@@ -151,7 +151,7 @@ async def on_message(message: cl.Message):
 
     print("[导演] narrator 正在判断场景和 targets...")
     narrator_response = await agent_manager.run_agent("narrator", narrator_input)
-    narrator_content = clean_response(narrator_response.content)
+    narrator_content = clean_response(narrator_response)
 
     # 解析 narrator 的 TARGETS 指令
     targets = []
@@ -206,7 +206,7 @@ async def on_message(message: cl.Message):
 
             # 调用 agent
             response = await agent_manager.run_agent(agent_name, full_input)
-            return agent_name, response.content
+            return agent_name, response
 
         except Exception as e:
             print(f"Agent {agent_name} 运行失败: {e}")
