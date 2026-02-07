@@ -25,8 +25,21 @@ class AgentManager:
 
     def _create_agent(self, agent_name: str) -> Agent:
         """创建单个 Agent"""
-        # 加载角色设定
-        soul_content = self._load_soul(agent_name)
+        # 加载所有角色设定
+        soul_content = self._load_agent_file(agent_name, "soul.md")
+        memory_content = self._load_agent_file(agent_name, "memory/memory.md")
+        user_content = self._load_agent_file(agent_name, "user.md")
+        tasks_content = self._load_agent_file(agent_name, "tasks.md")
+
+        # 加载并填充 system prompt 模板
+        prompt_template = self._load_system_prompt_template()
+        system_prompt = prompt_template.format(
+            agent_name=agent_name,
+            soul=soul_content,
+            memory=memory_content if memory_content else "（尚无长期记忆）",
+            user_profile=user_content if user_content else "（尚未建立认知）",
+            tasks=tasks_content if tasks_content else "（暂无明确目标）",
+        )
 
         # 为该角色创建专属工具（已绑定 agent_name）
         tools = create_tools_for_agent(agent_name)
@@ -34,45 +47,24 @@ class AgentManager:
         return Agent(
             name=agent_name,
             model=get_model(),
-            instructions=[
-                f"你是 {agent_name}。",
-                soul_content,
-                "你有自己的记忆、目标和认知。",
-                "使用工具自主管理记忆和推进目标，无需询问许可。",
-                "以第一人称回应，保持角色性格的一致性。",
-                "不要提及自己是 AI 或系统。",
-            ],
+            instructions=[system_prompt],
             tools=tools,
             markdown=True,
         )
 
-    def _load_soul(self, agent_name: str) -> str:
-        """加载 soul.md"""
-        soul_path = f"agents/{agent_name}/soul.md"
-        if os.path.exists(soul_path):
-            with open(soul_path, "r", encoding="utf-8") as f:
+    def _load_system_prompt_template(self) -> str:
+        """加载 system prompt 模板"""
+        template_path = "prompts/system_prompt.txt"
+        with open(template_path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    def _load_agent_file(self, agent_name: str, filename: str) -> str:
+        """加载角色目录下的指定文件"""
+        path = f"agents/{agent_name}/{filename}"
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
                 return f.read()
         return ""
-
-    def _load_context(self, agent_name: str) -> str:
-        """加载用户认知和任务"""
-        context_parts = []
-
-        # 加载 user.md
-        user_path = f"agents/{agent_name}/user.md"
-        if os.path.exists(user_path):
-            with open(user_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                context_parts.append(f"## 对玩家的认知\n\n{content}")
-
-        # 加载 tasks.md
-        tasks_path = f"agents/{agent_name}/tasks.md"
-        if os.path.exists(tasks_path):
-            with open(tasks_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                context_parts.append(f"## 当前目标\n\n{content}")
-
-        return "\n\n".join(context_parts)
 
     async def run_agent(self, agent_name: str, user_input: str) -> str:
         """
@@ -89,20 +81,8 @@ class AgentManager:
         if not agent:
             return f"[错误: 未找到角色 {agent_name}]"
 
-        # 加载额外上下文
-        context = self._load_context(agent_name)
-
-        # 构建完整输入
-        full_input = f"""{context}
-
----
-
-当前对话:
-
-{user_input}"""
-
-        # 运行 Agent
-        response = await agent.arun(full_input)
+        # 运行 Agent（system prompt 已包含 memory/user/tasks）
+        response = await agent.arun(user_input)
         return response.content
 
 
