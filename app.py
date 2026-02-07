@@ -157,14 +157,14 @@ async def on_message(message: cl.Message):
     targets = []
     scene_description = narrator_content
 
-    # 查找 TARGETS: [...] 格式
-    targets_match = re.search(r'TARGETS:\s*\[([^\]]*)\]', narrator_content, re.IGNORECASE)
+    # 查找 TARGETS: [...] 或 TARGETS[...] 格式
+    targets_match = re.search(r'TARGETS:?\s*\[([^\]]*)\]', narrator_content, re.IGNORECASE)
     if targets_match:
         targets_str = targets_match.group(1)
         # 解析角色列表
         targets = [t.strip().lower() for t in targets_str.split(',') if t.strip()]
         # 移除 TARGETS 行，保留场景描述
-        scene_description = re.sub(r'TARGETS:\s*\[[^\]]*\]\n?', '', narrator_content, flags=re.IGNORECASE).strip()
+        scene_description = re.sub(r'TARGETS:?\s*\[[^\]]*\]\n?', '', narrator_content, flags=re.IGNORECASE).strip()
 
     # 过滤有效角色
     valid_agents = ["lilith", "ruri", "mitsuki"]
