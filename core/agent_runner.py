@@ -31,8 +31,8 @@ class AgentManager:
         user_content = self._load_agent_file(agent_name, "user.md")
         tasks_content = self._load_agent_file(agent_name, "tasks.md")
 
-        # 加载并填充 system prompt 模板
-        prompt_template = self._load_system_prompt_template()
+        # 加载并填充 system prompt 模板（narrator 使用专用模板）
+        prompt_template = self._load_system_prompt_template(agent_name)
         system_prompt = prompt_template.format(
             agent_name=agent_name,
             soul=soul_content,
@@ -52,9 +52,14 @@ class AgentManager:
             markdown=True,
         )
 
-    def _load_system_prompt_template(self) -> str:
+    def _load_system_prompt_template(self, agent_name: str) -> str:
         """加载 system prompt 模板"""
-        template_path = "prompts/system_prompt.txt"
+        # narrator 使用专用模板
+        if agent_name == "narrator":
+            template_path = "prompts/narrator_prompt.txt"
+        else:
+            template_path = "prompts/character_prompt.txt"
+
         with open(template_path, "r", encoding="utf-8") as f:
             return f.read()
 
@@ -158,9 +163,11 @@ class MessageBroadcaster:
         # 确定广播范围
         broadcast_targets = targets.copy()
 
-        # narrator 的场景描述应该被所有角色看到
+        # narrator 的场景描述只给 targets + narrator 自己（上帝视角）
         if agent_name == "narrator":
-            broadcast_targets = self.agents.copy()
+            broadcast_targets = targets.copy()
+            if "narrator" not in broadcast_targets:
+                broadcast_targets.append("narrator")
 
         # narrator 作为 DM 需要看到所有角色的回应（上帝视角）
         if "narrator" not in broadcast_targets:

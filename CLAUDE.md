@@ -52,8 +52,10 @@ me moBot/
 
 ## 消息路由
 
+由 **narrator（旁白）** 负责路由决策，不再使用独立的 Router LLM。
+
 ```
-用户输入 → Router LLM → {"targets": ["alice", "bob", "narrator"]}
+用户输入 → narrator → {"targets": ["alice", "bob", "narrator"]}
 ```
 
 `targets` 包含谁，谁就回应。
@@ -64,6 +66,11 @@ me moBot/
 | "悄悄对 Alice 说..." | [alice] | 仅 Alice（私密） |
 | "现在几点了？" | [narrator] | 仅旁白回应 |
 | "等到明天" | [narrator, alice, bob] | 旁白+角色都回应 |
+
+**narrator 的路由职责**：
+- 分析玩家输入，判断哪些角色需要回应
+- 在回应开头输出 `TARGETS: [角色名列表]`
+- 仅决定**谁参与**，绝不**替角色说话或决定行为**
 
 ## 上下文规则
 
@@ -114,23 +121,27 @@ me moBot/
 ```
 用户消息
     ↓
-Router 判断 targets（可能包含 narrator）
+调用 narrator，获取路由决策 + 旁白描述
     ↓
-消息广播到所有 targets 的 jsonl
+解析 narrator 输出的 TARGETS 列表
+    ↓
+ narrator 的旁白内容写入所有 targets 的 jsonl
     ↓
 并行调用每个 target：
-  1. 读取自己的 jsonl 历史
+  1. 读取自己的 jsonl 历史（包含 narrator 的旁白）
   2. 拼装 system prompt
   3. 调 LLM（流式 + tools）
   4. 响应完成
     ↓
-所有回应广播到各自 jsonl
+所有角色回应广播到各自 jsonl
     ↓
-合并展示给玩家
+合并展示给玩家（旁白 + 角色回应）
 ```
 
+**注意**：narrator 先执行，其输出作为后续角色的上下文输入，但 narrator **不得**在旁白中替其他角色说话或预设行为。
+
 ## 文件更新规则
-****
+
 - **jsonl**：系统维护，自动追加
 - **md 文件**：Agent 通过 Tools 自主更新
 - **soul.md**：手写，只读
