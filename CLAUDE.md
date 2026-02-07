@@ -7,7 +7,6 @@
 - **记忆系统**：文件（人类可读）+ 向量数据库（可搜索）双存储
 - **信息差**：角色各自维护独立的对话历史
 - **自主更新**：Agent 通过 Tools 决定何时搜索/更新记忆
-- **narrator 即 Agent**：旁白和其他角色平级，只是 soul.md 定义它为故事主持人
 
 ## 技术栈
 
@@ -16,16 +15,16 @@ Chainlit + OpenRouter + sqlite-vec + asyncio
 ## 项目结构
 
 ```
-MemoBot/
+me moBot/
 ├── app.py                      # Chainlit 入口
 ├── router.py                   # 路由层：判断哪些角色需要回应
-├── agents/                     # 所有角色（平级，包括 narrator）
+├── agents/                     # 所有角色
 │   ├── alice/
 │   │   ├── soul.md             # 性格定义（手写，只读）
 │   │   ├── user.md             # 对玩家的认知（Agent 更新）
 │   │   ├── tasks.md            # 当前目标（Agent 更新）
 │   │   └── memory/
-│   │       ├── Memory.md       # 长期记忆（Agent 更新）
+│   │       ├── memory.md       # 长期记忆（Agent 更新）
 │   │       ├── daily/          # 每日摘要
 │   │       └── raw/            # YYYY-MM-DD.jsonl 对话流水
 │   ├── bob/
@@ -35,7 +34,7 @@ MemoBot/
 │       ├── user.md             # 对玩家的认知
 │       ├── tasks.md            # 故事主线任务（如"推进到月圆之夜"）
 │       └── memory/
-│           ├── Memory.md       # 故事事件记录
+│           ├── memory.md       # 故事事件记录
 │           └── ...
 ├── core/
 │   ├── llm.py                  # OpenRouter 异步调用
@@ -83,7 +82,7 @@ MemoBot/
 
 ```
 1. soul.md（性格定义）
-2. Memory.md（长期记忆）
+2. memory.md（长期记忆）
 3. user.md（对玩家的认知）
 4. tasks.md（当前目标）
 5. 运行时信息：时间、时区、语言
@@ -101,14 +100,14 @@ MemoBot/
 | Tool | 功能 |
 |------|------|
 | `search_memory` | 语义搜索自己的向量库 |
-| `update_memory` | 追加/编辑自己的 Memory.md |
+| `update_memory` | 追加/编辑自己的 memory.md |
 | `update_player_profile` | 更新自己的 user.md |
 | `update_tasks` | 更新自己的 tasks.md |
 | `summarize_today` | 生成今日摘要 |
 
 **narrator 使用方式**：
 - `tasks.md` = 故事主线任务（"推进到月圆之夜"、"制造冲突"）
-- `Memory.md` = 已发生的故事事件
+- `memory.md` = 已发生的故事事件
 
 ## 单轮对话流程
 
