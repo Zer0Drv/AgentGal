@@ -19,7 +19,12 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
     """
 
     async def search_memory(query: str, limit: int = 5) -> str:
-        """语义搜索自己的长期记忆"""
+        """语义搜索自己的长期记忆
+
+        Args:
+            query: 搜索查询内容
+            limit: 返回结果数量，默认5条
+        """
         try:
             results = await vector_store.search(agent_name, query, limit=limit)
 
@@ -36,7 +41,12 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             return f"搜索记忆时出错: {e}"
 
     async def update_memory(content: str, mode: str = "append") -> str:
-        """追加或编辑长期记忆文件 Memory.md"""
+        """追加或编辑长期记忆文件 Memory.md
+
+        Args:
+            content: 要写入记忆的内容
+            mode: 写入模式，'append'追加或'replace'替换，默认append
+        """
         try:
             memory_path = f"agents/{agent_name}/memory/Memory.md"
             os.makedirs(os.path.dirname(memory_path), exist_ok=True)
@@ -71,7 +81,11 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             return f"更新记忆时出错: {e}"
 
     async def update_player_profile(observation: str) -> str:
-        """更新对玩家的认知（写入 user.md）"""
+        """更新对玩家的认知（写入 user.md）
+
+        Args:
+            observation: 对玩家的观察内容
+        """
         try:
             user_path = f"agents/{agent_name}/user.md"
             os.makedirs(os.path.dirname(user_path), exist_ok=True)
@@ -92,7 +106,13 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             return f"更新玩家档案时出错: {e}"
 
     async def update_tasks(action: str, task: str, old_task: str = "") -> str:
-        """更新当前目标与待办事项（写入 tasks.md）"""
+        """更新当前目标与待办事项（写入 tasks.md）
+
+        Args:
+            action: 操作类型，可选 'add'添加、'complete'完成、'update'更新、'remove'删除
+            task: 任务内容
+            old_task: 旧任务内容（仅在action='update'时需要）
+        """
         try:
             tasks_path = f"agents/{agent_name}/tasks.md"
             os.makedirs(os.path.dirname(tasks_path), exist_ok=True)
@@ -146,7 +166,11 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             return f"更新任务时出错: {e}"
 
     async def summarize_today(summary: str) -> str:
-        """生成今日对话摘要并存入 daily 目录"""
+        """生成今日对话摘要并存入 daily 目录
+
+        Args:
+            summary: 今日对话摘要内容
+        """
         try:
             today = datetime.now().strftime("%Y-%m-%d")
             daily_path = f"agents/{agent_name}/memory/daily/{today}.md"
