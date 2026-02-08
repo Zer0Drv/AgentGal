@@ -1,7 +1,6 @@
 """Agent Tools - 所有角色共享的工具"""
 
 import os
-from datetime import datetime
 from typing import List, Callable
 from .vector_store import vector_store
 
@@ -50,21 +49,18 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             memory_path = f"agents/{agent_name}/memory/Memory.md"
             os.makedirs(os.path.dirname(memory_path), exist_ok=True)
 
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-
             if mode == "replace":
                 with open(memory_path, "w", encoding="utf-8") as f:
                     f.write(f"# {agent_name} 的长期记忆\n\n")
-                    f.write(f"## 更新于 {timestamp}\n\n")
                     f.write(content)
             else:
                 if os.path.exists(memory_path):
                     with open(memory_path, "a", encoding="utf-8") as f:
-                        f.write(f"\n\n## {timestamp}\n\n{content}")
+                        f.write(f"\n\n{content}")
                 else:
                     with open(memory_path, "w", encoding="utf-8") as f:
                         f.write(f"# {agent_name} 的长期记忆\n\n")
-                        f.write(f"## {timestamp}\n\n{content}")
+                        f.write(content)
 
             # 同步到向量库
             memory_path = f"agents/{agent_name}/memory/Memory.md"
