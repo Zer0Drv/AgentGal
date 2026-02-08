@@ -50,29 +50,25 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
         else:
             user_input = str(run_output.input)
 
-    # 提取 system message 和 history messages
-    system_message = None
-    history_messages = []
+    # 提取完整的 messages 数组（发送给模型的完整上下文）
+    full_messages = []
     if messages:
         for msg in messages:
-            if hasattr(msg, 'role'):
-                msg_content = msg.content if hasattr(msg, 'content') else str(msg)
-                if msg.role == 'system':
-                    system_message = msg_content
-                elif msg.role in ('user', 'assistant'):
-                    history_messages.append({
-                        "role": msg.role,
-                        "content": msg_content
-                    })
+            msg_dict = {
+                "role": msg.role if hasattr(msg, 'role') else 'unknown',
+                "content": msg.content if hasattr(msg, 'content') else str(msg),
+            }
+            # 如果有 name 属性（如 tool 调用结果），也记录下来
+            if hasattr(msg, 'name') and msg.name:
+                msg_dict["name"] = msg.name
+            full_messages.append(msg_dict)
 
     # 构建日志条目
     log_entry = {
         "timestamp": timestamp,
         "agent": agent_name,
         "model": model,
-        "system_message": system_message,
-        "user_input": user_input,
-        "history_messages": history_messages,
+        "request": full_messages if full_messages else [{"role": "user", "content": user_input}],
         "response": content,
         "tools_used": [
             {
@@ -98,19 +94,22 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
     text_path = f"{LOGS_DIR}/agent_calls_readable.log"
     with open(text_path, "a", encoding="utf-8") as f:
         f.write(f"\n{'='*80}\n")
-        f.write(f"Agent: {agent_name}\n")
-        f.write(f"Model: {model}\n")
-        f.write(f"Time: {timestamp}\n")
+        f.write(f"Agent: {agent_name} | Model: {model} | Time: {timestamp}\n")
         f.write(f"{'='*80}\n")
-        if system_message:
-            f.write(f"【System Prompt】\n{system_message}\n")
-            f.write(f"{'-'*80}\n")
-        if history_messages:
-            f.write(f"【History】\n")
-            for msg in history_messages:
-                f.write(f"  {msg['role']}: {msg['content'][:200]}...\n")
-            f.write(f"{'-'*80}\n")
-        f.write(f"【User Input】\n{user_input}\n")
+        # 直接显示完整的发送给模型的内容
+        f.write(f"【Request - 发送给模型的完整内容】\n")
+        if full_messages:
+            for msg in full_messages:
+                role = msg.get("role", "unknown")
+                content_text = msg.get("content", "")
+                name = msg.get("name")
+                if name:
+                    f.write(f"[{role} | {name}]\n{content_text}\n\n")
+                else:
+                    f.write(f"[{role}]\n{content_text}\n\n")
+        else:
+            # 如果 Agno 没有返回 messages，显示 input
+            f.write(f"[input]\n{user_input}\n\n")
         f.write(f"{'-'*80}\n")
         f.write(f"【Response】\n{content}\n")
         if tools:

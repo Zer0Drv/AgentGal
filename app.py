@@ -76,6 +76,21 @@ def reset_agent_memory(agent_name: str):
             print(f"  清空失败 memory.md: {e}")
 
 
+def reset_logs():
+    """重置日志文件"""
+    log_files = [
+        "logs/agent_calls_readable.log",
+        "logs/agent_calls.jsonl",
+    ]
+    for log_file in log_files:
+        if os.path.exists(log_file):
+            try:
+                os.remove(log_file)
+                print(f"  已删除: {log_file}")
+            except Exception as e:
+                print(f"  删除失败 {log_file}: {e}")
+
+
 @cl.on_chat_start
 async def on_chat_start():
     """聊天开始时的初始化 - 询问是否重置记忆"""
@@ -107,6 +122,9 @@ async def on_chat_start():
         for agent_name in all_agents:
             print(f"[{agent_name}]")
             reset_agent_memory(agent_name)
+        # 重置日志
+        print("[日志]")
+        reset_logs()
         print(f"\n{'='*40}")
         print("记忆重置完成")
         print(f"{'='*40}\n")
@@ -190,6 +208,10 @@ async def on_message(message: cl.Message):
     # 2. 广播玩家消息到 narrator（导演已看到）
     await broadcaster.broadcast_player_message(["narrator"], user_input)
 
+    # 2.5 将玩家消息广播给所有 targets（让角色们能看到玩家消息）
+    if targets:
+        await broadcaster.broadcast_player_message(targets, user_input)
+
     # 3. 如果有场景描述，广播给所有 targets（让角色们能看到旁白）
     if scene_description:
         await broadcaster.broadcast_agent_response("narrator", targets, scene_description)
@@ -207,12 +229,12 @@ async def on_message(message: cl.Message):
             # 加载该角色的历史上下文
             history = broadcaster.load_recent_history(agent_name, limit=10)
 
-            # 构建完整输入（包含历史、场景描述）
+            # 构建完整输入
+            # 注意：history 已从 jsonl 加载，包含 narrator 广播的场景描述
+            # 不需要再单独添加 scene_description，避免重复
             parts = []
             if history:
                 parts.append(f"最近对话历史:\n\n{history}")
-            if scene_description:
-                parts.append(f"当前场景:\n\n{scene_description}")
             parts.append(f"玩家新消息: {user_input}")
             full_input = "\n\n---\n\n".join(parts)
 

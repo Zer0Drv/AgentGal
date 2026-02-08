@@ -52,6 +52,8 @@ class AgentManager:
             tools=tools,
             markdown=True,
             post_hooks=[log_agent_run],
+            # 禁用 Agno 内部历史管理，由应用层通过 jsonl 自行管理
+            add_history_to_context=False,
         )
 
     def _load_system_prompt_template(self, agent_name: str) -> str:
@@ -123,9 +125,7 @@ class MessageBroadcaster:
             targets: 需要回应的角色列表
             content: 玩家消息内容
         """
-        timestamp = datetime.now().isoformat()
         message = {
-            "timestamp": timestamp,
             "role": "player",
             "content": content,
             "visible_to": targets,
@@ -154,9 +154,7 @@ class MessageBroadcaster:
             targets: 需要看到这条回应的角色列表（原消息的 targets）
             content: 回应内容
         """
-        timestamp = datetime.now().isoformat()
         message = {
-            "timestamp": timestamp,
             "role": agent_name,
             "content": content,
             "visible_to": targets,
