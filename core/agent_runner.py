@@ -21,7 +21,7 @@ class AgentManager:
 
     def _init_agents(self):
         """初始化所有角色 Agent"""
-        for agent_name in ["lilith", "ruri", "mitsuki", "narrator"]:
+        for agent_name in ["lilith", "mitsuki", "narrator"]:
             self.agents[agent_name] = self._create_agent(agent_name)
 
     def _create_agent(self, agent_name: str) -> Agent:
@@ -101,7 +101,7 @@ class MessageBroadcaster:
     """消息广播系统 - 维护每个角色的独立对话历史"""
 
     def __init__(self):
-        self.agents = ["lilith", "ruri", "mitsuki", "narrator"]
+        self.agents = ["lilith", "mitsuki", "narrator"]
 
     def _get_raw_path(self, agent_name: str, date: str = None) -> str:
         """获取某角色的 raw 对话文件路径"""

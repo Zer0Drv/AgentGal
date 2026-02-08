@@ -39,7 +39,7 @@ def clean_response(content: str) -> str:
 def has_existing_save() -> bool:
     """检查是否有已存在的存档（任一角色有 jsonl 文件）"""
     import glob
-    all_agents = ["lilith", "ruri", "mitsuki", "narrator"]
+    all_agents = ["lilith", "mitsuki", "narrator"]
     for agent_name in all_agents:
         raw_dir = f"agents/{agent_name}/memory/raw"
         if os.path.exists(raw_dir):
@@ -80,7 +80,7 @@ def reset_agent_memory(agent_name: str):
 async def on_chat_start():
     """聊天开始时的初始化 - 询问是否重置记忆"""
 
-    all_agents = ["lilith", "ruri", "mitsuki", "narrator"]
+    all_agents = ["lilith", "mitsuki", "narrator"]
 
     # 检查是否有存档
     has_save = has_existing_save()
@@ -119,9 +119,9 @@ async def on_chat_start():
 新学期刚开始，距离毕业还有三个月。
 
 讲台上，班主任拍了拍手：
-"今天有两位转学生加入我们班级。"
+"今天有位转学生加入我们班级。"
 
-两个身影走进教室。
+一个引人注目的身影走进教室。
 """
 
         # 发送消息给玩家
@@ -136,7 +136,7 @@ async def on_chat_start():
             "timestamp": timestamp,
             "role": "narrator",
             "content": default_opening,
-            "visible_to": ["lilith", "ruri", "mitsuki", "narrator"],
+            "visible_to": ["lilith", "mitsuki", "narrator"],
         }
 
         # 写入所有角色的 jsonl
@@ -179,7 +179,7 @@ async def on_message(message: cl.Message):
         scene_description = re.sub(r'TARGETS:?\s*\[[^\]]*\]\n?', '', narrator_content, flags=re.IGNORECASE).strip()
 
     # 过滤有效角色
-    valid_agents = ["lilith", "ruri", "mitsuki"]
+    valid_agents = ["lilith", "mitsuki"]
     targets = [t for t in targets if t in valid_agents]
 
     print(f"[导演] narrator 决定 targets: {targets}")
@@ -252,4 +252,4 @@ if __name__ == "__main__":
     # 本地运行调试
     print("MemoBot 启动...")
     print(f"时间: {datetime.now().isoformat()}")
-    print(f"可用角色: lilith (魅魔), ruri (天降巫女), mitsuki (青梅竹马), narrator (旁白)")
+    print(f"可用角色: lilith (魅魔), mitsuki (青梅竹马), narrator (旁白)")
