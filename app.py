@@ -35,6 +35,19 @@ def clean_response(content: str) -> str:
     return content.strip()
 
 
+def has_existing_save() -> bool:
+    """检查是否有已存在的存档（任一角色有 jsonl 文件）"""
+    import glob
+    all_agents = ["lilith", "ruri", "mitsuki", "narrator"]
+    for agent_name in all_agents:
+        raw_dir = f"agents/{agent_name}/memory/raw"
+        if os.path.exists(raw_dir):
+            jsonl_files = glob.glob(f"{raw_dir}/*.jsonl")
+            if jsonl_files:
+                return True
+    return False
+
+
 def reset_agent_memory(agent_name: str):
     """重置指定角色的所有记忆文件（保留 soul.md，从模板恢复 tasks.md 和 user.md）"""
     import shutil
@@ -85,56 +98,73 @@ def reset_agent_memory(agent_name: str):
 
 @cl.on_chat_start
 async def on_chat_start():
-    """聊天开始时的初始化 - 重置记忆、显示默认开场并写入所有角色历史"""
+    """聊天开始时的初始化 - 询问是否重置记忆"""
 
-    # 重置所有角色的记忆（确保每次新游戏都是全新开始）
     all_agents = ["lilith", "ruri", "mitsuki", "narrator"]
-    print(f"\n{'='*40}")
-    print("新游戏开始，重置所有角色记忆...")
-    print(f"{'='*40}\n")
-    for agent_name in all_agents:
-        print(f"[{agent_name}]")
-        reset_agent_memory(agent_name)
-    print(f"\n{'='*40}")
-    print("记忆重置完成")
-    print(f"{'='*40}\n")
 
-    default_opening = """**私立桜庭学园 · 4月的清晨**
+    # 检查是否有存档
+    has_save = has_existing_save()
+
+    should_reset = True
+    if has_save:
+        # 有存档，询问玩家是否重置
+        res = await cl.AskActionMessage(
+            content="检测到已有游戏存档，是否重置记忆开始新游戏？",
+            actions=[
+                cl.Action(name="reset", label="重置并新游戏", payload={"value": "reset"}),
+                cl.Action(name="continue", label="继续上次游戏", payload={"value": "continue"}),
+            ],
+        ).send()
+        should_reset = res and res.get("payload", {}).get("value") == "reset"
+
+    if should_reset:
+        # 重置所有角色的记忆
+        print(f"\n{'='*40}")
+        print("新游戏开始，重置所有角色记忆...")
+        print(f"{'='*40}\n")
+        for agent_name in all_agents:
+            print(f"[{agent_name}]")
+            reset_agent_memory(agent_name)
+        print(f"\n{'='*40}")
+        print("记忆重置完成")
+        print(f"{'='*40}\n")
+        await cl.Message(content="已重置记忆，开始新游戏。").send()
+
+        default_opening = """**私立桜庭学园 · 4月的清晨**
 
 樱花瓣随风飘进教室的窗户。
-你坐在靠窗的座位上，看着窗外熟悉的景色。
+你懒懒地坐在靠窗的座位上，看着窗外熟悉的景色。
 新学期刚开始，距离毕业还有三个月。
 
 讲台上，班主任拍了拍手：
 "今天有两位转学生加入我们班级。"
 
-你的心跳莫名加速了一点。
-也许是因为春风，也许是因为——
+两个身影走进教室。
+"""
 
-*你会怎么做？*"""
+        # 发送消息给玩家
+        await cl.Message(content=default_opening, author="Narrator").send()
 
-    # 发送消息给玩家
-    await cl.Message(content=default_opening, author="Narrator").send()
+        # 将开场旁白写入所有角色的历史，让他们知道场景设定
+        from datetime import datetime
+        import json
 
-    # 将开场旁白写入所有角色的历史，让他们知道场景设定
-    from datetime import datetime
-    import json
+        timestamp = datetime.now().isoformat()
+        opening_message = {
+            "timestamp": timestamp,
+            "role": "narrator",
+            "content": default_opening,
+            "visible_to": ["lilith", "ruri", "mitsuki", "narrator"],
+        }
 
-    timestamp = datetime.now().isoformat()
-    opening_message = {
-        "timestamp": timestamp,
-        "role": "narrator",
-        "content": default_opening,
-        "visible_to": ["lilith", "ruri", "mitsuki", "narrator"],
-    }
-
-    # 写入所有角色的 jsonl
-    all_agents = ["lilith", "ruri", "mitsuki", "narrator"]
-    for agent_name in all_agents:
-        raw_path = f"agents/{agent_name}/memory/raw/{datetime.now().strftime('%Y-%m-%d')}.jsonl"
-        os.makedirs(os.path.dirname(raw_path), exist_ok=True)
-        with open(raw_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
+        # 写入所有角色的 jsonl
+        for agent_name in all_agents:
+            raw_path = f"agents/{agent_name}/memory/raw/{datetime.now().strftime('%Y-%m-%d')}.jsonl"
+            os.makedirs(os.path.dirname(raw_path), exist_ok=True)
+            with open(raw_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
+    else:
+        await cl.Message(content="继续上次游戏。").send()
 
 
 @cl.on_message
