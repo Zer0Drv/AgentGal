@@ -1,7 +1,6 @@
 """Agent Tools - 所有角色共享的工具"""
 
 import os
-import json
 from datetime import datetime
 from typing import List, Callable
 from .vector_store import vector_store
@@ -68,11 +67,15 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
                         f.write(f"## {timestamp}\n\n{content}")
 
             # 同步到向量库
-            await vector_store.init_agent_table(agent_name)
-            await vector_store.add_memory(
+            memory_path = f"agents/{agent_name}/memory/Memory.md"
+            full_content = ""
+            if os.path.exists(memory_path):
+                with open(memory_path, "r", encoding="utf-8") as f:
+                    full_content = f.read()
+            await vector_store.sync_file(
                 agent_name=agent_name,
-                content=content,
-                source="Memory.md",
+                file_path=memory_path,
+                content=full_content or content,
             )
 
             return f"记忆已更新: {content[:50]}..."
@@ -80,34 +83,7 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
         except Exception as e:
             return f"更新记忆时出错: {e}"
 
-    async def summarize_today(summary: str) -> str:
-        """生成今日对话摘要并存入 daily 目录
-
-        Args:
-            summary: 今日对话摘要内容
-        """
-        try:
-            today = datetime.now().strftime("%Y-%m-%d")
-            daily_path = f"agents/{agent_name}/memory/daily/{today}.md"
-
-            os.makedirs(os.path.dirname(daily_path), exist_ok=True)
-
-            timestamp = datetime.now().strftime("%H:%M")
-
-            if os.path.exists(daily_path):
-                with open(daily_path, "a", encoding="utf-8") as f:
-                    f.write(f"\n\n## {timestamp}\n\n{summary}")
-            else:
-                with open(daily_path, "w", encoding="utf-8") as f:
-                    f.write(f"# {today} 的摘要\n\n## {timestamp}\n\n{summary}")
-
-            return f"今日摘要已保存: {summary[:50]}..."
-
-        except Exception as e:
-            return f"生成摘要时出错: {e}"
-
     return [
         search_memory,
         update_memory,
-        summarize_today,
     ]
