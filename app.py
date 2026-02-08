@@ -208,9 +208,9 @@ async def on_message(message: cl.Message):
     # 2. 广播玩家消息到 narrator（导演已看到）
     await broadcaster.broadcast_player_message(["narrator"], user_input)
 
-    # 3. 如果有场景描述，广播并展示
+    # 3. 如果有场景描述，广播给所有 targets（让角色们能看到旁白）
     if scene_description:
-        await broadcaster.broadcast_agent_response("narrator", ["narrator"], scene_description)
+        await broadcaster.broadcast_agent_response("narrator", targets, scene_description)
         await cl.Message(content=scene_description, author="Narrator").send()
 
     # 4. 如果没有角色需要回应，结束
