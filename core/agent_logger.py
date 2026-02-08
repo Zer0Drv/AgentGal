@@ -90,14 +90,13 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
     with open(jsonl_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
-    # 同时写入可读的文本日志
+    # 写入可读的文本日志
     text_path = f"{LOGS_DIR}/agent_calls_readable.log"
     with open(text_path, "a", encoding="utf-8") as f:
         f.write(f"\n{'='*80}\n")
         f.write(f"Agent: {agent_name} | Model: {model} | Time: {timestamp}\n")
         f.write(f"{'='*80}\n")
-        # 直接显示完整的发送给模型的内容
-        f.write(f"【Request - 发送给模型的完整内容】\n")
+        # 直接显示完整的 message 流
         if full_messages:
             for msg in full_messages:
                 role = msg.get("role", "unknown")
@@ -110,21 +109,21 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
         else:
             # 如果 Agno 没有返回 messages，显示 input
             f.write(f"[input]\n{user_input}\n\n")
-        f.write(f"{'-'*80}\n")
-        f.write(f"【Response】\n{content}\n")
         if tools:
-            f.write(f"{'-'*80}\n")
-            f.write(f"【Tools Used】\n")
+            f.write(f"{'-'*40}\n")
+            f.write(f"[tools]\n")
             for t in tools:
                 tool_name = t.tool_name if hasattr(t, 'tool_name') else str(t)
                 f.write(f"  - {tool_name}\n")
         if metrics:
-            f.write(f"{'-'*80}\n")
-            f.write(f"【Metrics】\n")
+            f.write(f"{'-'*40}\n")
+            f.write(f"[metrics] ")
+            metrics_parts = []
             if hasattr(metrics, 'input_tokens'):
-                f.write(f"  Input tokens: {metrics.input_tokens}\n")
+                metrics_parts.append(f"in: {metrics.input_tokens}")
             if hasattr(metrics, 'output_tokens'):
-                f.write(f"  Output tokens: {metrics.output_tokens}\n")
+                metrics_parts.append(f"out: {metrics.output_tokens}")
             if hasattr(metrics, 'total_tokens'):
-                f.write(f"  Total tokens: {metrics.total_tokens}\n")
+                metrics_parts.append(f"total: {metrics.total_tokens}")
+            f.write(" | ".join(metrics_parts) + "\n")
         f.write(f"{'='*80}\n\n")
