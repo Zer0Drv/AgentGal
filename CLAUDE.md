@@ -25,7 +25,6 @@ me moBot/
 │   │   ├── tasks.md            # 当前目标（Agent 更新）
 │   │   └── memory/
 │   │       ├── memory.md       # 长期记忆（Agent 更新）
-│   │       ├── daily/          # 每日摘要
 │   │       └── raw/            # YYYY-MM-DD.jsonl 对话流水
 │   ├── bob/
 │   │   └── ...
@@ -43,10 +42,7 @@ me moBot/
 │   ├── prompt.py               # system prompt 拼装
 │   └── tools/                  # 所有 Agent 共享的 Tools
 │       ├── search_memory.py
-│       ├── update_memory.py
-│       ├── update_player_profile.py
-│       ├── update_tasks.py
-│       └── summarize_today.py
+│       └── update_memory.py
 └── .env
 ```
 
@@ -110,7 +106,6 @@ me moBot/
 | `update_memory` | 追加/编辑自己的 memory.md |
 | `update_player_profile` | 更新自己的 user.md |
 | `update_tasks` | 更新自己的 tasks.md |
-| `summarize_today` | 生成今日摘要 |
 
 **narrator 使用方式**：
 - `tasks.md` = 故事主线任务（"推进到月圆之夜"、"制造冲突"）
