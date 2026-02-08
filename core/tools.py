@@ -31,7 +31,7 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
 
             lines = ["找到以下相关记忆："]
             for i, r in enumerate(results, 1):
-                lines.append(f"\n{i}. [{r['source']}] {r['content'][:200]}...")
+                lines.append(f"\n{i}. [{r['source_file']}] {r['content'][:200]}...")
 
             return "\n".join(lines)
 
