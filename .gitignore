@@ -5,6 +5,8 @@
 __pycache__/
 *.pyc
 *.db
+*.jsonl
+*.log
 memory/
 tasks.md
 user.md
