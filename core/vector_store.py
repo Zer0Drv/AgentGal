@@ -2,9 +2,13 @@
 
 import os
 import json
+import sqlite_vec
 import aiosqlite
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+
+# 获取 sqlite-vec 扩展的路径
+_SQLITE_VEC_PATH = sqlite_vec.__file__.replace("__init__.py", "vec0")
 
 
 class VectorStore:
@@ -18,17 +22,15 @@ class VectorStore:
         """获取数据库连接"""
         db = await aiosqlite.connect(self.db_path)
         await db.enable_load_extension(True)
-        try:
-            await db.load_extension("vec0")
-        except Exception:
-            # 某些环境可能需要不同的加载方式
-            pass
+        # 使用完整路径加载 sqlite-vec 扩展
+        await db.execute(f"SELECT load_extension('{_SQLITE_VEC_PATH}')")
         return db
 
     async def init_agent_table(self, agent_name: str):
         """为角色初始化向量表"""
         table_name = f"{agent_name}_memories"
-        async with await self._get_db() as db:
+        db = await self._get_db()
+        try:
             # 创建虚拟表用于向量搜索
             await db.execute(f"""
                 CREATE VIRTUAL TABLE IF NOT EXISTS {table_name} USING vec0(
@@ -40,6 +42,8 @@ class VectorStore:
                 )
             """)
             await db.commit()
+        finally:
+            await db.close()
 
     async def add_memory(
         self,
@@ -55,7 +59,8 @@ class VectorStore:
         if embedding is None:
             embedding = self._mock_embedding(content)
 
-        async with await self._get_db() as db:
+        db = await self._get_db()
+        try:
             await db.execute(
                 f"""
                 INSERT INTO {table_name} (content, source, created_at, embedding)
@@ -69,6 +74,8 @@ class VectorStore:
                 ),
             )
             await db.commit()
+        finally:
+            await db.close()
 
     async def search(
         self,
@@ -83,7 +90,8 @@ class VectorStore:
         if query_embedding is None:
             query_embedding = self._mock_embedding(query)
 
-        async with await self._get_db() as db:
+        db = await self._get_db()
+        try:
             # sqlite-vec 支持向量相似度搜索
             cursor = await db.execute(
                 f"""
@@ -107,16 +115,21 @@ class VectorStore:
                 }
                 for row in rows
             ]
+        finally:
+            await db.close()
 
     async def delete_by_source(self, agent_name: str, source: str):
         """删除特定来源的记忆（用于更新时清理旧内容）"""
         table_name = f"{agent_name}_memories"
-        async with await self._get_db() as db:
+        db = await self._get_db()
+        try:
             await db.execute(
                 f"DELETE FROM {table_name} WHERE source = ?",
                 (source,),
             )
             await db.commit()
+        finally:
+            await db.close()
 
     def _mock_embedding(self, text: str, dim: int = 1536) -> List[float]:
         """

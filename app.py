@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import chainlit as cl
 
 from core.agent_runner import agent_manager, broadcaster
+from core.init_db import init_database
 
 # 加载环境变量
 load_dotenv()
@@ -118,6 +119,8 @@ async def on_chat_start():
         should_reset = res and res.get("payload", {}).get("value") == "reset"
 
     if should_reset:
+        # 初始化数据库表（新游戏或重置时）
+        await init_database()
         # 重置所有角色的记忆
         print(f"\n{'='*40}")
         print("新游戏开始，重置所有角色记忆...")
