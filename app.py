@@ -50,8 +50,7 @@ def has_existing_save() -> bool:
 
 
 def reset_agent_memory(agent_name: str):
-    """重置指定角色的所有记忆文件（保留 soul.md，从模板恢复 tasks.md 和 user.md）"""
-    import shutil
+    """重置指定角色的所有记忆文件（保留 soul.md）"""
     import glob
 
     agent_path = f"agents/{agent_name}"
@@ -75,26 +74,6 @@ def reset_agent_memory(agent_name: str):
             print(f"  已清空: memory.md")
         except Exception as e:
             print(f"  清空失败 memory.md: {e}")
-
-    # 3. 从模板恢复 tasks.md（当前目标）
-    tasks_default = f"{agent_path}/tasks.default.md"
-    tasks_path = f"{agent_path}/tasks.md"
-    if os.path.exists(tasks_default):
-        try:
-            shutil.copy2(tasks_default, tasks_path)
-            print(f"  已恢复: tasks.md")
-        except Exception as e:
-            print(f"  恢复失败 tasks.md: {e}")
-
-    # 4. 从模板恢复 user.md（对玩家的认知）
-    user_default = f"{agent_path}/user.default.md"
-    user_path = f"{agent_path}/user.md"
-    if os.path.exists(user_default):
-        try:
-            shutil.copy2(user_default, user_path)
-            print(f"  已恢复: user.md")
-        except Exception as e:
-            print(f"  恢复失败 user.md: {e}")
 
 
 @cl.on_chat_start

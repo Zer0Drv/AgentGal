@@ -80,91 +80,6 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
         except Exception as e:
             return f"更新记忆时出错: {e}"
 
-    async def update_player_profile(observation: str) -> str:
-        """更新对玩家的认知（写入 user.md）
-
-        Args:
-            observation: 对玩家的观察内容
-        """
-        try:
-            user_path = f"agents/{agent_name}/user.md"
-            os.makedirs(os.path.dirname(user_path), exist_ok=True)
-
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-            if os.path.exists(user_path):
-                with open(user_path, "a", encoding="utf-8") as f:
-                    f.write(f"\n\n## 观察于 {timestamp}\n\n{observation}")
-            else:
-                with open(user_path, "w", encoding="utf-8") as f:
-                    f.write(f"# {agent_name} 对玩家的认知\n\n")
-                    f.write(f"## 观察于 {timestamp}\n\n{observation}")
-
-            return f"玩家认知已更新: {observation[:50]}..."
-
-        except Exception as e:
-            return f"更新玩家档案时出错: {e}"
-
-    async def update_tasks(action: str, task: str, old_task: str = "") -> str:
-        """更新当前目标与待办事项（写入 tasks.md）
-
-        Args:
-            action: 操作类型，可选 'add'添加、'complete'完成、'update'更新、'remove'删除
-            task: 任务内容
-            old_task: 旧任务内容（仅在action='update'时需要）
-        """
-        try:
-            tasks_path = f"agents/{agent_name}/tasks.md"
-            os.makedirs(os.path.dirname(tasks_path), exist_ok=True)
-
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-            existing_content = ""
-            if os.path.exists(tasks_path):
-                with open(tasks_path, "r", encoding="utf-8") as f:
-                    existing_content = f.read()
-
-            if action == "add":
-                new_entry = f"\n- [ ] {task}（添加于 {timestamp}）"
-                if os.path.exists(tasks_path):
-                    with open(tasks_path, "a", encoding="utf-8") as f:
-                        f.write(new_entry)
-                else:
-                    with open(tasks_path, "w", encoding="utf-8") as f:
-                        f.write(f"# {agent_name} 的当前目标\n\n## 进行中\n{new_entry}\n")
-                return f"任务已添加: {task}"
-
-            elif action == "complete":
-                if task in existing_content:
-                    updated = existing_content.replace(
-                        f"- [ ] {task}",
-                        f"- [x] {task}（完成于 {timestamp}）",
-                    )
-                    with open(tasks_path, "w", encoding="utf-8") as f:
-                        f.write(updated)
-                    return f"任务已标记完成: {task}"
-                return f"未找到任务: {task}"
-
-            elif action == "update" and old_task:
-                if old_task in existing_content:
-                    updated = existing_content.replace(old_task, task)
-                    with open(tasks_path, "w", encoding="utf-8") as f:
-                        f.write(updated)
-                    return f"任务已更新: {old_task} -> {task}"
-                return f"未找到旧任务: {old_task}"
-
-            elif action == "remove":
-                lines = existing_content.split("\n")
-                new_lines = [l for l in lines if task not in l]
-                with open(tasks_path, "w", encoding="utf-8") as f:
-                    f.write("\n".join(new_lines))
-                return f"任务已删除: {task}"
-
-            return f"未知操作: {action}"
-
-        except Exception as e:
-            return f"更新任务时出错: {e}"
-
     async def summarize_today(summary: str) -> str:
         """生成今日对话摘要并存入 daily 目录
 
@@ -194,7 +109,5 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
     return [
         search_memory,
         update_memory,
-        update_player_profile,
-        update_tasks,
         summarize_today,
     ]

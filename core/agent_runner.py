@@ -9,6 +9,7 @@ from agno.models.openai import OpenAIChat
 
 from .llm import get_model
 from .tools import create_tools_for_agent
+from .agent_logger import log_agent_run
 
 
 class AgentManager:
@@ -32,8 +33,6 @@ class AgentManager:
         def get_dynamic_instructions(agent: Agent) -> str:
             # 运行时重新加载动态记忆文件
             memory_content = self._load_agent_file(agent_name, "memory/memory.md")
-            user_content = self._load_agent_file(agent_name, "user.md")
-            tasks_content = self._load_agent_file(agent_name, "tasks.md")
 
             # 加载并填充 system prompt 模板
             prompt_template = self._load_system_prompt_template(agent_name)
@@ -41,8 +40,6 @@ class AgentManager:
                 agent_name=agent_name,
                 soul=soul_content,
                 memory=memory_content if memory_content else "（尚无长期记忆）",
-                user_profile=user_content if user_content else "（尚未建立认知）",
-                tasks=tasks_content if tasks_content else "（暂无明确目标）",
             )
 
         # 为该角色创建专属工具（已绑定 agent_name）
@@ -54,6 +51,7 @@ class AgentManager:
             instructions=get_dynamic_instructions,
             tools=tools,
             markdown=True,
+            post_hooks=[log_agent_run],
         )
 
     def _load_system_prompt_template(self, agent_name: str) -> str:
