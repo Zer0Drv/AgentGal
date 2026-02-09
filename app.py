@@ -89,7 +89,7 @@ def reset_logs():
     ]
     for log_file in log_files:
         if os.path.exists(log_file):
-            os.remove(log_file)
+            open(log_file, "w").close()
         
 
 @cl.on_chat_start
