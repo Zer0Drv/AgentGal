@@ -223,16 +223,14 @@ async def on_message(message: cl.Message):
         print("[导演] 无角色需要回应")
         return
 
-    # 5. 并行调用 targets 中的角色
-    async def run_single_agent(agent_name: str) -> tuple:
-        """运行单个 agent 并返回结果"""
+    # 5. 顺序调用 targets 中的角色（让后面的角色能看到前面的回应）
+    results = []
+    for agent_name in targets:
         try:
-            # 加载该角色的历史上下文
+            # 加载该角色的历史上下文（包含之前角色的回应）
             history = broadcaster.load_recent_history(agent_name, limit=10)
 
             # 构建完整输入
-            # 注意：history 已从 jsonl 加载，包含 narrator 广播的场景描述
-            # 不需要再单独添加 scene_description，避免重复
             parts = []
             if history:
                 parts.append(f"最近对话历史:\n\n{history}")
@@ -240,20 +238,17 @@ async def on_message(message: cl.Message):
             full_input = "\n\n---\n\n".join(parts)
 
             # 调用 agent
+            print(f"[导演] {agent_name} 正在回应...")
             response = await agent_manager.run_agent(agent_name, full_input)
-            return agent_name, response
+
+            # 立即广播该角色的回应，让下一个角色能看到
+            await broadcaster.broadcast_agent_response(agent_name, targets, response)
+
+            results.append((agent_name, response))
 
         except Exception as e:
             print(f"Agent {agent_name} 运行失败: {e}")
-            return agent_name, f"[错误: {str(e)}]"
-
-    # 并行执行所有目标 agents
-    agent_tasks = [run_single_agent(name) for name in targets]
-    results = await asyncio.gather(*agent_tasks)
-
-    # 6. 广播角色回应到各自 jsonl
-    for agent_name, response in results:
-        await broadcaster.broadcast_agent_response(agent_name, targets, response)
+            results.append((agent_name, f"[错误: {str(e)}]"))
 
     # 7. 展示给玩家
     for agent_name, response in results:
