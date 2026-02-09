@@ -114,7 +114,7 @@ async def on_chat_start():
 
     if should_reset:
         # 初始化数据库表（新游戏或重置时）
-        await init_database()
+        init_database()
         # 重置所有角色的记忆
         print(f"\n{'='*40}")
         print("新游戏开始，重置所有角色记忆...")
@@ -205,12 +205,10 @@ async def on_message(message: cl.Message):
         print(f"[导演] 场景描述:\n{scene_description[:200]}...")
     print("-" * 40)
 
-    # 2. 广播玩家消息到 narrator（导演已看到）
-    await broadcaster.broadcast_player_message(["narrator"], user_input)
-
-    # 2.5 将玩家消息广播给所有 targets（让角色们能看到玩家消息）
-    if targets:
-        await broadcaster.broadcast_player_message(targets, user_input)
+    # 2. 广播玩家消息到所有 targets + narrator（让角色们能看到玩家消息）
+    print("[调试] 开始广播玩家消息...")
+    await broadcaster.broadcast_player_message(targets, user_input)
+    print("[调试] 广播玩家消息完成")
 
     # 3. 如果有场景描述，广播给所有 targets（让角色们能看到旁白）
     if scene_description:

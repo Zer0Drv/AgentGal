@@ -1,4 +1,4 @@
-"""Agent Tools - 所有角色共享的工具"""
+"""Agent Tools - 所有角色共享的工具（完全同步版本）"""
 
 import os
 from typing import List, Callable
@@ -16,7 +16,7 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
         该角色的工具函数列表
     """
 
-    async def search_memory(query: str, limit: int = 5) -> str:
+    def search_memory(query: str, limit: int = 5) -> str:
         """语义搜索自己的长期记忆
 
         Args:
@@ -24,7 +24,7 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             limit: 返回结果数量，默认5条
         """
         try:
-            results = await vector_store.search(agent_name, query, limit=limit)
+            results = vector_store.search(agent_name, query, limit=limit)
 
             if not results:
                 return "没有找到相关记忆。"
@@ -38,7 +38,7 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
         except Exception as e:
             return f"搜索记忆时出错: {e}"
 
-    async def update_memory(content: str, mode: str = "append") -> str:
+    def update_memory(content: str, mode: str = "append") -> str:
         """追加或编辑长期记忆文件 Memory.md
 
         Args:
@@ -68,7 +68,7 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             if os.path.exists(memory_path):
                 with open(memory_path, "r", encoding="utf-8") as f:
                     full_content = f.read()
-            await vector_store.sync_file(
+            vector_store.sync_file(
                 agent_name=agent_name,
                 file_path=memory_path,
                 content=full_content or content,
