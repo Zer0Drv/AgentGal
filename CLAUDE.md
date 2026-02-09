@@ -2,6 +2,8 @@
 
 多 Agent 角色扮演游戏。每个角色（包括旁白）拥有独立记忆，通过 Tools 自主管理记忆和目标。
 
+使用 uv 作为项目管理器。
+
 ## 核心设计
 
 - **记忆系统**：文件（人类可读）+ 向量数据库（可搜索）双存储
@@ -17,12 +19,9 @@ Chainlit + OpenRouter + sqlite-vec + asyncio
 ```
 me moBot/
 ├── app.py                      # Chainlit 入口
-├── router.py                   # 路由层：判断哪些角色需要回应
 ├── agents/                     # 所有角色
 │   ├── alice/
 │   │   ├── soul.md             # 性格定义（手写，只读）
-│   │   ├── user.md             # 对玩家的认知（Agent 更新）
-│   │   ├── tasks.md            # 当前目标（Agent 更新）
 │   │   └── memory/
 │   │       ├── memory.md       # 长期记忆（Agent 更新）
 │   │       └── raw/            # YYYY-MM-DD.jsonl 对话流水
@@ -30,8 +29,6 @@ me moBot/
 │   │   └── ...
 │   └── narrator/               # 旁白角色（结构同其他角色）
 │       ├── soul.md             # 定义：故事主持人、上帝视角
-│       ├── user.md             # 对玩家的认知
-│       ├── tasks.md            # 故事主线任务（如"推进到月圆之夜"）
 │       └── memory/
 │           ├── memory.md       # 故事事件记录
 │           └── ...
@@ -48,7 +45,7 @@ me moBot/
 
 ## 消息路由
 
-由 **narrator（旁白）** 负责路由决策，不再使用独立的 Router LLM。
+由 **narrator（旁白）** 负责路由决策。
 
 ```
 用户输入 → narrator → {"targets": ["alice", "bob", "narrator"]}
