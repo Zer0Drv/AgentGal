@@ -40,6 +40,34 @@ def clean_response(content: str) -> str:
     return content.strip()
 
 
+def load_recent_raw_messages(limit: int = 10) -> list:
+    """从 narrator 的 raw/ 目录加载最近的原始消息（narrator 拥有上帝视角，包含所有消息）"""
+    import glob
+
+    raw_dir = "agents/narrator/memory/raw"
+    if not os.path.exists(raw_dir):
+        return []
+
+    # 按日期排序所有 jsonl 文件
+    jsonl_files = sorted(glob.glob(f"{raw_dir}/*.jsonl"))
+    if not jsonl_files:
+        return []
+
+    # 从所有文件中收集消息
+    all_messages = []
+    for filepath in jsonl_files:
+        with open(filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        all_messages.append(json.loads(line.strip()))
+                    except json.JSONDecodeError:
+                        continue
+
+    # 返回最后 limit 条
+    return all_messages[-limit:]
+
+
 def has_existing_save() -> bool:
     """检查是否有已存在的存档（任一角色有 jsonl 文件）"""
     import glob
@@ -163,7 +191,24 @@ async def on_chat_start():
             with open(raw_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
     else:
-        await cl.Message(content="继续上次游戏。").send()
+        # 从 narrator 的历史中还原最近消息
+        recent_messages = load_recent_raw_messages(limit=10)
+        if recent_messages:
+            await cl.Message(content="继续上次游戏，以下是最近的对话回顾：").send()
+            for msg in recent_messages:
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "").strip()
+                if not content:
+                    continue
+                if role == "player":
+                    # 玩家消息用 User author 展示
+                    await cl.Message(content=content, author="User").send()
+                elif role == "narrator":
+                    await cl.Message(content=content, author="Narrator").send()
+                else:
+                    await cl.Message(content=content, author=role.capitalize()).send()
+        else:
+            await cl.Message(content="继续上次游戏。").send()
 
 
 @cl.on_message
