@@ -109,6 +109,37 @@ class MessageBroadcaster:
         """确保目录存在"""
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
+    async def _broadcast_message(
+        self,
+        targets: list[str],
+        message: dict,
+    ):
+        """统一的消息广播方法
+
+        Args:
+            targets: 原始目标角色列表
+            message: 要广播的消息字典
+        """
+        # narrator 作为 DM 需要看到所有消息（上帝视角）
+        broadcast_targets = targets.copy()
+        if "narrator" not in broadcast_targets:
+            broadcast_targets.append("narrator")
+
+        # 去重并保持顺序
+        seen = set()
+        broadcast_targets = [t for t in broadcast_targets if not (t in seen or seen.add(t))]
+
+        # 更新消息的 visible_to 为实际广播目标
+        message["visible_to"] = broadcast_targets
+
+        # 写入所有 targets 的 jsonl
+        for target in broadcast_targets:
+            raw_path = self._get_raw_path(target)
+            self._ensure_dir(raw_path)
+
+            with open(raw_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(message, ensure_ascii=False) + "\n")
+
     async def broadcast_player_message(
         self, targets: list[str], content: str
     ):
@@ -119,23 +150,12 @@ class MessageBroadcaster:
             targets: 需要回应的角色列表
             content: 玩家消息内容
         """
-        # narrator 作为 DM 需要看到所有消息（上帝视角）
-        visible_targets = list(set(targets + ["narrator"]))
-
         message = {
             "role": "player",
             "content": content,
-            "visible_to": visible_targets,
+            "visible_to": targets,
         }
-
-        broadcast_targets = visible_targets.copy()
-
-        for agent_name in broadcast_targets:
-            raw_path = self._get_raw_path(agent_name)
-            self._ensure_dir(raw_path)
-
-            with open(raw_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(message, ensure_ascii=False) + "\n")
+        await self._broadcast_message(targets, message)
 
     async def broadcast_agent_response(
         self, agent_name: str, targets: list[str], content: str
@@ -153,31 +173,7 @@ class MessageBroadcaster:
             "content": content,
             "visible_to": targets,
         }
-
-        # 确定广播范围
-        broadcast_targets = targets.copy()
-
-        # narrator 的场景描述只给 targets + narrator 自己（上帝视角）
-        if agent_name == "narrator":
-            broadcast_targets = targets.copy()
-            if "narrator" not in broadcast_targets:
-                broadcast_targets.append("narrator")
-
-        # narrator 作为 DM 需要看到所有角色的回应（上帝视角）
-        if "narrator" not in broadcast_targets:
-            broadcast_targets.append("narrator")
-
-        # 去重并保持顺序
-        seen = set()
-        broadcast_targets = [t for t in broadcast_targets if not (t in seen or seen.add(t))]
-
-        # 写入所有 targets 的历史（包括自己）
-        for target in broadcast_targets:
-            raw_path = self._get_raw_path(target)
-            self._ensure_dir(raw_path)
-
-            with open(raw_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(message, ensure_ascii=False) + "\n")
+        await self._broadcast_message(targets, message)
 
     def load_recent_history(self, agent_name: str, limit: int = 10) -> str:
         """
