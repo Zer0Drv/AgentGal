@@ -3,6 +3,7 @@
 import os
 import asyncio
 import httpx
+from .routing_logger import routing_logger
 
 # 整理间隔（每多少轮对话触发一次）
 CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
@@ -79,14 +80,14 @@ class MemoryConsolidator:
 
         # 如果已有整理任务在跑，跳过
         if lock.locked():
-            print(f"[整理器] {agent_name} 已有整理任务在运行，跳过")
+            routing_logger.info(f"[整理器] {agent_name} 已有整理任务在运行，跳过")
             return
 
         async with lock:
             memory_path = f"agents/{agent_name}/memory/Memory.md"
 
             if not os.path.exists(memory_path):
-                print(f"[整理器] {agent_name} 无 Memory.md，跳过")
+                routing_logger.info(f"[整理器] {agent_name} 无 Memory.md，跳过")
                 return
 
             with open(memory_path, "r", encoding="utf-8") as f:
@@ -94,10 +95,10 @@ class MemoryConsolidator:
 
             # 内容太短不需要整理
             if len(current_memory.strip()) < 200:
-                print(f"[整理器] {agent_name} 记忆内容过短，跳过整理")
+                routing_logger.info(f"[整理器] {agent_name} 记忆内容过短，跳过整理")
                 return
 
-            print(f"[整理器] 开始整理 {agent_name} 的记忆 (长度: {len(current_memory)})")
+            routing_logger.info(f"[整理器] 开始整理 {agent_name} 的记忆 (长度: {len(current_memory)})")
 
             try:
                 prompt = CONSOLIDATION_PROMPT.format(
@@ -110,17 +111,17 @@ class MemoryConsolidator:
                 with open(memory_path, "w", encoding="utf-8") as f:
                     f.write(consolidated)
 
-                print(f"[整理器] {agent_name} 记忆整理完成 (长度: {len(current_memory)} → {len(consolidated)})")
+                routing_logger.info(f"[整理器] {agent_name} 记忆整理完成 (长度: {len(current_memory)} → {len(consolidated)})")
 
             except Exception as e:
-                print(f"[整理器] {agent_name} 记忆整理失败: {e}")
+                routing_logger.info(f"[整理器] {agent_name} 记忆整理失败: {e}")
 
     async def consolidate_all(self, agent_names: list[str]):
         """并行整理所有角色的记忆"""
-        print(f"[整理器] 开始后台记忆整理: {agent_names}")
+        routing_logger.info(f"[整理器] 开始后台记忆整理: {agent_names}")
         tasks = [self.consolidate_agent(name) for name in agent_names]
         await asyncio.gather(*tasks, return_exceptions=True)
-        print(f"[整理器] 后台记忆整理完成")
+        routing_logger.info("[整理器] 后台记忆整理完成")
 
     async def close(self):
         """关闭 HTTP 客户端"""
