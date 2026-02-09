@@ -25,6 +25,8 @@ class VectorStore:
     def __init__(self, db_path: str = "data/memory.db"):
         self.db_path = db_path
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        # 复用 httpx Client，避免频繁创建连接
+        self._client = httpx.Client(timeout=30.0, limits=httpx.Limits(max_connections=20, max_keepalive_connections=10))
 
     def _get_db(self):
         """获取数据库连接"""
@@ -71,8 +73,8 @@ class VectorStore:
 
     def _get_embedding(self, text: str) -> list[float]:
         """获取文本的 embedding 向量"""
-        with httpx.Client(timeout=30.0) as client:
-            response = client.post(
+        try:
+            response = self._client.post(
                 "https://openrouter.ai/api/v1/embeddings",
                 headers={
                     "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -86,6 +88,10 @@ class VectorStore:
             response.raise_for_status()
             data = response.json()
             return data["data"][0]["embedding"]
+        except httpx.TimeoutException as e:
+            raise RuntimeError(f"获取 embedding 超时: {e}") from e
+        except httpx.HTTPStatusError as e:
+            raise RuntimeError(f"获取 embedding HTTP 错误: {e.response.status_code}") from e
 
     def _chunk_text(self, text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
         """将文本分块"""
