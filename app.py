@@ -192,7 +192,7 @@ async def on_chat_start():
                 f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
     else:
         # 从 narrator 的历史中还原最近消息
-        recent_messages = load_recent_raw_messages(limit=10)
+        recent_messages = load_recent_raw_messages(limit=5)
         if recent_messages:
             await cl.Message(content="继续上次游戏，以下是最近的对话回顾：").send()
             for msg in recent_messages:
