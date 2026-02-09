@@ -266,9 +266,7 @@ async def on_message(message: cl.Message):
 @cl.on_chat_end
 async def on_chat_end():
     """聊天结束时的清理 - 关闭 HTTP 客户端"""
-    print("[清理] 关闭 HTTP 客户端...")
     await vector_store.close()
-    print("[清理] 清理完成")
 
 
 if __name__ == "__main__":
