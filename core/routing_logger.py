@@ -24,8 +24,7 @@ if not routing_logger.handlers:
     )
     handler.setLevel(logging.INFO)
 
-    # 简洁格式：只输出消息内容
-    formatter = logging.Formatter("%(message)s")
+    formatter = logging.Formatter("[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
     handler.setFormatter(formatter)
 
     routing_logger.addHandler(handler)
