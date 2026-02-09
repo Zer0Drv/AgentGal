@@ -89,12 +89,8 @@ def reset_logs():
     ]
     for log_file in log_files:
         if os.path.exists(log_file):
-            try:
-                os.remove(log_file)
-                print(f"  已删除: {log_file}")
-            except Exception as e:
-                print(f"  删除失败 {log_file}: {e}")
-
+            os.remove(log_file)
+        
 
 @cl.on_chat_start
 async def on_chat_start():
