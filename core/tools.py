@@ -1,7 +1,6 @@
-"""Agent Tools - 所有角色共享的工具（异步版本）"""
+"""Agent Tools - 所有角色共享的工具（完全异步版本）"""
 
 import os
-import asyncio
 from typing import List, Callable
 from agno.tools import tool
 from .vector_store import vector_store
@@ -27,10 +26,8 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             limit: 返回结果数量，默认5条
         """
         try:
-            # 使用 asyncio.to_thread 避免阻塞事件循环
-            results = await asyncio.to_thread(
-                vector_store.search, agent_name, query, limit=limit
-            )
+            # 直接 await 异步方法，不再使用 asyncio.to_thread()
+            results = await vector_store.search(agent_name, query, limit=limit)
 
             if not results:
                 return "没有找到相关记忆。"
@@ -69,15 +66,14 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
                         f.write(f"# {agent_name} 的长期记忆\n\n")
                         f.write(content)
 
-            # 同步到向量库（使用 asyncio.to_thread 避免阻塞）
+            # 直接 await 异步方法同步到向量库
             memory_path = f"agents/{agent_name}/memory/Memory.md"
             full_content = ""
             if os.path.exists(memory_path):
                 with open(memory_path, "r", encoding="utf-8") as f:
                     full_content = f.read()
 
-            await asyncio.to_thread(
-                vector_store.sync_file,
+            await vector_store.sync_file(
                 agent_name=agent_name,
                 file_path=memory_path,
                 content=full_content or content,

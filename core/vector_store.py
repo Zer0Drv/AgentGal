@@ -1,10 +1,10 @@
-"""向量存储 - 使用 sqlite-vec"""
+"""向量存储 - 使用 sqlite-vec (完全异步版本)"""
 
 import os
 import json
 import hashlib
 import sqlite_vec
-import sqlite3
+import aiosqlite
 import httpx
 from datetime import datetime
 from typing import Any
@@ -20,27 +20,36 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 
 class VectorStore:
-    """基于 sqlite-vec 的向量存储"""
+    """基于 sqlite-vec 的向量存储 (异步版本)"""
 
     def __init__(self, db_path: str = "data/memory.db"):
         self.db_path = db_path
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        # 复用 httpx Client，避免频繁创建连接
-        self._client = httpx.Client(timeout=30.0, limits=httpx.Limits(max_connections=20, max_keepalive_connections=10))
+        # 使用异步 HTTP 客户端，复用连接池
+        self._client: httpx.AsyncClient | None = None
 
-    def _get_db(self):
-        """获取数据库连接"""
-        db = sqlite3.connect(self.db_path)
-        db.enable_load_extension(True)
-        db.execute(f"SELECT load_extension('{_SQLITE_VEC_PATH}')")
+    async def _get_http_client(self) -> httpx.AsyncClient:
+        """获取或创建 HTTP 客户端 (复用连接池)"""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=30.0,
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10)
+            )
+        return self._client
+
+    async def _get_db(self):
+        """获取异步数据库连接"""
+        db = await aiosqlite.connect(self.db_path)
+        await db.enable_load_extension(True)
+        await db.execute(f"SELECT load_extension('{_SQLITE_VEC_PATH}')")
         return db
 
-    def init_tables(self):
+    async def init_tables(self):
         """初始化数据库表"""
-        db = self._get_db()
+        db = await self._get_db()
         try:
             # 表1: 文件跟踪表 - 检测文件是否变更
-            db.execute("""
+            await db.execute("""
                 CREATE TABLE IF NOT EXISTS files (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     agent_name TEXT NOT NULL,
@@ -52,7 +61,7 @@ class VectorStore:
             """)
 
             # 表2: 向量表 - 存储 chunks 和 embeddings
-            db.execute("""
+            await db.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING vec0(
                     id INTEGER PRIMARY KEY,
                     agent_name TEXT,
@@ -63,18 +72,19 @@ class VectorStore:
                     embedding FLOAT[1536]
                 )
             """)
-            db.commit()
+            await db.commit()
         finally:
-            db.close()
+            await db.close()
 
     def _compute_hash(self, content: str) -> str:
         """计算内容哈希"""
         return hashlib.sha256(content.encode()).hexdigest()
 
-    def _get_embedding(self, text: str) -> list[float]:
-        """获取文本的 embedding 向量"""
+    async def _get_embedding(self, text: str) -> list[float]:
+        """异步获取文本的 embedding 向量"""
         try:
-            response = self._client.post(
+            client = await self._get_http_client()
+            response = await client.post(
                 "https://openrouter.ai/api/v1/embeddings",
                 headers={
                     "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -110,29 +120,29 @@ class VectorStore:
             start = end - overlap if end < len(text) else end
         return chunks
 
-    def sync_file(
+    async def sync_file(
         self,
         agent_name: str,
         file_path: str,
         content: str,
     ) -> tuple[bool, str]:
-        """同步文件到向量库"""
+        """异步同步文件到向量库"""
         content_hash = self._compute_hash(content)
-        db = self._get_db()
+        db = await self._get_db()
 
         try:
             # 检查文件是否已存在且未变更
-            cursor = db.execute(
+            cursor = await db.execute(
                 "SELECT content_hash FROM files WHERE agent_name = ? AND file_path = ?",
                 (agent_name, file_path)
             )
-            row = cursor.fetchone()
+            row = await cursor.fetchone()
 
             if row and row[0] == content_hash:
                 return False, f"文件未变更: {file_path}"
 
             # 文件是新文件或已变更，删除旧的 chunks
-            db.execute(
+            await db.execute(
                 "DELETE FROM chunks WHERE agent_name = ? AND source_file = ?",
                 (agent_name, file_path)
             )
@@ -144,8 +154,8 @@ class VectorStore:
             for idx, chunk_content in enumerate(chunks):
                 if not chunk_content.strip():
                     continue
-                embedding = self._get_embedding(chunk_content)
-                db.execute(
+                embedding = await self._get_embedding(chunk_content)
+                await db.execute(
                     """
                     INSERT INTO chunks (agent_name, source_file, chunk_index, content, created_at, embedding)
                     VALUES (?, ?, ?, ?, ?, ?)
@@ -155,7 +165,7 @@ class VectorStore:
 
             # 更新文件记录
             if row:
-                db.execute(
+                await db.execute(
                     """
                     UPDATE files SET content_hash = ?, updated_at = ?
                     WHERE agent_name = ? AND file_path = ?
@@ -163,7 +173,7 @@ class VectorStore:
                     (content_hash, timestamp, agent_name, file_path)
                 )
             else:
-                db.execute(
+                await db.execute(
                     """
                     INSERT INTO files (agent_name, file_path, content_hash, updated_at)
                     VALUES (?, ?, ?, ?)
@@ -171,26 +181,26 @@ class VectorStore:
                     (agent_name, file_path, content_hash, timestamp)
                 )
 
-            db.commit()
+            await db.commit()
             return True, f"已同步 {len(chunks)} 个 chunks: {file_path}"
 
         finally:
-            db.close()
+            await db.close()
 
-    def search(
+    async def search(
         self,
         agent_name: str,
         query: str,
         query_embedding: list[float] | None = None,
         limit: int = 5,
     ) -> list[dict[str, Any]]:
-        """搜索记忆"""
+        """异步搜索记忆"""
         if query_embedding is None:
-            query_embedding = self._get_embedding(query)
+            query_embedding = await self._get_embedding(query)
 
-        db = self._get_db()
+        db = await self._get_db()
         try:
-            cursor = db.execute(
+            cursor = await db.execute(
                 """
                 SELECT id, source_file, chunk_index, content, created_at, distance
                 FROM chunks
@@ -200,7 +210,7 @@ class VectorStore:
                 """,
                 (agent_name, json.dumps(query_embedding), limit),
             )
-            rows = cursor.fetchall()
+            rows = await cursor.fetchall()
 
             return [
                 {
@@ -214,27 +224,27 @@ class VectorStore:
                 for row in rows
             ]
         finally:
-            db.close()
+            await db.close()
 
-    def delete_agent_files(self, agent_name: str):
+    async def delete_agent_files(self, agent_name: str):
         """删除角色的所有文件记录和 chunks"""
-        db = self._get_db()
+        db = await self._get_db()
         try:
-            db.execute("DELETE FROM chunks WHERE agent_name = ?", (agent_name,))
-            db.execute("DELETE FROM files WHERE agent_name = ?", (agent_name,))
-            db.commit()
+            await db.execute("DELETE FROM chunks WHERE agent_name = ?", (agent_name,))
+            await db.execute("DELETE FROM files WHERE agent_name = ?", (agent_name,))
+            await db.commit()
         finally:
-            db.close()
+            await db.close()
 
-    def get_file_status(self, agent_name: str) -> list[dict[str, Any]]:
+    async def get_file_status(self, agent_name: str) -> list[dict[str, Any]]:
         """获取角色的文件同步状态"""
-        db = self._get_db()
+        db = await self._get_db()
         try:
-            cursor = db.execute(
+            cursor = await db.execute(
                 "SELECT file_path, content_hash, updated_at FROM files WHERE agent_name = ?",
                 (agent_name,)
             )
-            rows = cursor.fetchall()
+            rows = await cursor.fetchall()
             return [
                 {
                     "file_path": row[0],
@@ -244,7 +254,12 @@ class VectorStore:
                 for row in rows
             ]
         finally:
-            db.close()
+            await db.close()
+
+    async def close(self):
+        """关闭 HTTP 客户端"""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
 
 # 全局实例
