@@ -53,13 +53,13 @@ class MemoryConsolidator:
         return self._client
 
     async def _call_llm(self, prompt: str) -> str:
-        """直接调用 OpenRouter chat API"""
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        model_id = os.getenv("MODEL_ID", "anthropic/claude-3.5-sonnet")
+        """直接调用 DeepSeek chat API"""
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        model_id = os.getenv("MODEL_ID", "deepseek-chat")
 
         client = await self._get_http_client()
         response = await client.post(
-            "https://openrouter.ai/api/v1/chat/completions",
+            "https://api.deepseek.com/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",

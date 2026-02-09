@@ -1,17 +1,18 @@
 """LLM 配置 - 使用 agno 的模型系统"""
 
 import os
-from agno.models.openrouter import OpenRouter
+from agno.models.deepseek import DeepSeek
 
 
 def get_model():
     """
-    获取 OpenRouter 配置的模型
+    获取 DeepSeek 配置的模型
     """
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
-        raise ValueError("OPENROUTER_API_KEY not set in environment")
+        raise ValueError("DEEPSEEK_API_KEY not set in environment")
 
-    return OpenRouter(
-        id=os.getenv("MODEL_ID", "anthropic/claude-3.5-sonnet"),
+    return DeepSeek(
+        id=os.getenv("MODEL_ID", "deepseek-chat"),
+        api_key=api_key,
     )
