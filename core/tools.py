@@ -3,6 +3,7 @@
 import os
 from typing import List, Callable
 from agno.tools import tool
+from .routing_logger import routing_logger
 
 
 def create_tools_for_agent(agent_name: str) -> List[Callable]:
@@ -25,7 +26,7 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             mode: 写入模式，'append'追加或'replace'替换，默认append
         """
         try:
-            print(f"[Tool] {agent_name} 调用 update_memory")
+            routing_logger.info(f"[Tool] {agent_name} 调用 update_memory")
             memory_path = f"agents/{agent_name}/memory/Memory.md"
             os.makedirs(os.path.dirname(memory_path), exist_ok=True)
 
@@ -45,7 +46,7 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             return f"记忆已更新: {content[:50]}..."
 
         except Exception as e:
-            print(f"[Tool] {agent_name} update_memory 出错: {e}")
+            routing_logger.info(f"[Tool] {agent_name} update_memory 出错: {e}")
             return f"更新记忆时出错: {e}"
 
     return [
