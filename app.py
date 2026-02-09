@@ -11,7 +11,7 @@ import chainlit as cl
 
 from core.agent_runner import agent_manager, broadcaster
 from core.memory_consolidator import memory_consolidator, CONSOLIDATION_INTERVAL
-from core.routing_logger import log_routing_decision, reset_routing_logs
+from core.routing_logger import routing_logger
 
 # 加载环境变量
 load_dotenv()
@@ -85,6 +85,7 @@ def reset_logs():
     log_files = [
         "logs/agent_calls_readable.log",
         "logs/agent_calls.jsonl",
+        "logs/routing.jsonl",
     ]
     for log_file in log_files:
         if os.path.exists(log_file):
@@ -183,7 +184,6 @@ async def on_message(message: cl.Message):
     else:
         narrator_input = user_input
 
-    print("[导演] narrator 正在判断场景和 targets...")
     narrator_response = await agent_manager.run_agent("narrator", narrator_input)
     narrator_content = clean_response(narrator_response)
 
@@ -204,10 +204,7 @@ async def on_message(message: cl.Message):
     valid_agents = ["lilith", "mitsuki"]
     targets = [t for t in targets if t in valid_agents]
 
-    print(f"[导演] narrator 决定 targets: {targets}")
-    if scene_description:
-        print(f"[导演] 场景描述:\n{scene_description[:200]}...")
-    print("-" * 40)
+    routing_logger.info(f"narrator 决定 targets: {targets}")
 
     # 2. 广播玩家消息到所有 targets + narrator（让角色们能看到玩家消息）
     await broadcaster.broadcast_player_message(targets, user_input)
@@ -237,7 +234,6 @@ async def on_message(message: cl.Message):
             full_input = "\n\n---\n\n".join(parts)
 
             # 调用 agent
-            print(f"[导演] {agent_name} 正在回应...")
             response = await agent_manager.run_agent(agent_name, full_input)
 
             # 立即广播该角色的回应，让下一个角色能看到

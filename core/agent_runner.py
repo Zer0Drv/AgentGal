@@ -9,6 +9,7 @@ from agno.agent import Agent
 from .llm import get_model
 from .tools import create_tools_for_agent
 from .agent_logger import log_agent_run
+from .routing_logger import routing_logger
 
 
 class AgentManager:
@@ -80,12 +81,10 @@ class AgentManager:
             return f"[错误: 未找到角色 {agent_name}]"
 
         import time
-
         start = time.time()
-        print(f"[调试] 开始运行 agent: {agent_name} at {time.strftime('%H:%M:%S')}")
         response = await agent.arun(user_input)
         elapsed = time.time() - start
-        print(f"[调试] agent {agent_name} 运行完成，耗时 {elapsed:.1f}秒")
+        routing_logger.info(f"{agent_name} 运行完成，耗时 {elapsed:.1f}秒")
         return response.content
 
 
