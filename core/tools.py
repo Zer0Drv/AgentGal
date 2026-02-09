@@ -19,10 +19,10 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
 
     @tool
     async def update_memory(content: str, mode: str = "append") -> str:
-        """追加或编辑长期记忆文件 Memory.md
+        """追加或编辑长期记忆文件 Memory.md。写入时只记事件和情感，不写环境描写。
 
         Args:
-            content: 要写入记忆的内容
+            content: 要写入记忆的内容（聚焦事件和内心感受，不要写环境描写）
             mode: 写入模式，'append'追加或'replace'替换，默认append
         """
         try:
