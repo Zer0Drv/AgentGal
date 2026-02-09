@@ -25,7 +25,7 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             mode: 写入模式，'append'追加或'replace'替换，默认append
         """
         try:
-            print(f"[Tool] {agent_name} 调用 update_memory, mode={mode}, content长度={len(content)}")
+            print(f"[Tool] {agent_name} 调用 update_memory")
             memory_path = f"agents/{agent_name}/memory/Memory.md"
             os.makedirs(os.path.dirname(memory_path), exist_ok=True)
 
@@ -42,7 +42,6 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
                         f.write(f"# {agent_name} 的长期记忆\n\n")
                         f.write(content)
 
-            print(f"[Tool] {agent_name} 记忆文件写入完成")
             return f"记忆已更新: {content[:50]}..."
 
         except Exception as e:

@@ -11,6 +11,7 @@ import chainlit as cl
 
 from core.agent_runner import agent_manager, broadcaster
 from core.memory_consolidator import memory_consolidator, CONSOLIDATION_INTERVAL
+from core.routing_logger import log_routing_decision, reset_routing_logs
 
 # 加载环境变量
 load_dotenv()
@@ -209,9 +210,7 @@ async def on_message(message: cl.Message):
     print("-" * 40)
 
     # 2. 广播玩家消息到所有 targets + narrator（让角色们能看到玩家消息）
-    print("[调试] 开始广播玩家消息...")
     await broadcaster.broadcast_player_message(targets, user_input)
-    print("[调试] 广播玩家消息完成")
 
     # 3. 如果有场景描述，广播给所有 targets（让角色们能看到旁白）
     if scene_description:
