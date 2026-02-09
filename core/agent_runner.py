@@ -3,9 +3,7 @@
 import os
 import json
 from datetime import datetime
-from typing import List, Dict, Any
 from agno.agent import Agent
-from agno.models.openai import OpenAIChat
 
 from .llm import get_model
 from .tools import create_tools_for_agent
@@ -16,7 +14,7 @@ class AgentManager:
     """管理所有角色的 Agent 实例"""
 
     def __init__(self):
-        self.agents: Dict[str, Agent] = {}
+        self.agents: dict[str, Agent] = {}
         self._init_agents()
 
     def _init_agents(self):
@@ -76,22 +74,17 @@ class AgentManager:
         return ""
 
     async def run_agent(self, agent_name: str, user_input: str) -> str:
-        """
-        运行单个 Agent 获取回应
-
-        Args:
-            agent_name: 角色名
-            user_input: 用户输入（已包含历史上下文）
-
-        Returns:
-            Agent 的回应文本
-        """
         agent = self.agents.get(agent_name)
         if not agent:
             return f"[错误: 未找到角色 {agent_name}]"
 
-        # 运行 Agent（system prompt 已包含 memory/user/tasks）
+        import time
+
+        start = time.time()
+        print(f"[调试] 开始运行 agent: {agent_name} at {time.strftime('%H:%M:%S')}")
         response = await agent.arun(user_input)
+        elapsed = time.time() - start
+        print(f"[调试] agent {agent_name} 运行完成，耗时 {elapsed:.1f}秒")
         return response.content
 
 
@@ -116,7 +109,7 @@ class MessageBroadcaster:
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
     async def broadcast_player_message(
-        self, targets: List[str], content: str
+        self, targets: list[str], content: str
     ):
         """
         广播玩家消息到所有 targets 的 jsonl
@@ -125,16 +118,16 @@ class MessageBroadcaster:
             targets: 需要回应的角色列表
             content: 玩家消息内容
         """
+        # narrator 作为 DM 需要看到所有消息（上帝视角）
+        visible_targets = list(set(targets + ["narrator"]))
+
         message = {
             "role": "player",
             "content": content,
-            "visible_to": targets,
+            "visible_to": visible_targets,
         }
 
-        # narrator 作为 DM 需要看到所有消息（上帝视角）
-        broadcast_targets = targets.copy()
-        if "narrator" not in broadcast_targets:
-            broadcast_targets.append("narrator")
+        broadcast_targets = visible_targets.copy()
 
         for agent_name in broadcast_targets:
             raw_path = self._get_raw_path(agent_name)
@@ -144,7 +137,7 @@ class MessageBroadcaster:
                 f.write(json.dumps(message, ensure_ascii=False) + "\n")
 
     async def broadcast_agent_response(
-        self, agent_name: str, targets: List[str], content: str
+        self, agent_name: str, targets: list[str], content: str
     ):
         """
         广播角色回应到所有 targets（包括自己）的 jsonl
