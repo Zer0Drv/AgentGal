@@ -85,7 +85,7 @@ def reset_logs():
     log_files = [
         "logs/agent_calls_readable.log",
         "logs/agent_calls.jsonl",
-        "logs/routing.jsonl",
+        "logs/routing.log",
     ]
     for log_file in log_files:
         if os.path.exists(log_file):
