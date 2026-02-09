@@ -10,11 +10,13 @@ from dotenv import load_dotenv
 import chainlit as cl
 
 from core.agent_runner import agent_manager, broadcaster
-from core.init_db import init_database
-from core.vector_store import vector_store
+from core.memory_consolidator import memory_consolidator, CONSOLIDATION_INTERVAL
 
 # 加载环境变量
 load_dotenv()
+
+# 对话轮次计数器（每个 session 独立）
+_message_counter: int = 0
 
 
 def clean_response(content: str) -> str:
@@ -114,8 +116,6 @@ async def on_chat_start():
         should_reset = res and res.get("payload", {}).get("value") == "reset"
 
     if should_reset:
-        # 初始化数据库表（新游戏或重置时）
-        await init_database()
         # 重置所有角色的记忆
         print(f"\n{'='*40}")
         print("新游戏开始，重置所有角色记忆...")
@@ -171,6 +171,8 @@ async def on_chat_start():
 @cl.on_message
 async def on_message(message: cl.Message):
     """处理用户消息"""
+    global _message_counter
+    _message_counter += 1
     user_input = message.content
 
     # 1. 先调用 narrator（导演）决定场景和 targets
@@ -262,11 +264,16 @@ async def on_message(message: cl.Message):
                 author=agent_name.capitalize(),
             ).send()
 
+    # 8. 每 N 轮触发后台记忆整理（不阻塞用户）
+    if _message_counter % CONSOLIDATION_INTERVAL == 0:
+        all_active = list(set(targets + ["narrator"]))
+        asyncio.create_task(memory_consolidator.consolidate_all(all_active))
+
 
 @cl.on_chat_end
 async def on_chat_end():
-    """聊天结束时的清理 - 关闭 HTTP 客户端"""
-    await vector_store.close()
+    """聊天结束时的清理"""
+    await memory_consolidator.close()
 
 
 if __name__ == "__main__":
