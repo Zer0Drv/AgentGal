@@ -5,7 +5,7 @@
 - condensed（3-5 天前）：LLM 压缩为关键事件摘要（~10 行/天）
 - summary（5 天以上）：LLM 压缩为一句话摘要（2-3 行/天）
 
-同时在文件顶部维护「关系状态」区块。
+
 """
 
 import os
@@ -65,21 +65,7 @@ SUMMARIZE_PROMPT = """\
 {content}
 """
 
-STATUS_PROMPT = """\
-你是一个记忆分析助手。请根据以下角色的全部记忆，生成一个简洁的**关系状态总结**。
 
-角色名：{agent_name}
-
-要求：
-1. 用 `- ` 条目列出与每个相关角色的当前关系状态
-2. 列出 1-2 个未解决的关键悬念/伏笔
-3. 总共不超过 10 行
-4. 只输出总结内容，不要标题，不要说明
-
-全部记忆：
-
-{content}
-"""
 
 
 class MemoryConsolidator:
@@ -193,15 +179,6 @@ class MemoryConsolidator:
             if line.strip().startswith("# "):
                 return line.strip()
         return ""
-
-    def _extract_status_block(self, content: str) -> str:
-        """提取现有的关系状态区块（如果有）"""
-        match = re.search(
-            r"(---\n\*\*关系状态.*?\*\*\n.*?)\n---",
-            content,
-            re.DOTALL,
-        )
-        return match.group(1) if match else ""
 
     # ── 压缩级别判定 ──
 
@@ -324,27 +301,12 @@ class MemoryConsolidator:
                         f"({target_level})"
                     )
 
-                # 生成关系状态区块
-                all_memory_text = "\n\n".join(
-                    date_contents[d] for d in all_dates
-                )
-                status_prompt = STATUS_PROMPT.format(
-                    agent_name=agent_name, content=all_memory_text
-                )
-                status_block = await self._call_llm(status_prompt)
-
                 # 重新组装文件
                 header = self._extract_header(content)
                 if not header:
                     header = f"# {agent_name} 的长期记忆"
 
                 parts = [header, ""]
-                # 关系状态区块
-                parts.append("---")
-                parts.append("**关系状态**")
-                parts.append(status_block)
-                parts.append("---")
-                parts.append("")
 
                 # 按日期顺序拼接
                 for date in all_dates:
