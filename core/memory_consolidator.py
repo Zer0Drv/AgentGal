@@ -1,7 +1,9 @@
 """后台记忆整理器 - 定期对 memory.md 进行去重归纳"""
 
 import os
+import shutil
 import asyncio
+from datetime import datetime
 import httpx
 from .routing_logger import routing_logger
 
@@ -103,6 +105,17 @@ class MemoryConsolidator:
                 return
 
             routing_logger.info(f"[整理器] 开始整理 {agent_name} 的记忆 (长度: {len(current_memory)})")
+
+            # 备份当前 memory.md
+            try:
+                bak_dir = f"agents/{agent_name}/memory/bak"
+                os.makedirs(bak_dir, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+                bak_path = f"{bak_dir}/Memory_{timestamp}.md"
+                shutil.copy2(memory_path, bak_path)
+                routing_logger.info(f"[整理器] 已备份 {agent_name} 的记忆 → {bak_path}")
+            except Exception as e:
+                routing_logger.info(f"[整理器] {agent_name} 记忆备份失败: {e}")
 
             try:
                 prompt = CONSOLIDATION_PROMPT.format(
