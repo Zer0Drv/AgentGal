@@ -10,6 +10,9 @@ from .routing_logger import routing_logger
 # 整理间隔（每多少轮对话触发一次）
 CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
 
+# 安全阈值：整理后长度不得低于原文的此比例，否则拒绝写入
+MIN_CONSOLIDATION_RATIO = float(os.getenv("MIN_CONSOLIDATION_RATIO", "0.4"))
+
 CONSOLIDATION_PROMPT = """\
 你是一个记忆整理助手。你的任务是对以下角色的长期记忆进行**场景化归纳**，提升信息密度。
 
@@ -107,6 +110,7 @@ class MemoryConsolidator:
             routing_logger.info(f"[整理器] 开始整理 {agent_name} 的记忆 (长度: {len(current_memory)})")
 
             # 备份当前 memory.md
+            bak_path = None
             try:
                 bak_dir = f"agents/{agent_name}/memory/bak"
                 os.makedirs(bak_dir, exist_ok=True)
@@ -116,6 +120,7 @@ class MemoryConsolidator:
                 routing_logger.info(f"[整理器] 已备份 {agent_name} 的记忆 → {bak_path}")
             except Exception as e:
                 routing_logger.info(f"[整理器] {agent_name} 记忆备份失败: {e}")
+                return  # 备份失败则不整理，防止数据丢失
 
             try:
                 prompt = CONSOLIDATION_PROMPT.format(
@@ -124,14 +129,40 @@ class MemoryConsolidator:
                 )
                 consolidated = await self._call_llm(prompt)
 
+                # 安全检查：整理后长度不得过短
+                original_len = len(current_memory.strip())
+                consolidated_len = len(consolidated.strip())
+                ratio = consolidated_len / original_len if original_len > 0 else 0
+
+                if ratio < MIN_CONSOLIDATION_RATIO:
+                    routing_logger.info(
+                        f"[整理器] {agent_name} 整理结果过短，已拒绝写入 "
+                        f"(原文 {original_len} → 整理后 {consolidated_len}，"
+                        f"比例 {ratio:.1%} < 阈值 {MIN_CONSOLIDATION_RATIO:.0%})，"
+                        f"已从备份恢复"
+                    )
+                    # 从备份恢复（备份是在上面刚做的）
+                    shutil.copy2(bak_path, memory_path)
+                    return
+
                 # 写回文件
                 with open(memory_path, "w", encoding="utf-8") as f:
                     f.write(consolidated)
 
-                routing_logger.info(f"[整理器] {agent_name} 记忆整理完成 (长度: {len(current_memory)} → {len(consolidated)})")
+                routing_logger.info(
+                    f"[整理器] {agent_name} 记忆整理完成 "
+                    f"(长度: {original_len} → {consolidated_len}，比例 {ratio:.1%})"
+                )
 
             except Exception as e:
-                routing_logger.info(f"[整理器] {agent_name} 记忆整理失败: {e}")
+                routing_logger.info(f"[整理器] {agent_name} 记忆整理失败: {e}，尝试从备份恢复")
+                # 整理失败时从备份恢复
+                try:
+                    if bak_path and os.path.exists(bak_path):
+                        shutil.copy2(bak_path, memory_path)
+                        routing_logger.info(f"[整理器] {agent_name} 已从备份恢复")
+                except Exception as restore_err:
+                    routing_logger.info(f"[整理器] {agent_name} 备份恢复也失败: {restore_err}")
 
     async def consolidate_all(self, agent_names: list[str]):
         """并行整理所有角色的记忆"""
