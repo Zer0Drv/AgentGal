@@ -5,8 +5,8 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 
-# 创建 logs 目录
-LOGS_DIR = "logs"
+# 创建 logs/routing 目录
+LOGS_DIR = "logs/routing"
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 # 创建 logger

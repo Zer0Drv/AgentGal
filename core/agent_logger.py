@@ -6,16 +6,49 @@
 
 import os
 import json
+import logging
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from typing import Any, Optional
 
 
-# 创建 logs 目录
-LOGS_DIR = "logs"
+# 创建 logs/agent 目录
+LOGS_DIR = "logs/agent"
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 # 是否启用日志（默认关闭，需设置 AGENT_LOG_ENABLED=true 开启）
 LOG_ENABLED = os.getenv("AGENT_LOG_ENABLED", "false").lower() == "true"
+
+# ---- RotatingFileHandler 日志器 ----
+_jsonl_logger = logging.getLogger("agent_calls_jsonl")
+_jsonl_logger.setLevel(logging.INFO)
+_jsonl_logger.propagate = False
+
+_text_logger = logging.getLogger("agent_calls_text")
+_text_logger.setLevel(logging.INFO)
+_text_logger.propagate = False
+
+if not _jsonl_logger.handlers:
+    _jh = RotatingFileHandler(
+        f"{LOGS_DIR}/agent_calls.jsonl",
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    _jh.setLevel(logging.INFO)
+    _jh.setFormatter(logging.Formatter("%(message)s"))
+    _jsonl_logger.addHandler(_jh)
+
+if not _text_logger.handlers:
+    _th = RotatingFileHandler(
+        f"{LOGS_DIR}/agent_calls_readable.log",
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    _th.setLevel(logging.INFO)
+    _th.setFormatter(logging.Formatter("%(message)s"))
+    _text_logger.addHandler(_th)
 
 
 def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
@@ -85,45 +118,42 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
         } if metrics else None,
     }
 
-    # 写入 JSONL 格式（便于后续分析）
-    jsonl_path = f"{LOGS_DIR}/agent_calls.jsonl"
-    with open(jsonl_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+    # 写入 JSONL 格式（便于后续分析，自动轮转）
+    _jsonl_logger.info(json.dumps(log_entry, ensure_ascii=False))
 
-    # 写入可读的文本日志
-    text_path = f"{LOGS_DIR}/agent_calls_readable.log"
-    with open(text_path, "a", encoding="utf-8") as f:
-        f.write(f"\n{'='*80}\n")
-        f.write(f"Agent: {agent_name} | Model: {model} | Time: {timestamp}\n")
-        f.write(f"{'='*80}\n")
-        # 直接显示完整的 message 流
-        if full_messages:
-            for msg in full_messages:
-                role = msg.get("role", "unknown")
-                content_text = msg.get("content", "")
-                name = msg.get("name")
-                if name:
-                    f.write(f"[{role} | {name}]\n{content_text}\n\n")
-                else:
-                    f.write(f"[{role}]\n{content_text}\n\n")
-        else:
-            # 如果 Agno 没有返回 messages，显示 input
-            f.write(f"[input]\n{user_input}\n\n")
-        if tools:
-            f.write(f"{'-'*40}\n")
-            f.write(f"[tools]\n")
-            for t in tools:
-                tool_name = t.tool_name if hasattr(t, 'tool_name') else str(t)
-                f.write(f"  - {tool_name}\n")
-        if metrics:
-            f.write(f"{'-'*40}\n")
-            f.write(f"[metrics] ")
-            metrics_parts = []
-            if hasattr(metrics, 'input_tokens'):
-                metrics_parts.append(f"in: {metrics.input_tokens}")
-            if hasattr(metrics, 'output_tokens'):
-                metrics_parts.append(f"out: {metrics.output_tokens}")
-            if hasattr(metrics, 'total_tokens'):
-                metrics_parts.append(f"total: {metrics.total_tokens}")
-            f.write(" | ".join(metrics_parts) + "\n")
-        f.write(f"{'='*80}\n\n")
+    # 写入可读的文本日志（自动轮转）
+    lines = []
+    lines.append(f"\n{'='*80}")
+    lines.append(f"Agent: {agent_name} | Model: {model} | Time: {timestamp}")
+    lines.append(f"{'='*80}")
+    # 直接显示完整的 message 流
+    if full_messages:
+        for msg in full_messages:
+            role = msg.get("role", "unknown")
+            content_text = msg.get("content", "")
+            name = msg.get("name")
+            if name:
+                lines.append(f"[{role} | {name}]\n{content_text}\n")
+            else:
+                lines.append(f"[{role}]\n{content_text}\n")
+    else:
+        # 如果 Agno 没有返回 messages，显示 input
+        lines.append(f"[input]\n{user_input}\n")
+    if tools:
+        lines.append(f"{'-'*40}")
+        lines.append("[tools]")
+        for t in tools:
+            tool_name = t.tool_name if hasattr(t, 'tool_name') else str(t)
+            lines.append(f"  - {tool_name}")
+    if metrics:
+        lines.append(f"{'-'*40}")
+        metrics_parts = []
+        if hasattr(metrics, 'input_tokens'):
+            metrics_parts.append(f"in: {metrics.input_tokens}")
+        if hasattr(metrics, 'output_tokens'):
+            metrics_parts.append(f"out: {metrics.output_tokens}")
+        if hasattr(metrics, 'total_tokens'):
+            metrics_parts.append(f"total: {metrics.total_tokens}")
+        lines.append("[metrics] " + " | ".join(metrics_parts))
+    lines.append(f"{'='*80}\n")
+    _text_logger.info("\n".join(lines))

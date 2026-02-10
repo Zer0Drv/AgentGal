@@ -245,7 +245,8 @@ async def on_message(message: cl.Message):
     valid_agents = ["lilith", "mitsuki"]
     targets = [t for t in targets if t in valid_agents]
 
-    routing_logger.info(f"玩家输入: {user_input} | narrator 决定 targets: {targets}")
+    routing_logger.info(f"玩家输入: {user_input}")
+    routing_logger.info(f"narrator 决定 targets: {targets}")
 
     # 2. 广播玩家消息到所有 targets + narrator（让角色们能看到玩家消息）
     await broadcaster.broadcast_player_message(targets, user_input)
