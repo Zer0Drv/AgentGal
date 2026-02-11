@@ -12,3 +12,4 @@ __pycache__/
 memory/
 tasks.md
 user.md
+tmp/*
