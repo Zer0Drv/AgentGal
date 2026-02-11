@@ -178,6 +178,9 @@ class MessageBroadcaster:
         """
         加载某角色的最近对话历史
 
+        统一从 narrator 的 jsonl 读取（上帝视角，最完整），
+        然后按 visible_to 字段过滤该角色可见的消息。
+
         Args:
             agent_name: 角色名
             limit: 返回最近多少条
@@ -185,7 +188,8 @@ class MessageBroadcaster:
         Returns:
             格式化的对话历史文本
         """
-        raw_path = self._get_raw_path(agent_name)
+        # 统一从 narrator 的 jsonl 读取
+        raw_path = self._get_raw_path("narrator")
 
         if not os.path.exists(raw_path):
             return ""
@@ -195,6 +199,13 @@ class MessageBroadcaster:
             for line in f:
                 if line.strip():
                     lines.append(json.loads(line.strip()))
+
+        # 按 visible_to 过滤：narrator 看全部，其他角色只看自己可见的
+        if agent_name != "narrator":
+            lines = [
+                msg for msg in lines
+                if agent_name in msg.get("visible_to", [])
+            ]
 
         # 取最近 limit 条
         recent = lines[-limit:]
