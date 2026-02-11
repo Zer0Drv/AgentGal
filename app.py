@@ -122,26 +122,14 @@ def reset_logs():
 
 @cl.on_chat_start
 async def on_chat_start():
-    """聊天开始时的初始化 - 询问是否重置记忆"""
+    """聊天开始时的初始化 - 有记忆直接加载"""
 
     all_agents = ["lilith", "mitsuki", "narrator"]
 
     # 检查是否有存档
     has_save = has_existing_save()
 
-    should_reset = True
-    if has_save:
-        # 有存档，询问玩家是否重置
-        res = await cl.AskActionMessage(
-            content="检测到已有游戏存档，是否重置记忆开始新游戏？",
-            actions=[
-                cl.Action(name="reset", label="重置并新游戏", payload={"value": "reset"}),
-                cl.Action(name="continue", label="继续上次游戏", payload={"value": "continue"}),
-            ],
-        ).send()
-        should_reset = res and res.get("payload", {}).get("value") == "reset"
-
-    if should_reset:
+    if not has_save:
         # 重置所有角色的记忆
         print(f"\n{'='*40}")
         print("新游戏开始，重置所有角色记忆...")
