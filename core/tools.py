@@ -18,12 +18,11 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
     """
 
     @tool
-    async def update_memory(content: str, mode: str = "append") -> str:
-        """追加或编辑长期记忆文件 Memory.md。写入时只记事件和情感，不写环境描写。
+    async def update_memory(content: str) -> str:
+        """追加长期记忆文件 Memory.md。写入时只记事件和情感，不写环境描写。
 
         Args:
             content: 要写入记忆的内容（聚焦事件和内心感受，不要写环境描写）
-            mode: 写入模式，'append'追加或'replace'替换，默认append
         """
         try:
             routing_logger.info(f"[Tool] {agent_name} 调用 update_memory")
@@ -33,18 +32,13 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             # LLM 经常传入字面 \n 而非真换行，统一修复
             content = content.replace("\\n", "\n")
 
-            if mode == "replace":
+            if os.path.exists(memory_path):
+                with open(memory_path, "a", encoding="utf-8") as f:
+                    f.write(f"\n\n{content}")
+            else:
                 with open(memory_path, "w", encoding="utf-8") as f:
                     f.write(f"# {agent_name} 的长期记忆\n\n")
                     f.write(content)
-            else:
-                if os.path.exists(memory_path):
-                    with open(memory_path, "a", encoding="utf-8") as f:
-                        f.write(f"\n\n{content}")
-                else:
-                    with open(memory_path, "w", encoding="utf-8") as f:
-                        f.write(f"# {agent_name} 的长期记忆\n\n")
-                        f.write(content)
 
             routing_logger.info(f"[Tool] {agent_name} update_memory 完成")
             return f"记忆已更新: {content[:50]}..."
