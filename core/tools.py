@@ -30,6 +30,9 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
             memory_path = f"agents/{agent_name}/memory/Memory.md"
             os.makedirs(os.path.dirname(memory_path), exist_ok=True)
 
+            # LLM 经常传入字面 \n 而非真换行，统一修复
+            content = content.replace("\\n", "\n")
+
             if mode == "replace":
                 with open(memory_path, "w", encoding="utf-8") as f:
                     f.write(f"# {agent_name} 的长期记忆\n\n")
