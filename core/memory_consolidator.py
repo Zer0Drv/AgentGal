@@ -143,6 +143,7 @@ class MemoryConsolidator:
     async def consolidate_agent(self, agent_name: str):
         lock = self._get_lock(agent_name)
         if lock.locked():
+            routing_logger.info(f"[整理器] {agent_name} 已有整理任务在运行，跳过")
             return
 
         async with lock:
@@ -167,36 +168,48 @@ class MemoryConsolidator:
 
             if not to_condense:
                 routing_logger.info(
-                    f"[整理器] {agent_name} 无需压缩 ({len(sections)} 天)"
+                    f"[整理器] {agent_name} 无需压缩 ({len(sections)} 天)，跳过整理"
                 )
-                # 即使不压缩，也写回 normalize 后的内容（修复格式）
-                self._write_back(path, agent_name, sections, original_content)
+                # 不需要压缩时，不重写文件，避免并发冲突
                 return
 
             routing_logger.info(
-                f"[整理器] {agent_name} 压缩: {', '.join(to_condense)}"
+                f"[整理器] {agent_name} 压缩: {', '.join(to_condense)} "
+                f"(原始长度: {len(original_content)} 字符)"
             )
 
             # 备份
             bak_dir = Path(f"agents/{agent_name}/memory/bak")
             bak_dir.mkdir(parents=True, exist_ok=True)
             ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-            shutil.copy2(path, bak_dir / f"Memory_{ts}_pre.md")
+            bak_path = bak_dir / f"Memory_{ts}_pre.md"
+            shutil.copy2(path, bak_path)
+            routing_logger.info(f"[整理器] {agent_name} 已备份到: {bak_path.name}")
 
             # 逐个压缩
             for date in to_condense:
                 full_text = f"## {date}\n{sections[date]}"
+                original_date_len = len(full_text)
                 prompt = CONDENSE_PROMPT.format(content=full_text)
                 try:
                     result = await self._call_llm(prompt)
                     if len(result.strip()) < 20:
+                        routing_logger.warning(
+                            f"[整理器] {agent_name} {date} LLM 返回内容过短，跳过"
+                        )
                         continue
                     # 去掉 LLM 可能重复输出的日期标题
                     result = re.sub(
                         r"^##\s*\d{1,2}月\d{1,2}日\s*\n?", "", result
                     ).strip()
                     sections[date] = result
-                    routing_logger.info(f"[整理器] {agent_name} {date} 已压缩")
+                    compressed_len = len(result)
+                    routing_logger.info(
+                        f"[整理器] {agent_name} {date} 已压缩: "
+                        f"{original_date_len} → {compressed_len} 字符 "
+                        f"(-{original_date_len - compressed_len}, "
+                        f"{(1 - compressed_len/original_date_len)*100:.1f}%)"
+                    )
                 except Exception as e:
                     routing_logger.error(
                         f"[整理器] {agent_name} {date} 失败: {e}"
@@ -230,6 +243,14 @@ class MemoryConsolidator:
         # 追加并发期间新写入的内容
         if appended:
             result += appended
+
+        # 记录长度变化
+        original_len = len(original_content)
+        final_len = len(result)
+        routing_logger.info(
+            f"[整理器] {agent_name} 写回完成: {original_len} 字符 → {final_len} 字符 "
+            f"(压缩 {original_len - final_len} 字符, {(1 - final_len/original_len)*100:.1f}%)"
+        )
 
         path.write_text(result, encoding="utf-8")
 

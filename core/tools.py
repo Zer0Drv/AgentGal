@@ -46,6 +46,7 @@ def create_tools_for_agent(agent_name: str) -> List[Callable]:
                         f.write(f"# {agent_name} 的长期记忆\n\n")
                         f.write(content)
 
+            routing_logger.info(f"[Tool] {agent_name} update_memory 完成")
             return f"记忆已更新: {content[:50]}..."
 
         except Exception as e:

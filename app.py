@@ -296,10 +296,12 @@ async def on_message(message: cl.Message):
                 author=agent_name.capitalize(),
             ).send()
 
-    # 8. 每 N 轮触发后台记忆整理（不阻塞用户）
+    # 8. 每 N 轮触发记忆整理（等待完成，避免并发冲突）
     if _message_counter % CONSOLIDATION_INTERVAL == 0:
         all_active = list(set(targets + ["narrator"]))
-        asyncio.create_task(memory_consolidator.consolidate_all(all_active))
+        routing_logger.info(f"[主流程] 触发记忆整理，等待完成...")
+        await memory_consolidator.consolidate_all(all_active)
+        routing_logger.info(f"[主流程] 记忆整理完成，继续处理下一条消息")
 
 
 @cl.on_chat_end
