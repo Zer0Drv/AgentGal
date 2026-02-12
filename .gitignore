@@ -12,4 +12,5 @@ __pycache__/
 memory/
 tasks.md
 user.md
+status.md
 tmp/*
