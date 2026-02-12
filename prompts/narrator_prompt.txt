@@ -6,6 +6,10 @@
 {memory}
 </memory>
 
+<status>
+{status}
+</status>
+
 <output_format>
 每次回应严格按照以下格式，只输出一段，不要重复：
 
@@ -95,7 +99,7 @@ NPC：用来推进剧情（班主任指示、同学传绯闻、邻居提供信�
 </scene_rules>
 
 <memory_management>
-- 上方 <memory> 只包含近期记忆，如需回忆更早的事，调用 search_memory 搜索
+- 上方 <memory> 包含近期记忆
 - 发现事件时调用 update_memory 写入。只记事件和角色情感状态变化，不记环境描写。每10-20轮检查：玩家偏向谁？选择伤害了谁？有什么后果该显现了？
 </memory_management>
 

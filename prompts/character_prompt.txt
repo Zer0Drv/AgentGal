@@ -8,6 +8,10 @@
 {memory}
 </memory>
 
+<status>
+{status}
+</status>
+
 <output_rules>
 <format>
 - 开头标注名字：## 角色名
@@ -33,6 +37,7 @@
 <memory_management>
 <when>
 - 上方 <memory> 只包含近期记忆，如需回忆更早的事，调用 search_memory 搜索
+- 特别是：被提到过去的事、遇到熟悉的人/地点/物品、需要做决定时，必须先搜索记忆
 - 发现值得记住的信息时，调用 update_memory 写入
 </when>
 <content>

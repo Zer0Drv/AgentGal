@@ -34,12 +34,16 @@ class AgentManager:
             max_lines = int(os.getenv("MEMORY_CONTEXT_LINES", "30"))
             memory_content = self._load_recent_memory(agent_name, max_lines=max_lines)
 
+            # 加载 status.md
+            status_content = self._load_agent_file(agent_name, "status.md")
+
             # 加载并填充 system prompt 模板
             prompt_template = self._load_system_prompt_template(agent_name)
             return prompt_template.format(
                 agent_name=agent_name,
                 soul=soul_content,
                 memory=memory_content if memory_content else "（尚无长期记忆）",
+                status=status_content if status_content else "（尚无状态记录）",
             )
 
         # 为该角色创建专属工具（已绑定 agent_name）
