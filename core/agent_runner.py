@@ -2,7 +2,6 @@
 
 import os
 import json
-import asyncio
 from datetime import datetime
 from agno.agent import Agent
 
@@ -31,8 +30,9 @@ class AgentManager:
 
         # 定义动态 instructions 函数，每次运行时重新加载记忆文件
         def get_dynamic_instructions(agent: Agent) -> str:
-            # 运行时重新加载动态记忆文件
-            memory_content = self._load_agent_file(agent_name, "memory/memory.md")
+            # 运行时加载 memory.md 最后 N 行作为近期记忆
+            max_lines = int(os.getenv("MEMORY_CONTEXT_LINES", "30"))
+            memory_content = self._load_recent_memory(agent_name, max_lines=max_lines)
 
             # 加载并填充 system prompt 模板
             prompt_template = self._load_system_prompt_template(agent_name)
@@ -74,6 +74,22 @@ class AgentManager:
             with open(path, "r", encoding="utf-8") as f:
                 return f.read()
         return ""
+
+    def _load_recent_memory(self, agent_name: str, max_lines: int = 30) -> str:
+        """加载 memory.md 最后 N 行作为近期记忆注入 system prompt。
+
+        完整记忆通过 search_memory tool 按需检索。
+        """
+        path = f"agents/{agent_name}/memory/Memory.md"
+        if not os.path.exists(path):
+            return ""
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        if not lines:
+            return ""
+        # 取最后 max_lines 行
+        recent = lines[-max_lines:]
+        return "".join(recent).strip()
 
     async def run_agent(self, agent_name: str, user_input: str) -> str:
         agent = self.agents.get(agent_name)

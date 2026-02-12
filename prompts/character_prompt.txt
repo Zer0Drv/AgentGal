@@ -32,8 +32,8 @@
 
 <memory_management>
 <when>
-- 长期记忆已在上方提供，直接参考即可
-- 发现值得长期记住的信息时，调用 update_memory 写入
+- 上方 <memory> 只包含近期记忆，如需回忆更早的事，调用 search_memory 搜索
+- 发现值得记住的信息时，调用 update_memory 写入
 </when>
 <content>
 - 只记事件和内心感受，用第一人称

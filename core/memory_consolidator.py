@@ -1,9 +1,10 @@
-"""后台记忆整理器 - 去重 + 压缩
+"""后台记忆整理器 - 合并同日期 + 去重
 
-normalize → split_by_date（天然去重）→ condense → write
+normalize → split_by_date（合并同日期段落）→ 对有合并的日期调 LLM 去重 → write
+→ 触发向量库全量重建
 
-所有日期统一用 condense 级别：去重 + 压缩为关键事件摘要。
-行数 ≤ 10 的日期视为已整理，跳过。
+触发 LLM 的条件：同一日期在文件中出现了多个段落（被合并了）。
+行数多但无重复的日期不会被动。
 """
 
 import os
@@ -15,34 +16,26 @@ from datetime import datetime
 from pathlib import Path
 import httpx
 from .routing_logger import routing_logger
+from .vector_store import vector_store
 
 CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
-CONDENSE_THRESHOLD = int(os.getenv("CONDENSE_THRESHOLD", "6"))
 
 API_URL = "https://api.deepseek.com/chat/completions"
 
-CONDENSE_PROMPT = """\
-<task>将以下角色的某一天详细记忆压缩为关键事件摘要，尽量不超过 5 条。</task>
+DEDUP_PROMPT = """\
+<task>整理以下角色某一天的记忆，去除重复条目，保留所有细节。</task>
 
-<merge_rules>
-- 同一时间段 + 同一地点的多条记忆合并为一条
-- 相邻时间段的连续行动也可合并
-- 重复出现的同类情绪只保留一次
-</merge_rules>
-
-<priority>
-1. 关系转折点（告白、决裂、和解等）
-2. 关键数值变化（如契约进度）
-3. 具体行为和对话（谁做了什么、说了什么）
-4. 情绪反应（仅保留新出现的情绪）
-</priority>
+<rules>
+- 如果同一事件被多次描述，合并为一条，保留最完整的版本
+- 不要压缩、不要摘要、不要丢失任何独特的细节
+- 按时间顺序排列
+- 保持角色第一人称视角
+</rules>
 
 <format>
 - 保持 ## X月X日 标题
 - 每条格式：- **时间段/地点**：事件描述
-- 地点保留专有名词，不要泛化
-- 用角色自己的口吻书写
-- 只输出压缩结果，不要任何说明
+- 只输出整理结果，不要任何说明
 </format>
 
 <input>
@@ -78,9 +71,16 @@ def normalize(content: str) -> str:
     return content
 
 
-def split_by_date(content: str) -> OrderedDict[str, str]:
-    """按 ## X月X日 切分，同日期自动合并（天然去重）"""
+def split_by_date(content: str) -> tuple[OrderedDict[str, str], set[str]]:
+    """按 ## X月X日 切分，同日期自动合并。
+
+    Returns:
+        (sections, merged_dates)
+        sections: 日期 → 合并后的内容
+        merged_dates: 发生了多段合并的日期集合
+    """
     sections: OrderedDict[str, str] = OrderedDict()
+    merged_dates: set[str] = set()
     current_date = None
     current_lines: list[str] = []
 
@@ -91,6 +91,7 @@ def split_by_date(content: str) -> OrderedDict[str, str]:
                 body = "\n".join(current_lines).strip()
                 if current_date in sections:
                     sections[current_date] += "\n" + body
+                    merged_dates.add(current_date)
                 else:
                     sections[current_date] = body
             current_date = m.group(1)
@@ -104,10 +105,11 @@ def split_by_date(content: str) -> OrderedDict[str, str]:
         body = "\n".join(current_lines).strip()
         if current_date in sections:
             sections[current_date] += "\n" + body
+            merged_dates.add(current_date)
         else:
             sections[current_date] = body
 
-    return sections
+    return sections, merged_dates
 
 
 class MemoryConsolidator:
@@ -135,11 +137,6 @@ class MemoryConsolidator:
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"].strip()
 
-    def _needs_condense(self, body: str) -> bool:
-        """行数超过阈值则需要整理"""
-        lines = [line for line in body.split("\n") if line.strip()]
-        return len(lines) > CONDENSE_THRESHOLD
-
     async def consolidate_agent(self, agent_name: str):
         lock = self._get_lock(agent_name)
         if lock.locked():
@@ -154,27 +151,22 @@ class MemoryConsolidator:
             if len(original_content.strip()) < 500:
                 return
 
-            # normalize + split
+            # normalize + split（同日期段落自动合并）
             content = normalize(original_content)
-            sections = split_by_date(content)
+            sections, merged_dates = split_by_date(content)
             if len(sections) < 2:
                 return
 
-            # 找出需要压缩的日期（行数 > 阈值）
-            to_condense = [
-                date for date, body in sections.items()
-                if self._needs_condense(body)
-            ]
-
-            if not to_condense:
+            if not merged_dates:
                 routing_logger.info(
-                    f"[整理器] {agent_name} 无需压缩 ({len(sections)} 天)，跳过整理"
+                    f"[整理器] {agent_name} 无需整理 ({len(sections)} 天，无重复日期)"
                 )
-                # 不需要压缩时，不重写文件，避免并发冲突
+                # 即使无合并，也写回 normalize 后的内容（修复格式）
+                self._write_back(path, agent_name, sections, original_content)
                 return
 
             routing_logger.info(
-                f"[整理器] {agent_name} 压缩: {', '.join(to_condense)} "
+                f"[整理器] {agent_name} 去重整理: {', '.join(sorted(merged_dates))} "
                 f"(原始长度: {len(original_content)} 字符)"
             )
 
@@ -186,23 +178,24 @@ class MemoryConsolidator:
             shutil.copy2(path, bak_path)
             routing_logger.info(f"[整理器] {agent_name} 已备份到: {bak_path.name}")
 
-            # 只保留最近15个备份，删除最早的
-            bak_files = sorted(bak_dir.glob("Memory_*_pre.md"), key=lambda f: f.stat().st_mtime)
+            # 只保留最近15个备份
+            bak_files = sorted(
+                bak_dir.glob("Memory_*_pre.md"),
+                key=lambda f: f.stat().st_mtime,
+            )
             if len(bak_files) > 15:
                 for old_bak in bak_files[:-15]:
                     old_bak.unlink()
-                    routing_logger.info(f"[整理器] {agent_name} 删除旧备份: {old_bak.name}")
 
-            # 逐个压缩
-            for date in to_condense:
+            # 对合并了多段的日期调 LLM 去重整理
+            for date in merged_dates:
                 full_text = f"## {date}\n{sections[date]}"
-                original_date_len = len(full_text)
-                prompt = CONDENSE_PROMPT.format(content=full_text)
+                prompt = DEDUP_PROMPT.format(content=full_text)
                 try:
                     result = await self._call_llm(prompt)
                     if len(result.strip()) < 20:
                         routing_logger.warning(
-                            f"[整理器] {agent_name} {date} LLM 返回内容过短，跳过"
+                            f"[整理器] {agent_name} {date} LLM 返回过短，跳过"
                         )
                         continue
                     # 去掉 LLM 可能重复输出的日期标题
@@ -210,20 +203,20 @@ class MemoryConsolidator:
                         r"^##\s*\d{1,2}月\d{1,2}日\s*\n?", "", result
                     ).strip()
                     sections[date] = result
-                    compressed_len = len(result)
                     routing_logger.info(
-                        f"[整理器] {agent_name} {date} 已压缩: "
-                        f"{original_date_len} → {compressed_len} 字符 "
-                        f"(-{original_date_len - compressed_len}, "
-                        f"{(1 - compressed_len/original_date_len)*100:.1f}%)"
+                        f"[整理器] {agent_name} {date} 去重完成"
                     )
                 except Exception as e:
                     routing_logger.error(
-                        f"[整理器] {agent_name} {date} 失败: {e}"
+                        f"[整理器] {agent_name} {date} 去重失败: {e}"
                     )
 
             self._write_back(path, agent_name, sections, original_content)
-            routing_logger.info(f"[整理器] {agent_name} 整理完成")
+
+            # 整理后触发向量库全量重建（后台执行，不阻塞）
+            final_content = path.read_text(encoding="utf-8")
+            asyncio.create_task(vector_store.rebuild(agent_name, final_content))
+            routing_logger.info(f"[整理器] {agent_name} 整理完成，向量重建已提交后台")
 
     def _write_back(self, path: Path, agent_name: str,
                     sections: OrderedDict[str, str],

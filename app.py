@@ -11,6 +11,7 @@ import chainlit as cl
 
 from core.agent_runner import agent_manager, broadcaster
 from core.memory_consolidator import memory_consolidator, CONSOLIDATION_INTERVAL
+from core.vector_store import vector_store
 from core.routing_logger import routing_logger
 
 # 加载环境变量
@@ -126,6 +127,10 @@ async def on_chat_start():
 
     all_agents = ["lilith", "mitsuki", "narrator"]
 
+    # 初始化向量库，检查并补做未完成的 embedding
+    await vector_store.init_tables()
+    await vector_store.sync_if_needed(all_agents)
+
     # 检查是否有存档
     has_save = has_existing_save()
 
@@ -137,6 +142,7 @@ async def on_chat_start():
         for agent_name in all_agents:
             print(f"[{agent_name}]")
             reset_agent_memory(agent_name)
+            await vector_store.delete_agent(agent_name)
         # 重置日志
         print("[日志]")
         reset_logs()
@@ -295,6 +301,7 @@ async def on_message(message: cl.Message):
 @cl.on_chat_end
 async def on_chat_end():
     """聊天结束时的清理"""
+    await vector_store.close()
     await memory_consolidator.close()
 
 
