@@ -186,6 +186,13 @@ class MemoryConsolidator:
             shutil.copy2(path, bak_path)
             routing_logger.info(f"[整理器] {agent_name} 已备份到: {bak_path.name}")
 
+            # 只保留最近15个备份，删除最早的
+            bak_files = sorted(bak_dir.glob("Memory_*_pre.md"), key=lambda f: f.stat().st_mtime)
+            if len(bak_files) > 15:
+                for old_bak in bak_files[:-15]:
+                    old_bak.unlink()
+                    routing_logger.info(f"[整理器] {agent_name} 删除旧备份: {old_bak.name}")
+
             # 逐个压缩
             for date in to_condense:
                 full_text = f"## {date}\n{sections[date]}"
