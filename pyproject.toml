@@ -1,5 +1,5 @@
 [project]
-name = "memobot"
+name = "AgentGal"
 version = "0.1.0"
 description = "A chatbot with long-term memory and personal customization"
 requires-python = ">=3.11"
