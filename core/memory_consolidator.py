@@ -1,12 +1,12 @@
-"""后台记忆整理器 - 合并同日期 + 去重
+"""后台记忆整理器 - 每个日期都过 LLM 整合 + 增量进度
 
-normalize → split_by_date（合并同日期段落）→ 对有合并的日期调 LLM 去重 → write
-→ 触发向量库全量重建
+normalize → split_by_date（合并同日期段落）→ 根据进度跳过已整合日期
+→ 对需要整合的日期调 LLM 整合 → write → 触发向量库全量重建
 
-触发 LLM 的条件：同一日期在文件中出现了多个段落（被合并了）。
-行数多但无重复的日期不会被动。
+进度机制：记录上次整合到哪个日期，下次从该日期开始，避免过度压缩旧记忆。
 """
 
+import json
 import os
 import re
 import shutil
@@ -22,26 +22,12 @@ CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
 
 API_URL = "https://api.deepseek.com/chat/completions"
 
-DEDUP_PROMPT = """\
-<task>整理以下角色某一天的记忆，去除重复条目，保留所有细节。</task>
+_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt.txt"
 
-<rules>
-- 如果同一事件被多次描述，合并为一条，保留最完整的版本
-- 不要压缩、不要摘要、不要丢失任何独特的细节
-- 按时间顺序排列
-- 保持角色第一人称视角
-</rules>
 
-<format>
-- 保持 ## X月X日 标题
-- 每条格式：- **时间段/地点**：事件描述
-- 只输出整理结果，不要任何说明
-</format>
-
-<input>
-{content}
-</input>
-"""
+def _load_consolidation_prompt() -> str:
+    """从外部文件加载整合 prompt 模板"""
+    return _PROMPT_PATH.read_text(encoding="utf-8")
 
 # 日期标题正则：只匹配「整行就是日期标题」的情况，避免误伤正文
 # 匹配：## 4月5日 / **4月5日** / 4月5日（行首且行尾，不含其他文字）
@@ -71,16 +57,13 @@ def normalize(content: str) -> str:
     return content
 
 
-def split_by_date(content: str) -> tuple[OrderedDict[str, str], set[str]]:
+def split_by_date(content: str) -> OrderedDict[str, str]:
     """按 ## X月X日 切分，同日期自动合并。
 
     Returns:
-        (sections, merged_dates)
-        sections: 日期 → 合并后的内容
-        merged_dates: 发生了多段合并的日期集合
+        sections: 日期 → 合并后的内容（保持出现顺序）
     """
     sections: OrderedDict[str, str] = OrderedDict()
-    merged_dates: set[str] = set()
     current_date = None
     current_lines: list[str] = []
 
@@ -91,7 +74,6 @@ def split_by_date(content: str) -> tuple[OrderedDict[str, str], set[str]]:
                 body = "\n".join(current_lines).strip()
                 if current_date in sections:
                     sections[current_date] += "\n" + body
-                    merged_dates.add(current_date)
                 else:
                     sections[current_date] = body
             current_date = m.group(1)
@@ -105,11 +87,10 @@ def split_by_date(content: str) -> tuple[OrderedDict[str, str], set[str]]:
         body = "\n".join(current_lines).strip()
         if current_date in sections:
             sections[current_date] += "\n" + body
-            merged_dates.add(current_date)
         else:
             sections[current_date] = body
 
-    return sections, merged_dates
+    return sections
 
 
 class MemoryConsolidator:
@@ -137,6 +118,30 @@ class MemoryConsolidator:
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"].strip()
 
+    def _state_path(self, agent_name: str) -> Path:
+        """整合进度文件路径"""
+        return Path(f"agents/{agent_name}/memory/.consolidation_state.json")
+
+    def _load_state(self, agent_name: str) -> str | None:
+        """读取上次整合到的日期，返回如 '2月10日' 或 None"""
+        p = self._state_path(agent_name)
+        if not p.exists():
+            return None
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            return data.get("last_consolidated_date")
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    def _save_state(self, agent_name: str, last_date: str):
+        """保存整合进度"""
+        p = self._state_path(agent_name)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(
+            json.dumps({"last_consolidated_date": last_date}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
     async def consolidate_agent(self, agent_name: str):
         lock = self._get_lock(agent_name)
         if lock.locked():
@@ -153,21 +158,40 @@ class MemoryConsolidator:
 
             # normalize + split（同日期段落自动合并）
             content = normalize(original_content)
-            sections, merged_dates = split_by_date(content)
+            sections = split_by_date(content)
             if len(sections) < 2:
                 return
 
-            if not merged_dates:
+            # 根据进度确定需要整合的日期范围
+            all_dates = list(sections.keys())
+            last_consolidated = self._load_state(agent_name)
+
+            if last_consolidated:
+                if last_consolidated in all_dates:
+                    start_idx = all_dates.index(last_consolidated)
+                else:
+                    # 进度日期已不存在（文件被手动编辑？），跳过本次整合
+                    routing_logger.warning(
+                        f"[整理器] {agent_name} 进度日期 '{last_consolidated}' "
+                        f"在文件中不存在，跳过本次整合"
+                    )
+                    return
+            else:
+                # 无进度记录，从头开始
+                start_idx = 0
+
+            dates_to_consolidate = all_dates[start_idx:]
+
+            if not dates_to_consolidate:
                 routing_logger.info(
-                    f"[整理器] {agent_name} 无需整理 ({len(sections)} 天，无重复日期)"
+                    f"[整理器] {agent_name} 无需整理（所有日期已整合）"
                 )
-                # 即使无合并，也写回 normalize 后的内容（修复格式）
-                self._write_back(path, agent_name, sections, original_content)
                 return
 
             routing_logger.info(
-                f"[整理器] {agent_name} 去重整理: {', '.join(sorted(merged_dates))} "
-                f"(原始长度: {len(original_content)} 字符)"
+                f"[整理器] {agent_name} 整合 {len(dates_to_consolidate)} 天: "
+                f"{dates_to_consolidate[0]} ~ {dates_to_consolidate[-1]} "
+                f"(共 {len(all_dates)} 天, 原始长度: {len(original_content)} 字符)"
             )
 
             # 备份
@@ -187,10 +211,10 @@ class MemoryConsolidator:
                 for old_bak in bak_files[:-15]:
                     old_bak.unlink()
 
-            # 对合并了多段的日期调 LLM 去重整理
-            for date in merged_dates:
+            # 对需要整合的日期逐个调 LLM
+            for date in dates_to_consolidate:
                 full_text = f"## {date}\n{sections[date]}"
-                prompt = DEDUP_PROMPT.format(content=full_text)
+                prompt = _load_consolidation_prompt().format(content=full_text)
                 try:
                     result = await self._call_llm(prompt)
                     if len(result.strip()) < 20:
@@ -204,14 +228,19 @@ class MemoryConsolidator:
                     ).strip()
                     sections[date] = result
                     routing_logger.info(
-                        f"[整理器] {agent_name} {date} 去重完成"
+                        f"[整理器] {agent_name} {date} 整合完成"
                     )
                 except Exception as e:
                     routing_logger.error(
-                        f"[整理器] {agent_name} {date} 去重失败: {e}"
+                        f"[整理器] {agent_name} {date} 整合失败: {e}"
                     )
 
             self._write_back(path, agent_name, sections, original_content)
+
+            # 更新进度：记录到倒数第二个日期（最新一天可能还在产生新记忆）
+            if len(all_dates) >= 2:
+                self._save_state(agent_name, all_dates[-2])
+            # 只有1天时不记录进度，下次仍会整合
 
             # 整理后触发向量库全量重建（后台执行，不阻塞）
             final_content = path.read_text(encoding="utf-8")
