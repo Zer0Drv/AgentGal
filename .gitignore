@@ -1,6 +1,5 @@
 .venv/
 .env
-*/memory/*
 .chainlit/
 __pycache__/
 *.pyc
@@ -9,8 +8,13 @@ __pycache__/
 *.jsonl.*
 *.log
 *.log.*
-memory/
-tasks.md
-user.md
-status.md
 tmp/*
+
+# agents/ 下的动态文件（运行时生成，不入库）
+agents/*/memory/
+agents/*/status.md
+agents/*/user.md
+agents/*/tasks.md
+
+# examples/ 下的模板文件需要入库
+!examples/
