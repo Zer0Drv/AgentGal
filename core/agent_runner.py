@@ -37,6 +37,9 @@ class AgentManager:
             # 加载 status.md
             status_content = self._load_agent_file(agent_name, "status.md")
 
+            # 加载 user.md
+            user_content = self._load_agent_file(agent_name, "user.md")
+
             # 加载并填充 system prompt 模板
             prompt_template = self._load_system_prompt_template(agent_name)
             return prompt_template.format(
@@ -44,6 +47,7 @@ class AgentManager:
                 soul=soul_content,
                 memory=memory_content if memory_content else "（尚无长期记忆）",
                 status=status_content if status_content else "（尚无状态记录）",
+                user_profile=user_content if user_content else "（尚无玩家认知）",
             )
 
         # 为该角色创建专属工具（已绑定 agent_name）
