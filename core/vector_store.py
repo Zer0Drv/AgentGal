@@ -39,6 +39,7 @@ class VectorStore:
 
     async def _get_db(self) -> aiosqlite.Connection:
         db = await aiosqlite.connect(self.db_path)
+        await db.execute("PRAGMA busy_timeout = 10000")  # 等待最多 10 秒
         await db.enable_load_extension(True)
         await db.execute(f"SELECT load_extension('{_SQLITE_VEC_PATH}')")
         return db
@@ -93,7 +94,41 @@ class VectorStore:
         results = await self._get_embeddings([text])
         return results[0]
 
-    def _chunk_text(self, text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
+    def _chunk_text(self, text: str, chunk_size: int = 2000, overlap: int = 200) -> list[str]:
+        """按日期分块，一个日期下的内容作为一个 chunk。
+
+        日期格式: ## 4月22日 或 ## 2024-04-22
+        非日期内容使用滑动窗口兜底分块。
+        """
+        import re
+
+        # 匹配日期标题: ## 4月22日 或 ## 2024-04-22 或 ## 2024-04-22 标题
+        date_pattern = re.compile(r'^##\s*(\d{1,2}月\d{1,2}日|\d{4}-\d{2}-\d{2}).*$', re.MULTILINE)
+
+        matches = list(date_pattern.finditer(text))
+
+        # 如果没有找到日期格式，使用滑动窗口兜底
+        if not matches:
+            return self._chunk_text_sliding_window(text, chunk_size, overlap)
+
+        chunks: list[str] = []
+
+        for i, match in enumerate(matches):
+            start = match.start()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            section = text[start:end].strip()
+            if not section:
+                continue
+            # 超长 section 用滑动窗口二次分块，防止超过模型 token 限制
+            if len(section) > chunk_size:
+                chunks.extend(self._chunk_text_sliding_window(section, chunk_size, overlap))
+            else:
+                chunks.append(section)
+
+        return chunks if chunks else self._chunk_text_sliding_window(text, chunk_size, overlap)
+
+    def _chunk_text_sliding_window(self, text: str, chunk_size: int = 2000, overlap: int = 200) -> list[str]:
+        """滑动窗口 + 句子边界分块（兜底策略）"""
         chunks: list[str] = []
         start = 0
         while start < len(text):
@@ -135,6 +170,10 @@ class VectorStore:
             chunks = self._chunk_text(new_text)
             if not chunks:
                 return True
+
+            # 保护：单个 chunk 不超过 4000 字符，防止超过 bge-m3 的 8192 token 限制
+            MAX_CHUNK_LEN = 4000
+            chunks = [c[:MAX_CHUNK_LEN] if len(c) > MAX_CHUNK_LEN else c for c in chunks]
 
             # 获取当前最大 chunk_index
             cursor = await db.execute(
