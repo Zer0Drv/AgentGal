@@ -53,10 +53,9 @@ class AgentManager:
             )
 
         # 为该角色创建专属工具（已绑定 agent_name）
-        # narrator 路由+场景描写，工具需求少；角色 agent 需要更多工具交互
-        tool_limit = 3 if agent_name == "narrator" else 5
+        # 只有一个 update_notes 工具，每轮最多调用 1 次
         tools, reset_counter = create_tools_for_agent(
-            agent_name, tool_call_limit=tool_limit
+            agent_name, tool_call_limit=1
         )
         self._tool_counter_resets[agent_name] = reset_counter
 
