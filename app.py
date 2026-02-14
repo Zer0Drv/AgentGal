@@ -20,6 +20,10 @@ load_dotenv()
 # 对话轮次计数器（每个 session 独立）
 _message_counter: int = 0
 
+# 对话历史条数配置（从环境变量读取）
+HISTORY_LIMIT_NARRATOR = int(os.getenv("HISTORY_LIMIT_NARRATOR", "20"))
+HISTORY_LIMIT_DEFAULT = int(os.getenv("HISTORY_LIMIT_DEFAULT", "10"))
+
 
 def clean_response(content: str) -> str:
     """清理回复内容，移除 thinking 部分"""
@@ -213,7 +217,8 @@ async def on_message(message: cl.Message):
     user_input = message.content
 
     # 1. 先调用 narrator（导演）决定场景和 targets
-    narrator_history = broadcaster.load_recent_history("narrator", limit=10)
+    # narrator 需要更多历史来理解全局上下文
+    narrator_history = broadcaster.load_recent_history("narrator", limit=HISTORY_LIMIT_NARRATOR)
     if narrator_history:
         narrator_input = f"最近对话历史:\n\n{narrator_history}\n\n---\n\n玩家新消息: {user_input}"
     else:
@@ -226,14 +231,14 @@ async def on_message(message: cl.Message):
     targets = []
     scene_description = narrator_content
 
-    # 查找 TARGETS: [...] 或 TARGETS[...] 格式
-    targets_match = re.search(r'TARGETS:?\s*\[([^\]]*)\]', narrator_content, re.IGNORECASE)
+    # 查找 TARGETS: [...] 或 **TARGETS:** [...] 格式
+    targets_match = re.search(r'\*{0,2}TARGETS\*{0,2}:?\s*\[([^\]]*)\]', narrator_content, re.IGNORECASE)
     if targets_match:
         targets_str = targets_match.group(1)
         # 解析角色列表
         targets = [t.strip().lower() for t in targets_str.split(',') if t.strip()]
         # 移除 TARGETS 行，保留场景描述
-        scene_description = re.sub(r'TARGETS:?\s*\[[^\]]*\]\n?', '', narrator_content, flags=re.IGNORECASE).strip()
+        scene_description = re.sub(r'\*{0,2}TARGETS\*{0,2}:?\s*\[[^\]]*\]\n?', '', narrator_content, flags=re.IGNORECASE).strip()
 
     # 过滤有效角色
     valid_agents = ["lilith", "mitsuki"]
@@ -259,8 +264,8 @@ async def on_message(message: cl.Message):
     results = []
     for agent_name in targets:
         try:
-            # 加载该角色的历史上下文（包含之前角色的回应）
-            history = broadcaster.load_recent_history(agent_name, limit=10)
+            # 加载该角色的历史上下文（默认角色使用 HISTORY_LIMIT_DEFAULT）
+            history = broadcaster.load_recent_history(agent_name, limit=HISTORY_LIMIT_DEFAULT)
 
             # 构建完整输入
             parts = []
