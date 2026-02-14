@@ -20,7 +20,13 @@ from .vector_store import vector_store
 
 CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
 
-API_URL = "https://api.deepseek.com/chat/completions"
+# 从统一配置读取，兼容旧版 DEEPSEEK_API_KEY
+_API_KEY = os.getenv("CONSOLIDATION_LLM_API_KEY") or os.getenv("LLM_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+_API_URL = os.getenv("CONSOLIDATION_LLM_API_URL") or os.getenv("LLM_API_URL") or "https://api.deepseek.com/v1"
+_MODEL_ID = os.getenv("CONSOLIDATION_LLM_MODEL_ID") or os.getenv("LLM_MODEL_ID") or "deepseek-chat"
+# 整理用较低 temperature，保证输出稳定
+_TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.1"))
+_MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "4096"))
 
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt.txt"
 
@@ -104,16 +110,33 @@ class MemoryConsolidator:
         return self._locks[name]
 
     async def _call_llm(self, prompt: str) -> str:
+        """调用 LLM 进行记忆整理，使用统一配置"""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(timeout=120.0)
-        api_key = os.getenv("DEEPSEEK_API_KEY")
+
+        if not _API_KEY:
+            raise ValueError(
+                "LLM API key not configured. "
+                "Please set LLM_API_KEY or CONSOLIDATION_LLM_API_KEY"
+            )
+
+        # 构建 chat completions 端点 URL
+        api_url = _API_URL.rstrip("/")
+        if not api_url.endswith("/chat/completions"):
+            api_url = f"{api_url}/chat/completions"
+
         resp = await self._client.post(
-            API_URL,
-            headers={"Authorization": f"Bearer {api_key}",
-                     "Content-Type": "application/json"},
-            json={"model": os.getenv("MODEL_ID", "deepseek-chat"),
-                  "messages": [{"role": "user", "content": prompt}],
-                  "temperature": 0.1, "max_tokens": 4096},
+            api_url,
+            headers={
+                "Authorization": f"Bearer {_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": _MODEL_ID,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": _TEMPERATURE,
+                "max_tokens": _MAX_TOKENS,
+            },
         )
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"].strip()
