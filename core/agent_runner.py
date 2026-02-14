@@ -2,6 +2,7 @@
 
 import os
 import json
+from typing import Callable
 from datetime import datetime
 from agno.agent import Agent
 
@@ -16,6 +17,8 @@ class AgentManager:
 
     def __init__(self):
         self.agents: dict[str, Agent] = {}
+        # 存储每个 agent 的工具计数器重置函数
+        self._tool_counter_resets: dict[str, Callable] = {}
         self._init_agents()
 
     def _init_agents(self):
@@ -30,9 +33,8 @@ class AgentManager:
 
         # 定义动态 instructions 函数，每次运行时重新加载记忆文件
         def get_dynamic_instructions(agent: Agent) -> str:
-            # 运行时加载 memory.md 最后 N 行作为近期记忆
-            max_lines = int(os.getenv("MEMORY_CONTEXT_LINES", "30"))
-            memory_content = self._load_recent_memory(agent_name, max_lines=max_lines)
+            # 运行时加载完整 Memory.md（依赖 DeepSeek 前缀缓存降低成本）
+            memory_content = self._load_full_memory(agent_name)
 
             # 加载 status.md
             status_content = self._load_agent_file(agent_name, "status.md")
@@ -51,7 +53,12 @@ class AgentManager:
             )
 
         # 为该角色创建专属工具（已绑定 agent_name）
-        tools = create_tools_for_agent(agent_name)
+        # narrator 路由+场景描写，工具需求少；角色 agent 需要更多工具交互
+        tool_limit = 3 if agent_name == "narrator" else 5
+        tools, reset_counter = create_tools_for_agent(
+            agent_name, tool_call_limit=tool_limit
+        )
+        self._tool_counter_resets[agent_name] = reset_counter
 
         return Agent(
             name=agent_name,
@@ -83,26 +90,26 @@ class AgentManager:
                 return f.read()
         return ""
 
-    def _load_recent_memory(self, agent_name: str, max_lines: int = 30) -> str:
-        """加载 memory.md 最后 N 行作为近期记忆注入 system prompt。
+    def _load_full_memory(self, agent_name: str) -> str:
+        """加载完整 Memory.md 注入 system prompt。
 
-        完整记忆通过 search_memory tool 按需检索。
+        全量加载，依赖 DeepSeek 前缀缓存降低成本。
         """
         path = f"agents/{agent_name}/memory/Memory.md"
         if not os.path.exists(path):
             return ""
         with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        if not lines:
-            return ""
-        # 取最后 max_lines 行
-        recent = lines[-max_lines:]
-        return "".join(recent).strip()
+            return f.read().strip()
 
     async def run_agent(self, agent_name: str, user_input: str) -> str:
         agent = self.agents.get(agent_name)
         if not agent:
             return f"[错误: 未找到角色 {agent_name}]"
+
+        # 每轮对话前重置该 agent 的工具调用计数器
+        reset_fn = self._tool_counter_resets.get(agent_name)
+        if reset_fn:
+            reset_fn()
 
         import time
         start = time.time()

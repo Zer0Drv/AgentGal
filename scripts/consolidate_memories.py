@@ -32,7 +32,6 @@ from dotenv import load_dotenv
 load_dotenv(PROJECT_ROOT / ".env")
 
 from core.memory_consolidator import memory_consolidator
-from core.vector_store import vector_store
 
 
 def _parse_args() -> argparse.Namespace:
@@ -170,7 +169,6 @@ async def _close_resources() -> None:
             print(f"[记忆整理] 关闭 {label} 失败: {e}", flush=True)
 
     await _close_one("memory_consolidator", memory_consolidator.close())
-    await _close_one("vector_store", vector_store.close())
 
 
 async def main() -> int:

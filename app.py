@@ -11,7 +11,6 @@ import chainlit as cl
 
 from core.agent_runner import agent_manager, broadcaster
 from core.memory_consolidator import memory_consolidator, CONSOLIDATION_INTERVAL
-from core.vector_store import vector_store
 from core.routing_logger import routing_logger
 
 # 加载环境变量
@@ -251,14 +250,17 @@ async def on_message(message: cl.Message):
     targets = []
     scene_description = narrator_content
 
-    # 查找 TARGETS: [...] 或 **TARGETS:** [...] 格式
-    targets_match = re.search(r'\*{0,2}TARGETS\*{0,2}:?\s*\[([^\]]*)\]', narrator_content, re.IGNORECASE)
-    if targets_match:
+    # 查找最后一个 TARGETS: [...] 或 **TARGETS:** [...] 格式
+    # LLM 在 tool 调用前后可能都输出文本，导致多段重复；取最后一个匹配确保拿到最终版本
+    targets_pattern = re.compile(r'\*{0,2}TARGETS\*{0,2}:?\s*\[([^\]]*)\]', re.IGNORECASE)
+    all_matches = list(targets_pattern.finditer(narrator_content))
+    if all_matches:
+        targets_match = all_matches[-1]  # 取最后一个匹配
         targets_str = targets_match.group(1)
         # 解析角色列表
         targets = [t.strip().lower() for t in targets_str.split(',') if t.strip()]
-        # 移除 TARGETS 行，保留场景描述
-        scene_description = re.sub(r'\*{0,2}TARGETS\*{0,2}:?\s*\[[^\]]*\]\n?', '', narrator_content, flags=re.IGNORECASE).strip()
+        # 只取最后一个 TARGETS 行之后的文本，丢弃前面的重复内容
+        scene_description = narrator_content[targets_match.end():].strip()
 
     # 过滤有效角色
     valid_agents = ["lilith", "mitsuki"]
@@ -325,7 +327,6 @@ async def on_message(message: cl.Message):
 @cl.on_chat_end
 async def on_chat_end():
     """聊天结束时的清理"""
-    await vector_store.close()
     await memory_consolidator.close()
 
 

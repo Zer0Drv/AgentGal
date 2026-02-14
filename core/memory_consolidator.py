@@ -16,7 +16,6 @@ from datetime import datetime
 from pathlib import Path
 import httpx
 from .routing_logger import routing_logger
-from .vector_store import vector_store
 
 CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
 
@@ -25,15 +24,21 @@ _API_KEY = os.getenv("CONSOLIDATION_LLM_API_KEY") or os.getenv("LLM_API_KEY") or
 _API_URL = os.getenv("CONSOLIDATION_LLM_API_URL") or os.getenv("LLM_API_URL") or "https://api.deepseek.com/v1"
 _MODEL_ID = os.getenv("CONSOLIDATION_LLM_MODEL_ID") or os.getenv("LLM_MODEL_ID") or "deepseek-chat"
 # 整理用较低 temperature，保证输出稳定
-_TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.1"))
+_TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.0"))
 _MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "4096"))
 
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt.txt"
+_PLAYER_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 
 
 def _load_consolidation_prompt() -> str:
     """从外部文件加载整合 prompt 模板"""
     return _PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def _load_player_profile_prompt() -> str:
+    """从外部文件加载玩家档案整理 prompt 模板"""
+    return _PLAYER_PROMPT_PATH.read_text(encoding="utf-8")
 
 # 日期标题正则：只匹配「整行就是日期标题」的情况，避免误伤正文
 # 匹配：## 4月5日 / **4月5日** / 4月5日（行首且行尾，不含其他文字）
@@ -265,10 +270,10 @@ class MemoryConsolidator:
                 self._save_state(agent_name, all_dates[-2])
             # 只有1天时不记录进度，下次仍会整合
 
-            # 整理后触发向量库全量重建（后台执行，不阻塞）
-            final_content = path.read_text(encoding="utf-8")
-            asyncio.create_task(vector_store.rebuild(agent_name, final_content))
-            routing_logger.info(f"[整理器] {agent_name} 整理完成，向量重建已提交后台")
+            routing_logger.info(f"[整理器] {agent_name} 整理完成")
+
+            # 顺带整理 user.md
+            await self.consolidate_player_profile(agent_name)
 
     def _write_back(self, path: Path, agent_name: str,
                     sections: OrderedDict[str, str],
@@ -305,6 +310,59 @@ class MemoryConsolidator:
         )
 
         path.write_text(result, encoding="utf-8")
+
+    async def consolidate_player_profile(self, agent_name: str):
+        """整理单个角色的 user.md（去重精炼）"""
+        user_path = Path(f"agents/{agent_name}/user.md")
+        if not user_path.exists():
+            routing_logger.info(f"[整理器] {agent_name} 无 user.md，跳过")
+            return
+
+        content = user_path.read_text(encoding="utf-8")
+
+        # 内容太短不需要整理
+        if len(content.strip()) < 100:
+            routing_logger.info(f"[整理器] {agent_name} user.md 内容过短，跳过整理")
+            return
+
+        routing_logger.info(
+            f"[整理器] 开始整理 {agent_name} 的 user.md (长度: {len(content)})"
+        )
+
+        try:
+            # 备份
+            bak_dir = Path(f"agents/{agent_name}/memory/bak")
+            bak_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+            bak_path = bak_dir / f"user_{ts}_pre.md"
+            shutil.copy2(user_path, bak_path)
+
+            # 只保留最近 5 个 user.md 备份
+            user_baks = sorted(
+                bak_dir.glob("user_*_pre.md"),
+                key=lambda f: f.stat().st_mtime,
+            )
+            if len(user_baks) > 5:
+                for old_bak in user_baks[:-5]:
+                    old_bak.unlink()
+
+            prompt = _load_player_profile_prompt().format(content=content)
+            consolidated = await self._call_llm(prompt)
+
+            if len(consolidated.strip()) < 20:
+                routing_logger.warning(
+                    f"[整理器] {agent_name} user.md LLM 返回过短，跳过"
+                )
+                return
+
+            user_path.write_text(consolidated.strip() + "\n", encoding="utf-8")
+            routing_logger.info(
+                f"[整理器] {agent_name} user.md 整理完成 "
+                f"(长度: {len(content)} → {len(consolidated)})"
+            )
+
+        except Exception as e:
+            routing_logger.error(f"[整理器] {agent_name} user.md 整理失败: {e}")
 
     async def consolidate_all(self, agent_names: list[str]):
         routing_logger.info(f"[整理器] 开始后台记忆整理: {agent_names}")
