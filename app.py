@@ -235,6 +235,17 @@ async def on_message(message: cl.Message):
 
     _message_counter += 1
 
+    # 处理重置命令
+    if user_input.strip() == "/reset":
+        await cl.Message(content="✅ 游戏已重置，开始新故事...").send()
+        default_opening = await reset_game(show_opening=True)
+        await cl.Message(content=default_opening, author="Narrator").send()
+        _message_counter = 0
+        return
+
+    _message_counter += 1
+
+    routing_logger.info(f"玩家输入: {user_input}")
     # 1. 先调用 narrator（导演）决定场景和 targets
     # narrator 需要更多历史来理解全局上下文
     narrator_history = broadcaster.load_recent_history("narrator", limit=HISTORY_LIMIT_NARRATOR)
@@ -266,7 +277,6 @@ async def on_message(message: cl.Message):
     valid_agents = ["lilith", "mitsuki"]
     targets = [t for t in targets if t in valid_agents]
 
-    routing_logger.info(f"玩家输入: {user_input}")
     routing_logger.info(f"narrator 决定 targets: {targets}")
 
     # 2. 广播玩家消息到所有 targets + narrator（让角色们能看到玩家消息）
