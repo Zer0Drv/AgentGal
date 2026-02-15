@@ -9,6 +9,7 @@ __pycache__/
 *.log
 *.log.*
 tmp/*
+关键点bak/*
 
 # agents/ 下的动态文件（运行时生成，不入库）
 agents/*/memory/
