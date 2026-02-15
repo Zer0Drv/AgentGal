@@ -257,10 +257,21 @@ class MemoryConsolidator:
                 for old_bak in bak_files[:-15]:
                     old_bak.unlink()
 
+            # 读取角色性格定义，让整理后的记忆保持角色口吻
+            soul_path = Path(f"agents/{agent_name}/soul.md")
+            soul_content = (
+                soul_path.read_text(encoding="utf-8")
+                if soul_path.exists()
+                else ""
+            )
+
             # 对需要整合的日期逐个调 LLM
+            prompt_template = _load_consolidation_prompt()
             for date in dates_to_consolidate:
                 full_text = f"## {date}\n{sections[date]}"
-                prompt = _load_consolidation_prompt().format(content=full_text)
+                prompt = prompt_template.format(
+                    soul=soul_content, content=full_text
+                )
                 try:
                     llm_result = await self._call_llm(prompt)
                     if len(llm_result.strip()) < 20:

@@ -140,7 +140,6 @@ async def reset_game(show_opening: bool = True) -> str:
     for agent_name in all_agents:
         print(f"[{agent_name}]")
         reset_agent_memory(agent_name)
-        await vector_store.delete_agent(agent_name)
 
     # 重置日志
     print("[日志]")
@@ -185,10 +184,6 @@ async def on_chat_start():
     """聊天开始时的初始化 - 有记忆直接加载"""
 
     all_agents = ["lilith", "mitsuki", "narrator"]
-
-    # 初始化向量库，检查并补做未完成的 embedding
-    await vector_store.init_tables()
-    await vector_store.sync_if_needed(all_agents)
 
     # 检查是否有存档
     has_save = has_existing_save()
