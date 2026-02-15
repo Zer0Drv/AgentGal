@@ -123,6 +123,62 @@ def reset_logs():
     for log_file in log_files:
         if os.path.exists(log_file):
             open(log_file, "w").close()
+
+
+async def reset_game(show_opening: bool = True) -> str:
+    """重置游戏，清空所有记忆并可选发送开场
+
+    Returns:
+        开场白内容（如果 show_opening=True）或空字符串
+    """
+    all_agents = ["lilith", "mitsuki", "narrator"]
+
+    print(f"\n{'='*40}")
+    print("重置游戏...")
+    print(f"{'='*40}\n")
+
+    # 重置所有角色记忆
+    for agent_name in all_agents:
+        print(f"[{agent_name}]")
+        reset_agent_memory(agent_name)
+        await vector_store.delete_agent(agent_name)
+
+    # 重置日志
+    print("[日志]")
+    reset_logs()
+
+    print(f"\n{'='*40}")
+    print("重置完成")
+    print(f"{'='*40}\n")
+
+    default_opening = """**私立桜庭学园 · 4月的清晨**
+
+樱花瓣随风飘进教室的窗户。
+你懒懒地坐在靠窗的座位上，看着窗外熟悉的景色。
+新学期刚开始，距离毕业还有三个月。
+
+讲台上，班主任拍了拍手：
+"今天有位转学生加入我们班级。"
+
+一个引人注目的身影走进教室。
+"""
+
+    # 将开场旁白写入所有角色的历史
+    timestamp = datetime.now().isoformat()
+    opening_message = {
+        "timestamp": timestamp,
+        "role": "narrator",
+        "content": default_opening,
+        "visible_to": ["lilith", "mitsuki", "narrator"],
+    }
+
+    for agent_name in all_agents:
+        raw_path = f"agents/{agent_name}/memory/raw/{datetime.now().strftime('%Y-%m-%d')}.jsonl"
+        os.makedirs(os.path.dirname(raw_path), exist_ok=True)
+        with open(raw_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
+
+    return default_opening if show_opening else ""
         
 
 @cl.on_chat_start
@@ -139,55 +195,10 @@ async def on_chat_start():
     has_save = has_existing_save()
 
     if not has_save:
-        # 重置所有角色的记忆
-        print(f"\n{'='*40}")
-        print("新游戏开始，重置所有角色记忆...")
-        print(f"{'='*40}\n")
-        for agent_name in all_agents:
-            print(f"[{agent_name}]")
-            reset_agent_memory(agent_name)
-            await vector_store.delete_agent(agent_name)
-        # 重置日志
-        print("[日志]")
-        reset_logs()
-        print(f"\n{'='*40}")
-        print("记忆重置完成")
-        print(f"{'='*40}\n")
+        # 新游戏，重置记忆并发送开场
         await cl.Message(content="已重置记忆，开始新游戏。").send()
-
-        default_opening = """**私立桜庭学园 · 4月的清晨**
-
-樱花瓣随风飘进教室的窗户。
-你懒懒地坐在靠窗的座位上，看着窗外熟悉的景色。
-新学期刚开始，距离毕业还有三个月。
-
-讲台上，班主任拍了拍手：
-"今天有位转学生加入我们班级。"
-
-一个引人注目的身影走进教室。
-"""
-
-        # 发送消息给玩家
+        default_opening = await reset_game(show_opening=True)
         await cl.Message(content=default_opening, author="Narrator").send()
-
-        # 将开场旁白写入所有角色的历史，让他们知道场景设定
-        from datetime import datetime
-        import json
-
-        timestamp = datetime.now().isoformat()
-        opening_message = {
-            "timestamp": timestamp,
-            "role": "narrator",
-            "content": default_opening,
-            "visible_to": ["lilith", "mitsuki", "narrator"],
-        }
-
-        # 写入所有角色的 jsonl
-        for agent_name in all_agents:
-            raw_path = f"agents/{agent_name}/memory/raw/{datetime.now().strftime('%Y-%m-%d')}.jsonl"
-            os.makedirs(os.path.dirname(raw_path), exist_ok=True)
-            with open(raw_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
     else:
         # 从 narrator 的历史中还原最近消息
         recent_messages = load_recent_raw_messages(limit=5)
@@ -213,8 +224,17 @@ async def on_chat_start():
 async def on_message(message: cl.Message):
     """处理用户消息"""
     global _message_counter
-    _message_counter += 1
     user_input = message.content
+
+    # 处理重置命令
+    if user_input.strip() == "/reset":
+        await cl.Message(content="✅ 游戏已重置，开始新故事...").send()
+        default_opening = await reset_game(show_opening=True)
+        await cl.Message(content=default_opening, author="Narrator").send()
+        _message_counter = 0
+        return
+
+    _message_counter += 1
 
     # 1. 先调用 narrator（导演）决定场景和 targets
     # narrator 需要更多历史来理解全局上下文
