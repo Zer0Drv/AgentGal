@@ -160,35 +160,16 @@ def _read_title(file_path: str, default: str) -> str:
 
 def create_tools_for_agent(
     agent_name: str,
-    tool_call_limit: int = 5,
-) -> tuple[List[Callable], Callable[[], None]]:
+) -> List[Callable]:
     """
-    为指定角色创建工具函数列表，并附带 per-turn 调用计数器。
+    为指定角色创建工具函数列表。
 
     Args:
         agent_name: 角色名称
-        tool_call_limit: 单轮最大工具调用次数
 
     Returns:
-        (工具函数列表, 重置计数器的回调函数)
+        该角色的工具函数列表
     """
-    # 闭包共享的调用计数器
-    _counter = {"count": 0, "limit": tool_call_limit}
-
-    def _reset_counter() -> None:
-        """每轮对话开始前调用，重置工具计数器。"""
-        _counter["count"] = 0
-
-    def _check_limit() -> str | None:
-        """检查是否超限，超限返回提示文本，否则返回 None。"""
-        _counter["count"] += 1
-        if _counter["count"] > _counter["limit"]:
-            return (
-                "本轮工具调用次数已达上限，请直接基于已有信息生成回应，"
-                "不要再调用任何工具。"
-            )
-        return None
-
     # 预计算该角色的白名单字段
     status_fields = STATUS_FIELDS.get(agent_name, [])
     user_fields = USER_FIELDS.get(agent_name, [])
@@ -207,10 +188,6 @@ def create_tools_for_agent(
             status (str): 更新状态字段，JSON 格式 {{"字段": "内容"}}，会覆盖原内容。允许的字段：{status_fields}。留空则不更新。
             player (str): 追加玩家认知，JSON 格式 {{"字段": "内容"}}，只写新增部分。允许的字段：{player_fields}。留空则不更新。
         """
-        blocked = _check_limit()
-        if blocked:
-            return blocked
-
         results: list[str] = []
 
         # --- memory: 追加到 Memory.md ---
@@ -310,5 +287,4 @@ def create_tools_for_agent(
     _update_notes.__name__ = "update_notes"
     update_notes = tool(_update_notes)
 
-    tools = [update_notes]
-    return tools, _reset_counter
+    return [update_notes]

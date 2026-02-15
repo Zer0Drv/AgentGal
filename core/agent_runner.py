@@ -1,8 +1,8 @@
 """Agent 运行器 - 初始化 Agent 并处理消息广播"""
 
+import asyncio
 import os
 import json
-from typing import Callable
 from datetime import datetime
 from agno.agent import Agent
 
@@ -11,14 +11,15 @@ from .tools import create_tools_for_agent
 from .agent_logger import log_agent_run
 from .routing_logger import routing_logger
 
+# 单次 agent.arun 的超时秒数，防止 LLM 陷入无限工具调用循环
+AGENT_RUN_TIMEOUT_SECONDS = int(os.getenv("AGENT_RUN_TIMEOUT_SECONDS", "10"))
+
 
 class AgentManager:
     """管理所有角色的 Agent 实例"""
 
     def __init__(self):
         self.agents: dict[str, Agent] = {}
-        # 存储每个 agent 的工具计数器重置函数
-        self._tool_counter_resets: dict[str, Callable] = {}
         self._init_agents()
 
     def _init_agents(self):
@@ -53,11 +54,7 @@ class AgentManager:
             )
 
         # 为该角色创建专属工具（已绑定 agent_name）
-        # 只有一个 update_notes 工具，每轮最多调用 1 次
-        tools, reset_counter = create_tools_for_agent(
-            agent_name, tool_call_limit=1
-        )
-        self._tool_counter_resets[agent_name] = reset_counter
+        tools = create_tools_for_agent(agent_name)
 
         return Agent(
             name=agent_name,
@@ -68,6 +65,8 @@ class AgentManager:
             post_hooks=[log_agent_run],
             # 禁用 Agno 内部历史管理，由应用层通过 jsonl 自行管理
             add_history_to_context=False,
+            # 框架层面限制工具调用次数，防止 LLM 无限循环
+            tool_call_limit=1,
         )
 
     def _load_system_prompt_template(self, agent_name: str) -> str:
@@ -105,17 +104,22 @@ class AgentManager:
         if not agent:
             return f"[错误: 未找到角色 {agent_name}]"
 
-        # 每轮对话前重置该 agent 的工具调用计数器
-        reset_fn = self._tool_counter_resets.get(agent_name)
-        if reset_fn:
-            reset_fn()
-
         import time
         start = time.time()
-        response = await agent.arun(user_input)
-        elapsed = time.time() - start
-        routing_logger.info(f"{agent_name} 运行完成，耗时 {elapsed:.1f}秒")
-        return response.content
+        try:
+            response = await asyncio.wait_for(
+                agent.arun(user_input),
+                timeout=AGENT_RUN_TIMEOUT_SECONDS,
+            )
+            elapsed = time.time() - start
+            routing_logger.info(f"{agent_name} 运行完成，耗时 {elapsed:.1f}秒")
+            return response.content
+        except asyncio.TimeoutError:
+            elapsed = time.time() - start
+            routing_logger.error(
+                f"{agent_name} 运行超时（{elapsed:.1f}秒），强制终止"
+            )
+            return f"[{agent_name} 回应超时，请稍后再试]"
 
 
 # 全局实例
