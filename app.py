@@ -330,7 +330,6 @@ async def on_message(message: cl.Message):
     # 8. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
     if _message_counter % CONSOLIDATION_INTERVAL == 0:
         all_active = list(set(targets + ["narrator"]))
-        routing_logger.info(f"[主流程] 触发后台记忆整理: {all_active}")
         asyncio.create_task(memory_consolidator.consolidate_all(all_active))
 
 
