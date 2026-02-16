@@ -12,7 +12,7 @@ from .agent_logger import log_agent_run
 from .routing_logger import routing_logger
 
 # 单次 agent.arun 的超时秒数，防止 LLM 陷入无限工具调用循环
-AGENT_RUN_TIMEOUT_SECONDS = int(os.getenv("AGENT_RUN_TIMEOUT_SECONDS", "10"))
+AGENT_RUN_TIMEOUT_SECONDS = int(os.getenv("AGENT_RUN_TIMEOUT_SECONDS", "20"))
 
 
 class AgentManager:
