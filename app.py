@@ -44,6 +44,59 @@ def clean_response(content: str) -> str:
     return content.strip()
 
 
+def limit_actions(content: str, max_actions: int = 3) -> str:
+    """限制角色回复中（）动作描写的数量，只保留前 max_actions 个。
+
+    仅处理全角括号（）的动作描写，超出上限的直接删除。
+    """
+    if not content:
+        return content
+
+    action_pattern = re.compile(r'（[^）]*）')
+    actions_found = 0
+
+    def _replace(match: re.Match) -> str:
+        nonlocal actions_found
+        actions_found += 1
+        if actions_found <= max_actions:
+            return match.group(0)
+        return ''
+
+    result = action_pattern.sub(_replace, content)
+
+    # 清理删除动作后可能残留的多余空格和空行
+    result = re.sub(r'  +', ' ', result)
+    result = re.sub(r'\n{3,}', '\n\n', result)
+
+    return result.strip()
+
+
+def limit_ellipsis(content: str, max_ellipsis: int = 3) -> str:
+    """限制回复中省略号的数量，只保留前 max_ellipsis 个。
+
+    匹配中文省略号（……）和连续句点（...、..），超出上限的直接删除。
+    """
+    if not content:
+        return content
+
+    ellipsis_pattern = re.compile(r'……|\.{2,}')
+    count = 0
+
+    def _replace(match: re.Match) -> str:
+        nonlocal count
+        count += 1
+        if count <= max_ellipsis:
+            return match.group(0)
+        return ''
+
+    result = ellipsis_pattern.sub(_replace, content)
+
+    # 清理残留的多余空格
+    result = re.sub(r'  +', ' ', result)
+
+    return result.strip()
+
+
 def load_recent_raw_messages(limit: int = 10) -> list:
     """从 narrator 的 raw/ 目录加载最近的原始消息（narrator 拥有上帝视角，包含所有消息）"""
     import glob
@@ -304,7 +357,12 @@ async def on_message(message: cl.Message):
             # 调用 agent
             response = await agent_manager.run_agent(agent_name, full_input)
 
-            # 立即广播该角色的回应，让下一个角色能看到
+            # 后处理：清理 thinking 标签 + 限制动作数量 + 限制省略号
+            response = clean_response(response)
+            response = limit_actions(response)
+            response = limit_ellipsis(response)
+
+            # 立即广播该角色的回应（已裁剪），让下一个角色能看到
             await broadcaster.broadcast_agent_response(agent_name, targets, response)
 
             results.append((agent_name, response))
@@ -313,12 +371,11 @@ async def on_message(message: cl.Message):
             print(f"Agent {agent_name} 运行失败: {e}")
             results.append((agent_name, f"[错误: {str(e)}]"))
 
-    # 7. 展示给玩家
+    # 7. 展示给玩家（已在步骤 5 中完成后处理）
     for agent_name, response in results:
-        cleaned_response = clean_response(response)
-        if cleaned_response:
+        if response:
             await cl.Message(
-                content=cleaned_response,
+                content=response,
                 author=agent_name.capitalize(),
             ).send()
 
