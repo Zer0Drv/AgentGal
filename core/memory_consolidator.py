@@ -6,36 +6,53 @@ normalize → split_by_date（合并同日期段落）→ 根据进度跳过已�
 进度机制：记录上次整合到哪个日期，下次从该日期开始，避免过度压缩旧记忆。
 """
 
+import asyncio
 import json
 import os
 import re
 import shutil
-import asyncio
 import time
 from collections import OrderedDict
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from dataclasses import dataclass, field
+
 import httpx
+
 from .routing_logger import routing_logger
 
 CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
 
 # 从统一配置读取，兼容旧版 DEEPSEEK_API_KEY
-_API_KEY = os.getenv("CONSOLIDATION_LLM_API_KEY") or os.getenv("LLM_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
-_API_URL = os.getenv("CONSOLIDATION_LLM_API_URL") or os.getenv("LLM_API_URL") or "https://api.deepseek.com/v1"
-_MODEL_ID = os.getenv("CONSOLIDATION_LLM_MODEL_ID") or os.getenv("LLM_MODEL_ID") or "deepseek-chat"
+_API_KEY = (
+    os.getenv("CONSOLIDATION_LLM_API_KEY")
+    or os.getenv("LLM_API_KEY")
+    or os.getenv("DEEPSEEK_API_KEY")
+)
+_API_URL = (
+    os.getenv("CONSOLIDATION_LLM_API_URL")
+    or os.getenv("LLM_API_URL")
+    or "https://api.deepseek.com/v1"
+)
+_MODEL_ID = (
+    os.getenv("CONSOLIDATION_LLM_MODEL_ID")
+    or os.getenv("LLM_MODEL_ID")
+    or "deepseek-chat"
+)
 # 整理用较低 temperature，保证输出稳定
 _TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.0"))
 _MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "4096"))
 
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt.txt"
-_PLAYER_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
+_PLAYER_PROMPT_PATH = (
+    Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
+)
 
 
 @dataclass
 class _ConsolidationResult:
     """单个 agent 整理结果，用于汇总日志"""
+
     agent_name: str
     days: int = 0
     date_range: str = ""
@@ -56,6 +73,30 @@ def _load_consolidation_prompt() -> str:
 def _load_player_profile_prompt() -> str:
     """从外部文件加载玩家档案整理 prompt 模板"""
     return _PLAYER_PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def _cleanup_old_backups(bak_dir: Path, pattern: str, max_count: int = 10) -> int:
+    """清理旧备份文件，只保留最近的 max_count 个。
+
+    Args:
+        bak_dir: 备份目录路径
+        pattern: 文件匹配模式，如 "Memory_*_pre.md"
+        max_count: 最大保留数量，默认 10
+
+    Returns:
+        删除的文件数量
+    """
+    bak_files = sorted(
+        bak_dir.glob(pattern),
+        key=lambda f: f.stat().st_mtime,
+    )
+    deleted = 0
+    if len(bak_files) > max_count:
+        for old_bak in bak_files[:-max_count]:
+            old_bak.unlink()
+            deleted += 1
+    return deleted
+
 
 # 日期标题正则：只匹配「整行就是日期标题」的情况，避免误伤正文
 # 匹配：## 4月5日 / **4月5日** / 4月5日（行首且行尾，不含其他文字）
@@ -187,9 +228,7 @@ class MemoryConsolidator:
             encoding="utf-8",
         )
 
-    async def consolidate_agent(
-        self, agent_name: str
-    ) -> _ConsolidationResult | None:
+    async def consolidate_agent(self, agent_name: str) -> _ConsolidationResult | None:
         """整理单个 agent 的记忆，返回结果摘要（供 consolidate_all 汇总日志）"""
         result = _ConsolidationResult(agent_name=agent_name)
         lock = self._get_lock(agent_name)
@@ -236,9 +275,7 @@ class MemoryConsolidator:
                 return None
 
             result.days = len(dates_to_consolidate)
-            result.date_range = (
-                f"{dates_to_consolidate[0]}~{dates_to_consolidate[-1]}"
-            )
+            result.date_range = f"{dates_to_consolidate[0]}~{dates_to_consolidate[-1]}"
             result.original_len = len(original_content)
 
             # 备份
@@ -248,21 +285,13 @@ class MemoryConsolidator:
             bak_path = bak_dir / f"Memory_{ts}_pre.md"
             shutil.copy2(path, bak_path)
 
-            # 只保留最近15个备份
-            bak_files = sorted(
-                bak_dir.glob("Memory_*_pre.md"),
-                key=lambda f: f.stat().st_mtime,
-            )
-            if len(bak_files) > 15:
-                for old_bak in bak_files[:-15]:
-                    old_bak.unlink()
+            # 只保留最近10个备份（匹配所有 Memory_*.md 文件）
+            _cleanup_old_backups(bak_dir, "Memory_*.md", max_count=10)
 
             # 读取角色性格定义，让整理后的记忆保持角色口吻
             soul_path = Path(f"agents/{agent_name}/soul.md")
             soul_content = (
-                soul_path.read_text(encoding="utf-8")
-                if soul_path.exists()
-                else ""
+                soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
             )
 
             # 对需要整合的日期逐个调 LLM
@@ -270,23 +299,30 @@ class MemoryConsolidator:
             for date in dates_to_consolidate:
                 full_text = f"## {date}\n{sections[date]}"
                 prompt = prompt_template.format(
-                    soul=soul_content, content=full_text
+                    soul=soul_content,
+                    content=full_text,
                 )
                 try:
                     llm_result = await self._call_llm(prompt)
                     if len(llm_result.strip()) < 20:
                         result.errors.append(f"{date} LLM返回过短")
                         continue
-                    # 去掉 LLM 可能重复输出的日期标题
+                    # 两步式 prompt：提取「第二步：日记」之后的内容
+                    diary_match = re.search(
+                        r"^.*第二步.*日记.*$",
+                        llm_result,
+                        re.MULTILINE,
+                    )
+                    if diary_match:
+                        llm_result = llm_result[diary_match.end() :].lstrip("\n")
+                    # 去掉 LLM 可能重复输出的日期标题（## 或 ###）
                     llm_result = re.sub(
-                        r"^##\s*\d{1,2}月\d{1,2}日\s*\n?", "", llm_result
+                        r"^#{1,6}\s*\d{1,2}月\d{1,2}日\s*\n?", "", llm_result
                     ).strip()
                     sections[date] = llm_result
                 except Exception as e:
                     result.errors.append(f"{date}: {e}")
-                    routing_logger.error(
-                        f"[整理器] {agent_name} {date} 整合失败: {e}"
-                    )
+                    routing_logger.error(f"[整理器] {agent_name} {date} 整合失败: {e}")
 
             result.final_len = self._write_back(
                 path, agent_name, sections, original_content
@@ -298,23 +334,25 @@ class MemoryConsolidator:
             # 只有1天时不记录进度，下次仍会整合
 
             # 顺带整理 user.md
-            user_before, user_after = await self._consolidate_player_profile(
-                agent_name
-            )
+            user_before, user_after = await self._consolidate_player_profile(agent_name)
             result.user_md_before = user_before
             result.user_md_after = user_after
 
             return result
 
-    def _write_back(self, path: Path, agent_name: str,
-                    sections: OrderedDict[str, str],
-                    original_content: str) -> int:
+    def _write_back(
+        self,
+        path: Path,
+        agent_name: str,
+        sections: OrderedDict[str, str],
+        original_content: str,
+    ) -> int:
         """写回整理后的内容，同时保护并发追加的新记忆。返回最终字符数。"""
         # 检查文件是否在整理期间被追加了新内容
         current_content = path.read_text(encoding="utf-8")
         if len(current_content) > len(original_content):
             # 有新内容被追加，提取增量部分
-            appended = current_content[len(original_content):]
+            appended = current_content[len(original_content) :]
             routing_logger.info(
                 f"[整理器] {agent_name} 检测到并发追加 ({len(appended)} 字符)，将保留"
             )
@@ -335,9 +373,7 @@ class MemoryConsolidator:
         path.write_text(result, encoding="utf-8")
         return len(result)
 
-    async def _consolidate_player_profile(
-        self, agent_name: str
-    ) -> tuple[int, int]:
+    async def _consolidate_player_profile(self, agent_name: str) -> tuple[int, int]:
         """整理单个角色的 user.md（去重精炼）。返回 (原始长度, 整理后长度)。"""
         user_path = Path(f"agents/{agent_name}/user.md")
         if not user_path.exists():
@@ -357,14 +393,8 @@ class MemoryConsolidator:
             bak_path = bak_dir / f"user_{ts}_pre.md"
             shutil.copy2(user_path, bak_path)
 
-            # 只保留最近 5 个 user.md 备份
-            user_baks = sorted(
-                bak_dir.glob("user_*_pre.md"),
-                key=lambda f: f.stat().st_mtime,
-            )
-            if len(user_baks) > 5:
-                for old_bak in user_baks[:-5]:
-                    old_bak.unlink()
+            # 只保留最近 10 个 user.md 备份
+            _cleanup_old_backups(bak_dir, "user_*_pre.md", max_count=10)
 
             prompt = _load_player_profile_prompt().format(content=content)
             consolidated = await self._call_llm(prompt)
@@ -374,6 +404,15 @@ class MemoryConsolidator:
                     f"[整理器] {agent_name} user.md LLM 返回过短，跳过"
                 )
                 return 0, 0
+
+            # 两步式 prompt：提取「第二步：档案」之后的内容
+            diary_match = re.search(
+                r"^.*第二步.*档案.*$",
+                consolidated,
+                re.MULTILINE,
+            )
+            if diary_match:
+                consolidated = consolidated[diary_match.end() :].lstrip("\n")
 
             user_path.write_text(consolidated.strip() + "\n", encoding="utf-8")
             return len(content), len(consolidated)
@@ -388,8 +427,7 @@ class MemoryConsolidator:
         before, after = await self._consolidate_player_profile(agent_name)
         if before > 0:
             routing_logger.info(
-                f"[整理器] {agent_name} user.md 整理完成 "
-                f"(长度: {before} → {after})"
+                f"[整理器] {agent_name} user.md 整理完成 (长度: {before} → {after})"
             )
 
     async def consolidate_all(self, agent_names: list[str]):
@@ -405,9 +443,7 @@ class MemoryConsolidator:
             else:
                 summaries.append(f"{name}(无文件)")
 
-        routing_logger.info(
-            f"[整理器] 开始记忆整理: {', '.join(summaries)}"
-        )
+        routing_logger.info(f"[整理器] 开始记忆整理: {', '.join(summaries)}")
 
         raw_results = await asyncio.gather(
             *(self.consolidate_agent(n) for n in agent_names),
@@ -422,18 +458,13 @@ class MemoryConsolidator:
             if r is None:
                 continue
             if r.skipped:
-                routing_logger.info(
-                    f"[整理器] {r.agent_name} 跳过: {r.skip_reason}"
-                )
+                routing_logger.info(f"[整理器] {r.agent_name} 跳过: {r.skip_reason}")
                 continue
 
             # 构建压缩率
             if r.original_len > 0:
                 ratio = (1 - r.final_len / r.original_len) * 100
-                mem_part = (
-                    f"{r.original_len}→{r.final_len}字"
-                    f"({ratio:+.1f}%)"
-                )
+                mem_part = f"{r.original_len}→{r.final_len}字({ratio:+.1f}%)"
             else:
                 mem_part = "无变化"
 
