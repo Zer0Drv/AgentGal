@@ -147,31 +147,29 @@ class MessageBroadcaster:
         targets: list[str],
         message: dict,
     ):
-        """统一的消息广播方法
+        """统一的消息广播方法 — 只写入 narrator 的 jsonl（单一数据源）
 
         Args:
             targets: 原始目标角色列表
             message: 要广播的消息字典
         """
-        # narrator 作为 DM 需要看到所有消息（上帝视角）
-        broadcast_targets = targets.copy()
-        if "narrator" not in broadcast_targets:
-            broadcast_targets.append("narrator")
+        # 确保 visible_to 包含 narrator（上帝视角）
+        visible = targets.copy()
+        if "narrator" not in visible:
+            visible.append("narrator")
 
         # 去重并保持顺序
         seen = set()
-        broadcast_targets = [t for t in broadcast_targets if not (t in seen or seen.add(t))]
+        visible = [t for t in visible if not (t in seen or seen.add(t))]
 
-        # 更新消息的 visible_to 为实际广播目标
-        message["visible_to"] = broadcast_targets
+        message["visible_to"] = visible
 
-        # 写入所有 targets 的 jsonl
-        for target in broadcast_targets:
-            raw_path = self._get_raw_path(target)
-            self._ensure_dir(raw_path)
+        # 只写入 narrator 的 jsonl（角色通过 visible_to 过滤读取）
+        raw_path = self._get_raw_path("narrator")
+        self._ensure_dir(raw_path)
 
-            with open(raw_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(message, ensure_ascii=False) + "\n")
+        with open(raw_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(message, ensure_ascii=False) + "\n")
 
     async def broadcast_player_message(
         self, targets: list[str], content: str
