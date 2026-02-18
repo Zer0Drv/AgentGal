@@ -1,15 +1,16 @@
 """Agent 运行器 - 初始化 Agent 并处理消息广播"""
 
 import asyncio
-import os
 import json
+import os
 from datetime import datetime
+
 from agno.agent import Agent
 
-from .llm import get_model
-from .tools import create_tools_for_agent
 from .agent_logger import log_agent_run
+from .llm import get_model
 from .routing_logger import routing_logger
+from .tools import create_tools_for_agent
 
 # 单次 agent.arun 的超时秒数，防止 LLM 陷入无限工具调用循环
 AGENT_RUN_TIMEOUT_SECONDS = int(os.getenv("AGENT_RUN_TIMEOUT_SECONDS", "20"))
@@ -105,6 +106,7 @@ class AgentManager:
             return f"[错误: 未找到角色 {agent_name}]"
 
         import time
+
         start = time.time()
         try:
             response = await asyncio.wait_for(
@@ -116,9 +118,7 @@ class AgentManager:
             return response.content
         except asyncio.TimeoutError:
             elapsed = time.time() - start
-            routing_logger.error(
-                f"{agent_name} 运行超时（{elapsed:.1f}秒），强制终止"
-            )
+            routing_logger.error(f"{agent_name} 运行超时（{elapsed:.1f}秒），强制终止")
             return f"[{agent_name} 回应超时，请稍后再试]"
 
 
@@ -137,10 +137,6 @@ class MessageBroadcaster:
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")
         return f"agents/{agent_name}/memory/raw/{date}.jsonl"
-
-    def _ensure_dir(self, path: str):
-        """确保目录存在"""
-        os.makedirs(os.path.dirname(path), exist_ok=True)
 
     async def _broadcast_message(
         self,
@@ -166,14 +162,12 @@ class MessageBroadcaster:
 
         # 只写入 narrator 的 jsonl（角色通过 visible_to 过滤读取）
         raw_path = self._get_raw_path("narrator")
-        self._ensure_dir(raw_path)
+        os.makedirs(os.path.dirname(raw_path), exist_ok=True)
 
         with open(raw_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(message, ensure_ascii=False) + "\n")
 
-    async def broadcast_player_message(
-        self, targets: list[str], content: str
-    ):
+    async def broadcast_player_message(self, targets: list[str], content: str):
         """
         广播玩家消息到所有 targets 的 jsonl
 
@@ -234,10 +228,7 @@ class MessageBroadcaster:
 
         # 按 visible_to 过滤：narrator 看全部，其他角色只看自己可见的
         if agent_name != "narrator":
-            lines = [
-                msg for msg in lines
-                if agent_name in msg.get("visible_to", [])
-            ]
+            lines = [msg for msg in lines if agent_name in msg.get("visible_to", [])]
 
         # 取最近 limit 条
         recent = lines[-limit:]
