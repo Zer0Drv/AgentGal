@@ -1,16 +1,16 @@
 """Chainlit 入口"""
 
-import os
 import asyncio
-import re
 import json
+import os
+import re
 from datetime import datetime
-from dotenv import load_dotenv
 
 import chainlit as cl
+from dotenv import load_dotenv
 
 from core.agent_runner import agent_manager, broadcaster
-from core.memory_consolidator import memory_consolidator, CONSOLIDATION_INTERVAL
+from core.memory_consolidator import CONSOLIDATION_INTERVAL, memory_consolidator
 from core.routing_logger import routing_logger
 
 # 加载环境变量
@@ -30,16 +30,16 @@ def clean_response(content: str) -> str:
         return content
 
     # 移除 <thinking>...</thinking> 标签及其内容
-    content = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL)
+    content = re.sub(r"<thinking>.*?</thinking>", "", content, flags=re.DOTALL)
 
     # 移除可能的 think 标签变体
-    content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
 
     # 移除可能的 reasoning 标签
-    content = re.sub(r'<reasoning>.*?</reasoning>', '', content, flags=re.DOTALL)
+    content = re.sub(r"<reasoning>.*?</reasoning>", "", content, flags=re.DOTALL)
 
     # 清理多余的空行
-    content = re.sub(r'\n{3,}', '\n\n', content)
+    content = re.sub(r"\n{3,}", "\n\n", content)
 
     return content.strip()
 
@@ -52,7 +52,7 @@ def limit_actions(content: str, max_actions: int = 3) -> str:
     if not content:
         return content
 
-    action_pattern = re.compile(r'（[^）]*）')
+    action_pattern = re.compile(r"（[^）]*）")
     actions_found = 0
 
     def _replace(match: re.Match) -> str:
@@ -60,13 +60,13 @@ def limit_actions(content: str, max_actions: int = 3) -> str:
         actions_found += 1
         if actions_found <= max_actions:
             return match.group(0)
-        return ''
+        return ""
 
     result = action_pattern.sub(_replace, content)
 
     # 清理删除动作后可能残留的多余空格和空行
-    result = re.sub(r'  +', ' ', result)
-    result = re.sub(r'\n{3,}', '\n\n', result)
+    result = re.sub(r"  +", " ", result)
+    result = re.sub(r"\n{3,}", "\n\n", result)
 
     return result.strip()
 
@@ -79,7 +79,7 @@ def limit_ellipsis(content: str, max_ellipsis: int = 3) -> str:
     if not content:
         return content
 
-    ellipsis_pattern = re.compile(r'……|\.{2,}')
+    ellipsis_pattern = re.compile(r"……|\.{2,}")
     count = 0
 
     def _replace(match: re.Match) -> str:
@@ -87,12 +87,12 @@ def limit_ellipsis(content: str, max_ellipsis: int = 3) -> str:
         count += 1
         if count <= max_ellipsis:
             return match.group(0)
-        return ''
+        return ""
 
     result = ellipsis_pattern.sub(_replace, content)
 
     # 清理残留的多余空格
-    result = re.sub(r'  +', ' ', result)
+    result = re.sub(r"  +", " ", result)
 
     return result.strip()
 
@@ -128,6 +128,7 @@ def load_recent_raw_messages(limit: int = 10) -> list:
 def has_existing_save() -> bool:
     """检查是否有已存在的存档（任一角色有 jsonl 文件）"""
     import glob
+
     all_agents = ["lilith", "mitsuki", "narrator"]
     for agent_name in all_agents:
         raw_dir = f"agents/{agent_name}/memory/raw"
@@ -141,8 +142,10 @@ def has_existing_save() -> bool:
 def reset_agent_memory(agent_name: str):
     """重置指定角色的所有记忆文件（保留 soul.md）"""
     import glob
+    import shutil
 
     agent_path = f"agents/{agent_name}"
+    example_path = f"examples/{agent_name}"
 
     # 1. 删除 raw/ 目录下的所有 jsonl 文件（对话历史）
     raw_dir = f"{agent_path}/memory/raw"
@@ -163,6 +166,17 @@ def reset_agent_memory(agent_name: str):
             print(f"  已清空: memory.md")
         except Exception as e:
             print(f"  清空失败 memory.md: {e}")
+
+    # 3. 从 examples 恢复初始状态文件
+    for filename in ["status.md", "user.md"]:
+        example_file = f"{example_path}/{filename}"
+        target_file = f"{agent_path}/{filename}"
+        if os.path.exists(example_file):
+            try:
+                shutil.copy2(example_file, target_file)
+                print(f"  已恢复: {filename}")
+            except Exception as e:
+                print(f"  恢复失败 {filename}: {e}")
 
 
 def reset_logs():
@@ -185,9 +199,9 @@ async def reset_game(show_opening: bool = True) -> str:
     """
     all_agents = ["lilith", "mitsuki", "narrator"]
 
-    print(f"\n{'='*40}")
+    print(f"\n{'=' * 40}")
     print("重置游戏...")
-    print(f"{'='*40}\n")
+    print(f"{'=' * 40}\n")
 
     # 重置所有角色记忆
     for agent_name in all_agents:
@@ -198,9 +212,9 @@ async def reset_game(show_opening: bool = True) -> str:
     print("[日志]")
     reset_logs()
 
-    print(f"\n{'='*40}")
+    print(f"\n{'=' * 40}")
     print("重置完成")
-    print(f"{'='*40}\n")
+    print(f"{'=' * 40}\n")
 
     default_opening = """**私立桜庭学园 · 4月的清晨**
 
@@ -230,7 +244,7 @@ async def reset_game(show_opening: bool = True) -> str:
             f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
 
     return default_opening if show_opening else ""
-        
+
 
 @cl.on_chat_start
 async def on_chat_start():
@@ -283,22 +297,16 @@ async def on_message(message: cl.Message):
 
     _message_counter += 1
 
-    # 处理重置命令
-    if user_input.strip() == "/reset":
-        await cl.Message(content="✅ 游戏已重置，开始新故事...").send()
-        default_opening = await reset_game(show_opening=True)
-        await cl.Message(content=default_opening, author="Narrator").send()
-        _message_counter = 0
-        return
-
-    _message_counter += 1
-
     routing_logger.info(f"玩家输入: {user_input}")
     # 1. 先调用 narrator（导演）决定场景和 targets
     # narrator 需要更多历史来理解全局上下文
-    narrator_history = broadcaster.load_recent_history("narrator", limit=HISTORY_LIMIT_NARRATOR)
+    narrator_history = broadcaster.load_recent_history(
+        "narrator", limit=HISTORY_LIMIT_NARRATOR
+    )
     if narrator_history:
-        narrator_input = f"最近对话历史:\n\n{narrator_history}\n\n---\n\n玩家新消息: {user_input}"
+        narrator_input = (
+            f"最近对话历史:\n\n{narrator_history}\n\n---\n\n玩家新消息: {user_input}"
+        )
     else:
         narrator_input = user_input
 
@@ -311,15 +319,17 @@ async def on_message(message: cl.Message):
 
     # 查找最后一个 TARGETS: [...] 或 **TARGETS:** [...] 格式
     # LLM 在 tool 调用前后可能都输出文本，导致多段重复；取最后一个匹配确保拿到最终版本
-    targets_pattern = re.compile(r'\*{0,2}TARGETS\*{0,2}:?\s*\[([^\]]*)\]', re.IGNORECASE)
+    targets_pattern = re.compile(
+        r"\*{0,2}TARGETS\*{0,2}:?\s*\[([^\]]*)\]", re.IGNORECASE
+    )
     all_matches = list(targets_pattern.finditer(narrator_content))
     if all_matches:
         targets_match = all_matches[-1]  # 取最后一个匹配
         targets_str = targets_match.group(1)
         # 解析角色列表
-        targets = [t.strip().lower() for t in targets_str.split(',') if t.strip()]
+        targets = [t.strip().lower() for t in targets_str.split(",") if t.strip()]
         # 只取最后一个 TARGETS 行之后的文本，丢弃前面的重复内容
-        scene_description = narrator_content[targets_match.end():].strip()
+        scene_description = narrator_content[targets_match.end() :].strip()
 
     # 过滤有效角色
     valid_agents = ["lilith", "mitsuki"]
@@ -332,7 +342,9 @@ async def on_message(message: cl.Message):
 
     # 3. 如果有场景描述，广播给所有 targets（让角色们能看到旁白）
     if scene_description:
-        await broadcaster.broadcast_agent_response("narrator", targets, scene_description)
+        await broadcaster.broadcast_agent_response(
+            "narrator", targets, scene_description
+        )
         await cl.Message(content=scene_description, author="Narrator").send()
 
     # 4. 如果没有角色需要回应，结束
@@ -345,7 +357,9 @@ async def on_message(message: cl.Message):
     for agent_name in targets:
         try:
             # 加载该角色的历史上下文（默认角色使用 HISTORY_LIMIT_DEFAULT）
-            history = broadcaster.load_recent_history(agent_name, limit=HISTORY_LIMIT_DEFAULT)
+            history = broadcaster.load_recent_history(
+                agent_name, limit=HISTORY_LIMIT_DEFAULT
+            )
 
             # 构建完整输入
             parts = []
@@ -380,9 +394,13 @@ async def on_message(message: cl.Message):
             ).send()
 
     # 8. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
+    print(
+        f"[调试] 当前轮次: {_message_counter}, CONSOLIDATION_INTERVAL: {CONSOLIDATION_INTERVAL}, 是否触发: {_message_counter % CONSOLIDATION_INTERVAL == 0}"
+    )
     if _message_counter % CONSOLIDATION_INTERVAL == 0:
-        all_active = list(set(targets + ["narrator"]))
-        asyncio.create_task(memory_consolidator.consolidate_all(all_active))
+        all_agents = ["lilith", "mitsuki", "narrator"]
+        print(f"[调试] 触发记忆整理，目标角色: {all_agents}")
+        asyncio.create_task(memory_consolidator.consolidate_all(all_agents))
 
 
 @cl.on_chat_end
