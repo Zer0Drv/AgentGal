@@ -198,14 +198,49 @@ def create_tools_for_agent(
                 )
                 memory_path = f"agents/{agent_name}/memory/Memory.md"
                 os.makedirs(os.path.dirname(memory_path), exist_ok=True)
-                clean = memory.replace("\\n", "\n")
+                clean = memory.replace("\\n", "\n").strip()
+
+                # 读取现有内容
+                existing = ""
                 if os.path.exists(memory_path):
-                    with open(memory_path, "a", encoding="utf-8") as f:
-                        f.write(f"\n\n{clean}")
+                    with open(memory_path, "r", encoding="utf-8") as f:
+                        existing = f.read()
+
+                # 将内容分割成 entries（以 ## 日期 或 - **地点** 开头的块）
+                def parse_entries(text: str) -> list[str]:
+                    """将 memory 文本解析为 entry 列表"""
+                    entries = []
+                    current_entry = []
+                    for line in text.split("\n"):
+                        # 新 entry 的开始：日期标题或地点标记
+                        if line.strip().startswith("##") or (line.strip().startswith("-") and "**" in line):
+                            if current_entry:
+                                entries.append("\n".join(current_entry).strip())
+                            current_entry = [line]
+                        elif line.strip() or current_entry:
+                            current_entry.append(line)
+                    if current_entry:
+                        entries.append("\n".join(current_entry).strip())
+                    return entries
+
+                new_entries = parse_entries(clean)
+                existing_entries = parse_entries(existing)
+                existing_set = set(existing_entries)
+
+                # 过滤出真正新的 entries
+                unique_new_entries = [e for e in new_entries if e and e not in existing_set]
+
+                if not unique_new_entries:
+                    results.append(f"✓ memory 所有 entry 已存在，跳过")
                 else:
-                    with open(memory_path, "w", encoding="utf-8") as f:
-                        f.write(f"# {agent_name} 的长期记忆\n\n{clean}")
-                results.append(f"✓ memory 已追加")
+                    to_append = "\n\n".join(unique_new_entries)
+                    if existing.strip():
+                        with open(memory_path, "a", encoding="utf-8") as f:
+                            f.write(f"\n\n{to_append}")
+                    else:
+                        with open(memory_path, "w", encoding="utf-8") as f:
+                            f.write(f"# {agent_name} 的长期记忆\n\n{to_append}")
+                    results.append(f"✓ memory 已追加 {len(unique_new_entries)} 个新 entry")
             except Exception as e:
                 routing_logger.error(
                     f"[Tool] {agent_name} update_notes memory 出错: {e}"
