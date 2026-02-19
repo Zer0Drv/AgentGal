@@ -1,9 +1,8 @@
 """路由决策和性能日志记录"""
 
-import os
 import logging
+import os
 from logging.handlers import RotatingFileHandler
-
 
 # 创建 logs/routing 目录
 LOGS_DIR = "logs/routing"
@@ -18,16 +17,17 @@ if not routing_logger.handlers:
     # 创建文件 handler，写入 JSONL 格式
     handler = RotatingFileHandler(
         f"{LOGS_DIR}/routing.log",
-        maxBytes=10*1024*1024,  # 10MB
+        maxBytes=10 * 1024 * 1024,  # 10MB
         backupCount=5,
-        encoding="utf-8"
+        encoding="utf-8",
     )
     handler.setLevel(logging.INFO)
 
-    formatter = logging.Formatter("[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    formatter = logging.Formatter(
+        "[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
     handler.setFormatter(formatter)
 
     routing_logger.addHandler(handler)
     # 不传播到 root logger
     routing_logger.propagate = False
-
