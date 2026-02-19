@@ -237,11 +237,10 @@ async def reset_game(show_opening: bool = True) -> str:
         "visible_to": ["lilith", "mitsuki", "narrator"],
     }
 
-    for agent_name in all_agents:
-        raw_path = f"agents/{agent_name}/memory/raw/{datetime.now().strftime('%Y-%m-%d')}.jsonl"
-        os.makedirs(os.path.dirname(raw_path), exist_ok=True)
-        with open(raw_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
+    raw_path = f"agents/narrator/memory/raw/{datetime.now().strftime('%Y-%m-%d')}.jsonl"
+    os.makedirs(os.path.dirname(raw_path), exist_ok=True)
+    with open(raw_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
 
     return default_opening if show_opening else ""
 
