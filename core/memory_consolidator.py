@@ -248,7 +248,7 @@ class MemoryConsolidator:
             # normalize + split（同日期段落自动合并）
             content = normalize(original_content)
             sections = split_by_date(content)
-            if len(sections) < 2:
+            if not sections:
                 return None
 
             # 根据进度确定需要整合的日期范围
