@@ -5,8 +5,6 @@
 </identity>
 
 <memory>
-以下是你的完整长期记忆，不需要搜索，直接参考即可：
-
 {memory}
 </memory>
 
