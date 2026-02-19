@@ -27,6 +27,7 @@ def _create_openai_compatible_model(
     model_id: str,
     api_key: str,
     api_url: str | None = None,
+    provider: str | None = None,
 ) -> "Model":
     """创建 OpenAI 兼容格式的模型实例
 
@@ -38,11 +39,18 @@ def _create_openai_compatible_model(
     # DeepSeek 等兼容 API 不支持，需要覆盖回 "system"
     fixed_role_map = dict(OpenAIChat.default_role_map, system="system")
 
+    # DeepSeek 支持 prefix caching，可大幅降低长 system prompt 的成本
+    # 其他提供商忽略此参数
+    client_params = {}
+    if provider == "deepseek":
+        client_params["extra_headers"] = {"x-deepseek-cache": "true"}
+
     return OpenAIChat(
         id=model_id,
         api_key=api_key,
         base_url=api_url if api_url else None,
         role_map=fixed_role_map,
+        **client_params,
     )
 
 
@@ -100,7 +108,7 @@ def get_model(
                 api_url = "https://openrouter.ai/api/v1"
             # openai 不需要默认 base_url，agno 会使用官方 endpoint
 
-        return _create_openai_compatible_model(model_id, api_key, api_url)
+        return _create_openai_compatible_model(model_id, api_key, api_url, provider)
 
     elif provider == "anthropic":
         return _create_anthropic_model(model_id, api_key)
@@ -108,7 +116,7 @@ def get_model(
     else:
         # 未知提供商，尝试作为 OpenAI 兼容格式处理
         if api_url:
-            return _create_openai_compatible_model(model_id, api_key, api_url)
+            return _create_openai_compatible_model(model_id, api_key, api_url, provider)
         raise ValueError(
             f"Unsupported LLM provider: {provider}. "
             f"Supported: {', '.join(SUPPORTED_PROVIDERS.keys())}. "
