@@ -15,8 +15,8 @@ STATUS_FIELDS: dict[str, list[str]] = {
 
 # 每个角色 user.md 允许的字段白名单
 USER_FIELDS: dict[str, list[str]] = {
-    "lilith": ["印象", "了解到的事", "在意的细节"],
-    "mitsuki": ["印象", "了解到的事", "在意的细节"],
+    "lilith": ["基本信息", "观察到的特质", "互动模式"],
+    "mitsuki": ["基本信息", "观察到的特质", "互动模式"],
     "narrator": ["玩家风格", "关键选择", "当前倾向"],
 }
 
