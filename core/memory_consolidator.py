@@ -254,22 +254,38 @@ class MemoryConsolidator:
             # 根据进度确定需要整合的日期范围
             all_dates = list(sections.keys())
             last_consolidated = self._load_state(agent_name)
+            next_date = None
 
             if last_consolidated:
                 if last_consolidated in all_dates:
-                    start_idx = all_dates.index(last_consolidated)
+                    current_idx = all_dates.index(last_consolidated)
+                    if current_idx == len(all_dates) - 1:
+                        # 没有新日期，继续整理当前日期
+                        routing_logger.info(
+                            f"[整理器] {agent_name} 整理日期: {last_consolidated}"
+                        )
+                        dates_to_consolidate = [last_consolidated]
+                        next_date = last_consolidated  # 进度不变
+                    else:
+                        # 有新日期出现：最后一次整理当前日期，同时整理所有新日期
+                        new_dates = all_dates[current_idx + 1:]
+                        routing_logger.info(
+                            f"[整理器] {agent_name} 检测到新日期，最后一次整理 {last_consolidated}，"
+                            f"同时整理新日期: {', '.join(new_dates)}"
+                        )
+                        dates_to_consolidate = all_dates[current_idx:]  # 从当前到末尾
+                        next_date = all_dates[-1]  # 推进到最新的日期
                 else:
-                    # 进度日期已不存在（文件被手动编辑？），跳过本次整合
-                    routing_logger.warning(
-                        f"[整理器] {agent_name} 进度日期 '{last_consolidated}' "
-                        f"在文件中不存在，跳过本次整合"
-                    )
+                    # 进度日期已不存在（文件被手动编辑？）
+                    routing_logger.warning(f"[整理器] {agent_name} 进度日期 '{last_consolidated}' 在文件中不存在")
                     return None
             else:
-                # 无进度记录，从头开始
-                start_idx = 0
-
-            dates_to_consolidate = all_dates[start_idx:]
+                # 无进度记录，整理全部
+                routing_logger.info(
+                    f"[整理器] {agent_name} 无进度记录，从头开始整理全部 {len(all_dates)} 个日期"
+                )
+                dates_to_consolidate = all_dates
+                next_date = all_dates[-1] if all_dates else None
 
             if not dates_to_consolidate:
                 return None
@@ -294,19 +310,22 @@ class MemoryConsolidator:
                 soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
             )
 
-            # 对需要整合的日期逐个调 LLM
-            prompt_template = _load_consolidation_prompt()
+            # 构建多日期合并内容，一次性调 LLM
+            parts = []
             for date in dates_to_consolidate:
-                full_text = f"## {date}\n{sections[date]}"
-                prompt = prompt_template.format(
-                    soul=soul_content,
-                    content=full_text,
-                )
-                try:
-                    llm_result = await self._call_llm(prompt)
-                    if len(llm_result.strip()) < 20:
-                        result.errors.append(f"{date} LLM返回过短")
-                        continue
+                parts.append(f"## {date}\n{sections[date]}")
+            combined_text = "\n\n".join(parts)
+
+            prompt_template = _load_consolidation_prompt()
+            prompt = prompt_template.format(
+                soul=soul_content,
+                content=combined_text,
+            )
+            try:
+                llm_result = await self._call_llm(prompt)
+                if len(llm_result.strip()) < 50:
+                    result.errors.append("LLM返回过短，跳过整理")
+                else:
                     # 两步式 prompt：提取「第二步：日记」之后的内容
                     diary_match = re.search(
                         r"^.*第二步.*日记.*$",
@@ -315,23 +334,29 @@ class MemoryConsolidator:
                     )
                     if diary_match:
                         llm_result = llm_result[diary_match.end() :].lstrip("\n")
-                    # 去掉 LLM 可能重复输出的日期标题（## 或 ###）
-                    llm_result = re.sub(
-                        r"^#{1,6}\s*\d{1,2}月\d{1,2}日\s*\n?", "", llm_result
-                    ).strip()
-                    sections[date] = llm_result
-                except Exception as e:
-                    result.errors.append(f"{date}: {e}")
-                    routing_logger.error(f"[整理器] {agent_name} {date} 整合失败: {e}")
+                    # 解析返回结果，按日期拆分
+                    parsed = split_by_date(llm_result)
+                    # 只更新成功解析的日期
+                    for date in dates_to_consolidate:
+                        if date in parsed:
+                            sections[date] = parsed[date]
+                        else:
+                            result.errors.append(f"{date} 未在LLM返回中找到")
+            except Exception as e:
+                result.errors.append(f"整合失败: {e}")
+                routing_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
 
             result.final_len = self._write_back(
                 path, agent_name, sections, original_content
             )
 
-            # 更新进度：记录到倒数第二个日期（最新一天可能还在产生新记忆）
-            if len(all_dates) >= 2:
-                self._save_state(agent_name, all_dates[-2])
-            # 只有1天时不记录进度，下次仍会整合
+            # 更新进度：保存 next_date（由上面的逻辑确定）
+            if next_date:
+                if last_consolidated and next_date != last_consolidated:
+                    routing_logger.info(
+                        f"[整理器] {agent_name} 进度推进: {last_consolidated} → {next_date}"
+                    )
+                self._save_state(agent_name, next_date)
 
             # 顺带整理 user.md
             user_before, user_after = await self._consolidate_player_profile(agent_name)
