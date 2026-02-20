@@ -9,8 +9,17 @@ from agno.agent import Agent
 
 from .agent_logger import log_agent_run
 from .llm import get_model
+from .response_parser import parse_agent_response
 from .routing_logger import routing_logger
-from .tools import create_tools_for_agent
+from .tools import (
+    STATUS_FIELDS,
+    USER_FIELDS,
+    _append_section_file,
+    _parse_section_file,
+    _read_title,
+    _update_section_file,
+    _write_section_file,
+)
 
 # 单次 agent.arun 的超时秒数，防止 LLM 陷入无限工具调用循环
 AGENT_RUN_TIMEOUT_SECONDS = int(os.getenv("AGENT_RUN_TIMEOUT_SECONDS", "20"))
@@ -46,28 +55,27 @@ class AgentManager:
 
             # 加载并填充 system prompt 模板
             prompt_template = self._load_system_prompt_template(agent_name)
+            # 获取该角色的字段白名单
+            status_fields = "、".join(STATUS_FIELDS.get(agent_name, []))
+            player_fields = "、".join(USER_FIELDS.get(agent_name, []))
             return prompt_template.format(
                 agent_name=agent_name,
                 soul=soul_content,
                 memory=memory_content if memory_content else "（尚无长期记忆）",
                 status=status_content if status_content else "（尚无状态记录）",
                 user_profile=user_content if user_content else "（尚无玩家认知）",
+                status_fields=status_fields,
+                player_fields=player_fields,
             )
-
-        # 为该角色创建专属工具（已绑定 agent_name）
-        tools = create_tools_for_agent(agent_name)
 
         return Agent(
             name=agent_name,
             model=get_model(),
             instructions=get_dynamic_instructions,
-            tools=tools,
             markdown=True,
             post_hooks=[log_agent_run],
             # 禁用 Agno 内部历史管理，由应用层通过 jsonl 自行管理
             add_history_to_context=False,
-            # 框架层面限制工具调用次数，防止 LLM 无限循环
-            tool_call_limit=1,
         )
 
     def _load_system_prompt_template(self, agent_name: str) -> str:
@@ -115,11 +123,143 @@ class AgentManager:
             )
             elapsed = time.time() - start
             routing_logger.info(f"{agent_name} 运行完成，耗时 {elapsed:.1f}秒")
-            return response.content
+
+            # 解析响应中的 XML 更新指令
+            raw_content = response.content
+            parsed = parse_agent_response(raw_content, agent_name)
+
+            # 应用更新到文件
+            await self._apply_response_updates(agent_name, parsed)
+
+            return parsed.content
         except asyncio.TimeoutError:
             elapsed = time.time() - start
             routing_logger.error(f"{agent_name} 运行超时（{elapsed:.1f}秒），强制终止")
             return f"[{agent_name} 回应超时，请稍后再试]"
+
+    async def _apply_response_updates(self, agent_name: str, parsed) -> None:
+        """
+        应用解析后的更新到对应文件。
+
+        Args:
+            agent_name: 角色名称
+            parsed: ParsedResponse 对象
+        """
+        results = []
+
+        # --- memory: 追加到 Memory.md（带去重） ---
+        if parsed.memory:
+            try:
+                result = self._update_memory(agent_name, parsed.memory)
+                results.append(f"memory: {result}")
+            except Exception as e:
+                routing_logger.error(f"[{agent_name}] 更新 memory 失败: {e}")
+                results.append(f"memory: 失败")
+
+        # --- status: 覆盖更新到 status.md ---
+        if parsed.status:
+            try:
+                for field, content in parsed.status.items():
+                    result = self._update_status(agent_name, field, str(content))
+                    results.append(f"status[{field}]: {result}")
+            except Exception as e:
+                routing_logger.error(f"[{agent_name}] 更新 status 失败: {e}")
+                results.append(f"status: 失败")
+
+        # --- player: 追加更新到 user.md ---
+        if parsed.player:
+            try:
+                for field, content in parsed.player.items():
+                    result = self._update_player(agent_name, field, str(content))
+                    results.append(f"player[{field}]: {result}")
+            except Exception as e:
+                routing_logger.error(f"[{agent_name}] 更新 player 失败: {e}")
+                results.append(f"player: 失败")
+
+        if results:
+            routing_logger.info(f"[{agent_name}] 文件更新: {'; '.join(results)}")
+
+    def _update_memory(self, agent_name: str, memory_content: str) -> str:
+        """追加 memory 内容到 Memory.md（带去重）"""
+        memory_path = f"agents/{agent_name}/memory/Memory.md"
+        os.makedirs(os.path.dirname(memory_path), exist_ok=True)
+
+        clean = memory_content.replace("\\n", "\n").strip()
+
+        # 读取现有内容
+        existing = ""
+        if os.path.exists(memory_path):
+            with open(memory_path, "r", encoding="utf-8") as f:
+                existing = f.read()
+
+        # 将内容分割成 entries
+        def parse_entries(text: str) -> list[str]:
+            entries = []
+            current_entry = []
+            for line in text.split("\n"):
+                if line.strip().startswith("##") or (
+                    line.strip().startswith("-") and "**" in line
+                ):
+                    if current_entry:
+                        entries.append("\n".join(current_entry).strip())
+                    current_entry = [line]
+                elif line.strip() or current_entry:
+                    current_entry.append(line)
+            if current_entry:
+                entries.append("\n".join(current_entry).strip())
+            return entries
+
+        new_entries = parse_entries(clean)
+        existing_entries = parse_entries(existing)
+        existing_set = set(existing_entries)
+
+        # 过滤出真正新的 entries
+        unique_new_entries = [e for e in new_entries if e and e not in existing_set]
+
+        if not unique_new_entries:
+            return "所有 entry 已存在，跳过"
+
+        to_append = "\n\n".join(unique_new_entries)
+        if existing.strip():
+            with open(memory_path, "a", encoding="utf-8") as f:
+                f.write(f"\n\n{to_append}")
+        else:
+            with open(memory_path, "w", encoding="utf-8") as f:
+                f.write(f"# {agent_name} 的长期记忆\n\n{to_append}")
+
+        return f"已追加 {len(unique_new_entries)} 个新 entry"
+
+    def _update_status(self, agent_name: str, field: str, content: str) -> str:
+        """覆盖更新 status.md 的指定字段"""
+        allowed = STATUS_FIELDS.get(agent_name, [])
+        if field not in allowed:
+            routing_logger.warning(
+                f"[{agent_name}] 不允许的 status 字段: {field}, "
+                f"允许的: {', '.join(allowed)}"
+            )
+            return f"字段 {field} 不在白名单中"
+
+        status_path = f"agents/{agent_name}/status.md"
+        title = _read_title(status_path, "# 我的状态")
+
+        result = _update_section_file(status_path, field, content, allowed, title)
+        return result
+
+    def _update_player(self, agent_name: str, field: str, content: str) -> str:
+        """追加更新 user.md 的指定字段"""
+        allowed = USER_FIELDS.get(agent_name, [])
+        if field not in allowed:
+            routing_logger.warning(
+                f"[{agent_name}] 不允许的 player 字段: {field}, "
+                f"允许的: {', '.join(allowed)}"
+            )
+            return f"字段 {field} 不在白名单中"
+
+        user_path = f"agents/{agent_name}/user.md"
+        title = _read_title(user_path, "# 玩家档案")
+
+        result = _append_section_file(user_path, field, content, allowed, title)
+        return result
 
 
 # 全局实例
