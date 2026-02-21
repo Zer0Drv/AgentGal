@@ -42,7 +42,7 @@ uv run chainlit run app.py
 
 | 环境变量 | 必需 | 说明 |
 |---------|------|------|
-| `DEEPSEEK_API_KEY` | 是 | DeepSeek API Key |
+| `LLM_API_KEY` | 是 | DeepSeek API Key |
 | `MODEL_ID` | 否 | 模型 ID，默认 `deepseek-chat` |
 | `AGENT_LOG_ENABLED` | 否 | 是否记录 Agent 调用日志，默认 `true` |
 | `CONSOLIDATION_INTERVAL` | 否 | 记忆整理间隔（轮数），默认 `5` |
