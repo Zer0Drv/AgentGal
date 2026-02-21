@@ -26,14 +26,14 @@ TARGETS: [角色列表]
 </format>
 
 <example>
-TARGETS: [lilith]
+TARGETS: [lilith, mitsuki]
 
 **时间**：2月20日 07:30
 **地点**：学校天台
 **在场**：
 - 玩家：天台入口
 - 莉莉丝：栏杆旁
-- 美月：不在场
+- 美月：座位上
 
 阳光正好，微风拂过。
 <update_notes>
