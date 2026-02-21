@@ -8,21 +8,16 @@ from datetime import datetime
 from agno.agent import Agent
 
 from .agent_logger import log_agent_run
+from .config import get_agent_names, AGENT_RUN_TIMEOUT_SECONDS
 from .llm import get_model
 from .response_parser import parse_agent_response
 from .routing_logger import routing_logger
 from .tools import (
-    STATUS_FIELDS,
-    USER_FIELDS,
     _append_section_file,
-    _parse_section_file,
     _read_title,
     _update_section_file,
-    _write_section_file,
+    get_allowed_fields,
 )
-
-# 单次 agent.arun 的超时秒数，防止 LLM 陷入无限工具调用循环
-AGENT_RUN_TIMEOUT_SECONDS = int(os.getenv("AGENT_RUN_TIMEOUT_SECONDS", "20"))
 
 
 class AgentManager:
@@ -34,7 +29,7 @@ class AgentManager:
 
     def _init_agents(self):
         """初始化所有角色 Agent"""
-        for agent_name in ["lilith", "mitsuki", "narrator"]:
+        for agent_name in get_agent_names():
             self.agents[agent_name] = self._create_agent(agent_name)
 
     def _create_agent(self, agent_name: str) -> Agent:
@@ -55,9 +50,9 @@ class AgentManager:
 
             # 加载并填充 system prompt 模板
             prompt_template = self._load_system_prompt_template(agent_name)
-            # 获取该角色的字段白名单
-            status_fields = "、".join(STATUS_FIELDS.get(agent_name, []))
-            player_fields = "、".join(USER_FIELDS.get(agent_name, []))
+            # 动态获取字段白名单（从文件读取，失败回退到默认值）
+            status_fields = "、".join(get_allowed_fields(agent_name, "status"))
+            player_fields = "、".join(get_allowed_fields(agent_name, "user"))
             return prompt_template.format(
                 agent_name=agent_name,
                 soul=soul_content,
@@ -181,19 +176,16 @@ class AgentManager:
 
     def _update_memory(self, agent_name: str, memory_content: str) -> str:
         """追加 memory 内容到 Memory.md（带去重）"""
+        if not memory_content or not memory_content.strip():
+            return "内容为空，跳过"
+
         memory_path = f"agents/{agent_name}/memory/Memory.md"
         os.makedirs(os.path.dirname(memory_path), exist_ok=True)
 
         clean = memory_content.replace("\\n", "\n").strip()
 
-        # 读取现有内容
-        existing = ""
-        if os.path.exists(memory_path):
-            with open(memory_path, "r", encoding="utf-8") as f:
-                existing = f.read()
-
-        # 将内容分割成 entries
-        def parse_entries(text: str) -> list[str]:
+        # 解析 entries
+        def _parse_entries(text: str) -> list[str]:
             entries = []
             current_entry = []
             for line in text.split("\n"):
@@ -209,17 +201,24 @@ class AgentManager:
                 entries.append("\n".join(current_entry).strip())
             return entries
 
-        new_entries = parse_entries(clean)
-        existing_entries = parse_entries(existing)
+        # 读取现有内容
+        existing = ""
+        if os.path.exists(memory_path):
+            with open(memory_path, "r", encoding="utf-8") as f:
+                existing = f.read()
+
+        new_entries = _parse_entries(clean)
+        existing_entries = _parse_entries(existing)
         existing_set = set(existing_entries)
 
-        # 过滤出真正新的 entries
-        unique_new_entries = [e for e in new_entries if e and e not in existing_set]
+        # 去重
+        unique_entries = [e for e in new_entries if e and e not in existing_set]
 
-        if not unique_new_entries:
+        if not unique_entries:
             return "所有 entry 已存在，跳过"
 
-        to_append = "\n\n".join(unique_new_entries)
+        # 写入
+        to_append = "\n\n".join(unique_entries)
         if existing.strip():
             with open(memory_path, "a", encoding="utf-8") as f:
                 f.write(f"\n\n{to_append}")
@@ -227,11 +226,13 @@ class AgentManager:
             with open(memory_path, "w", encoding="utf-8") as f:
                 f.write(f"# {agent_name} 的长期记忆\n\n{to_append}")
 
-        return f"已追加 {len(unique_new_entries)} 个新 entry"
+        msg = f"已追加 {len(unique_entries)} 个新 entry"
+        routing_logger.info(f"[{agent_name}] {msg}")
+        return msg
 
     def _update_status(self, agent_name: str, field: str, content: str) -> str:
         """覆盖更新 status.md 的指定字段"""
-        allowed = STATUS_FIELDS.get(agent_name, [])
+        allowed = get_allowed_fields(agent_name, "status")
         if field not in allowed:
             routing_logger.warning(
                 f"[{agent_name}] 不允许的 status 字段: {field}, "
@@ -247,7 +248,7 @@ class AgentManager:
 
     def _update_player(self, agent_name: str, field: str, content: str) -> str:
         """追加更新 user.md 的指定字段"""
-        allowed = USER_FIELDS.get(agent_name, [])
+        allowed = get_allowed_fields(agent_name, "user")
         if field not in allowed:
             routing_logger.warning(
                 f"[{agent_name}] 不允许的 player 字段: {field}, "
@@ -270,7 +271,7 @@ class MessageBroadcaster:
     """消息广播系统 - 维护每个角色的独立对话历史"""
 
     def __init__(self):
-        self.agents = ["lilith", "mitsuki", "narrator"]
+        self.agents = get_agent_names()
 
     def _get_raw_path(self, agent_name: str, date: str = None) -> str:
         """获取某角色的 raw 对话文件路径"""

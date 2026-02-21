@@ -1,9 +1,12 @@
-"""Agent Tools - 所有角色共享的工具"""
+"""Agent Tools - 底层文件操作函数
+
+注意：当前 Agent 通过 XML 解析响应手动触发更新，
+而非通过 Tool 调用。本模块保留底层文件操作供其他模块使用。
+"""
 
 import json
 import os
-from typing import List, Callable
-from agno.tools import tool
+
 from .routing_logger import routing_logger
 
 # 每个角色 status.md 允许的字段白名单（对应 ## 标题）
@@ -19,6 +22,45 @@ USER_FIELDS: dict[str, list[str]] = {
     "mitsuki": ["基本信息", "观察到的特质", "互动模式"],
     "narrator": ["玩家风格", "关键选择", "当前倾向"],
 }
+
+
+def _get_fields_from_file(file_path: str) -> list[str] | None:
+    """从文件中提取 ## 标题列表
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        文件中所有 ## 标题列表，文件不存在返回 None
+    """
+    if not os.path.exists(file_path):
+        return None
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    fields = []
+    for line in content.split("\n"):
+        if line.startswith("## "):
+            fields.append(line[3:].strip())
+    return fields
+
+
+def get_allowed_fields(agent_name: str, file_type: str) -> list[str]:
+    """获取允许字段列表（文件驱动，失败回退到默认值）
+
+    Args:
+        agent_name: 角色名
+        file_type: "status" | "user"
+
+    Returns:
+        文件中所有 ## 标题列表，文件不存在则返回默认字段
+    """
+    file_path = f"agents/{agent_name}/{file_type}.md"
+    fields = _get_fields_from_file(file_path)
+    if fields is not None:
+        return fields
+    # 回退到默认值
+    defaults = STATUS_FIELDS if file_type == "status" else USER_FIELDS
+    return defaults.get(agent_name, [])
 
 
 def _parse_section_file(
@@ -156,170 +198,3 @@ def _read_title(file_path: str, default: str) -> str:
             if first_line.startswith("# "):
                 return first_line
     return default
-
-
-def create_tools_for_agent(
-    agent_name: str,
-) -> List[Callable]:
-    """
-    为指定角色创建工具函数列表。
-
-    Args:
-        agent_name: 角色名称
-
-    Returns:
-        该角色的工具函数列表
-    """
-    # 预计算该角色的白名单字段
-    status_fields = STATUS_FIELDS.get(agent_name, [])
-    user_fields = USER_FIELDS.get(agent_name, [])
-    status_fields_str = "、".join(status_fields)
-    user_fields_str = "、".join(user_fields)
-
-    async def _update_notes(
-        memory: str = "",
-        status: str = "",
-        player: str = "",
-    ) -> str:
-        """一次性更新记忆、状态、玩家认知。不需要更新的参数留空。
-
-        Args:
-            memory (str): 追加到长期记忆，用第一人称记录事件和感受。留空则不更新。
-            status (str): 更新状态字段，JSON 格式 {{"字段": "内容"}}，会覆盖原内容。允许的字段：{status_fields}。留空则不更新。
-            player (str): 追加玩家认知，JSON 格式 {{"字段": "内容"}}，只写新增部分。允许的字段：{player_fields}。留空则不更新。
-        """
-        results: list[str] = []
-
-        # --- memory: 追加到 Memory.md ---
-        if memory and memory.strip():
-            try:
-                routing_logger.info(
-                    f"[Tool] {agent_name} update_notes: memory"
-                )
-                memory_path = f"agents/{agent_name}/memory/Memory.md"
-                os.makedirs(os.path.dirname(memory_path), exist_ok=True)
-                clean = memory.replace("\\n", "\n").strip()
-
-                # 读取现有内容
-                existing = ""
-                if os.path.exists(memory_path):
-                    with open(memory_path, "r", encoding="utf-8") as f:
-                        existing = f.read()
-
-                # 将内容分割成 entries（以 ## 日期 或 - **地点** 开头的块）
-                def parse_entries(text: str) -> list[str]:
-                    """将 memory 文本解析为 entry 列表"""
-                    entries = []
-                    current_entry = []
-                    for line in text.split("\n"):
-                        # 新 entry 的开始：日期标题或地点标记
-                        if line.strip().startswith("##") or (line.strip().startswith("-") and "**" in line):
-                            if current_entry:
-                                entries.append("\n".join(current_entry).strip())
-                            current_entry = [line]
-                        elif line.strip() or current_entry:
-                            current_entry.append(line)
-                    if current_entry:
-                        entries.append("\n".join(current_entry).strip())
-                    return entries
-
-                new_entries = parse_entries(clean)
-                existing_entries = parse_entries(existing)
-                existing_set = set(existing_entries)
-
-                # 过滤出真正新的 entries
-                unique_new_entries = [e for e in new_entries if e and e not in existing_set]
-
-                if not unique_new_entries:
-                    results.append(f"✓ memory 所有 entry 已存在，跳过")
-                else:
-                    to_append = "\n\n".join(unique_new_entries)
-                    if existing.strip():
-                        with open(memory_path, "a", encoding="utf-8") as f:
-                            f.write(f"\n\n{to_append}")
-                    else:
-                        with open(memory_path, "w", encoding="utf-8") as f:
-                            f.write(f"# {agent_name} 的长期记忆\n\n{to_append}")
-                    results.append(f"✓ memory 已追加 {len(unique_new_entries)} 个新 entry")
-            except Exception as e:
-                routing_logger.error(
-                    f"[Tool] {agent_name} update_notes memory 出错: {e}"
-                )
-                results.append(f"✗ memory 出错: {e}")
-
-        # --- status: 覆盖模式，JSON 解析 ---
-        if status and status.strip():
-            try:
-                updates = json.loads(status)
-                if not isinstance(updates, dict):
-                    results.append("✗ status 格式错误，需要 JSON 对象")
-                else:
-                    status_path = f"agents/{agent_name}/status.md"
-                    title = _read_title(status_path, "# 我的状态")
-                    allowed = STATUS_FIELDS.get(agent_name, [])
-                    for field, content in updates.items():
-                        if field not in allowed:
-                            results.append(f"✗ status[{field}] 不在允许字段中，已跳过")
-                            continue
-                        result = _update_section_file(
-                            status_path, field, str(content), allowed, title
-                        )
-                        routing_logger.info(
-                            f"[Tool] {agent_name} update_notes status[{field}]: {result}"
-                        )
-                        results.append(f"✓ status[{field}]: {result}")
-            except json.JSONDecodeError:
-                results.append("✗ status JSON 解析失败，请检查格式")
-            except Exception as e:
-                routing_logger.error(
-                    f"[Tool] {agent_name} update_notes status 出错: {e}"
-                )
-                results.append(f"✗ status 出错: {e}")
-
-        # --- player: 追加模式，JSON 解析 ---
-        if player and player.strip():
-            try:
-                updates = json.loads(player)
-                if not isinstance(updates, dict):
-                    results.append("✗ player 格式错误，需要 JSON 对象")
-                else:
-                    user_path = f"agents/{agent_name}/user.md"
-                    title = _read_title(user_path, "# 玩家档案")
-                    allowed = USER_FIELDS.get(agent_name, [])
-                    for field, content in updates.items():
-                        if field not in allowed:
-                            results.append(f"✗ player[{field}] 不在允许字段中，已跳过")
-                            continue
-                        result = _append_section_file(
-                            user_path, field, str(content), allowed, title
-                        )
-                        routing_logger.info(
-                            f"[Tool] {agent_name} update_notes player[{field}]: {result}"
-                        )
-                        results.append(f"✓ player[{field}]: {result}")
-            except json.JSONDecodeError:
-                results.append("✗ player JSON 解析失败，请检查格式")
-            except Exception as e:
-                routing_logger.error(
-                    f"[Tool] {agent_name} update_notes player 出错: {e}"
-                )
-                results.append(f"✗ player 出错: {e}")
-
-        if not results:
-            return "所有参数为空，未执行任何更新。"
-
-        routing_logger.info(
-            f"[Tool] {agent_name} update_notes 完成: {'; '.join(results)}"
-        )
-        return "\n".join(results)
-
-    # 动态注入白名单字段到 docstring
-    _update_notes.__doc__ = _update_notes.__doc__.replace(
-        "{status_fields}", status_fields_str
-    ).replace(
-        "{player_fields}", user_fields_str
-    )
-    _update_notes.__name__ = "update_notes"
-    update_notes = tool(_update_notes)
-
-    return [update_notes]
