@@ -43,26 +43,56 @@ class VectorStore:
         return self._client
 
     def _chunk_text(self, text: str, chunk_size: int = 2000, overlap: int = 200) -> list[str]:
-        """按日期分块，一个日期下的内容作为一个 chunk。"""
+        """按事件分块，每个事件作为一个独立的 chunk。
+
+        事件格式：
+        ## X月X日
+        - **时间**：...
+        - **地点**：...
+        - **在场**：...
+        - **内容**：...
+        """
         import re
 
+        # 按日期标题分割，然后提取每个事件
         date_pattern = re.compile(r'^##\s*(\d{1,2}月\d{1,2}日|\d{4}-\d{2}-\d{2}).*$', re.MULTILINE)
-        matches = list(date_pattern.finditer(text))
+        date_matches = list(date_pattern.finditer(text))
 
-        if not matches:
+        if not date_matches:
+            # 没有日期格式，兜底
             return self._chunk_text_sliding_window(text, chunk_size, overlap)
 
         chunks: list[str] = []
-        for i, match in enumerate(matches):
-            start = match.start()
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+
+        for i, date_match in enumerate(date_matches):
+            date = date_match.group(1)
+            start = date_match.end()
+            end = date_matches[i + 1].start() if i + 1 < len(date_matches) else len(text)
             section = text[start:end].strip()
+
             if not section:
                 continue
-            if len(section) > chunk_size:
-                chunks.extend(self._chunk_text_sliding_window(section, chunk_size, overlap))
-            else:
-                chunks.append(section)
+
+            # 在日期块内按事件分割（以 - **时间**：开头的条目）
+            # 事件条目通常以空行或行首的 "- **" 分隔
+            event_pattern = re.compile(r'(^|\n)- \*\*时间\*\*：', re.MULTILINE)
+            events = list(event_pattern.finditer(section))
+
+            if not events:
+                # 没有找到标准事件格式，整个日期块作为一个 chunk
+                chunk_content = f"## {date}\n{section}"
+                chunks.append(chunk_content)
+                continue
+
+            for j, event_match in enumerate(events):
+                event_start = event_match.start()
+                event_end = events[j + 1].start() if j + 1 < len(events) else len(section)
+                event_content = section[event_start:event_end].strip()
+
+                if event_content:
+                    # 组装完整事件：日期 + 事件内容
+                    chunk_content = f"## {date}\n{event_content}"
+                    chunks.append(chunk_content)
 
         return chunks if chunks else self._chunk_text_sliding_window(text, chunk_size, overlap)
 
