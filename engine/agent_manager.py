@@ -13,6 +13,7 @@ from llm.providers import get_model
 from log_config.agent_calls import log_agent_run
 from log_config.routing import routing_logger
 from memory.file_ops import _append_section_file, _read_title, _update_section_file, get_allowed_fields
+from memory.vector_store import vector_store
 
 
 class AgentManager:
@@ -98,17 +99,54 @@ class AgentManager:
         with open(path, "r", encoding="utf-8") as f:
             return f.read().strip()
 
-    async def run_agent(self, agent_name: str, user_input: str) -> str:
-        agent = self.agents.get(agent_name)
-        if not agent:
-            return f"[错误: 未找到角色 {agent_name}]"
+    def _load_growth(self, agent_name: str) -> str:
+        """加载 growth.md 人格沉淀层"""
+        path = character_path(agent_name, "growth.md")
+        if not os.path.exists(path):
+            return "（尚无人格沉淀）"
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+            # 提取 ID 条目部分
+            if not content or content == "# 人格沉淀层":
+                return "（尚无人格沉淀）"
+            return content
 
+    async def _load_relevant_memories(
+        self, agent_name: str, user_input: str, limit: int = 3
+    ) -> str:
+        """使用 RAG 召回相关记忆片段"""
+        # 搜索相关记忆
+        results = await vector_store.search(agent_name, user_input, limit=limit)
+
+        if not results:
+            return "（无相关记忆）"
+
+        # 格式化召回的记忆
+        memories = []
+        for r in results:
+            content = r["content"].strip()
+            if content:
+                memories.append(content)
+
+        return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
+
+    async def run_agent(self, agent_name: str, user_input: str) -> str:
         import time
 
         start = time.time()
+
+        # 预加载动态内容（growth + RAG memory）
+        growth_content = self._load_growth(agent_name)
+        memory_content = await self._load_relevant_memories(agent_name, user_input)
+
+        # 创建临时 agent，使用预加载的内容
+        temp_agent = self._create_agent_with_context(
+            agent_name, growth_content, memory_content
+        )
+
         try:
             response = await asyncio.wait_for(
-                agent.arun(user_input),
+                temp_agent.arun(user_input),
                 timeout=AGENT_RUN_TIMEOUT_SECONDS,
             )
             elapsed = time.time() - start
@@ -127,6 +165,44 @@ class AgentManager:
             elapsed = time.time() - start
             routing_logger.error(f"{agent_name} 运行超时（{elapsed:.1f}秒），强制终止")
             return f"[{agent_name} 回应超时，请稍后再试]"
+
+    def _create_agent_with_context(
+        self, agent_name: str, growth_content: str, memory_content: str
+    ) -> Agent:
+        """创建带有预加载上下文的 Agent"""
+
+        def get_dynamic_instructions(agent: Agent) -> str:
+            # 加载静态内容
+            soul_content = self._load_agent_file(agent_name, "soul.md")
+            status_content = self._load_agent_file(agent_name, "status.md")
+            user_content = self._load_agent_file(agent_name, "user.md")
+
+            # 加载 prompt 模板
+            prompt_template = self._load_system_prompt_template(agent_name)
+
+            # 动态获取字段白名单
+            status_fields = "、".join(get_allowed_fields(agent_name, "status"))
+            player_fields = "、".join(get_allowed_fields(agent_name, "user"))
+
+            return prompt_template.format(
+                agent_name=agent_name,
+                soul=soul_content,
+                growth=growth_content,
+                memory=memory_content,
+                status=status_content if status_content else "（尚无状态记录）",
+                user_profile=user_content if user_content else "（尚无玩家认知）",
+                status_fields=status_fields,
+                player_fields=player_fields,
+            )
+
+        return Agent(
+            name=agent_name,
+            model=get_model(),
+            instructions=get_dynamic_instructions,
+            markdown=True,
+            post_hooks=[log_agent_run],
+            add_history_to_context=False,
+        )
 
     async def _apply_response_updates(self, agent_name: str, parsed) -> None:
         """

@@ -16,6 +16,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, Union
 
 import httpx
 
@@ -41,7 +42,7 @@ _MODEL_ID = (
 )
 # 整理用较低 temperature，保证输出稳定
 _TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.0"))
-_MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "4096"))
+_MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "8192"))
 
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt.txt"
 _PLAYER_PROMPT_PATH = (
@@ -165,7 +166,7 @@ def split_by_date(content: str) -> OrderedDict[str, str]:
 class MemoryConsolidator:
     def __init__(self):
         self._locks: dict[str, asyncio.Lock] = {}
-        self._client: httpx.AsyncClient | None = None
+        self._client: Optional[httpx.AsyncClient] = None
 
     def _get_lock(self, name: str) -> asyncio.Lock:
         if name not in self._locks:
@@ -208,7 +209,7 @@ class MemoryConsolidator:
         """整合进度文件路径"""
         return Path(character_path(agent_name, "memory", ".consolidation_state.json"))
 
-    def _load_state(self, agent_name: str) -> str | None:
+    def _load_state(self, agent_name: str) -> Optional[str]:
         """读取上次整合到的日期，返回如 '2月10日' 或 None"""
         p = self._state_path(agent_name)
         if not p.exists():
@@ -228,7 +229,7 @@ class MemoryConsolidator:
             encoding="utf-8",
         )
 
-    async def consolidate_agent(self, agent_name: str) -> _ConsolidationResult | None:
+    async def consolidate_agent(self, agent_name: str) -> Optional["_ConsolidationResult"]:
         """整理单个 agent 的记忆，返回结果摘要（供 consolidate_all 汇总日志）"""
         result = _ConsolidationResult(agent_name=agent_name)
         lock = self._get_lock(agent_name)
@@ -310,6 +311,13 @@ class MemoryConsolidator:
                 soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
             )
 
+            # 读取现有人格沉淀（如果有）
+            growth_path = Path(character_path(agent_name, "growth.md"))
+            if growth_path.exists():
+                growth_content = growth_path.read_text(encoding="utf-8")
+            else:
+                growth_content = "（尚无）"
+
             # 构建多日期合并内容，一次性调 LLM
             parts = []
             for date in dates_to_consolidate:
@@ -319,6 +327,7 @@ class MemoryConsolidator:
             prompt_template = _load_consolidation_prompt()
             prompt = prompt_template.format(
                 soul=soul_content,
+                growth=growth_content,
                 content=combined_text,
             )
             try:
@@ -326,22 +335,26 @@ class MemoryConsolidator:
                 if len(llm_result.strip()) < 50:
                     result.errors.append("LLM返回过短，跳过整理")
                 else:
-                    # 两步式 prompt：提取「第二步：日记」之后的内容
-                    diary_match = re.search(
-                        r"^.*第二步.*日记.*$",
-                        llm_result,
-                        re.MULTILINE,
-                    )
-                    if diary_match:
-                        llm_result = llm_result[diary_match.end():].lstrip("\n")
-                    # 解析返回结果，按日期拆分
-                    parsed = split_by_date(llm_result)
-                    # 只更新成功解析的日期
-                    for date in dates_to_consolidate:
-                        if date in parsed:
-                            sections[date] = parsed[date]
-                        else:
-                            result.errors.append(f"{date} 未在LLM返回中找到")
+                    # ===== 第一步：更新 memory.md =====
+                    step1_sections = self._parse_step1_memories(llm_result)
+                    if step1_sections:
+                        # 只更新成功解析的日期
+                        for date in dates_to_consolidate:
+                            if date in step1_sections:
+                                sections[date] = step1_sections[date]
+                            else:
+                                result.errors.append(f"{date} 未在LLM返回中找到")
+                    else:
+                        result.errors.append("未能解析第一步:归并整理")
+
+                    # ===== 第二步：更新 growth.md =====
+                    step2_updates = self._parse_step2_growth(llm_result)
+                    if step2_updates:
+                        growth_log = self._apply_growth_updates(agent_name, step2_updates)
+                        routing_logger.info(f"[整理器] {agent_name} growth.md: {growth_log}")
+                    else:
+                        routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
+
             except Exception as e:
                 result.errors.append(f"整合失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
@@ -364,6 +377,133 @@ class MemoryConsolidator:
             result.user_md_after = user_after
 
             return result
+
+    # ===== 双解析器：第一步 + 第二步 =====
+
+    def _parse_step1_memories(
+        self, llm_result: str
+    ) -> OrderedDict[str, str]:
+        """
+        从 LLM 输出中提取第一步：归并整理后的日记内容。
+
+        格式：
+        ## 第一步：归并整理
+        ## X月X日
+        - **时间/地点**：事件描述...
+
+        Returns:
+            OrderedDict[日期, 该日期的内容]
+        """
+        # 提取 "## 第一步" 到 "## 第二步" 之间的内容
+        step1_pattern = r"##\s*第一步.*?(?:##\s*第二步|$)"
+        step1_match = re.search(step1_pattern, llm_result, re.DOTALL)
+
+        if not step1_match:
+            # 兼容：如果没有明确标记，从第一个 ## X月X日 开始解析
+            return split_by_date(llm_result)
+
+        step1_content = step1_match.group(0)
+        # 移除第一步标题本身
+        step1_content = re.sub(r"^##\s*第一步.*\n", "", step1_content, count=1)
+        # 移除第二步标记（如果有）
+        step1_content = re.sub(r"##\s*第二步.*$", "", step1_content, flags=re.DOTALL)
+
+        return split_by_date(step1_content.strip())
+
+    def _parse_step2_growth(self, llm_result: str) -> list[dict]:
+        """
+        从 LLM 输出中提取第二步：人格沉淀更新。
+
+        Returns:
+            [{"type": "ADD|UPDATE|DELETE", "id": "P001", "content": "..."}]
+        """
+        # 提取 personality_updates 部分
+        pattern = r"<personality_updates>(.*?)</personality_updates>"
+        match = re.search(pattern, llm_result, re.DOTALL)
+
+        if not match:
+            return []
+
+        updates = []
+        # 解析每个 update 标签，支持自闭合和内容形式
+        update_pattern = r'<update\s+type="(\w+)"\s+id="(\w+)"\s*(?:/>|>(.*?)</update>)'
+        for m in re.finditer(update_pattern, match.group(1), re.DOTALL):
+            updates.append({
+                "type": m.group(1).upper(),  # ADD/UPDATE/DELETE
+                "id": m.group(2),            # P001
+                "content": m.group(3).strip() if m.group(3) else None
+            })
+
+        return updates
+
+    def _apply_growth_updates(
+        self, agent_name: str, updates: list[dict]
+    ) -> str:
+        """
+        应用人格沉淀更新到 growth.md
+
+        Returns:
+            操作日志字符串
+        """
+        path = Path(character_path(agent_name, "growth.md"))
+
+        # 读取或创建
+        if path.exists():
+            content = path.read_text(encoding="utf-8")
+        else:
+            content = "# 人格沉淀层\n\n"
+
+        # 解析现有条目 {id: content_line}
+        entries = {}
+        # 匹配 [P001] 内容（支持多行）
+        pattern = r"\[(\w+)\]\s*(.+?)(?=\n\[|$)"
+        for m in re.finditer(pattern, content, re.DOTALL):
+            entries[m.group(1)] = m.group(2).strip()
+
+        # 记录操作日志
+        logs = []
+
+        for up in updates:
+            if up["type"] == "ADD":
+                if up["id"] in entries:
+                    logs.append(f"ADD失败:{up['id']}已存在")
+                else:
+                    entries[up["id"]] = up["content"] or ""
+                    logs.append(f"ADD {up['id']}")
+
+            elif up["type"] == "UPDATE":
+                if up["id"] not in entries:
+                    logs.append(f"UPDATE警告:{up['id']}不存在转为ADD")
+                    entries[up["id"]] = up["content"] or ""
+                else:
+                    entries[up["id"]] = up["content"] or ""
+                    logs.append(f"UPDATE {up['id']}")
+
+            elif up["type"] == "DELETE":
+                if up["id"] in entries:
+                    del entries[up["id"]]
+                    logs.append(f"DELETE {up['id']}")
+                else:
+                    logs.append(f"DELETE警告:{up['id']}不存在")
+
+        # 按 ID 数字部分排序
+        def sort_key(k):
+            try:
+                return int(re.sub(r"[^0-9]", "", k))
+            except:
+                return 0
+
+        sorted_ids = sorted(entries.keys(), key=sort_key)
+
+        # 写回文件
+        lines = ["# 人格沉淀层\n", ""]
+        for id in sorted_ids:
+            lines.append(f"[{id}] {entries[id]}\n\n")
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(lines), encoding="utf-8")
+
+        return ";".join(logs) if logs else "无更新"
 
     def _write_back(
         self,

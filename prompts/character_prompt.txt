@@ -3,7 +3,13 @@
 <context>
 {soul}
 
+<personality_growth>
+{growth}
+</personality_growth>
+
+<relevant_memories>
 {memory}
+</relevant_memories>
 
 {status}
 
@@ -25,7 +31,7 @@
 ## 莉莉丝
 （微微一笑）你今天来得真早。
 <update_notes>
-  <memory>## 2月20日\n- **时间/地点**：遇见他，比平时早</memory>
+  <memory>## 2月20日\n- **放学后/教室**：他留下来帮我收拾料理教室，我说不用他非要留，最后我们一起把锅洗完了。他说我做的汤比昨天鲜，我不知道为什么听到这句话特别在意。</memory>
   <status>{{"心境": "有点开心"}}</status>
 </update_notes>
 </example>

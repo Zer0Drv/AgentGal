@@ -1,6 +1,10 @@
 <context>
 {soul}
 
+<personality_growth>
+{growth}
+</personality_growth>
+
 {status}
 
 {user_profile}
