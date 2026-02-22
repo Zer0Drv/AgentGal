@@ -1,9 +1,11 @@
 """Chainlit 入口"""
 
 import asyncio
+import glob
 import json
 import os
 import re
+import zipfile
 from datetime import datetime
 
 import chainlit as cl
@@ -274,6 +276,115 @@ async def on_chat_start():
 # on_message 拆分
 # =============================================================================
 
+def _get_agent_save_files(agent_name: str) -> list[str]:
+    """获取指定角色需要存档的所有文件路径
+
+    Args:
+        agent_name: 角色名称
+
+    Returns:
+        文件路径列表（相对于 agents/ 目录）
+    """
+    files = []
+    agent_path = f"agents/{agent_name}"
+
+    # 核心记忆文件
+    for filename in ["memory/memory.md", "user.md", "status.md"]:
+        filepath = f"{agent_path}/{filename}"
+        if os.path.exists(filepath):
+            files.append(filepath)
+
+    # 可选的状态文件
+    for filename in ["states.md", "events.md", "tasks.md"]:
+        filepath = f"{agent_path}/{filename}"
+        if os.path.exists(filepath):
+            files.append(filepath)
+
+    # 整理状态文件
+    consolidation_file = f"{agent_path}/memory/.consolidation_state.json"
+    if os.path.exists(consolidation_file):
+        files.append(consolidation_file)
+
+    # 所有 jsonl 对话历史文件
+    raw_dir = f"{agent_path}/memory/raw"
+    if os.path.exists(raw_dir):
+        for jsonl_file in glob.glob(f"{raw_dir}/*.jsonl"):
+            files.append(jsonl_file)
+
+    return files
+
+
+async def export_save_archive() -> str | None:
+    """导出存档文件，返回存档文件路径
+
+    Returns:
+        存档文件路径，如果失败返回 None
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_dir = "saves"
+    os.makedirs(save_dir, exist_ok=True)
+
+    save_path = f"{save_dir}/save_{timestamp}.zip"
+
+    all_agents = get_agent_names()
+    if not all_agents:
+        print("[存档] 没有找到任何角色")
+        return None
+
+    try:
+        with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # 添加元数据文件
+            metadata = {
+                "export_time": datetime.now().isoformat(),
+                "agents": all_agents,
+                "version": "1.0"
+            }
+            zf.writestr("metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2))
+
+            # 添加每个角色的文件
+            for agent_name in all_agents:
+                agent_files = _get_agent_save_files(agent_name)
+                for filepath in agent_files:
+                    if os.path.exists(filepath):
+                        # 在 zip 中保持相对路径结构
+                        arcname = filepath.replace("agents/", "")
+                        zf.write(filepath, arcname)
+                        print(f"[存档] 已添加: {filepath}")
+
+        print(f"[存档] 导出完成: {save_path}")
+        return save_path
+
+    except Exception as e:
+        print(f"[存档] 导出失败: {e}")
+        return None
+
+
+async def _handle_save_command(user_input: str) -> bool:
+    """处理 /save 命令
+
+    Args:
+        user_input: 用户输入
+
+    Returns:
+        True 如果处理了命令，False 否则
+    """
+    if user_input.strip() != "/save":
+        return False
+
+    save_path = await export_save_archive()
+
+    if save_path:
+        await cl.Message(
+            content=f"✅ 存档已导出: `{save_path}`\n\n包含所有角色的记忆、对话历史和状态。",
+        ).send()
+    else:
+        await cl.Message(
+            content="❌ 存档导出失败，请检查日志。",
+        ).send()
+
+    return True
+
+
 async def _handle_reset_command(user_input: str) -> bool:
     """
     处理 /reset 命令
@@ -423,6 +534,10 @@ async def on_message(message: cl.Message):
 
     # 获取当前计数器（从 session 中）
     message_counter = cl.user_session.get("message_counter", 0)
+
+    # 处理存档命令
+    if await _handle_save_command(user_input):
+        return
 
     # 处理重置命令
     if await _handle_reset_command(user_input):
