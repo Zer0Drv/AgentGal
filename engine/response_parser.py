@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from .routing_logger import routing_logger
+from log_config.routing import routing_logger
 
 
 @dataclass
@@ -13,7 +13,7 @@ class ParsedResponse:
     """解析后的响应结构"""
 
     content: str  # 清理后的对话内容（不含 XML 标签）
-    memory: Optional[str] = None  # 需要追加到 memory.md 的内容
+    memory: Optional[str] = None  # 需要追加到 Memory.md 的内容
     status: Optional[dict] = None  # 需要更新到 status.md 的字段
     player: Optional[dict] = None  # 需要追加到 user.md 的字段
 

@@ -8,7 +8,7 @@ import sqlite_vec
 import aiosqlite
 import httpx
 from typing import Any
-from .routing_logger import routing_logger
+from log_config.routing import routing_logger
 
 _SQLITE_VEC_PATH = sqlite_vec.__file__.replace("__init__.py", "vec0")
 
@@ -73,7 +73,7 @@ class VectorStore:
 
     async def _get_embeddings(self, texts: list[str]) -> list[list[float]]:
         """批量获取 embedding，一次 API 调用处理多个文本"""
-        api_key = os.getenv("EMBEDDING_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+        api_key = os.getenv("EMBEDDING_API_KEY") or os.getenv("LLM_API_KEY")
         client = await self._get_http_client()
         resp = await client.post(
             EMBEDDING_API_URL,
@@ -134,7 +134,7 @@ class VectorStore:
         while start < len(text):
             end = min(start + chunk_size, len(text))
             if end < len(text):
-                for sep in ["。", "？", "！", "\n", ". ", "? ", "! "]:
+                for sep in ["，", "。", "？", "！", "\n", ". ", "? ", "! "]:
                     pos = text.rfind(sep, start, end)
                     if pos != -1:
                         end = pos + 1
@@ -289,7 +289,7 @@ class VectorStore:
         """检查各 agent 的 memory.md，offset 落后则后台补做 embedding"""
         await self.init_tables()
         for name in agent_names:
-            path = f"agents/{name}/memory/Memory.md"
+            path = f"data/agents/{name}/memory/Memory.md"
             if not os.path.exists(path):
                 continue
             content = open(path, "r", encoding="utf-8").read()
@@ -342,4 +342,3 @@ class VectorStore:
 
 # 全局实例
 vector_store = VectorStore()
-

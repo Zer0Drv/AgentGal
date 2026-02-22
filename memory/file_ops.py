@@ -1,4 +1,4 @@
-"""Agent Tools - 底层文件操作函数
+"""记忆系统文件操作 - 底层文件操作函数
 
 注意：当前 Agent 通过 XML 解析响应手动触发更新，
 而非通过 Tool 调用。本模块保留底层文件操作供其他模块使用。
@@ -6,8 +6,6 @@
 
 import json
 import os
-
-from .routing_logger import routing_logger
 
 # 每个角色 status.md 允许的字段白名单（对应 ## 标题）
 STATUS_FIELDS: dict[str, list[str]] = {
@@ -54,7 +52,7 @@ def get_allowed_fields(agent_name: str, file_type: str) -> list[str]:
     Returns:
         文件中所有 ## 标题列表，文件不存在则返回默认字段
     """
-    file_path = f"agents/{agent_name}/{file_type}.md"
+    file_path = f"data/agents/{agent_name}/{file_type}.md"
     fields = _get_fields_from_file(file_path)
     if fields is not None:
         return fields

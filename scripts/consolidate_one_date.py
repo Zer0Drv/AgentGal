@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from core.memory_consolidator import (
+from memory.consolidator import (
     MemoryConsolidator,
     normalize,
     split_by_date,
@@ -20,7 +20,7 @@ from core.memory_consolidator import (
 
 
 async def main(agent: str, date: str) -> None:
-    p = Path(f"agents/{agent}/memory/Memory.md")
+    p = Path(f"data/agents/{agent}/memory/Memory.md")
     content = normalize(p.read_text())
     sections = split_by_date(content)
 
@@ -32,7 +32,7 @@ async def main(agent: str, date: str) -> None:
     print(f"原始: {len(old_text)} 字")
 
     # 读 soul
-    soul_path = Path(f"agents/{agent}/soul.md")
+    soul_path = Path(f"data/agents/{agent}/soul.md")
     soul = soul_path.read_text().strip() if soul_path.exists() else ""
 
     # 加载 prompt
@@ -77,4 +77,3 @@ if __name__ == "__main__":
         print("用法: uv run python scripts/consolidate_one_date.py <agent> <日期>")
         sys.exit(1)
     asyncio.run(main(sys.argv[1], sys.argv[2]))
-

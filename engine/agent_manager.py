@@ -1,23 +1,18 @@
-"""Agent 运行器 - 初始化 Agent 并处理消息广播"""
+"""Agent 管理器 - 初始化 Agent 并处理运行"""
 
 import asyncio
 import json
 import os
-from datetime import datetime
 
 from agno.agent import Agent
 
-from .agent_logger import log_agent_run
-from .config import get_agent_names, AGENT_RUN_TIMEOUT_SECONDS
-from .llm import get_model
-from .response_parser import parse_agent_response
-from .routing_logger import routing_logger
-from .tools import (
-    _append_section_file,
-    _read_title,
-    _update_section_file,
-    get_allowed_fields,
-)
+from engine.config import get_agent_names, AGENT_RUN_TIMEOUT_SECONDS
+from engine.response_parser import parse_agent_response
+from engine.text_utils import clean_response
+from llm.providers import get_model
+from log_config.agent_calls import log_agent_run
+from log_config.routing import routing_logger
+from memory.file_ops import _append_section_file, _read_title, _update_section_file, get_allowed_fields
 
 
 class AgentManager:
@@ -86,7 +81,7 @@ class AgentManager:
 
     def _load_agent_file(self, agent_name: str, filename: str) -> str:
         """加载角色目录下的指定文件"""
-        path = f"agents/{agent_name}/{filename}"
+        path = f"data/agents/{agent_name}/{filename}"
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 return f.read()
@@ -97,7 +92,7 @@ class AgentManager:
 
         全量加载，依赖 DeepSeek 前缀缓存降低成本。
         """
-        path = f"agents/{agent_name}/memory/Memory.md"
+        path = f"data/agents/{agent_name}/memory/Memory.md"
         if not os.path.exists(path):
             return ""
         with open(path, "r", encoding="utf-8") as f:
@@ -126,7 +121,8 @@ class AgentManager:
             # 应用更新到文件
             await self._apply_response_updates(agent_name, parsed)
 
-            return parsed.content
+            # 清理响应内容
+            return clean_response(parsed.content)
         except asyncio.TimeoutError:
             elapsed = time.time() - start
             routing_logger.error(f"{agent_name} 运行超时（{elapsed:.1f}秒），强制终止")
@@ -179,7 +175,7 @@ class AgentManager:
         if not memory_content or not memory_content.strip():
             return "内容为空，跳过"
 
-        memory_path = f"agents/{agent_name}/memory/Memory.md"
+        memory_path = f"data/agents/{agent_name}/memory/Memory.md"
         os.makedirs(os.path.dirname(memory_path), exist_ok=True)
 
         clean = memory_content.replace("\\n", "\n").strip()
@@ -240,7 +236,7 @@ class AgentManager:
             )
             return f"字段 {field} 不在白名单中"
 
-        status_path = f"agents/{agent_name}/status.md"
+        status_path = f"data/agents/{agent_name}/status.md"
         title = _read_title(status_path, "# 我的状态")
 
         result = _update_section_file(status_path, field, content, allowed, title)
@@ -256,7 +252,7 @@ class AgentManager:
             )
             return f"字段 {field} 不在白名单中"
 
-        user_path = f"agents/{agent_name}/user.md"
+        user_path = f"data/agents/{agent_name}/user.md"
         title = _read_title(user_path, "# 玩家档案")
 
         result = _append_section_file(user_path, field, content, allowed, title)
@@ -265,127 +261,3 @@ class AgentManager:
 
 # 全局实例
 agent_manager = AgentManager()
-
-
-class MessageBroadcaster:
-    """消息广播系统 - 维护每个角色的独立对话历史"""
-
-    def __init__(self):
-        self.agents = get_agent_names()
-
-    def _get_raw_path(self, agent_name: str, date: str = None) -> str:
-        """获取某角色的 raw 对话文件路径"""
-        if date is None:
-            date = datetime.now().strftime("%Y-%m-%d")
-        return f"agents/{agent_name}/memory/raw/{date}.jsonl"
-
-    async def _broadcast_message(
-        self,
-        targets: list[str],
-        message: dict,
-    ):
-        """统一的消息广播方法 — 只写入 narrator 的 jsonl（单一数据源）
-
-        Args:
-            targets: 原始目标角色列表
-            message: 要广播的消息字典
-        """
-        # 确保 visible_to 包含 narrator（上帝视角）
-        visible = targets.copy()
-        if "narrator" not in visible:
-            visible.append("narrator")
-
-        # 去重并保持顺序
-        seen = set()
-        visible = [t for t in visible if not (t in seen or seen.add(t))]
-
-        message["visible_to"] = visible
-
-        # 只写入 narrator 的 jsonl（角色通过 visible_to 过滤读取）
-        raw_path = self._get_raw_path("narrator")
-        os.makedirs(os.path.dirname(raw_path), exist_ok=True)
-
-        with open(raw_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(message, ensure_ascii=False) + "\n")
-
-    async def broadcast_player_message(self, targets: list[str], content: str):
-        """
-        广播玩家消息到所有 targets 的 jsonl
-
-        Args:
-            targets: 需要回应的角色列表
-            content: 玩家消息内容
-        """
-        message = {
-            "role": "player",
-            "content": content,
-            "visible_to": targets,
-        }
-        await self._broadcast_message(targets, message)
-
-    async def broadcast_agent_response(
-        self, agent_name: str, targets: list[str], content: str
-    ):
-        """
-        广播角色回应到所有 targets（包括自己）的 jsonl
-
-        Args:
-            agent_name: 回应的角色名
-            targets: 需要看到这条回应的角色列表（原消息的 targets）
-            content: 回应内容
-        """
-        message = {
-            "role": agent_name,
-            "content": content,
-            "visible_to": targets,
-        }
-        await self._broadcast_message(targets, message)
-
-    def load_recent_history(self, agent_name: str, limit: int = 10) -> str:
-        """
-        加载某角色的最近对话历史
-
-        统一从 narrator 的 jsonl 读取（上帝视角，最完整），
-        然后按 visible_to 字段过滤该角色可见的消息。
-
-        Args:
-            agent_name: 角色名
-            limit: 返回最近多少条
-
-        Returns:
-            格式化的对话历史文本
-        """
-        # 统一从 narrator 的 jsonl 读取
-        raw_path = self._get_raw_path("narrator")
-
-        if not os.path.exists(raw_path):
-            return ""
-
-        lines = []
-        with open(raw_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    lines.append(json.loads(line.strip()))
-
-        # 按 visible_to 过滤：narrator 看全部，其他角色只看自己可见的
-        if agent_name != "narrator":
-            lines = [msg for msg in lines if agent_name in msg.get("visible_to", [])]
-
-        # 取最近 limit 条
-        recent = lines[-limit:]
-
-        # 格式化为文本
-        formatted = []
-        for msg in recent:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
-            if role == "player":
-                formatted.append(f"玩家: {content}")
-            else:
-                formatted.append(f"{role}: {content}")
-
-        return "\n".join(formatted)
-
-
-# 全局实例
-broadcaster = MessageBroadcaster()

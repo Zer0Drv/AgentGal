@@ -1,8 +1,8 @@
-"""文本处理工具函数 - 从 app.py 提取"""
+"""文本处理工具函数"""
 
 import re
 
-from .config import MAX_ACTIONS, MAX_ELLIPSIS
+from engine.config import MAX_ACTIONS, MAX_ELLIPSIS
 
 # =============================================================================
 # 常量

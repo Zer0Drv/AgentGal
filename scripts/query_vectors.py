@@ -9,7 +9,6 @@ Usage:
 
 import argparse
 import asyncio
-import json
 import sys
 from pathlib import Path
 
@@ -19,7 +18,7 @@ sys.path.insert(0, str(project_root))
 from dotenv import load_dotenv
 load_dotenv(project_root / ".env")
 
-from core.vector_store import vector_store
+from memory.vector_store import vector_store
 
 
 async def cmd_list():
@@ -143,4 +142,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

@@ -14,11 +14,11 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from core.memory_consolidator import MemoryConsolidator, _cleanup_old_backups
+from memory.consolidator import MemoryConsolidator, _cleanup_old_backups
 
 
 async def main(agent: str) -> None:
-    p = Path(f"agents/{agent}/user.md")
+    p = Path(f"data/agents/{agent}/user.md")
     content = p.read_text(encoding="utf-8")
     print(f"原始: {len(content)} 字")
 
@@ -44,7 +44,7 @@ async def main(agent: str) -> None:
 
     confirm = input("写入文件? [y/N] ")
     if confirm.strip().lower() == "y":
-        bak_dir = Path(f"agents/{agent}/memory/bak")
+        bak_dir = Path(f"data/agents/{agent}/memory/bak")
         bak_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         shutil.copy2(p, bak_dir / f"user_{ts}_pre.md")

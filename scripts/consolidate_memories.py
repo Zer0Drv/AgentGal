@@ -2,10 +2,10 @@
 """记忆整理脚本（稳定版）
 
 这个脚本的职责：
-1) 找到 agents/*/memory/Memory.md
-2) 调用 core.memory_consolidator 对每个 agent 做 LLM 整理
+1) 找到 data/agents/*/memory/Memory.md
+2) 调用 memory.consolidator 对每个 agent 做 LLM 整理
 3) **显式管理**整理过程里创建的后台任务（尤其是向量重建 rebuild），避免 asyncio.run
-   在退出阶段因为“悬挂任务取消不掉”而表现为卡死/只能 Ctrl-C。
+   在退出阶段因为"悬挂任务取消不掉"而表现为卡死/只能 Ctrl-C。
 
 Usage:
     uv run python scripts/consolidate_memories.py
@@ -26,12 +26,12 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# 必须先加载环境变量，再导入 core 模块（它们会读取环境变量）
+# 必须先加载环境变量，再导入模块（它们会读取环境变量）
 from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from core.memory_consolidator import memory_consolidator
+from memory.consolidator import memory_consolidator
 
 
 def _parse_args() -> argparse.Namespace:
@@ -40,7 +40,7 @@ def _parse_args() -> argparse.Namespace:
         "--agents",
         nargs="*",
         default=None,
-        help="只处理指定角色（默认自动扫描 agents/*/memory/Memory.md）",
+        help="只处理指定角色（默认自动扫描 data/agents/*/memory/Memory.md）",
     )
     p.add_argument(
         "--agent-timeout",
@@ -79,8 +79,8 @@ def _parse_args() -> argparse.Namespace:
 
 
 def get_all_agents() -> list[str]:
-    """获取 agents 目录下所有角色名称（以 Memory.md 是否存在为准）"""
-    agents_dir = PROJECT_ROOT / "agents"
+    """获取 data/agents 目录下所有角色名称（以 Memory.md 是否存在为准）"""
+    agents_dir = PROJECT_ROOT / "data" / "agents"
     if not agents_dir.exists():
         return []
 
@@ -176,7 +176,7 @@ async def main() -> int:
 
     agents = args.agents if args.agents else get_all_agents()
     if not agents:
-        print("[记忆整理] 未找到任何角色（agents/*/memory/Memory.md）", flush=True)
+        print("[记忆整理] 未找到任何角色（data/agents/*/memory/Memory.md）", flush=True)
         return 1
 
     print(f"[记忆整理] 角色: {agents}", flush=True)
@@ -216,7 +216,7 @@ async def main() -> int:
             }
             new_tasks = {t for t in (after - before) if not t.done()}
 
-            # 过滤一下：只保留看起来像“向量重建/同步”的任务，避免误把其他任务也纳入等待
+            # 过滤一下：只保留看起来像"向量重建/同步"的任务，避免误把其他任务也纳入等待
             for t in new_tasks:
                 name = getattr(t.get_coro(), "__qualname__", repr(t.get_coro()))
                 if "VectorStore" in name or "rebuild" in name or "_sync_incremental" in name:

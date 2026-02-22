@@ -12,12 +12,7 @@ tmp/*
 关键点bak/*
 
 # agents/ 下的动态文件（运行时生成，不入库）
-agents/*/memory/
-agents/*/status.md
-agents/*/states.md
-agents/*/events.md
-agents/*/user.md
-agents/*/tasks.md
+data/*
 
 # examples/ 下的模板文件需要入库
-!examples/
+!templates/

@@ -6,26 +6,27 @@ import re
 import chainlit as cl
 from dotenv import load_dotenv
 
-from core.agent_runner import agent_manager, broadcaster
-from core.config import (
+from engine.agent_manager import agent_manager
+from engine.config import (
     get_agent_names,
     get_valid_response_agents,
     HISTORY_LIMIT_DEFAULT,
     HISTORY_LIMIT_NARRATOR,
 )
-from core.memory_consolidator import CONSOLIDATION_INTERVAL, memory_consolidator
-from core.routing_logger import routing_logger
-from core.save_manager import (
+from engine.message_router import message_router
+from engine.text_utils import (
+    clean_response,
+    is_valid_response,
+    process_character_response,
+)
+from game.save_manager import (
     export_save_archive,
     has_existing_save,
     load_recent_raw_messages,
     reset_game,
 )
-from core.text_utils import (
-    clean_response,
-    is_valid_response,
-    process_character_response,
-)
+from log_config.routing import routing_logger
+from memory.consolidator import CONSOLIDATION_INTERVAL, memory_consolidator
 
 # 加载环境变量
 load_dotenv()
@@ -107,7 +108,7 @@ def _parse_narrator_response(content: str) -> tuple[list[str], str]:
 
 async def _call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool]:
     """调用 narrator 获取路由决策和场景描述"""
-    narrator_history = broadcaster.load_recent_history(
+    narrator_history = message_router.load_recent_history(
         "narrator", limit=HISTORY_LIMIT_NARRATOR
     )
     narrator_input = (
@@ -147,7 +148,7 @@ async def _process_target_agents(
 
     for agent_name in targets:
         try:
-            history = broadcaster.load_recent_history(
+            history = message_router.load_recent_history(
                 agent_name, limit=HISTORY_LIMIT_DEFAULT
             )
             full_input = _build_agent_input(history, user_input)
@@ -161,7 +162,7 @@ async def _process_target_agents(
 
             # 只有有效响应才广播到 jsonl（让后续角色能看到）
             if is_valid:
-                await broadcaster.broadcast_agent_response(agent_name, targets, response)
+                await message_router.broadcast_agent_response(agent_name, targets, response)
 
             results.append((agent_name, response, is_valid))
 
@@ -238,11 +239,11 @@ async def on_message(message: cl.Message):
     targets, scene_description, is_narrator_valid = await _call_narrator_and_route(user_input)
 
     # 2. 广播玩家消息到所有 targets
-    await broadcaster.broadcast_player_message(targets, user_input)
+    await message_router.broadcast_player_message(targets, user_input)
 
     # 3. 广播场景描述并显示
     if scene_description and is_narrator_valid:
-        await broadcaster.broadcast_agent_response(
+        await message_router.broadcast_agent_response(
             "narrator", targets, scene_description
         )
         await cl.Message(content=scene_description, author="Narrator").send()

@@ -1,4 +1,4 @@
-"""集中配置管理 - 动态读取 agents 目录
+"""集中配置管理 - 动态读取 data/agents 目录
 
 注意：角色列表在模块导入时（应用启动时）读取一次并缓存，
 运行期间不再重新扫描目录。
@@ -9,8 +9,8 @@ from pathlib import Path
 
 
 def _scan_agent_names() -> list[str]:
-    """扫描 agents/ 目录获取所有角色名称"""
-    agents_dir = Path(__file__).parent.parent / "agents"
+    """扫描 data/agents/ 目录获取所有角色名称"""
+    agents_dir = Path(__file__).parent.parent / "data" / "agents"
     if not agents_dir.exists():
         return []
 

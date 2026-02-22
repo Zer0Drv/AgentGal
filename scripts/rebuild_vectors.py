@@ -17,15 +17,15 @@ sys.path.insert(0, str(project_root))
 from dotenv import load_dotenv
 load_dotenv(project_root / ".env")
 
-from core.vector_store import vector_store
-from core.routing_logger import routing_logger
+from log_config.routing import routing_logger
+from memory.vector_store import vector_store
 
 
 def get_all_agents() -> list[str]:
-    """获取 agents 目录下所有角色名称"""
-    agents_dir = project_root / "agents"
+    """获取 data/agents 目录下所有角色名称"""
+    agents_dir = project_root / "data" / "agents"
     if not agents_dir.exists():
-        routing_logger.error(f"agents 目录不存在: {agents_dir}")
+        routing_logger.error(f"data/agents 目录不存在: {agents_dir}")
         return []
 
     agents = []
@@ -40,7 +40,7 @@ def get_all_agents() -> list[str]:
 
 async def rebuild_agent_vectors(agent_name: str):
     """重建单个角色的向量库"""
-    memory_path = project_root / "agents" / agent_name / "memory" / "Memory.md"
+    memory_path = project_root / "data" / "agents" / agent_name / "memory" / "Memory.md"
 
     if not memory_path.exists():
         routing_logger.warning(f"[向量重建] {agent_name} 的 Memory.md 不存在，跳过")

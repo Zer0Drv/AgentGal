@@ -19,7 +19,7 @@ from pathlib import Path
 
 import httpx
 
-from .routing_logger import routing_logger
+from log_config.routing import routing_logger
 
 CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
 
@@ -27,7 +27,6 @@ CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
 _API_KEY = (
     os.getenv("CONSOLIDATION_LLM_API_KEY")
     or os.getenv("LLM_API_KEY")
-    or os.getenv("DEEPSEEK_API_KEY")
 )
 _API_URL = (
     os.getenv("CONSOLIDATION_LLM_API_URL")
@@ -206,7 +205,7 @@ class MemoryConsolidator:
 
     def _state_path(self, agent_name: str) -> Path:
         """整合进度文件路径"""
-        return Path(f"agents/{agent_name}/memory/.consolidation_state.json")
+        return Path(f"data/agents/{agent_name}/memory/.consolidation_state.json")
 
     def _load_state(self, agent_name: str) -> str | None:
         """读取上次整合到的日期，返回如 '2月10日' 或 None"""
@@ -238,7 +237,7 @@ class MemoryConsolidator:
             return result
 
         async with lock:
-            path = Path(f"agents/{agent_name}/memory/Memory.md")
+            path = Path(f"data/agents/{agent_name}/memory/Memory.md")
             if not path.exists():
                 return None
             original_content = path.read_text(encoding="utf-8")
@@ -295,7 +294,7 @@ class MemoryConsolidator:
             result.original_len = len(original_content)
 
             # 备份
-            bak_dir = Path(f"agents/{agent_name}/memory/bak")
+            bak_dir = Path(f"data/agents/{agent_name}/memory/bak")
             bak_dir.mkdir(parents=True, exist_ok=True)
             ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
             bak_path = bak_dir / f"Memory_{ts}_pre.md"
@@ -305,7 +304,7 @@ class MemoryConsolidator:
             _cleanup_old_backups(bak_dir, "Memory_*.md", max_count=10)
 
             # 读取角色性格定义，让整理后的记忆保持角色口吻
-            soul_path = Path(f"agents/{agent_name}/soul.md")
+            soul_path = Path(f"data/agents/{agent_name}/soul.md")
             soul_content = (
                 soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
             )
@@ -333,7 +332,7 @@ class MemoryConsolidator:
                         re.MULTILINE,
                     )
                     if diary_match:
-                        llm_result = llm_result[diary_match.end() :].lstrip("\n")
+                        llm_result = llm_result[diary_match.end():].lstrip("\n")
                     # 解析返回结果，按日期拆分
                     parsed = split_by_date(llm_result)
                     # 只更新成功解析的日期
@@ -377,7 +376,7 @@ class MemoryConsolidator:
         current_content = path.read_text(encoding="utf-8")
         if len(current_content) > len(original_content):
             # 有新内容被追加，提取增量部分
-            appended = current_content[len(original_content) :]
+            appended = current_content[len(original_content):]
             routing_logger.info(
                 f"[整理器] {agent_name} 检测到并发追加 ({len(appended)} 字符)，将保留"
             )
@@ -400,7 +399,7 @@ class MemoryConsolidator:
 
     async def _consolidate_player_profile(self, agent_name: str) -> tuple[int, int]:
         """整理单个角色的 user.md（去重精炼）。返回 (原始长度, 整理后长度)。"""
-        user_path = Path(f"agents/{agent_name}/user.md")
+        user_path = Path(f"data/agents/{agent_name}/user.md")
         if not user_path.exists():
             return 0, 0
 
@@ -412,7 +411,7 @@ class MemoryConsolidator:
 
         try:
             # 备份
-            bak_dir = Path(f"agents/{agent_name}/memory/bak")
+            bak_dir = Path(f"data/agents/{agent_name}/memory/bak")
             bak_dir.mkdir(parents=True, exist_ok=True)
             ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
             bak_path = bak_dir / f"user_{ts}_pre.md"
@@ -437,7 +436,7 @@ class MemoryConsolidator:
                 re.MULTILINE,
             )
             if diary_match:
-                consolidated = consolidated[diary_match.end() :].lstrip("\n")
+                consolidated = consolidated[diary_match.end():].lstrip("\n")
 
             user_path.write_text(consolidated.strip() + "\n", encoding="utf-8")
             return len(content), len(consolidated)
@@ -461,7 +460,7 @@ class MemoryConsolidator:
         # 收集各 agent 的摘要信息用于开始日志
         summaries: list[str] = []
         for name in agent_names:
-            path = Path(f"agents/{name}/memory/Memory.md")
+            path = Path(f"data/agents/{name}/memory/Memory.md")
             if path.exists():
                 length = len(path.read_text(encoding="utf-8"))
                 summaries.append(f"{name}({length}字)")

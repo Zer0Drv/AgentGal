@@ -1,4 +1,4 @@
-"""存档与游戏状态管理 - 从 app.py 提取"""
+"""存档与游戏状态管理"""
 
 import glob
 import json
@@ -7,7 +7,7 @@ import shutil
 import zipfile
 from datetime import datetime
 
-from .config import get_agent_names
+from engine.config import get_agent_names
 
 
 # =============================================================================
@@ -17,12 +17,12 @@ from .config import get_agent_names
 
 def agent_path(agent_name: str) -> str:
     """获取角色基础目录路径"""
-    return f"agents/{agent_name}"
+    return f"data/agents/{agent_name}"
 
 
 def agent_raw_dir(agent_name: str) -> str:
     """获取角色 raw 目录路径"""
-    return f"agents/{agent_name}/memory/raw"
+    return f"data/agents/{agent_name}/memory/raw"
 
 
 # =============================================================================
@@ -44,7 +44,7 @@ def load_opening_text() -> str:
 
 def load_recent_raw_messages(limit: int = 10) -> list:
     """从 narrator 的 raw/ 目录加载最近的原始消息（narrator 拥有上帝视角，包含所有消息）"""
-    raw_dir = "agents/narrator/memory/raw"
+    raw_dir = "data/agents/narrator/memory/raw"
     if not os.path.exists(raw_dir):
         return []
 
@@ -88,7 +88,7 @@ def has_existing_save() -> bool:
 def reset_agent_memory(agent_name: str):
     """重置指定角色的所有记忆文件（保留 soul.md）"""
     base = agent_path(agent_name)
-    example_path = f"examples/{agent_name}"
+    template_path = f"data/templates/{agent_name}"
 
     # 1. 删除 raw/ 目录下的所有 jsonl 文件（对话历史）
     raw_dir = agent_raw_dir(agent_name)
@@ -110,13 +110,13 @@ def reset_agent_memory(agent_name: str):
         except Exception as e:
             print(f"  清空失败 memory.md: {e}")
 
-    # 3. 从 examples 恢复初始状态文件
+    # 3. 从 templates 恢复初始状态文件
     for filename in ["status.md", "user.md"]:
-        example_file = f"{example_path}/{filename}"
+        template_file = f"{template_path}/{filename}"
         target_file = f"{base}/{filename}"
-        if os.path.exists(example_file):
+        if os.path.exists(template_file):
             try:
-                shutil.copy2(example_file, target_file)
+                shutil.copy2(template_file, target_file)
                 print(f"  已恢复: {filename}")
             except Exception as e:
                 print(f"  恢复失败 {filename}: {e}")
@@ -172,7 +172,7 @@ async def reset_game(show_opening: bool = True) -> str:
         "visible_to": visible_agents + ["narrator"],
     }
 
-    raw_path = f"agents/narrator/memory/raw/{datetime.now().strftime('%Y-%m-%d')}.jsonl"
+    raw_path = f"data/agents/narrator/memory/raw/{datetime.now().strftime('%Y-%m-%d')}.jsonl"
     os.makedirs(os.path.dirname(raw_path), exist_ok=True)
     with open(raw_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
@@ -192,7 +192,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
         agent_name: 角色名称
 
     Returns:
-        文件路径列表（相对于 agents/ 目录）
+        文件路径列表（相对于 data/agents/ 目录）
     """
     files = []
     base = agent_path(agent_name)
@@ -256,7 +256,7 @@ async def export_save_archive() -> str | None:
                 for filepath in agent_files:
                     if os.path.exists(filepath):
                         # 在 zip 中保持相对路径结构
-                        arcname = filepath.replace("agents/", "")
+                        arcname = filepath.replace("data/agents/", "")
                         zf.write(filepath, arcname)
                         print(f"[存档] 已添加: {filepath}")
 
