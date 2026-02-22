@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 
-from engine.config import get_agent_names
+from engine.config import get_agent_names, character_path
 
 
 class MessageRouter:
@@ -17,7 +17,7 @@ class MessageRouter:
         """获取某角色的 raw 对话文件路径"""
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")
-        return f"data/agents/{agent_name}/memory/raw/{date}.jsonl"
+        return character_path(agent_name, "memory", "raw", f"{date}.jsonl")
 
     async def _broadcast_message(
         self,

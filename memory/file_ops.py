@@ -7,6 +7,8 @@
 import json
 import os
 
+from engine.config import character_path
+
 # 每个角色 status.md 允许的字段白名单（对应 ## 标题）
 STATUS_FIELDS: dict[str, list[str]] = {
     "lilith": ["身份", "心境", "我和他", "在意的事", "打算"],
@@ -52,7 +54,7 @@ def get_allowed_fields(agent_name: str, file_type: str) -> list[str]:
     Returns:
         文件中所有 ## 标题列表，文件不存在则返回默认字段
     """
-    file_path = f"data/agents/{agent_name}/{file_type}.md"
+    file_path = character_path(agent_name, f"{file_type}.md")
     fields = _get_fields_from_file(file_path)
     if fields is not None:
         return fields

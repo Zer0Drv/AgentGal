@@ -20,7 +20,7 @@ from memory.consolidator import (
 
 
 async def main(agent: str, date: str) -> None:
-    p = Path(f"data/agents/{agent}/memory/Memory.md")
+    p = Path(f"data/characters/{agent}/memory/Memory.md")
     content = normalize(p.read_text())
     sections = split_by_date(content)
 
@@ -32,7 +32,7 @@ async def main(agent: str, date: str) -> None:
     print(f"原始: {len(old_text)} 字")
 
     # 读 soul
-    soul_path = Path(f"data/agents/{agent}/soul.md")
+    soul_path = Path(f"data/characters/{agent}/soul.md")
     soul = soul_path.read_text().strip() if soul_path.exists() else ""
 
     # 加载 prompt

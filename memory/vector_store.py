@@ -9,6 +9,7 @@ import aiosqlite
 import httpx
 from typing import Any
 from log_config.routing import routing_logger
+from engine.config import character_path
 
 _SQLITE_VEC_PATH = sqlite_vec.__file__.replace("__init__.py", "vec0")
 
@@ -289,7 +290,7 @@ class VectorStore:
         """检查各 agent 的 memory.md，offset 落后则后台补做 embedding"""
         await self.init_tables()
         for name in agent_names:
-            path = f"data/agents/{name}/memory/Memory.md"
+            path = character_path(name, "memory", "Memory.md")
             if not os.path.exists(path):
                 continue
             content = open(path, "r", encoding="utf-8").read()

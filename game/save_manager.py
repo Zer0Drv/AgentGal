@@ -7,7 +7,7 @@ import shutil
 import zipfile
 from datetime import datetime
 
-from engine.config import get_agent_names
+from engine.config import get_agent_names, character_path
 
 
 # =============================================================================
@@ -17,12 +17,12 @@ from engine.config import get_agent_names
 
 def agent_path(agent_name: str) -> str:
     """获取角色基础目录路径"""
-    return f"data/agents/{agent_name}"
+    return character_path(agent_name)
 
 
 def agent_raw_dir(agent_name: str) -> str:
     """获取角色 raw 目录路径"""
-    return f"data/agents/{agent_name}/memory/raw"
+    return character_path(agent_name, "memory", "raw")
 
 
 # =============================================================================
@@ -44,7 +44,7 @@ def load_opening_text() -> str:
 
 def load_recent_raw_messages(limit: int = 10) -> list:
     """从 narrator 的 raw/ 目录加载最近的原始消息（narrator 拥有上帝视角，包含所有消息）"""
-    raw_dir = "data/agents/narrator/memory/raw"
+    raw_dir = character_path("narrator", "memory", "raw")
     if not os.path.exists(raw_dir):
         return []
 
@@ -172,7 +172,7 @@ async def reset_game(show_opening: bool = True) -> str:
         "visible_to": visible_agents + ["narrator"],
     }
 
-    raw_path = f"data/agents/narrator/memory/raw/{datetime.now().strftime('%Y-%m-%d')}.jsonl"
+    raw_path = character_path("narrator", "memory", "raw", f"{datetime.now().strftime('%Y-%m-%d')}.jsonl")
     os.makedirs(os.path.dirname(raw_path), exist_ok=True)
     with open(raw_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
@@ -192,7 +192,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
         agent_name: 角色名称
 
     Returns:
-        文件路径列表（相对于 data/agents/ 目录）
+        文件路径列表（相对于 data/characters/ 目录）
     """
     files = []
     base = agent_path(agent_name)
@@ -256,7 +256,7 @@ async def export_save_archive() -> str | None:
                 for filepath in agent_files:
                     if os.path.exists(filepath):
                         # 在 zip 中保持相对路径结构
-                        arcname = filepath.replace("data/agents/", "")
+                        arcname = filepath.replace("data/characters/", "")
                         zf.write(filepath, arcname)
                         print(f"[存档] 已添加: {filepath}")
 

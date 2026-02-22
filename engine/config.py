@@ -1,4 +1,4 @@
-"""集中配置管理 - 动态读取 data/agents 目录
+"""集中配置管理 - 动态读取 data/characters 目录
 
 注意：角色列表在模块导入时（应用启动时）读取一次并缓存，
 运行期间不再重新扫描目录。
@@ -8,9 +8,30 @@ import os
 from pathlib import Path
 
 
+# 角色数据根目录（相对于项目根目录）
+CHARACTERS_DIR = "data/characters"
+
+
+def character_path(character_name: str, *subpaths: str) -> str:
+    """构建角色数据路径
+
+    Args:
+        character_name: 角色名称
+        *subpaths: 子路径组件
+
+    Returns:
+        完整路径字符串
+
+    Example:
+        >>> character_path("lilith", "memory", "Memory.md")
+        "data/characters/lilith/memory/Memory.md"
+    """
+    return os.path.join(CHARACTERS_DIR, character_name, *subpaths)
+
+
 def _scan_agent_names() -> list[str]:
-    """扫描 data/agents/ 目录获取所有角色名称"""
-    agents_dir = Path(__file__).parent.parent / "data" / "agents"
+    """扫描 data/characters/ 目录获取所有角色名称"""
+    agents_dir = Path(__file__).parent.parent / CHARACTERS_DIR
     if not agents_dir.exists():
         return []
 

@@ -6,7 +6,7 @@ import os
 
 from agno.agent import Agent
 
-from engine.config import get_agent_names, AGENT_RUN_TIMEOUT_SECONDS
+from engine.config import get_agent_names, AGENT_RUN_TIMEOUT_SECONDS, character_path
 from engine.response_parser import parse_agent_response
 from engine.text_utils import clean_response
 from llm.providers import get_model
@@ -81,7 +81,7 @@ class AgentManager:
 
     def _load_agent_file(self, agent_name: str, filename: str) -> str:
         """加载角色目录下的指定文件"""
-        path = f"data/agents/{agent_name}/{filename}"
+        path = character_path(agent_name, filename)
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 return f.read()
@@ -92,7 +92,7 @@ class AgentManager:
 
         全量加载，依赖 DeepSeek 前缀缓存降低成本。
         """
-        path = f"data/agents/{agent_name}/memory/Memory.md"
+        path = character_path(agent_name, "memory", "Memory.md")
         if not os.path.exists(path):
             return ""
         with open(path, "r", encoding="utf-8") as f:
@@ -175,7 +175,7 @@ class AgentManager:
         if not memory_content or not memory_content.strip():
             return "内容为空，跳过"
 
-        memory_path = f"data/agents/{agent_name}/memory/Memory.md"
+        memory_path = character_path(agent_name, "memory", "Memory.md")
         os.makedirs(os.path.dirname(memory_path), exist_ok=True)
 
         clean = memory_content.replace("\\n", "\n").strip()
@@ -236,7 +236,7 @@ class AgentManager:
             )
             return f"字段 {field} 不在白名单中"
 
-        status_path = f"data/agents/{agent_name}/status.md"
+        status_path = character_path(agent_name, "status.md")
         title = _read_title(status_path, "# 我的状态")
 
         result = _update_section_file(status_path, field, content, allowed, title)
@@ -252,7 +252,7 @@ class AgentManager:
             )
             return f"字段 {field} 不在白名单中"
 
-        user_path = f"data/agents/{agent_name}/user.md"
+        user_path = character_path(agent_name, "user.md")
         title = _read_title(user_path, "# 玩家档案")
 
         result = _append_section_file(user_path, field, content, allowed, title)

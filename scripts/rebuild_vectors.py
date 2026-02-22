@@ -22,10 +22,10 @@ from memory.vector_store import vector_store
 
 
 def get_all_agents() -> list[str]:
-    """获取 data/agents 目录下所有角色名称"""
+    """获取 data/characters 目录下所有角色名称"""
     agents_dir = project_root / "data" / "agents"
     if not agents_dir.exists():
-        routing_logger.error(f"data/agents 目录不存在: {agents_dir}")
+        routing_logger.error(f"data/characters 目录不存在: {agents_dir}")
         return []
 
     agents = []
