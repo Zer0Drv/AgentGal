@@ -19,27 +19,33 @@ Chainlit + OpenRouter + sqlite-vec + asyncio
 ```
 me moBot/
 ├── app.py                      # Chainlit 入口
-├── agents/                     # 所有角色
-│   ├── alice/
-│   │   ├── soul.md             # 性格定义（手写，只读）
-│   │   └── memory/
-│   │       ├── memory.md       # 长期记忆（Agent 更新）
-│   │       └── raw/            # YYYY-MM-DD.jsonl 对话流水
-│   ├── bob/
-│   │   └── ...
-│   └── narrator/               # 旁白角色（结构同其他角色）
-│       ├── soul.md             # 定义：故事主持人、上帝视角
-│       └── memory/
-│           ├── memory.md       # 故事事件记录
-│           └── ...
-├── core/
-│   ├── llm.py                  # OpenRouter 异步调用
-│   ├── vector_store.py         # embedding + sqlite-vec
-│   ├── agent_runner.py         # 并行调用 Agent
-│   ├── prompt.py               # system prompt 拼装
-│   └── tools/                  # 所有 Agent 共享的 Tools
-│       ├── search_memory.py
-│       └── update_memory.py
+├── data/
+│   ├── characters/             # 角色数据（运行时）
+│   │   ├── lilith/
+│   │   │   ├── soul.md         # 性格定义（手写，只读）
+│   │   │   ├── Memory.md       # 长期记忆（Agent 更新）
+│   │   │   ├── status.md       # 当前状态
+│   │   │   ├── user.md         # 对玩家的认知
+│   │   │   ├── growth.md       # 人格沉淀（整理器生成）
+│   │   │   └── raw/            # YYYY-MM-DD.jsonl 对话流水（仅 narrator 有）
+│   │   ├── mitsuki/
+│   │   │   └── ...             # 结构同 lilith
+│   │   └── narrator/           # 旁白角色
+│   │       ├── soul.md         # 定义：故事主持人、上帝视角
+│   │       ├── Memory.md       # 故事事件记录
+│   │       └── ...
+│   └── templates/              # 角色模板（用于重置游戏）
+│       └── ...                 # 结构同 characters
+├── engine/                     # 核心引擎
+│   ├── agent_manager.py        # Agent 管理
+│   ├── config.py               # 配置管理
+│   ├── message_router.py       # 消息路由
+│   └── response_parser.py      # 响应解析
+├── memory/                     # 记忆系统
+│   ├── consolidator.py         # 后台记忆整理器
+│   ├── file_ops.py             # 文件操作
+│   └── vector_store.py         # 向量存储
+├── prompts/                    # 系统 Prompt 模板
 └── .env
 ```
 
