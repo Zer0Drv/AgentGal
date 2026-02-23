@@ -6,8 +6,9 @@ import os
 import shutil
 import zipfile
 from datetime import datetime
+from pathlib import Path
 
-from engine.config import get_agent_names, character_path
+from engine.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
 
 
 # =============================================================================
@@ -32,11 +33,10 @@ def agent_raw_dir(agent_name: str) -> str:
 
 def load_opening_text() -> str:
     """从配置文件加载开场白"""
-    opening_path = "prompts/opening.txt"
-    if os.path.exists(opening_path):
+    opening_path = PROJECT_ROOT / "prompts" / "opening.txt"
+    if opening_path.exists():
         try:
-            with open(opening_path, "r", encoding="utf-8") as f:
-                return f.read()
+            return opening_path.read_text(encoding="utf-8")
         except Exception as e:
             print(f"[警告] 读取开场白文件失败: {e}")
     return ""
@@ -88,7 +88,7 @@ def has_existing_save() -> bool:
 def reset_agent_memory(agent_name: str):
     """重置指定角色的所有记忆文件（保留 soul.md）"""
     base = agent_path(agent_name)
-    template_path = f"data/templates/{agent_name}"
+    template_path = PROJECT_ROOT / "data" / "templates" / agent_name
 
     # 1. 删除 raw/ 目录下的所有 jsonl 文件（对话历史）
     raw_dir = agent_raw_dir(agent_name)
@@ -112,9 +112,9 @@ def reset_agent_memory(agent_name: str):
 
     # 3. 从 templates 恢复初始状态文件
     for filename in ["status.md", "user.md"]:
-        template_file = f"{template_path}/{filename}"
-        target_file = f"{base}/{filename}"
-        if os.path.exists(template_file):
+        template_file = template_path / filename
+        target_file = Path(base) / filename
+        if template_file.exists():
             try:
                 shutil.copy2(template_file, target_file)
                 print(f"  已恢复: {filename}")
@@ -230,10 +230,10 @@ async def export_save_archive() -> str | None:
         存档文件路径，如果失败返回 None
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dir = "saves"
+    save_dir = PROJECT_ROOT / "saves"
     os.makedirs(save_dir, exist_ok=True)
 
-    save_path = f"{save_dir}/save_{timestamp}.zip"
+    save_path = str(save_dir / f"save_{timestamp}.zip")
 
     all_agents = get_agent_names()
     if not all_agents:
@@ -256,7 +256,7 @@ async def export_save_archive() -> str | None:
                 for filepath in agent_files:
                     if os.path.exists(filepath):
                         # 在 zip 中保持相对路径结构
-                        arcname = filepath.replace("data/characters/", "")
+                        arcname = os.path.relpath(filepath, start=str(CHARACTERS_DIR))
                         zf.write(filepath, arcname)
                         print(f"[存档] 已添加: {filepath}")
 

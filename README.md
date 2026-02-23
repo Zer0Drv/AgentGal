@@ -34,6 +34,19 @@ uv run chainlit run app.py
 
 打开 http://localhost:8000
 
+### 4. 使用 FastAPI（异步并发）
+
+```bash
+uv run uvicorn fastapi_app.main:app --reload
+```
+
+接口示例：
+
+- `GET /api/v1/health`
+- `POST /api/v1/chat`，body: `{"message":"你好"}`
+
+说明：FastAPI 版本使用异步 SQLAlchemy，启动时会按 `DATABASE_URL` 自动建表（默认 PostgreSQL + asyncpg）。
+
 ## 使用方法
 
 在聊天界面输入消息。

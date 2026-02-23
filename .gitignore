@@ -1,5 +1,7 @@
 .venv/
 .env
+.history
+/Users/seki/Desktop/Mystudy/AgentGal/.history
 .chainlit/
 __pycache__/
 *.pyc

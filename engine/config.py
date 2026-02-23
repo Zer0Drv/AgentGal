@@ -8,8 +8,10 @@ import os
 from pathlib import Path
 
 
-# 角色数据根目录（相对于项目根目录）
-CHARACTERS_DIR = "data/characters"
+# 项目根目录
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# 角色数据根目录（绝对路径，避免受当前工作目录影响）
+CHARACTERS_DIR = PROJECT_ROOT / "data" / "characters"
 
 
 def character_path(character_name: str, *subpaths: str) -> str:
@@ -24,14 +26,14 @@ def character_path(character_name: str, *subpaths: str) -> str:
 
     Example:
         >>> character_path("lilith", "memory", "Memory.md")
-        "data/characters/lilith/memory/Memory.md"
+        "/abs/path/to/data/characters/lilith/memory/Memory.md"
     """
-    return os.path.join(CHARACTERS_DIR, character_name, *subpaths)
+    return str(CHARACTERS_DIR / character_name / Path(*subpaths))
 
 
 def _scan_agent_names() -> list[str]:
     """扫描 data/characters/ 目录获取所有角色名称"""
-    agents_dir = Path(__file__).parent.parent / CHARACTERS_DIR
+    agents_dir = CHARACTERS_DIR
     if not agents_dir.exists():
         return []
 

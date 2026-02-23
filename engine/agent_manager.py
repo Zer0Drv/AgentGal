@@ -3,10 +3,16 @@
 import asyncio
 import json
 import os
+from pathlib import Path
 
 from agno.agent import Agent
 
-from engine.config import get_agent_names, AGENT_RUN_TIMEOUT_SECONDS, character_path
+from engine.config import (
+    AGENT_RUN_TIMEOUT_SECONDS,
+    PROJECT_ROOT,
+    character_path,
+    get_agent_names,
+)
 from engine.response_parser import parse_agent_response
 from engine.text_utils import clean_response
 from llm.providers import get_model
@@ -73,12 +79,11 @@ class AgentManager:
         """加载 system prompt 模板"""
         # narrator 使用专用模板
         if agent_name == "narrator":
-            template_path = "prompts/narrator_prompt.txt"
+            template_path = PROJECT_ROOT / "prompts" / "narrator_prompt.txt"
         else:
-            template_path = "prompts/character_prompt.txt"
+            template_path = PROJECT_ROOT / "prompts" / "character_prompt.txt"
 
-        with open(template_path, "r", encoding="utf-8") as f:
-            return f.read()
+        return Path(template_path).read_text(encoding="utf-8")
 
     def _load_agent_file(self, agent_name: str, filename: str) -> str:
         """加载角色目录下的指定文件"""
