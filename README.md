@@ -23,7 +23,7 @@ uv sync
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 DEEPSEEK_API_KEY
+# 编辑 .env，填入 LLM_API_KEY / EVERMEMOS_API_KEY / DATABASE_URL
 ```
 
 ### 3. 启动
@@ -40,12 +40,42 @@ uv run chainlit run app.py
 uv run uvicorn fastapi_app.main:app --reload
 ```
 
+也可以用模块方式启动：
+
+```bash
+uv run python -m fastapi_app.main
+```
+
+服务默认地址：
+
+- API: `http://127.0.0.1:5001`
+- Web UI: `http://127.0.0.1:5001/web`
+
 接口示例：
 
 - `GET /api/v1/health`
 - `POST /api/v1/chat`，body: `{"message":"你好"}`
 
 说明：FastAPI 版本使用异步 SQLAlchemy，启动时会按 `DATABASE_URL` 自动建表（默认 PostgreSQL + asyncpg）。
+
+#### DATABASE_URL 示例说明
+
+例如：
+
+```env
+DATABASE_URL=postgresql+asyncpg://seki:postgres@localhost:5432/agentgal
+```
+
+含义如下：
+
+- `postgresql+asyncpg`：数据库驱动，表示 PostgreSQL + `asyncpg` 异步驱动
+- `seki`：数据库用户名
+- `postgres`：数据库密码
+- `localhost`：数据库主机地址
+- `5432`：PostgreSQL 端口
+- `agentgal`：数据库名
+
+等价于「用账号 `seki` 连接本机 `5432` 的 `agentgal` 数据库」。
 
 ## 使用方法
 
@@ -56,7 +86,8 @@ uv run uvicorn fastapi_app.main:app --reload
 | 环境变量 | 必需 | 说明 |
 |---------|------|------|
 | `LLM_API_KEY` | 是 | DeepSeek API Key |
-| `MODEL_ID` | 否 | 模型 ID，默认 `deepseek-chat` |
+| `LLM_MODEL_ID` | 否 | 模型 ID，默认 `deepseek-chat` |
+| `DATABASE_URL` | FastAPI 必需 | 数据库连接串，示例：`postgresql+asyncpg://seki:postgres@localhost:5432/agentgal` |
 | `AGENT_LOG_ENABLED` | 否 | 是否记录 Agent 调用日志，默认 `true` |
 | `CONSOLIDATION_INTERVAL` | 否 | 记忆整理间隔（轮数），默认 `5` |
 
