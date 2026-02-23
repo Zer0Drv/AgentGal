@@ -178,10 +178,10 @@ class VectorStore:
 
     # --- 搜索 ---
 
-    async def search(
+    def search_sync(
         self, agent_name: str, query: str, limit: int = 5
     ) -> list[dict[str, Any]]:
-        """语义搜索，调用 EverMemOS"""
+        """同步语义搜索，供 Agno instructions 使用"""
         try:
             memory = self._get_client().v0.memories
 
@@ -211,6 +211,12 @@ class VectorStore:
         except Exception as e:
             routing_logger.error(f"[EverMemOS] {agent_name} 搜索失败: {e}")
             return []
+
+    async def search(
+        self, agent_name: str, query: str, limit: int = 5
+    ) -> list[dict[str, Any]]:
+        """异步语义搜索（包装同步版本）"""
+        return self.search_sync(agent_name, query, limit)
 
     # --- 查询与调度 ---
 

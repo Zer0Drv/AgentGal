@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import re
 
 from agno.agent import Agent
 
@@ -28,15 +29,48 @@ class AgentManager:
         for agent_name in get_agent_names():
             self.agents[agent_name] = self._create_agent(agent_name)
 
+    @staticmethod
+    def _extract_user_message_from_input(full_input: str) -> str:
+        """从拼接的完整输入中提取原始用户消息。
+
+        输入格式有两种:
+        1. narrator:
+            最近对话历史:\n\n{history}\n\n---\n\n玩家新消息: {user_input}
+        2. 其他角色 (history 中已包含玩家消息):
+            最近对话历史:\n\n...\n玩家: {user_input}
+        """
+        # 优先匹配 "玩家新消息:" (narrator 格式)
+        match = re.search(r"玩家新消息:\s*(.+)$", full_input, re.MULTILINE | re.DOTALL)
+        if match:
+            return match.group(1).strip()
+
+        # 匹配 history 中最后的 "玩家:" 行 (其他角色格式)
+        # 从后往前找最后一个 "玩家:" 开头的行
+        lines = full_input.split("\n")
+        for line in reversed(lines):
+            if line.startswith("玩家:"):
+                return line[len("玩家:"):].strip()
+
+        # 都没找到，返回完整输入（兜底）
+        return full_input.strip()
+
     def _create_agent(self, agent_name: str) -> Agent:
-        """创建单个 Agent"""
+        """创建单个 Agent（预创建，复用）"""
         # 加载静态角色设定（soul.md 是只读的）
         soul_content = self._load_agent_file(agent_name, "soul.md")
 
         # 定义动态 instructions 函数，每次运行时重新加载记忆文件
-        def get_dynamic_instructions(agent: Agent) -> str:
-            # 运行时加载完整 memory.md（依赖 DeepSeek 前缀缓存降低成本）
-            memory_content = self._load_full_memory(agent_name)
+        def get_dynamic_instructions(agent: Agent, run_context=None) -> str:
+            # 从 run_context 获取当前输入，提取原始用户消息用于 RAG
+            user_input = ""
+            if run_context and hasattr(run_context, 'input') and run_context.input:
+                user_input = self._extract_user_message_from_input(str(run_context.input))
+
+            # 同步 RAG 搜索相关记忆
+            relevant_memories = self._search_relevant_memories_sync(agent_name, user_input)
+
+            # 加载 memory.md 最后10行作为 recent_memories
+            recent_memories = self._load_recent_memory(agent_name, lines=10)
 
             # 加载 status.md
             status_content = self._load_agent_file(agent_name, "status.md")
@@ -56,7 +90,8 @@ class AgentManager:
                 agent_name=agent_name,
                 soul=soul_content,
                 growth=growth_content,
-                memory=memory_content if memory_content else "（尚无长期记忆）",
+                memory=relevant_memories,
+                recent_memories=recent_memories,
                 status=status_content if status_content else "（尚无状态记录）",
                 user_profile=user_content if user_content else "（尚无玩家认知）",
                 status_fields=status_fields,
@@ -72,6 +107,22 @@ class AgentManager:
             # 禁用 Agno 内部历史管理，由应用层通过 jsonl 自行管理
             add_history_to_context=False,
         )
+
+    def _search_relevant_memories_sync(self, agent_name: str, query: str) -> str:
+        """同步搜索相关记忆，用于 instructions 函数"""
+        results = vector_store.search_sync(agent_name, query, limit=3)
+
+        if not results:
+            return "（无相关记忆）"
+
+        # 格式化召回的记忆
+        memories = []
+        for r in results:
+            content = r["content"].strip()
+            if content:
+                memories.append(content)
+
+        return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
 
     def _load_system_prompt_template(self, agent_name: str) -> str:
         """加载 system prompt 模板"""
@@ -92,16 +143,17 @@ class AgentManager:
                 return f.read()
         return ""
 
-    def _load_full_memory(self, agent_name: str) -> str:
-        """加载完整 memory.md 注入 system prompt。
-
-        全量加载，依赖 DeepSeek 前缀缓存降低成本。
-        """
+    def _load_recent_memory(self, agent_name: str, lines: int = 10) -> str:
+        """加载 memory.md 的最后 N 行作为 recent_memories"""
         path = character_path(agent_name, "memory.md")
         if not os.path.exists(path):
-            return ""
+            return "（尚无记忆）"
         with open(path, "r", encoding="utf-8") as f:
-            return f.read().strip()
+            all_lines = f.readlines()
+            # 过滤空行，取最后 N 行
+            content_lines = [line for line in all_lines if line.strip()]
+            tail_lines = content_lines[-lines:] if len(content_lines) >= lines else content_lines
+            return "".join(tail_lines).strip()
 
     def _load_growth(self, agent_name: str) -> str:
         """加载 growth.md 人格沉淀层"""
@@ -115,42 +167,20 @@ class AgentManager:
                 return "（尚无人格沉淀）"
             return content
 
-    async def _load_relevant_memories(
-        self, agent_name: str, user_input: str, limit: int = 3
-    ) -> str:
-        """使用 RAG 召回相关记忆片段"""
-        # 搜索相关记忆
-        results = await vector_store.search(agent_name, user_input, limit=limit)
-
-        if not results:
-            return "（无相关记忆）"
-
-        # 格式化召回的记忆
-        memories = []
-        for r in results:
-            content = r["content"].strip()
-            if content:
-                memories.append(content)
-
-        return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
-
     async def run_agent(self, agent_name: str, user_input: str) -> str:
         import time
 
         start = time.time()
 
-        # 预加载动态内容（growth + RAG memory）
-        growth_content = self._load_growth(agent_name)
-        memory_content = await self._load_relevant_memories(agent_name, user_input)
-
-        # 创建临时 agent，使用预加载的内容
-        temp_agent = self._create_agent_with_context(
-            agent_name, growth_content, memory_content
-        )
+        # 获取预创建的 agent
+        agent = self.agents.get(agent_name)
+        if not agent:
+            routing_logger.error(f"[{agent_name}] Agent 未初始化")
+            return f"[{agent_name} 系统错误]"
 
         try:
             response = await asyncio.wait_for(
-                temp_agent.arun(user_input),
+                agent.arun(user_input),
                 timeout=AGENT_RUN_TIMEOUT_SECONDS,
             )
             elapsed = time.time() - start
@@ -170,44 +200,6 @@ class AgentManager:
             routing_logger.error(f"{agent_name} 运行超时（{elapsed:.1f}秒），强制终止")
             return f"[{agent_name} 回应超时，请稍后再试]"
 
-    def _create_agent_with_context(
-        self, agent_name: str, growth_content: str, memory_content: str
-    ) -> Agent:
-        """创建带有预加载上下文的 Agent"""
-
-        def get_dynamic_instructions(agent: Agent) -> str:
-            # 加载静态内容
-            soul_content = self._load_agent_file(agent_name, "soul.md")
-            status_content = self._load_agent_file(agent_name, "status.md")
-            user_content = self._load_agent_file(agent_name, "user.md")
-
-            # 加载 prompt 模板
-            prompt_template = self._load_system_prompt_template(agent_name)
-
-            # 动态获取字段白名单
-            status_fields = "、".join(get_allowed_fields(agent_name, "status"))
-            player_fields = "、".join(get_allowed_fields(agent_name, "user"))
-
-            return prompt_template.format(
-                agent_name=agent_name,
-                soul=soul_content,
-                growth=growth_content,
-                memory=memory_content,
-                status=status_content if status_content else "（尚无状态记录）",
-                user_profile=user_content if user_content else "（尚无玩家认知）",
-                status_fields=status_fields,
-                player_fields=player_fields,
-            )
-
-        return Agent(
-            name=agent_name,
-            model=get_model(),
-            instructions=get_dynamic_instructions,
-            markdown=True,
-            post_hooks=[log_agent_run],
-            add_history_to_context=False,
-        )
-
     async def _apply_response_updates(self, agent_name: str, parsed) -> None:
         """
         应用解析后的更新到对应文件。
@@ -225,7 +217,7 @@ class AgentManager:
                 results.append(f"memory: {result}")
             except Exception as e:
                 routing_logger.error(f"[{agent_name}] 更新 memory 失败: {e}")
-                results.append(f"memory: 失败")
+                results.append("memory: 失败")
 
         # --- status: 覆盖更新到 status.md ---
         if parsed.status:
@@ -235,7 +227,7 @@ class AgentManager:
                     results.append(f"status[{field}]: {result}")
             except Exception as e:
                 routing_logger.error(f"[{agent_name}] 更新 status 失败: {e}")
-                results.append(f"status: 失败")
+                results.append("status: 失败")
 
         # --- player: 追加更新到 user.md ---
         if parsed.player:
@@ -245,7 +237,7 @@ class AgentManager:
                     results.append(f"player[{field}]: {result}")
             except Exception as e:
                 routing_logger.error(f"[{agent_name}] 更新 player 失败: {e}")
-                results.append(f"player: 失败")
+                results.append("player: 失败")
 
         if results:
             routing_logger.info(f"[{agent_name}] 文件更新: {'; '.join(results)}")
