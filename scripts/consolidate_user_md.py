@@ -44,7 +44,7 @@ async def main(agent: str) -> None:
 
     confirm = input("写入文件? [y/N] ")
     if confirm.strip().lower() == "y":
-        bak_dir = Path(f"data/characters/{agent}/memory/bak")
+        bak_dir = Path(f"data/characters/{agent}/bak")
         bak_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         shutil.copy2(p, bak_dir / f"user_{ts}_pre.md")

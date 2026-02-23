@@ -20,7 +20,7 @@ from memory.consolidator import (
 
 
 async def main(agent: str, date: str) -> None:
-    p = Path(f"data/characters/{agent}/memory/Memory.md")
+    p = Path(f"data/characters/{agent}/Memory.md")
     content = normalize(p.read_text())
     sections = split_by_date(content)
 

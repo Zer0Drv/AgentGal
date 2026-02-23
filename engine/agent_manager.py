@@ -44,6 +44,9 @@ class AgentManager:
             # 加载 user.md
             user_content = self._load_agent_file(agent_name, "user.md")
 
+            # 加载 growth.md
+            growth_content = self._load_growth(agent_name)
+
             # 加载并填充 system prompt 模板
             prompt_template = self._load_system_prompt_template(agent_name)
             # 动态获取字段白名单（从文件读取，失败回退到默认值）
@@ -52,6 +55,7 @@ class AgentManager:
             return prompt_template.format(
                 agent_name=agent_name,
                 soul=soul_content,
+                growth=growth_content,
                 memory=memory_content if memory_content else "（尚无长期记忆）",
                 status=status_content if status_content else "（尚无状态记录）",
                 user_profile=user_content if user_content else "（尚无玩家认知）",
@@ -93,7 +97,7 @@ class AgentManager:
 
         全量加载，依赖 DeepSeek 前缀缓存降低成本。
         """
-        path = character_path(agent_name, "memory", "Memory.md")
+        path = character_path(agent_name, "Memory.md")
         if not os.path.exists(path):
             return ""
         with open(path, "r", encoding="utf-8") as f:

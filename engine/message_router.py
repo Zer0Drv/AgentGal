@@ -17,7 +17,7 @@ class MessageRouter:
         """获取某角色的 raw 对话文件路径"""
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")
-        return character_path(agent_name, "memory", "raw", f"{date}.jsonl")
+        return character_path(agent_name, "raw", f"{date}.jsonl")
 
     async def _broadcast_message(
         self,

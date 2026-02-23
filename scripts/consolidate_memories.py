@@ -2,7 +2,7 @@
 """记忆整理脚本（稳定版）
 
 这个脚本的职责：
-1) 找到 data/characters/*/memory/Memory.md
+1) 找到 data/characters/*/Memory.md
 2) 调用 memory.consolidator 对每个 agent 做 LLM 整理
 3) **显式管理**整理过程里创建的后台任务（尤其是向量重建 rebuild），避免 asyncio.run
    在退出阶段因为"悬挂任务取消不掉"而表现为卡死/只能 Ctrl-C。
@@ -40,7 +40,7 @@ def _parse_args() -> argparse.Namespace:
         "--agents",
         nargs="*",
         default=None,
-        help="只处理指定角色（默认自动扫描 data/characters/*/memory/Memory.md）",
+        help="只处理指定角色（默认自动扫描 data/characters/*/Memory.md）",
     )
     p.add_argument(
         "--agent-timeout",
@@ -88,7 +88,7 @@ def get_all_agents() -> list[str]:
     for item in agents_dir.iterdir():
         if not item.is_dir():
             continue
-        memory_file = item / "memory" / "Memory.md"
+        memory_file = item / "Memory.md"
         if memory_file.exists():
             agents.append(item.name)
     return sorted(agents)
@@ -176,7 +176,7 @@ async def main() -> int:
 
     agents = args.agents if args.agents else get_all_agents()
     if not agents:
-        print("[记忆整理] 未找到任何角色（data/characters/*/memory/Memory.md）", flush=True)
+        print("[记忆整理] 未找到任何角色（data/characters/*/Memory.md）", flush=True)
         return 1
 
     print(f"[记忆整理] 角色: {agents}", flush=True)

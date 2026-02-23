@@ -23,7 +23,7 @@ from memory.vector_store import vector_store
 
 def get_all_agents() -> list[str]:
     """获取 data/characters 目录下所有角色名称"""
-    agents_dir = project_root / "data" / "agents"
+    agents_dir = project_root / "data" / "characters"
     if not agents_dir.exists():
         routing_logger.error(f"data/characters 目录不存在: {agents_dir}")
         return []
@@ -31,7 +31,7 @@ def get_all_agents() -> list[str]:
     agents = []
     for item in agents_dir.iterdir():
         if item.is_dir():
-            memory_file = item / "memory" / "Memory.md"
+            memory_file = item / "Memory.md"
             if memory_file.exists():
                 agents.append(item.name)
 
@@ -40,7 +40,7 @@ def get_all_agents() -> list[str]:
 
 async def rebuild_agent_vectors(agent_name: str):
     """重建单个角色的向量库"""
-    memory_path = project_root / "data" / "agents" / agent_name / "memory" / "Memory.md"
+    memory_path = project_root / "data" / "characters" / agent_name / "Memory.md"
 
     if not memory_path.exists():
         routing_logger.warning(f"[向量重建] {agent_name} 的 Memory.md 不存在，跳过")

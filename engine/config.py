@@ -23,8 +23,8 @@ def character_path(character_name: str, *subpaths: str) -> str:
         完整路径字符串
 
     Example:
-        >>> character_path("lilith", "memory", "Memory.md")
-        "data/characters/lilith/memory/Memory.md"
+        >>> character_path("lilith", "Memory.md")
+        "data/characters/lilith/Memory.md"
     """
     return os.path.join(CHARACTERS_DIR, character_name, *subpaths)
 

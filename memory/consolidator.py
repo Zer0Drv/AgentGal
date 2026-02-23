@@ -200,7 +200,7 @@ class MemoryConsolidator:
 
     def _state_path(self, agent_name: str) -> Path:
         """整合进度文件路径"""
-        return Path(character_path(agent_name, "memory", ".consolidation_state.json"))
+        return Path(character_path(agent_name, ".consolidation_state.json"))
 
     def _load_state(self, agent_name: str) -> Optional[str]:
         """读取上次整合到的日期，返回如 '2月10日' 或 None"""
@@ -232,7 +232,7 @@ class MemoryConsolidator:
             return result
 
         async with lock:
-            path = Path(character_path(agent_name, "memory", "Memory.md"))
+            path = Path(character_path(agent_name, "Memory.md"))
             if not path.exists():
                 return None
             original_content = path.read_text(encoding="utf-8")
@@ -289,7 +289,7 @@ class MemoryConsolidator:
             result.original_len = len(original_content)
 
             # 备份
-            bak_dir = Path(character_path(agent_name, "memory", "bak"))
+            bak_dir = Path(character_path(agent_name, "bak"))
             bak_dir.mkdir(parents=True, exist_ok=True)
             ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
             bak_path = bak_dir / f"Memory_{ts}_pre.md"
@@ -587,7 +587,7 @@ class MemoryConsolidator:
 
         try:
             # 备份
-            bak_dir = Path(character_path(agent_name, "memory", "bak"))
+            bak_dir = Path(character_path(agent_name, "bak"))
             bak_dir.mkdir(parents=True, exist_ok=True)
             ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
             bak_path = bak_dir / f"user_{ts}_pre.md"
@@ -636,7 +636,7 @@ class MemoryConsolidator:
         # 收集各 agent 的摘要信息用于开始日志
         summaries: list[str] = []
         for name in agent_names:
-            path = Path(character_path(name, "memory", "Memory.md"))
+            path = Path(character_path(name, "Memory.md"))
             if path.exists():
                 length = len(path.read_text(encoding="utf-8"))
                 summaries.append(f"{name}({length}字)")
