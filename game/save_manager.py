@@ -83,39 +83,11 @@ def has_existing_save() -> bool:
     return False
 
 
-def reset_agent_memory(agent_name: str):
-    """重置指定角色的所有记忆文件（保留 soul.md）"""
-    base = agent_path(agent_name)
-    template_path = f"data/templates/{agent_name}"
-
-    # 注意：raw/ 目录只在 narrator 下，在 reset_game 中统一处理
-
-    # 2. 清空 Memory.md（长期记忆）
-    memory_path = f"{base}/Memory.md"
-    if os.path.exists(memory_path):
-        try:
-            with open(memory_path, "w", encoding="utf-8") as f:
-                f.write("")
-            print(f"  已清空: memory.md")
-        except Exception as e:
-            print(f"  清空失败 memory.md: {e}")
-
-    # 3. 从 templates 恢复初始状态文件
-    for filename in ["status.md", "user.md"]:
-        template_file = f"{template_path}/{filename}"
-        target_file = f"{base}/{filename}"
-        if os.path.exists(template_file):
-            try:
-                shutil.copy2(template_file, target_file)
-                print(f"  已恢复: {filename}")
-            except Exception as e:
-                print(f"  恢复失败 {filename}: {e}")
-
-
 def reset_logs():
     """重置日志文件 - 清空 logs 目录下所有 .log 和 .jsonl 文件"""
     log_dir = "logs"
     if not os.path.exists(log_dir):
+        print(f"  [info] 日志目录不存在: {log_dir}", flush=True)
         return
 
     for root, _, files in os.walk(log_dir):
@@ -125,9 +97,9 @@ def reset_logs():
                 try:
                     with open(filepath, "w"):
                         pass
-                    print(f"  已清空: {filepath}")
+                    print(f"  已清空: {filepath}", flush=True)
                 except Exception as e:
-                    print(f"  清空失败 {filepath}: {e}")
+                    print(f"  清空失败 {filepath}: {e}", flush=True)
 
 
 async def reset_game(show_opening: bool = True) -> str:
@@ -136,42 +108,47 @@ async def reset_game(show_opening: bool = True) -> str:
     Returns:
         开场白内容（如果 show_opening=True）或空字符串
     """
-    print(f"\n{'=' * 40}")
-    print("重置游戏...")
-    print(f"{'=' * 40}\n")
+    try:
+        print(f"\n{'=' * 40}", flush=True)
+        print("重置游戏...", flush=True)
+        print(f"{'=' * 40}\n", flush=True)
 
-    # 1. 删除整个 characters 目录（如果存在）
-    characters_dir = "data/characters"
-    if os.path.exists(characters_dir):
-        try:
-            shutil.rmtree(characters_dir)
-            print(f"  已删除: {characters_dir}")
-        except Exception as e:
-            print(f"  删除失败 {characters_dir}: {e}")
+        # 1. 删除整个 characters 目录（如果存在）
+        characters_dir = "data/characters"
+        if os.path.exists(characters_dir):
+            try:
+                shutil.rmtree(characters_dir)
+                print(f"  已删除: {characters_dir}", flush=True)
+            except Exception as e:
+                print(f"  删除失败 {characters_dir}: {e}", flush=True)
 
-    # 2. 从 templates 完整复制
-    templates_dir = "data/templates"
-    if os.path.exists(templates_dir):
-        try:
-            shutil.copytree(templates_dir, characters_dir)
-            print(f"  已复制: {templates_dir} -> {characters_dir}")
-        except Exception as e:
-            print(f"  复制失败: {e}")
-    else:
-        print(f"  [警告] 模板目录不存在: {templates_dir}")
+        # 2. 从 templates 完整复制
+        templates_dir = "data/templates"
+        if os.path.exists(templates_dir):
+            try:
+                shutil.copytree(templates_dir, characters_dir)
+                print(f"  已复制: {templates_dir} -> {characters_dir}", flush=True)
+            except Exception as e:
+                print(f"  复制失败: {e}", flush=True)
+        else:
+            print(f"  [警告] 模板目录不存在: {templates_dir}", flush=True)
 
-    # 3. 只为 narrator 创建 raw 目录（对话历史集中存储）
-    raw_dir = narrator_raw_dir()
-    os.makedirs(raw_dir, exist_ok=True)
-    print(f"  已创建: {raw_dir}")
+        # 3. 只为 narrator 创建 raw 目录（对话历史集中存储）
+        raw_dir = narrator_raw_dir()
+        os.makedirs(raw_dir, exist_ok=True)
+        print(f"  已创建: {raw_dir}", flush=True)
 
-    # 4. 重置日志
-    print("[日志]")
-    reset_logs()
+        # 4. 重置日志
+        print("[日志]", flush=True)
+        reset_logs()
 
-    print(f"\n{'=' * 40}")
-    print("重置完成")
-    print(f"{'=' * 40}\n")
+        print(f"\n{'=' * 40}", flush=True)
+        print("重置完成", flush=True)
+        print(f"{'=' * 40}\n", flush=True)
+    except Exception as e:
+        print(f"[ERROR] reset_game 执行异常: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
 
     opening_text = load_opening_text()
 
