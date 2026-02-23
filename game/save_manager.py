@@ -22,7 +22,7 @@ def agent_path(agent_name: str) -> str:
 
 def agent_raw_dir(agent_name: str) -> str:
     """获取角色 raw 目录路径"""
-    return character_path(agent_name, "memory", "raw")
+    return character_path(agent_name, "raw")
 
 
 # =============================================================================
@@ -44,7 +44,7 @@ def load_opening_text() -> str:
 
 def load_recent_raw_messages(limit: int = 10) -> list:
     """从 narrator 的 raw/ 目录加载最近的原始消息（narrator 拥有上帝视角，包含所有消息）"""
-    raw_dir = character_path("narrator", "memory", "raw")
+    raw_dir = character_path("narrator", "raw")
     if not os.path.exists(raw_dir):
         return []
 
@@ -100,8 +100,8 @@ def reset_agent_memory(agent_name: str):
             except Exception as e:
                 print(f"  删除失败 {jsonl_file}: {e}")
 
-    # 2. 清空 memory.md（长期记忆）
-    memory_path = f"{base}/memory/memory.md"
+    # 2. 清空 Memory.md（长期记忆）
+    memory_path = f"{base}/Memory.md"
     if os.path.exists(memory_path):
         try:
             with open(memory_path, "w", encoding="utf-8") as f:
@@ -123,36 +123,61 @@ def reset_agent_memory(agent_name: str):
 
 
 def reset_logs():
-    """重置日志文件"""
-    log_files = [
-        "logs/agent_calls_readable.log",
-        "logs/agent_calls.jsonl",
-        "logs/routing.log",
-    ]
-    for log_file in log_files:
-        if os.path.exists(log_file):
-            with open(log_file, "w"):
-                pass
+    """重置日志文件 - 清空 logs 目录下所有 .log 和 .jsonl 文件"""
+    log_dir = "logs"
+    if not os.path.exists(log_dir):
+        return
+
+    for root, _, files in os.walk(log_dir):
+        for filename in files:
+            if filename.endswith(".log") or filename.endswith(".jsonl"):
+                filepath = os.path.join(root, filename)
+                try:
+                    with open(filepath, "w"):
+                        pass
+                    print(f"  已清空: {filepath}")
+                except Exception as e:
+                    print(f"  清空失败 {filepath}: {e}")
 
 
 async def reset_game(show_opening: bool = True) -> str:
-    """重置游戏，清空所有记忆并可选发送开场
+    """重置游戏，从 templates 重新创建 characters 目录
 
     Returns:
         开场白内容（如果 show_opening=True）或空字符串
     """
-    all_agents = get_agent_names()
-
     print(f"\n{'=' * 40}")
     print("重置游戏...")
     print(f"{'=' * 40}\n")
 
-    # 重置所有角色记忆
-    for agent_name in all_agents:
-        print(f"[{agent_name}]")
-        reset_agent_memory(agent_name)
+    # 1. 删除整个 characters 目录（如果存在）
+    characters_dir = "data/characters"
+    if os.path.exists(characters_dir):
+        try:
+            shutil.rmtree(characters_dir)
+            print(f"  已删除: {characters_dir}")
+        except Exception as e:
+            print(f"  删除失败 {characters_dir}: {e}")
 
-    # 重置日志
+    # 2. 从 templates 完整复制
+    templates_dir = "data/templates"
+    if os.path.exists(templates_dir):
+        try:
+            shutil.copytree(templates_dir, characters_dir)
+            print(f"  已复制: {templates_dir} -> {characters_dir}")
+        except Exception as e:
+            print(f"  复制失败: {e}")
+    else:
+        print(f"  [警告] 模板目录不存在: {templates_dir}")
+
+    # 3. 为每个角色创建 raw 目录
+    all_agents = get_agent_names()
+    for agent_name in all_agents:
+        raw_dir = agent_raw_dir(agent_name)
+        os.makedirs(raw_dir, exist_ok=True)
+        print(f"  已创建: {raw_dir}")
+
+    # 4. 重置日志
     print("[日志]")
     reset_logs()
 
@@ -162,7 +187,7 @@ async def reset_game(show_opening: bool = True) -> str:
 
     opening_text = load_opening_text()
 
-    # 将开场旁白写入所有角色的历史
+    # 将开场旁白写入 narrator 的历史
     timestamp = datetime.now().isoformat()
     visible_agents = [a for a in all_agents if a != "narrator"]
     opening_message = {
@@ -172,7 +197,7 @@ async def reset_game(show_opening: bool = True) -> str:
         "visible_to": visible_agents + ["narrator"],
     }
 
-    raw_path = character_path("narrator", "memory", "raw", f"{datetime.now().strftime('%Y-%m-%d')}.jsonl")
+    raw_path = character_path("narrator", "raw", f"{datetime.now().strftime('%Y-%m-%d')}.jsonl")
     os.makedirs(os.path.dirname(raw_path), exist_ok=True)
     with open(raw_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
@@ -198,7 +223,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     base = agent_path(agent_name)
 
     # 核心记忆文件
-    for filename in ["memory/memory.md", "user.md", "status.md"]:
+    for filename in ["Memory.md", "user.md", "status.md"]:
         filepath = f"{base}/{filename}"
         if os.path.exists(filepath):
             files.append(filepath)
@@ -210,7 +235,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
             files.append(filepath)
 
     # 整理状态文件
-    consolidation_file = f"{base}/memory/.consolidation_state.json"
+    consolidation_file = f"{base}/.consolidation_state.json"
     if os.path.exists(consolidation_file):
         files.append(consolidation_file)
 
