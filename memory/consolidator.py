@@ -99,13 +99,6 @@ def _cleanup_old_backups(bak_dir: Path, pattern: str, max_count: int = 10) -> in
     return deleted
 
 
-# 日期标题正则：只匹配「整行就是日期标题」的情况，避免误伤正文
-# 匹配：## 4月5日 / **4月5日** / 4月5日（行首且行尾，不含其他文字）
-_DATE_HEADING_RE = re.compile(
-    r"^(?:##\s*|\*\*)?(\d{1,2}月\d{1,2}日)(?:\*\*)?\s*$",
-)
-
-
 def normalize(content: str) -> str:
     """修复常见格式问题：字面\\n、日期标题不规范"""
     # 1. 字面 \n → 真换行
@@ -116,7 +109,7 @@ def normalize(content: str) -> str:
     lines = content.split("\n")
     out = []
     for line in lines:
-        m = _DATE_HEADING_RE.match(line.strip())
+        m = re.match(r"^(?:##\s*|\*\*)?(\d{1,2}月\d{1,2}日)(?:\*\*)?\s*$", line.strip())
         if m:
             out.append(f"## {m.group(1)}")
         else:
@@ -386,10 +379,12 @@ class MemoryConsolidator:
         """
         从 LLM 输出中提取第一步：归并整理后的日记内容。
 
-        格式：
+        新格式（扁平列表，日期在时间字段中）：
         ## 第一步：归并整理
-        ## X月X日
-        - **时间/地点**：事件描述...
+        - **时间**：4月3日 上午
+        - **地点**：教室
+        - **在场**：莉莉丝、李小明
+        - **内容**：事件描述...
 
         Returns:
             OrderedDict[日期, 该日期的内容]
@@ -399,8 +394,7 @@ class MemoryConsolidator:
         step1_match = re.search(step1_pattern, llm_result, re.DOTALL)
 
         if not step1_match:
-            # 兼容：如果没有明确标记，从第一个 ## X月X日 开始解析
-            return split_by_date(llm_result)
+            return OrderedDict()
 
         step1_content = step1_match.group(0)
         # 移除第一步标题本身
@@ -408,7 +402,48 @@ class MemoryConsolidator:
         # 移除第二步标记（如果有）
         step1_content = re.sub(r"##\s*第二步.*$", "", step1_content, flags=re.DOTALL)
 
-        return split_by_date(step1_content.strip())
+        # 解析新格式：从 - **时间**：字段中提取日期
+        return self._split_by_date_from_time_field(step1_content.strip())
+
+    def _split_by_date_from_time_field(self, content: str) -> OrderedDict[str, str]:
+        """
+        从新格式内容中按日期分割。
+        格式：- **时间**：4月3日 上午
+        """
+        sections: OrderedDict[str, str] = OrderedDict()
+        current_date = None
+        current_lines: list[str] = []
+
+        # 匹配时间字段中的日期
+        time_pattern = re.compile(r"^-\s+\*\*时间\*\*：(\d{1,2}月\d{1,2}日)")
+
+        for line in content.split("\n"):
+            m = time_pattern.match(line.strip())
+            if m:
+                # 遇到新事件的开始，先保存之前的事件
+                if current_date and current_lines:
+                    event_text = "\n".join(current_lines).strip()
+                    if current_date in sections:
+                        sections[current_date] += "\n\n" + event_text
+                    else:
+                        sections[current_date] = event_text
+
+                # 开始新事件
+                current_date = m.group(1)
+                current_lines = [line]
+            elif current_date:
+                current_lines.append(line)
+            # 忽略事件之前的内容
+
+        # 最后一个事件
+        if current_date and current_lines:
+            event_text = "\n".join(current_lines).strip()
+            if current_date in sections:
+                sections[current_date] += "\n\n" + event_text
+            else:
+                sections[current_date] = event_text
+
+        return sections
 
     def _parse_step2_growth(self, llm_result: str) -> list[dict]:
         """
