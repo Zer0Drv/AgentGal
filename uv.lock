@@ -15,6 +15,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "chainlit" },
     { name = "evermemos" },
+    { name = "evermemos" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "openai" },
@@ -35,13 +36,19 @@ local-vec = [
     { name = "aiosqlite" },
     { name = "sqlite-vec" },
 ]
+local-vec = [
+    { name = "aiosqlite" },
+    { name = "sqlite-vec" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "agno", specifier = ">=0.9.0" },
     { name = "aiosqlite", marker = "extra == 'local-vec'", specifier = ">=0.22.1" },
+    { name = "aiosqlite", marker = "extra == 'local-vec'", specifier = ">=0.22.1" },
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "chainlit", specifier = ">=2.0" },
+    { name = "evermemos", specifier = ">=0.1.0" },
     { name = "evermemos", specifier = ">=0.1.0" },
     { name = "fastapi", specifier = ">=0.116.0" },
     { name = "httpx", specifier = ">=0.27" },
@@ -51,11 +58,13 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "sqlite-vec", marker = "extra == 'local-vec'", specifier = ">=0.1.6" },
     { name = "sqlalchemy", specifier = ">=2.0.36" },
     { name = "sqlite-vec", marker = "extra == 'local-vec'", specifier = ">=0.1.6" },
     { name = "tiktoken", specifier = ">=0.7" },
     { name = "uvicorn", specifier = ">=0.35.0" },
 ]
+provides-extras = ["local-vec", "dev"]
 provides-extras = ["local-vec", "dev"]
 
 [[package]]
@@ -732,6 +741,23 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b2/9d/c3b43da9515bd270df0f80548d9944e389870713cc1fe2b8fb35fe2bcefd/docstring_parser-0.17.0.tar.gz", hash = "sha256:583de4a309722b3315439bb31d64ba3eebada841f2e2cee23b99df001434c912", size = 27442, upload-time = "2025-07-21T07:35:01.868Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/55/e2/2537ebcff11c1ee1ff17d8d0b6f4db75873e3b0fb32c2d4a2ee31ecb310a/docstring_parser-0.17.0-py3-none-any.whl", hash = "sha256:cf2569abd23dce8099b300f9b4fa8191e9582dda731fd533daf54c4551658708", size = 36896, upload-time = "2025-07-21T07:35:00.684Z" },
+]
+
+[[package]]
+name = "evermemos"
+version = "0.3.13"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/c9/ea27d5a767333328c08617b855bae441aa1c9a586d2b1dbff4c27d4aec11/evermemos-0.3.13.tar.gz", hash = "sha256:0ca674d0dff14f7aba6191d1fffe3ae25883bff739faff332f3b97ea26dcf080", size = 230708, upload-time = "2026-02-13T09:30:23.768Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/fd/e4f8d23ce07822bd614e9fb674fdaacff4457cc094a27022fd6b8929ece2/evermemos-0.3.13-py3-none-any.whl", hash = "sha256:ad2a092f7e1f5b90d89dff5e81343db64a46d18e4eef1f2a9f9b069ccee6ad92", size = 94146, upload-time = "2026-02-13T09:30:24.806Z" },
 ]
 
 [[package]]

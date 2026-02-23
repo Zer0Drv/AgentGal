@@ -2,11 +2,10 @@
 
 from .save_manager import (
     agent_path,
-    agent_raw_dir,
+    narrator_raw_dir,
     load_opening_text,
     load_recent_raw_messages,
     has_existing_save,
-    reset_agent_memory,
     reset_logs,
     reset_game,
     export_save_archive,
@@ -14,11 +13,10 @@ from .save_manager import (
 
 __all__ = [
     "agent_path",
-    "agent_raw_dir",
+    "narrator_raw_dir",
     "load_opening_text",
     "load_recent_raw_messages",
     "has_existing_save",
-    "reset_agent_memory",
     "reset_logs",
     "reset_game",
     "export_save_archive",
