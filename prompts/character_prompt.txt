@@ -17,7 +17,7 @@
 </context>
 
 <format>
-## {agent_name}
+## 莉莉丝/美月
 （动作）对话内容，150字以内
 
 <update_notes>

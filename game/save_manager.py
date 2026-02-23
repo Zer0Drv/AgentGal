@@ -189,7 +189,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     base = agent_path(agent_name)
 
     # 核心记忆文件
-    for filename in ["Memory.md", "user.md", "status.md"]:
+    for filename in ["memory.md", "user.md", "status.md"]:
         filepath = f"{base}/{filename}"
         if os.path.exists(filepath):
             files.append(filepath)

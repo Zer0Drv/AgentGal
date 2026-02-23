@@ -52,7 +52,7 @@ uv run chainlit run app.py
 ### 记忆系统
 
 - **对话历史**（`raw/YYYY-MM-DD.jsonl`）：自动追加，包含该角色可见的所有消息
-- **长期记忆**（`Memory.md`）：Agent 通过 `update_memory` Tool 自主更新，记录重要事件和情感
+- **长期记忆**（`memory.md`）：Agent 通过 `update_memory` Tool 自主更新，记录重要事件和情感
 - **记忆整理**：每 N 轮自动触发，压缩冗长历史
 
 ## 技术栈

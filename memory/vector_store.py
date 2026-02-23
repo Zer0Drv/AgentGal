@@ -217,7 +217,7 @@ class VectorStore:
     async def sync_if_needed(self, agent_names: list[str]):
         """检查各 agent 的 memory.md，触发后台同步"""
         for name in agent_names:
-            path = character_path(name, "Memory.md")
+            path = character_path(name, "memory.md")
             if not os.path.exists(path):
                 continue
             content = open(path, "r", encoding="utf-8").read()

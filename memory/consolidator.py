@@ -232,7 +232,7 @@ class MemoryConsolidator:
             return result
 
         async with lock:
-            path = Path(character_path(agent_name, "Memory.md"))
+            path = Path(character_path(agent_name, "memory.md"))
             if not path.exists():
                 return None
             original_content = path.read_text(encoding="utf-8")
@@ -636,7 +636,7 @@ class MemoryConsolidator:
         # 收集各 agent 的摘要信息用于开始日志
         summaries: list[str] = []
         for name in agent_names:
-            path = Path(character_path(name, "Memory.md"))
+            path = Path(character_path(name, "memory.md"))
             if path.exists():
                 length = len(path.read_text(encoding="utf-8"))
                 summaries.append(f"{name}({length}字)")

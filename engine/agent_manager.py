@@ -35,7 +35,7 @@ class AgentManager:
 
         # 定义动态 instructions 函数，每次运行时重新加载记忆文件
         def get_dynamic_instructions(agent: Agent) -> str:
-            # 运行时加载完整 Memory.md（依赖 DeepSeek 前缀缓存降低成本）
+            # 运行时加载完整 memory.md（依赖 DeepSeek 前缀缓存降低成本）
             memory_content = self._load_full_memory(agent_name)
 
             # 加载 status.md
@@ -93,11 +93,11 @@ class AgentManager:
         return ""
 
     def _load_full_memory(self, agent_name: str) -> str:
-        """加载完整 Memory.md 注入 system prompt。
+        """加载完整 memory.md 注入 system prompt。
 
         全量加载，依赖 DeepSeek 前缀缓存降低成本。
         """
-        path = character_path(agent_name, "Memory.md")
+        path = character_path(agent_name, "memory.md")
         if not os.path.exists(path):
             return ""
         with open(path, "r", encoding="utf-8") as f:
@@ -218,7 +218,7 @@ class AgentManager:
         """
         results = []
 
-        # --- memory: 追加到 Memory.md（带去重） ---
+        # --- memory: 追加到 memory.md（带去重） ---
         if parsed.memory:
             try:
                 result = self._update_memory(agent_name, parsed.memory)
@@ -251,11 +251,11 @@ class AgentManager:
             routing_logger.info(f"[{agent_name}] 文件更新: {'; '.join(results)}")
 
     def _update_memory(self, agent_name: str, memory_content: str) -> str:
-        """追加 memory 内容到 Memory.md（带去重）"""
+        """追加 memory 内容到 memory.md（带去重）"""
         if not memory_content or not memory_content.strip():
             return "内容为空，跳过"
 
-        memory_path = character_path(agent_name, "memory", "Memory.md")
+        memory_path = character_path(agent_name, "memory.md")
         os.makedirs(os.path.dirname(memory_path), exist_ok=True)
 
         clean = memory_content.replace("\\n", "\n").strip()

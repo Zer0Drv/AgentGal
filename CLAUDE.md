@@ -23,7 +23,7 @@ me moBot/
 │   ├── characters/             # 角色数据（运行时）
 │   │   ├── lilith/
 │   │   │   ├── soul.md         # 性格定义（手写，只读）
-│   │   │   ├── Memory.md       # 长期记忆（Agent 更新）
+│   │   │   ├── memory.md       # 长期记忆（Agent 更新）
 │   │   │   ├── status.md       # 当前状态
 │   │   │   ├── user.md         # 对玩家的认知
 │   │   │   ├── growth.md       # 人格沉淀（整理器生成）
@@ -32,7 +32,7 @@ me moBot/
 │   │   │   └── ...             # 结构同 lilith
 │   │   └── narrator/           # 旁白角色
 │   │       ├── soul.md         # 定义：故事主持人、上帝视角
-│   │       ├── Memory.md       # 故事事件记录
+│   │       ├── memory.md       # 故事事件记录
 │   │       └── ...
 │   └── templates/              # 角色模板（用于重置游戏）
 │       └── ...                 # 结构同 characters
