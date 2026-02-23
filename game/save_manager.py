@@ -20,9 +20,9 @@ def agent_path(agent_name: str) -> str:
     return character_path(agent_name)
 
 
-def agent_raw_dir(agent_name: str) -> str:
-    """获取角色 raw 目录路径"""
-    return character_path(agent_name, "raw")
+def narrator_raw_dir() -> str:
+    """获取 narrator 的 raw 目录路径（只有 narrator 拥有对话历史）"""
+    return character_path("narrator", "raw")
 
 
 # =============================================================================
@@ -74,14 +74,12 @@ def load_recent_raw_messages(limit: int = 10) -> list:
 
 
 def has_existing_save() -> bool:
-    """检查是否有已存在的存档（任一角色有 jsonl 文件）"""
-    all_agents = get_agent_names()
-    for agent_name in all_agents:
-        raw_dir = agent_raw_dir(agent_name)
-        if os.path.exists(raw_dir):
-            jsonl_files = glob.glob(f"{raw_dir}/*.jsonl")
-            if jsonl_files:
-                return True
+    """检查是否有已存在的存档（narrator 有 jsonl 文件）"""
+    raw_dir = narrator_raw_dir()
+    if os.path.exists(raw_dir):
+        jsonl_files = glob.glob(f"{raw_dir}/*.jsonl")
+        if jsonl_files:
+            return True
     return False
 
 
@@ -90,15 +88,7 @@ def reset_agent_memory(agent_name: str):
     base = agent_path(agent_name)
     template_path = f"data/templates/{agent_name}"
 
-    # 1. 删除 raw/ 目录下的所有 jsonl 文件（对话历史）
-    raw_dir = agent_raw_dir(agent_name)
-    if os.path.exists(raw_dir):
-        for jsonl_file in glob.glob(f"{raw_dir}/*.jsonl"):
-            try:
-                os.remove(jsonl_file)
-                print(f"  已删除: {os.path.basename(jsonl_file)}")
-            except Exception as e:
-                print(f"  删除失败 {jsonl_file}: {e}")
+    # 注意：raw/ 目录只在 narrator 下，在 reset_game 中统一处理
 
     # 2. 清空 Memory.md（长期记忆）
     memory_path = f"{base}/Memory.md"
@@ -170,12 +160,10 @@ async def reset_game(show_opening: bool = True) -> str:
     else:
         print(f"  [警告] 模板目录不存在: {templates_dir}")
 
-    # 3. 为每个角色创建 raw 目录
-    all_agents = get_agent_names()
-    for agent_name in all_agents:
-        raw_dir = agent_raw_dir(agent_name)
-        os.makedirs(raw_dir, exist_ok=True)
-        print(f"  已创建: {raw_dir}")
+    # 3. 只为 narrator 创建 raw 目录（对话历史集中存储）
+    raw_dir = narrator_raw_dir()
+    os.makedirs(raw_dir, exist_ok=True)
+    print(f"  已创建: {raw_dir}")
 
     # 4. 重置日志
     print("[日志]")
@@ -189,6 +177,7 @@ async def reset_game(show_opening: bool = True) -> str:
 
     # 将开场旁白写入 narrator 的历史
     timestamp = datetime.now().isoformat()
+    all_agents = get_agent_names()
     visible_agents = [a for a in all_agents if a != "narrator"]
     opening_message = {
         "timestamp": timestamp,
@@ -239,11 +228,12 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     if os.path.exists(consolidation_file):
         files.append(consolidation_file)
 
-    # 所有 jsonl 对话历史文件
-    raw_dir = agent_raw_dir(agent_name)
-    if os.path.exists(raw_dir):
-        for jsonl_file in glob.glob(f"{raw_dir}/*.jsonl"):
-            files.append(jsonl_file)
+    # narrator 的 raw/ 对话历史（只有 narrator 有）
+    if agent_name == "narrator":
+        raw_dir = narrator_raw_dir()
+        if os.path.exists(raw_dir):
+            for jsonl_file in glob.glob(f"{raw_dir}/*.jsonl"):
+                files.append(jsonl_file)
 
     return files
 
