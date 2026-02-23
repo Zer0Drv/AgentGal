@@ -40,19 +40,8 @@ def get_all_agents() -> list[str]:
 
 async def rebuild_agent_vectors(agent_name: str):
     """重建单个角色的向量库"""
-    memory_path = project_root / "data" / "characters" / agent_name / "memory.md"
-
-    if not memory_path.exists():
-        routing_logger.warning(f"[向量重建] {agent_name} 的 memory.md 不存在，跳过")
-        return
-
-    content = memory_path.read_text(encoding="utf-8")
-    if not content.strip():
-        routing_logger.warning(f"[向量重建] {agent_name} 的 memory.md 为空，跳过")
-        return
-
-    routing_logger.info(f"[向量重建] 开始重建 {agent_name} 的向量库 ({len(content)} 字符)")
-    await vector_store.rebuild(agent_name, content)
+    routing_logger.info(f"[向量重建] 开始重建 {agent_name} 的向量库")
+    await vector_store.rebuild(agent_name)
     routing_logger.info(f"[向量重建] {agent_name} 重建完成")
 
 

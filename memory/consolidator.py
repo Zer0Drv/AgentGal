@@ -1,7 +1,6 @@
 """后台记忆整理器 - 每个日期都过 LLM 整合 + 增量进度
 
 normalize → split_by_date（合并同日期段落）→ 根据进度跳过已整合日期
-→ 对需要整合的日期调 LLM 整合 → write → 触发向量库全量重建
 
 进度机制：记录上次整合到哪个日期，下次从该日期开始，避免过度压缩旧记忆。
 """
@@ -16,12 +15,14 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 import httpx
 
 from log_config.routing import routing_logger
 from engine.config import character_path
+from memory.vector_store import vector_store
+from memory.text_utils import normalize, split_by_date, split_events_raw, split_into_events
 
 CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
 
@@ -99,63 +100,6 @@ def _cleanup_old_backups(bak_dir: Path, pattern: str, max_count: int = 10) -> in
     return deleted
 
 
-def normalize(content: str) -> str:
-    """修复常见格式问题：字面\\n、日期标题不规范"""
-    # 1. 字面 \n → 真换行
-    content = content.replace("\\n", "\n")
-    # 2. 清理 HTML 注释
-    content = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
-    # 3. 统一日期标题为 ## X月X日（只处理独占一行的日期标题）
-    lines = content.split("\n")
-    out = []
-    for line in lines:
-        m = re.match(r"^(?:##\s*|\*\*)?(\d{1,2}月\d{1,2}日)(?:\*\*)?\s*$", line.strip())
-        if m:
-            out.append(f"## {m.group(1)}")
-        else:
-            out.append(line)
-    # 4. 压缩连续空行
-    content = "\n".join(out)
-    content = re.sub(r"\n{3,}", "\n\n", content)
-    return content
-
-
-def split_by_date(content: str) -> OrderedDict[str, str]:
-    """按 ## X月X日 切分，同日期自动合并。
-
-    Returns:
-        sections: 日期 → 合并后的内容（保持出现顺序）
-    """
-    sections: OrderedDict[str, str] = OrderedDict()
-    current_date = None
-    current_lines: list[str] = []
-
-    for line in content.split("\n"):
-        m = re.match(r"^##\s*(\d{1,2}月\d{1,2}日)$", line.strip())
-        if m:
-            if current_date:
-                body = "\n".join(current_lines).strip()
-                if current_date in sections:
-                    sections[current_date] += "\n" + body
-                else:
-                    sections[current_date] = body
-            current_date = m.group(1)
-            current_lines = []
-        elif current_date:
-            current_lines.append(line)
-        # 忽略日期之前的内容（标题行等）
-
-    # 最后一段
-    if current_date:
-        body = "\n".join(current_lines).strip()
-        if current_date in sections:
-            sections[current_date] += "\n" + body
-        else:
-            sections[current_date] = body
-
-    return sections
-
-
 class MemoryConsolidator:
     def __init__(self):
         self._locks: dict[str, asyncio.Lock] = {}
@@ -198,6 +142,22 @@ class MemoryConsolidator:
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"].strip()
 
+    def _backup_file(self, src: Path, agent_name: str, prefix: str) -> Path:
+        """
+        备份文件到 agent 的 bak 目录，保留最近 10 个备份。
+
+        Returns:
+            备份文件的完整路径
+        """
+        bak_dir = Path(character_path(agent_name, "bak"))
+        bak_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        bak_path = bak_dir / f"{prefix}_{ts}_pre.md"
+        shutil.copy2(src, bak_path)
+
+        _cleanup_old_backups(bak_dir, f"{prefix}_*_pre.md", max_count=10)
+        return bak_path
+
     def _state_path(self, agent_name: str) -> Path:
         """整合进度文件路径"""
         return Path(character_path(agent_name, ".consolidation_state.json"))
@@ -222,6 +182,125 @@ class MemoryConsolidator:
             encoding="utf-8",
         )
 
+    def _load_and_normalize(
+        self, agent_name: str
+    ) -> tuple[Path, str, OrderedDict[str, str]] | None:
+        """
+        加载 memory.md，normalize 并按日期分割。
+
+        Returns:
+            (文件路径, 原始内容, sections) 或 None（文件不存在或太短）
+        """
+        path = Path(character_path(agent_name, "memory.md"))
+        if not path.exists():
+            return None
+        original = path.read_text(encoding="utf-8")
+        if len(original.strip()) < 500:
+            return None
+
+        content = normalize(original)
+        sections = split_by_date(content)
+        if not sections:
+            return None
+
+        return path, original, sections
+
+    def _resolve_dates(
+        self, agent_name: str, all_dates: list[str], last_consolidated: str | None
+    ) -> tuple[list[str], str | None] | None:
+        """
+        根据进度确定需要整合的日期范围。
+
+        Returns:
+            (dates_to_consolidate, next_date) 或 None（无法解析进度）
+        """
+        if last_consolidated:
+            if last_consolidated not in all_dates:
+                routing_logger.warning(
+                    f"[整理器] {agent_name} 进度日期 '{last_consolidated}' 在文件中不存在"
+                )
+                return None
+
+            current_idx = all_dates.index(last_consolidated)
+            if current_idx == len(all_dates) - 1:
+                # 没有新日期，继续整理当前日期
+                routing_logger.info(
+                    f"[整理器] {agent_name} 整理日期: {last_consolidated}"
+                )
+                return [last_consolidated], last_consolidated
+
+            # 有新日期出现：最后一次整理当前日期，同时整理所有新日期
+            new_dates = all_dates[current_idx + 1 :]
+            routing_logger.info(
+                f"[整理器] {agent_name} 检测到新日期，最后一次整理 {last_consolidated}，"
+                f"同时整理新日期: {', '.join(new_dates)}"
+            )
+            return all_dates[current_idx:], all_dates[-1]
+
+        # 无进度记录，整理全部
+        routing_logger.info(
+            f"[整理器] {agent_name} 无进度记录，从头开始整理全部 {len(all_dates)} 个日期"
+        )
+        return all_dates, all_dates[-1] if all_dates else None
+
+    def _build_consolidation_prompt(
+        self, agent_name: str, sections: OrderedDict[str, str], dates: list[str]
+    ) -> str:
+        """构建记忆整合的 LLM prompt。"""
+        soul_path = Path(character_path(agent_name, "soul.md"))
+        soul_content = (
+            soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
+        )
+
+        growth_path = Path(character_path(agent_name, "growth.md"))
+        growth_content = (
+            growth_path.read_text(encoding="utf-8")
+            if growth_path.exists()
+            else "（尚无）"
+        )
+
+        parts = [f"## {date}\n{sections[date]}" for date in dates]
+        combined_text = "\n\n".join(parts)
+
+        template = _load_consolidation_prompt()
+        return template.format(
+            soul=soul_content,
+            growth=growth_content,
+            content=combined_text,
+        )
+
+    def _apply_memory_result(
+        self,
+        agent_name: str,
+        sections: OrderedDict[str, str],
+        dates: list[str],
+        llm_result: str,
+        result: "_ConsolidationResult",
+    ):
+        """解析 LLM 结果并应用更新到 sections。"""
+        if len(llm_result.strip()) < 50:
+            result.errors.append("LLM返回过短，跳过整理")
+            return
+
+        # ===== 第一步：更新 memory.md =====
+        step1_sections = self._parse_step1_memories(llm_result)
+        if step1_sections:
+            for date in dates:
+                if date in step1_sections:
+                    sections[date] = step1_sections[date]
+                else:
+                    result.errors.append(f"{date} 未在LLM返回中找到")
+        else:
+            result.errors.append("未能解析第一步:归并整理")
+
+        # ===== 第二步：更新 growth.md =====
+        step2_updates = self._parse_step2_growth(llm_result)
+        if step2_updates:
+            growth_log = self._apply_growth_updates(agent_name, step2_updates)
+            routing_logger.info(f"[整理器] {agent_name} growth.md: {growth_log}")
+        else:
+            routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
+
     async def consolidate_agent(self, agent_name: str) -> Optional["_ConsolidationResult"]:
         """整理单个 agent 的记忆，返回结果摘要（供 consolidate_all 汇总日志）"""
         result = _ConsolidationResult(agent_name=agent_name)
@@ -232,54 +311,19 @@ class MemoryConsolidator:
             return result
 
         async with lock:
-            path = Path(character_path(agent_name, "memory.md"))
-            if not path.exists():
+            # 1. 加载文件并 normalize
+            loaded = self._load_and_normalize(agent_name)
+            if loaded is None:
                 return None
-            original_content = path.read_text(encoding="utf-8")
-            if len(original_content.strip()) < 500:
-                return None
+            path, original_content, sections = loaded
 
-            # normalize + split（同日期段落自动合并）
-            content = normalize(original_content)
-            sections = split_by_date(content)
-            if not sections:
-                return None
-
-            # 根据进度确定需要整合的日期范围
+            # 2. 确定需要整合的日期
             all_dates = list(sections.keys())
             last_consolidated = self._load_state(agent_name)
-            next_date = None
-
-            if last_consolidated:
-                if last_consolidated in all_dates:
-                    current_idx = all_dates.index(last_consolidated)
-                    if current_idx == len(all_dates) - 1:
-                        # 没有新日期，继续整理当前日期
-                        routing_logger.info(
-                            f"[整理器] {agent_name} 整理日期: {last_consolidated}"
-                        )
-                        dates_to_consolidate = [last_consolidated]
-                        next_date = last_consolidated  # 进度不变
-                    else:
-                        # 有新日期出现：最后一次整理当前日期，同时整理所有新日期
-                        new_dates = all_dates[current_idx + 1:]
-                        routing_logger.info(
-                            f"[整理器] {agent_name} 检测到新日期，最后一次整理 {last_consolidated}，"
-                            f"同时整理新日期: {', '.join(new_dates)}"
-                        )
-                        dates_to_consolidate = all_dates[current_idx:]  # 从当前到末尾
-                        next_date = all_dates[-1]  # 推进到最新的日期
-                else:
-                    # 进度日期已不存在（文件被手动编辑？）
-                    routing_logger.warning(f"[整理器] {agent_name} 进度日期 '{last_consolidated}' 在文件中不存在")
-                    return None
-            else:
-                # 无进度记录，整理全部
-                routing_logger.info(
-                    f"[整理器] {agent_name} 无进度记录，从头开始整理全部 {len(all_dates)} 个日期"
-                )
-                dates_to_consolidate = all_dates
-                next_date = all_dates[-1] if all_dates else None
+            resolved = self._resolve_dates(agent_name, all_dates, last_consolidated)
+            if resolved is None:
+                return None
+            dates_to_consolidate, next_date = resolved
 
             if not dates_to_consolidate:
                 return None
@@ -288,75 +332,33 @@ class MemoryConsolidator:
             result.date_range = f"{dates_to_consolidate[0]}~{dates_to_consolidate[-1]}"
             result.original_len = len(original_content)
 
-            # 备份
-            bak_dir = Path(character_path(agent_name, "bak"))
-            bak_dir.mkdir(parents=True, exist_ok=True)
-            ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-            bak_path = bak_dir / f"Memory_{ts}_pre.md"
-            shutil.copy2(path, bak_path)
+            # 3. 备份
+            self._backup_file(path, agent_name, "Memory")
 
-            # 只保留最近10个备份（匹配所有 Memory_*.md 文件）
-            _cleanup_old_backups(bak_dir, "Memory_*.md", max_count=10)
-
-            # 读取角色性格定义，让整理后的记忆保持角色口吻
-            soul_path = Path(character_path(agent_name, "soul.md"))
-            soul_content = (
-                soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
-            )
-
-            # 读取现有人格沉淀（如果有）
-            growth_path = Path(character_path(agent_name, "growth.md"))
-            if growth_path.exists():
-                growth_content = growth_path.read_text(encoding="utf-8")
-            else:
-                growth_content = "（尚无）"
-
-            # 构建多日期合并内容，一次性调 LLM
-            parts = []
-            for date in dates_to_consolidate:
-                parts.append(f"## {date}\n{sections[date]}")
-            combined_text = "\n\n".join(parts)
-
-            prompt_template = _load_consolidation_prompt()
-            prompt = prompt_template.format(
-                soul=soul_content,
-                growth=growth_content,
-                content=combined_text,
+            # 4. 构建 prompt 并调用 LLM
+            prompt = self._build_consolidation_prompt(
+                agent_name, sections, dates_to_consolidate
             )
             try:
                 llm_result = await self._call_llm(prompt)
-                if len(llm_result.strip()) < 50:
-                    result.errors.append("LLM返回过短，跳过整理")
-                else:
-                    # ===== 第一步：更新 memory.md =====
-                    step1_sections = self._parse_step1_memories(llm_result)
-                    if step1_sections:
-                        # 只更新成功解析的日期
-                        for date in dates_to_consolidate:
-                            if date in step1_sections:
-                                sections[date] = step1_sections[date]
-                            else:
-                                result.errors.append(f"{date} 未在LLM返回中找到")
-                    else:
-                        result.errors.append("未能解析第一步:归并整理")
-
-                    # ===== 第二步：更新 growth.md =====
-                    step2_updates = self._parse_step2_growth(llm_result)
-                    if step2_updates:
-                        growth_log = self._apply_growth_updates(agent_name, step2_updates)
-                        routing_logger.info(f"[整理器] {agent_name} growth.md: {growth_log}")
-                    else:
-                        routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
-
+                self._apply_memory_result(
+                    agent_name, sections, dates_to_consolidate, llm_result, result
+                )
             except Exception as e:
                 result.errors.append(f"整合失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
 
+            # 5. 写回文件
             result.final_len = self._write_back(
                 path, agent_name, sections, original_content
             )
 
-            # 更新进度：保存 next_date（由上面的逻辑确定）
+            # 6. 同步到向量存储
+            await self._sync_events_to_store(
+                agent_name, sections, dates_to_consolidate
+            )
+
+            # 7. 更新进度
             if next_date:
                 if last_consolidated and next_date != last_consolidated:
                     routing_logger.info(
@@ -364,7 +366,7 @@ class MemoryConsolidator:
                     )
                 self._save_state(agent_name, next_date)
 
-            # 顺带整理 user.md
+            # 8. 顺带整理 user.md
             user_before, user_after = await self._consolidate_player_profile(agent_name)
             result.user_md_before = user_before
             result.user_md_after = user_after
@@ -411,37 +413,14 @@ class MemoryConsolidator:
         格式：- **时间**：4月3日 上午
         """
         sections: OrderedDict[str, str] = OrderedDict()
-        current_date = None
-        current_lines: list[str] = []
 
-        # 匹配时间字段中的日期
-        time_pattern = re.compile(r"^-\s+\*\*时间\*\*：(\d{1,2}月\d{1,2}日)")
-
-        for line in content.split("\n"):
-            m = time_pattern.match(line.strip())
-            if m:
-                # 遇到新事件的开始，先保存之前的事件
-                if current_date and current_lines:
-                    event_text = "\n".join(current_lines).strip()
-                    if current_date in sections:
-                        sections[current_date] += "\n\n" + event_text
-                    else:
-                        sections[current_date] = event_text
-
-                # 开始新事件
-                current_date = m.group(1)
-                current_lines = [line]
-            elif current_date:
-                current_lines.append(line)
-            # 忽略事件之前的内容
-
-        # 最后一个事件
-        if current_date and current_lines:
-            event_text = "\n".join(current_lines).strip()
-            if current_date in sections:
-                sections[current_date] += "\n\n" + event_text
+        for date, event_text in split_events_raw(content):
+            if date is None:
+                continue
+            if date in sections:
+                sections[date] += "\n\n" + event_text
             else:
-                sections[current_date] = event_text
+                sections[date] = event_text
 
         return sections
 
@@ -471,6 +450,43 @@ class MemoryConsolidator:
 
         return updates
 
+    def _read_growth(self, agent_name: str) -> dict[str, str]:
+        """
+        读取 growth.md，返回 {id: content} 字典。
+
+        格式：[P001] 内容（支持多行）
+        """
+        path = Path(character_path(agent_name, "growth.md"))
+        if not path.exists():
+            return {}
+
+        content = path.read_text(encoding="utf-8")
+        entries = {}
+        # 匹配 [P001] 内容（支持多行）
+        pattern = r"\[(\w+)\]\s*(.+?)(?=\n\[|$)"
+        for m in re.finditer(pattern, content, re.DOTALL):
+            entries[m.group(1)] = m.group(2).strip()
+        return entries
+
+    def _write_growth(self, agent_name: str, entries: dict[str, str]):
+        """将 {id: content} 字典写回 growth.md，按 ID 数字部分排序。"""
+        path = Path(character_path(agent_name, "growth.md"))
+
+        def _sort_key(k: str) -> int:
+            try:
+                return int(re.sub(r"[^0-9]", "", k))
+            except ValueError:
+                return 0
+
+        sorted_ids = sorted(entries.keys(), key=_sort_key)
+
+        lines = ["# 人格沉淀层\n", ""]
+        for id in sorted_ids:
+            lines.append(f"[{id}] {entries[id]}\n\n")
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(lines), encoding="utf-8")
+
     def _apply_growth_updates(
         self, agent_name: str, updates: list[dict]
     ) -> str:
@@ -480,22 +496,7 @@ class MemoryConsolidator:
         Returns:
             操作日志字符串
         """
-        path = Path(character_path(agent_name, "growth.md"))
-
-        # 读取或创建
-        if path.exists():
-            content = path.read_text(encoding="utf-8")
-        else:
-            content = "# 人格沉淀层\n\n"
-
-        # 解析现有条目 {id: content_line}
-        entries = {}
-        # 匹配 [P001] 内容（支持多行）
-        pattern = r"\[(\w+)\]\s*(.+?)(?=\n\[|$)"
-        for m in re.finditer(pattern, content, re.DOTALL):
-            entries[m.group(1)] = m.group(2).strip()
-
-        # 记录操作日志
+        entries = self._read_growth(agent_name)
         logs = []
 
         for up in updates:
@@ -509,10 +510,9 @@ class MemoryConsolidator:
             elif up["type"] == "UPDATE":
                 if up["id"] not in entries:
                     logs.append(f"UPDATE警告:{up['id']}不存在转为ADD")
-                    entries[up["id"]] = up["content"] or ""
                 else:
-                    entries[up["id"]] = up["content"] or ""
                     logs.append(f"UPDATE {up['id']}")
+                entries[up["id"]] = up["content"] or ""
 
             elif up["type"] == "DELETE":
                 if up["id"] in entries:
@@ -521,23 +521,7 @@ class MemoryConsolidator:
                 else:
                     logs.append(f"DELETE警告:{up['id']}不存在")
 
-        # 按 ID 数字部分排序
-        def sort_key(k):
-            try:
-                return int(re.sub(r"[^0-9]", "", k))
-            except:
-                return 0
-
-        sorted_ids = sorted(entries.keys(), key=sort_key)
-
-        # 写回文件
-        lines = ["# 人格沉淀层\n", ""]
-        for id in sorted_ids:
-            lines.append(f"[{id}] {entries[id]}\n\n")
-
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("".join(lines), encoding="utf-8")
-
+        self._write_growth(agent_name, entries)
         return ";".join(logs) if logs else "无更新"
 
     def _write_back(
@@ -587,14 +571,7 @@ class MemoryConsolidator:
 
         try:
             # 备份
-            bak_dir = Path(character_path(agent_name, "bak"))
-            bak_dir.mkdir(parents=True, exist_ok=True)
-            ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-            bak_path = bak_dir / f"user_{ts}_pre.md"
-            shutil.copy2(user_path, bak_path)
-
-            # 只保留最近 10 个 user.md 备份
-            _cleanup_old_backups(bak_dir, "user_*_pre.md", max_count=10)
+            self._backup_file(user_path, agent_name, "user")
 
             prompt = _load_player_profile_prompt().format(content=content)
             consolidated = await self._call_llm(prompt)
@@ -685,6 +662,46 @@ class MemoryConsolidator:
 
         elapsed = time.monotonic() - t0
         routing_logger.info(f"[整理器] 全部完成 (耗时 {elapsed:.1f}s)")
+
+    async def _sync_events_to_store(
+        self,
+        agent_name: str,
+        sections: OrderedDict[str, str],
+        dates_to_sync: list[str],
+    ):
+        """将整理后的事件同步到向量存储。
+
+        Args:
+            agent_name: 角色名
+            sections: 所有日期的记忆内容（日期 -> 事件列表文本）
+            dates_to_sync: 需要同步的日期列表（本次整理的日期）
+        """
+        try:
+            total_events = 0
+            for date in dates_to_sync:
+                if date not in sections:
+                    continue
+
+                day_content = sections[date].strip()
+                if not day_content:
+                    continue
+
+                # 1. 解析出事件列表
+                events = split_into_events(day_content)
+
+                # 2. 将事件传给 vector_store
+                for idx, event in enumerate(events):
+                    message_id = f"{agent_name}_{date}_{idx}"
+                    vector_store.schedule_add(agent_name, message_id, event)
+                    total_events += 1
+
+            if total_events > 0:
+                routing_logger.info(
+                    f"[整理器] {agent_name} 同步 {total_events} 个事件到向量存储"
+                )
+
+        except Exception as e:
+            routing_logger.error(f"[整理器] {agent_name} 向量存储同步失败: {e}")
 
     async def close(self):
         if self._client and not self._client.is_closed:

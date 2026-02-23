@@ -12,11 +12,8 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from memory.consolidator import (
-    MemoryConsolidator,
-    normalize,
-    split_by_date,
-)
+from memory.consolidator import MemoryConsolidator
+from memory.text_utils import normalize, split_by_date
 
 
 async def main(agent: str, date: str) -> None:
