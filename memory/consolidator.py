@@ -195,7 +195,7 @@ class MemoryConsolidator:
         if not path.exists():
             return None
         original = path.read_text(encoding="utf-8")
-        if len(original.strip()) < 500:
+        if len(original.strip()) < 50:
             return None
 
         content = normalize(original)
