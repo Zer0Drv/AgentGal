@@ -150,6 +150,63 @@ class VectorStore:
         """异步语义搜索（包装同步版本）"""
         return self.search_sync(agent_name, query, limit)
 
+    # --- 删除 ---
+
+    async def delete(self, agent_name: str) -> bool:
+        """删除 EverMemOS 中指定角色的所有记忆。
+
+        由于 EverMemOS 使用 group_id 来隔离不同角色的记忆，
+        此方法会删除该 agent 对应 group_id 下的所有记忆。
+
+        Returns:
+            是否成功删除（或标记为已删除）
+        """
+        try:
+            memory = self._get_client().v0.memories
+
+            # 尝试调用 delete API（如果 SDK 支持）
+            if hasattr(memory, 'delete'):
+                response = memory.delete(
+                    extra_query={
+                        "user_id": agent_name,
+                        "group_id": agent_name,
+                    }
+                )
+                if getattr(response, 'status', '') == 'success':
+                    routing_logger.info(f"[EverMemOS] {agent_name} 记忆删除成功")
+                    return True
+                else:
+                    routing_logger.warning(
+                        f"[EverMemOS] {agent_name} 记忆删除失败: {getattr(response, 'message', 'unknown')}"
+                    )
+                    return False
+
+            # 降级：如果 SDK 不支持 delete，则记录警告
+            # 根据注释，EverMemOS 目前不提供删除 API，重建通过写入新版本实现
+            routing_logger.warning(
+                f"[EverMemOS] {agent_name} SDK 不支持 delete API，"
+                "记忆将在重建时通过写入新版本覆盖"
+            )
+            return False
+
+        except Exception as e:
+            routing_logger.error(f"[EverMemOS] {agent_name} 删除记忆失败: {e}")
+            return False
+
+    async def delete_all_agents(self, agent_names: list[str]) -> dict[str, bool]:
+        """批量删除多个角色的记忆。
+
+        Args:
+            agent_names: 角色名称列表
+
+        Returns:
+            每个角色的删除结果映射
+        """
+        results = {}
+        for agent_name in agent_names:
+            results[agent_name] = await self.delete(agent_name)
+        return results
+
     async def close(self):
         """等待后台任务完成"""
         if self._bg_tasks:
