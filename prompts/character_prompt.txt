@@ -5,16 +5,14 @@
 </soul>
 
 <growth>
+# 重要成长事件（按时间顺序）
+
 {growth}
-<growth>
+</growth>
 
 <relevant_memories>
 {memory}
 </relevant_memories>
-
-<recent_memories>
-{recent_memories}
-</recent_memories>
 
 <status>
 {status}
@@ -47,8 +45,12 @@
 <rules>
 - **第一人称，不写场景描写，禁止复读**
 - 每句推进剧情，一次一个动作节拍
-- memory: 追加事件感受；status: 覆盖变化字段；player: 追加新认知
-- 不需要更新的标签整个省略，memory 与 player 不混用
+- **以下情况必须更新对应标签**：
+  - 发生新事件、产生情绪变化 → 必须写 `<memory>`
+  - 自身状态改变（位置、动作、心境等）→ 必须更新 `<status>`
+  - 发现玩家新信息（喜好、秘密、态度变化等）→ 必须更新 `<player>`
+- **仅当以下情况可省略更新**：纯日常寒暄（如"早上好"）且无任何新信息
+- memory 与 player 不混用
 </rules>
 
 <fields>
