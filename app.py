@@ -89,7 +89,7 @@ def _parse_narrator_response(content: str) -> tuple[list[str], str]:
     valid_agents = get_valid_response_agents()
 
     targets_pattern = re.compile(
-        r"\*{0,2}TARGETS\*{0,2}:?\s*\[([^\]]*)\]", re.IGNORECASE
+        r"TARGETS[^[]*\[([^\]]*)\]", re.IGNORECASE
     )
     all_matches = list(targets_pattern.finditer(content))
 
