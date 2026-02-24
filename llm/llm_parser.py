@@ -8,10 +8,8 @@ OpenAI 兼容 LLM 客户端实现
 import json
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Any, Literal
-from loguru import logger
 
 from .base import BaseLLMClient
-
 
 StreamEventType = Literal[
     "stream_start",
@@ -21,7 +19,6 @@ StreamEventType = Literal[
     "stream_end",
     "error",
 ]
-
 
 @dataclass(slots=True)
 class StreamEvent:
@@ -51,7 +48,6 @@ class StreamEvent:
 
     def to_sse_data(self) -> str:
         return json.dumps(self.to_payload(), ensure_ascii=False)
-
 
 class FastAPISSEFormatter:
     """
@@ -121,7 +117,6 @@ class FastAPISSEFormatter:
             index=self._index,
         )
 
-
 class OpenAICompatibleClient(BaseLLMClient):
     """
     OpenAI 兼容协议 LLM 客户端
@@ -173,9 +168,6 @@ class OpenAICompatibleClient(BaseLLMClient):
             model=model,
             timeout=timeout,
             max_retries=max_retries,
-        )
-        logger.info(
-            f"✓ OpenAICompatibleClient 初始化 - Model: {model} | api_url: {self.api_url}"
         )
 
     # ==================== 实现抽象方法 ====================
@@ -318,7 +310,6 @@ class OpenAICompatibleClient(BaseLLMClient):
             ),  # 即使为空也返回空字符串
             "usage": response_data.get("usage", {}),
         }
-
 
 # 兼容旧命名，避免现有引用立刻断裂
 QwenClient = OpenAICompatibleClient

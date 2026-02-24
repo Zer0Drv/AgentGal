@@ -2,8 +2,6 @@ import httpx
 import asyncio
 from abc import ABC, abstractmethod
 from typing import List, Dict, AsyncGenerator, Any, Optional
-from loguru import logger
-
 
 class BaseLLMClient(ABC):
     """
@@ -38,13 +36,11 @@ class BaseLLMClient(ABC):
                 limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
                 headers=self._get_headers(),  # 初始化时注入 Header
             )
-            logger.debug(f"Client initialized for {self.model}")
 
     async def close(self):
         """关闭连接"""
         if self._client:
             await self._client.aclose()
-            logger.debug("Client closed")
 
     async def __aenter__(self):
         await self.initialize()
@@ -113,10 +109,8 @@ class BaseLLMClient(ABC):
                             parsed_item = self._parse_stream_chunk(raw_data)
                             if parsed_item:
                                 yield parsed_item
-                        except Exception as e:
-                            logger.warning(
-                                f"Parse chunk error: {e} | Raw: {raw_data[:50]}"
-                            )
+                        except Exception:
+                            # ignore bad chunk and continue
                             continue
                 return  # 成功后退出重试循环
 
@@ -149,7 +143,6 @@ class BaseLLMClient(ABC):
             await self.initialize()
 
     async def _handle_http_error(self, e: Exception, attempt: int):
-        logger.error(f"Request failed (Attempt {attempt + 1}): {str(e)}")
         if attempt < self.max_retries:
             await asyncio.sleep(2**attempt)
         else:
