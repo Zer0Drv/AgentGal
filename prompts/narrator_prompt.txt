@@ -48,7 +48,7 @@ TARGETS: [lilith, mitsuki]
 </example>
 
 <rules>
-- TARGETS：谁能感知玩家，谁进 targets。
+- TARGETS：谁能感知玩家，谁进 targets。**绝对不能漏掉TARGETS**。
   - 同地点角色默认互相可见
   - 私密交流（如"悄悄话"）仅对指定对象可见
   - 消息/电话仅收件人可见
