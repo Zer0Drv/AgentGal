@@ -4,8 +4,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi_app.models.conversation import Conversation
 
 
-async def get_conversation_by_id(db: AsyncSession, conversation_id: str) -> Conversation | None:
-    result = await db.execute(select(Conversation).where(Conversation.id == conversation_id))
+async def get_conversation_by_id(
+    db: AsyncSession, conversation_id: str
+) -> Conversation | None:
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id)
+    )
     return result.scalar_one_or_none()
 
 

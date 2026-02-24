@@ -39,10 +39,13 @@ def _scan_agent_names() -> list[str]:
     if not agents_dir.exists():
         return []
 
-    return sorted([
-        d.name for d in agents_dir.iterdir()
-        if d.is_dir() and not d.name.startswith('.') and not d.name.startswith('_')
-    ])
+    return sorted(
+        [
+            d.name
+            for d in agents_dir.iterdir()
+            if d.is_dir() and not d.name.startswith(".") and not d.name.startswith("_")
+        ]
+    )
 
 
 # 应用启动时扫描一次，后续不再变更

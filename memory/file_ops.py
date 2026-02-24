@@ -4,7 +4,6 @@
 而非通过 Tool 调用。本模块保留底层文件操作供其他模块使用。
 """
 
-import json
 import os
 
 from engine.config import character_path

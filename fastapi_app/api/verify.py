@@ -12,7 +12,9 @@ from app.core.config import settings
 from app.db import AsyncSession, get_or_none
 from app.models import User
 
-token_router = APIRouter(tags=['token管理'])
+token_router = APIRouter(tags=["token管理"])
+
+
 # FastAPI 路由
 async def verify_token(token: str) -> Dict[str, Any]:
     """
@@ -26,13 +28,8 @@ async def verify_token(token: str) -> Dict[str, Any]:
     """
     url = settings.rdp_authentication_url
 
-    payload = {
-        "token": token,
-        "system": "heman"
-    }
-    headers = {
-        'Content-Type': 'application/json'
-    }
+    payload = {"token": token, "system": "heman"}
+    headers = {"Content-Type": "application/json"}
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
@@ -42,7 +39,8 @@ async def verify_token(token: str) -> Dict[str, Any]:
         logger.error(f"Token verification failed: {e}")
         return {"error": "Token verification failed"}
 
-@token_router.get('/')
+
+@token_router.get("/")
 async def get_token(token: str) -> RedirectResponse:
     """
     重定向到前端页面并携带 token
@@ -58,10 +56,9 @@ async def get_token(token: str) -> RedirectResponse:
     return RedirectResponse(redirect_url)
 
 
-@token_router.get('/v1/getUserInfo')
+@token_router.get("/v1/getUserInfo")
 async def get_current_user_info(
-    token: str,
-    db: AsyncSession = Depends(get_db)
+    token: str, db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
     """
     获取当前用户信息
@@ -107,10 +104,10 @@ def _build_user_response(username: str, code: int) -> Dict[str, Any]:
         标准格式的用户信息响应
     """
     return {
-        'code': code,
-        'data': {
-            'username': username,
-            'nickname': username,
-            'rdpurl': settings.rdp_applist
-        }
+        "code": code,
+        "data": {
+            "username": username,
+            "nickname": username,
+            "rdpurl": settings.rdp_applist,
+        },
     }

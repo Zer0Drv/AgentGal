@@ -18,10 +18,9 @@ class LLMClientFactory:
     # 注册表：Provider -> "模块路径:类名"
     # 绝大多数现代模型都兼容 OpenAI 协议，所以使用各自的客户端
     _REGISTRY = {
-        "openai": "llm.llm_parser:OpenAICompatibleClient",   # OpenAI 兼容协议
-        "qwen": "llm.llm_parser:OpenAICompatibleClient",     # 通义千问
-        "deepseek": "llm.llm_parser:OpenAICompatibleClient", # DeepSeek (兼容 OpenAI)
-
+        "openai": "llm.llm_parser:OpenAICompatibleClient",  # OpenAI 兼容协议
+        "qwen": "llm.llm_parser:OpenAICompatibleClient",  # 通义千问
+        "deepseek": "llm.llm_parser:OpenAICompatibleClient",  # DeepSeek (兼容 OpenAI)
         # 如果未来有特殊协议模型（非 OpenAI 接口），可以注册在这里
         # "zhipu": "llm.zhipu_client:ZhipuClient",
     }
@@ -65,9 +64,7 @@ class LLMClientFactory:
 
         # 2. 获取 Provider 并加载对应的类（优先级：config > .env > 默认）
         provider = (
-            conf_dict.get("provider")
-            or os.getenv("LLM_PROVIDER")
-            or "openai"
+            conf_dict.get("provider") or os.getenv("LLM_PROVIDER") or "openai"
         ).lower()
         client_class = cls._get_client_class(provider)
 
@@ -97,10 +94,20 @@ class LLMClientFactory:
 
         # (B) 运行时生成参数 (对应 Chat/Stream 时的默认值)
         # 排除掉已经被提取的 keys (temperature 和 max_tokens 已传给 __init__)
-        used_keys = set(init_kwargs.keys()) | set(pool_keys) | {"provider", "api_url", "model_name", "headers", "temperature", "max_tokens"}
+        used_keys = (
+            set(init_kwargs.keys())
+            | set(pool_keys)
+            | {
+                "provider",
+                "api_url",
+                "model_name",
+                "headers",
+                "temperature",
+                "max_tokens",
+            }
+        )
         runtime_defaults = {
-            k: v for k, v in conf_dict.items()
-            if k not in used_keys and v is not None
+            k: v for k, v in conf_dict.items() if k not in used_keys and v is not None
         }
 
         # 4. 实例化前清理：移除 None 值，让子类默认值生效
@@ -109,15 +116,15 @@ class LLMClientFactory:
         # 5. 实例化
         try:
             if not init_kwargs.get("api_url"):
-                 raise ValueError(f"Provider [{provider}] missing 'api_url'")
+                raise ValueError(f"Provider [{provider}] missing 'api_url'")
 
             # 创建实例
             client = client_class(**init_kwargs)
-            
+
             # 挂载运行时默认参数 (temperature, max_tokens 等)
             # 这样在调用 client.stream_chat() 时如果没传参，就会用这里的默认值
             client.default_params = runtime_defaults
-            
+
             logger.info(
                 f"✓ Created Client: {provider} -> {client_class.__name__} "
                 f"(Model: {init_kwargs.get('model', '')})"
@@ -151,7 +158,7 @@ class LLMClientFactory:
                 module_path, class_name = target.split(":")
                 module = importlib.import_module(module_path)
                 client_class = getattr(module, class_name)
-                
+
                 # 缓存一下，下次直接用类，不用再 import
                 cls._REGISTRY[provider] = client_class
                 return client_class

@@ -136,11 +136,7 @@ async def _wait_tasks(
 async def _cancel_remaining_tasks(*, timeout_seconds: int) -> None:
     """确保事件循环退出前没有悬挂任务，避免 asyncio.run 在关机阶段卡住。"""
     current = asyncio.current_task()
-    pending = {
-        t
-        for t in asyncio.all_tasks()
-        if t is not current and not t.done()
-    }
+    pending = {t for t in asyncio.all_tasks() if t is not current and not t.done()}
     if not pending:
         return
 
@@ -187,7 +183,9 @@ async def main() -> int:
     )
 
     stop = asyncio.Event()
-    hb_task = asyncio.create_task(_heartbeat(stop=stop, interval_seconds=args.heartbeat))
+    hb_task = asyncio.create_task(
+        _heartbeat(stop=stop, interval_seconds=args.heartbeat)
+    )
 
     rebuild_tasks: set[asyncio.Task] = set()
     t0 = time.time()
@@ -197,11 +195,7 @@ async def main() -> int:
             print(f"[记忆整理] ({i}/{len(agents)}) 开始: {agent}", flush=True)
 
             # 关键：捕获 consolidate_agent 期间新创建的后台任务（主要是 rebuild）
-            before = {
-                t
-                for t in asyncio.all_tasks()
-                if t is not asyncio.current_task()
-            }
+            before = {t for t in asyncio.all_tasks() if t is not asyncio.current_task()}
 
             coro = memory_consolidator.consolidate_agent(agent)
             if args.agent_timeout and args.agent_timeout > 0:
@@ -209,22 +203,26 @@ async def main() -> int:
             else:
                 await coro
 
-            after = {
-                t
-                for t in asyncio.all_tasks()
-                if t is not asyncio.current_task()
-            }
+            after = {t for t in asyncio.all_tasks() if t is not asyncio.current_task()}
             new_tasks = {t for t in (after - before) if not t.done()}
 
             # 过滤一下：只保留看起来像"向量重建/同步"的任务，避免误把其他任务也纳入等待
             for t in new_tasks:
                 name = getattr(t.get_coro(), "__qualname__", repr(t.get_coro()))
-                if "VectorStore" in name or "rebuild" in name or "_sync_incremental" in name:
+                if (
+                    "VectorStore" in name
+                    or "rebuild" in name
+                    or "_sync_incremental" in name
+                ):
                     rebuild_tasks.add(t)
 
             print(
                 f"[记忆整理] ({i}/{len(agents)}) 完成: {agent}"
-                + (f"（捕获到 {len(rebuild_tasks)} 个向量任务）" if rebuild_tasks else ""),
+                + (
+                    f"（捕获到 {len(rebuild_tasks)} 个向量任务）"
+                    if rebuild_tasks
+                    else ""
+                ),
                 flush=True,
             )
 

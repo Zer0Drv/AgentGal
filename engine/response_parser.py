@@ -103,7 +103,7 @@ def _extract_update_notes(raw_response: str) -> tuple[Optional[str], int]:
 
     if end_match:
         # 正常闭合的情况
-        xml_content = raw_response[content_start:content_start + end_match.start()]
+        xml_content = raw_response[content_start : content_start + end_match.start()]
         # 返回 <update_notes> 开始位置，作为截取干净内容的边界
         xml_end_pos = start_pos
     else:
@@ -112,7 +112,7 @@ def _extract_update_notes(raw_response: str) -> tuple[Optional[str], int]:
         # 查找可能的结束标记（如分隔线、metrics 等）
         separator_match = re.search(r"\n\s*-{10,}|\n\s*\[metrics\]|\n\s*$", remaining)
         if separator_match:
-            xml_content = remaining[:separator_match.start()]
+            xml_content = remaining[: separator_match.start()]
         else:
             xml_content = remaining
 

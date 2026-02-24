@@ -13,7 +13,11 @@ from engine.config import (
     get_valid_response_agents,
 )
 from engine.message_router import message_router
-from engine.text_utils import clean_response, is_valid_response, process_character_response
+from engine.text_utils import (
+    clean_response,
+    is_valid_response,
+    process_character_response,
+)
 from game.save_manager import export_save_archive, reset_game
 from memory.consolidator import CONSOLIDATION_INTERVAL, memory_consolidator
 from memory.vector_store import vector_store
@@ -34,7 +38,9 @@ DEFAULT_USER_ID = "fastapi_user"
 def _parse_narrator_response(content: str) -> tuple[list[str], str]:
     valid_agents = get_valid_response_agents()
 
-    targets_pattern = re.compile(r"\*{0,2}TARGETS\*{0,2}:?\s*\[([^\]]*)\]", re.IGNORECASE)
+    targets_pattern = re.compile(
+        r"\*{0,2}TARGETS\*{0,2}:?\s*\[([^\]]*)\]", re.IGNORECASE
+    )
     all_matches = list(targets_pattern.finditer(content))
 
     if not all_matches:
@@ -48,7 +54,7 @@ def _parse_narrator_response(content: str) -> tuple[list[str], str]:
         if t.strip() and t.strip().lower() in valid_agents
     ]
 
-    scene_description = content[targets_match.end():].strip()
+    scene_description = content[targets_match.end() :].strip()
     return targets, scene_description
 
 
@@ -63,9 +69,13 @@ def _build_agent_input(history: str, user_input: str) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-async def _run_one_agent(agent_name: str, targets: list[str], user_input: str) -> AgentReply:
+async def _run_one_agent(
+    agent_name: str, targets: list[str], user_input: str
+) -> AgentReply:
     try:
-        history = message_router.load_recent_history(agent_name, limit=HISTORY_LIMIT_DEFAULT)
+        history = message_router.load_recent_history(
+            agent_name, limit=HISTORY_LIMIT_DEFAULT
+        )
         full_input = _build_agent_input(history, user_input)
 
         response = await agent_manager.run_agent(agent_name, full_input)
@@ -136,7 +146,9 @@ async def _apply_command(
     if command == "/save":
         save_path = await export_save_archive()
         if save_path:
-            text = f"✅ 存档已导出: `{save_path}`\n\n包含所有角色的记忆、对话历史和状态。"
+            text = (
+                f"✅ 存档已导出: `{save_path}`\n\n包含所有角色的记忆、对话历史和状态。"
+            )
         else:
             text = "❌ 存档导出失败，请检查日志。"
         return ChatResponse(narrator=text, targets=[], replies=[])
@@ -183,9 +195,8 @@ async def run_chat(
 ) -> ChatResponse:
     resolved_user_id = (user_id or DEFAULT_USER_ID).strip() or DEFAULT_USER_ID
     resolved_conversation_id = (
-        (conversation_id or f"{resolved_user_id}:default").strip()
-        or f"{resolved_user_id}:default"
-    )
+        conversation_id or f"{resolved_user_id}:default"
+    ).strip() or f"{resolved_user_id}:default"
     current_count = await _ensure_user_and_conversation(
         db, resolved_user_id, resolved_conversation_id
     )
@@ -204,7 +215,9 @@ async def run_chat(
         current_count=current_count,
     )
 
-    narrator_history = message_router.load_recent_history("narrator", limit=HISTORY_LIMIT_NARRATOR)
+    narrator_history = message_router.load_recent_history(
+        "narrator", limit=HISTORY_LIMIT_NARRATOR
+    )
     narrator_input = (
         f"最近对话历史:\n\n{narrator_history}\n\n---\n\n玩家新消息: {user_input}"
         if narrator_history
@@ -229,7 +242,9 @@ async def run_chat(
 
     narrator_text: str | None = None
     if scene_description and narrator_valid:
-        await message_router.broadcast_agent_response("narrator", targets, scene_description)
+        await message_router.broadcast_agent_response(
+            "narrator", targets, scene_description
+        )
         narrator_text = scene_description
         await create_message(
             db=db,
@@ -266,7 +281,9 @@ async def run_chat(
         round_targets = targets if "narrator" in targets else [*targets, "narrator"]
         round_id = f"{resolved_conversation_id}_{message_counter}"
         vector_store.schedule_add_round(
-            round_targets, round_id, _format_round_content(user_input, narrator_text, replies)
+            round_targets,
+            round_id,
+            _format_round_content(user_input, narrator_text, replies),
         )
 
     _trigger_consolidation_if_needed(message_counter)

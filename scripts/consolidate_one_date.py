@@ -48,7 +48,9 @@ async def main(agent: str, date: str) -> None:
         result = result[m.end() :].lstrip("\n")
     result = re.sub(r"^#{1,6}\s*\d{1,2}月\d{1,2}日\s*\n?", "", result).strip()
 
-    print(f"整理后: {len(result)} 字 (压缩 {(1 - len(result)/len(old_text))*100:.1f}%)")
+    print(
+        f"整理后: {len(result)} 字 (压缩 {(1 - len(result) / len(old_text)) * 100:.1f}%)"
+    )
     print()
     print(result)
     print()

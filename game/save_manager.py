@@ -6,7 +6,6 @@ import os
 import shutil
 import zipfile
 from datetime import datetime
-from pathlib import Path
 
 from engine.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
 
@@ -115,6 +114,7 @@ async def reset_game(show_opening: bool = True) -> str:
 
         # 1. 删除 EverMemOS 中的向量记忆
         from memory.vector_store import vector_store
+
         all_agents = get_agent_names()
         if all_agents:
             print("[EverMemOS] 清理向量记忆...", flush=True)
@@ -155,6 +155,7 @@ async def reset_game(show_opening: bool = True) -> str:
     except Exception as e:
         print(f"[ERROR] reset_game 执行异常: {e}", flush=True)
         import traceback
+
         traceback.print_exc()
 
     opening_text = load_opening_text()
@@ -170,7 +171,9 @@ async def reset_game(show_opening: bool = True) -> str:
         "visible_to": visible_agents + ["narrator"],
     }
 
-    raw_path = character_path("narrator", "raw", f"{datetime.now().strftime('%Y-%m-%d')}.jsonl")
+    raw_path = character_path(
+        "narrator", "raw", f"{datetime.now().strftime('%Y-%m-%d')}.jsonl"
+    )
     os.makedirs(os.path.dirname(raw_path), exist_ok=True)
     with open(raw_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
@@ -240,14 +243,16 @@ async def export_save_archive() -> str | None:
         return None
 
     try:
-        with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(save_path, "w", zipfile.ZIP_DEFLATED) as zf:
             # 添加元数据文件
             metadata = {
                 "export_time": datetime.now().isoformat(),
                 "agents": all_agents,
-                "version": "1.0"
+                "version": "1.0",
             }
-            zf.writestr("metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2))
+            zf.writestr(
+                "metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2)
+            )
 
             # 添加每个角色的文件
             for agent_name in all_agents:

@@ -1,7 +1,6 @@
 """Agent 管理器 - 初始化 Agent 并处理运行"""
 
 import asyncio
-import json
 import os
 import re
 from pathlib import Path
@@ -19,7 +18,12 @@ from engine.text_utils import clean_response
 from llm.providers import get_model
 from log_config.agent_calls import log_agent_run
 from log_config.routing import routing_logger
-from memory.file_ops import _append_section_file, _read_title, _update_section_file, get_allowed_fields
+from memory.file_ops import (
+    _append_section_file,
+    _read_title,
+    _update_section_file,
+    get_allowed_fields,
+)
 from memory.vector_store import vector_store
 
 
@@ -55,7 +59,7 @@ class AgentManager:
         lines = full_input.split("\n")
         for line in reversed(lines):
             if line.startswith("玩家:"):
-                return line[len("玩家:"):].strip()
+                return line[len("玩家:") :].strip()
 
         # 都没找到，返回完整输入（兜底）
         return full_input.strip()
@@ -69,11 +73,15 @@ class AgentManager:
         def get_dynamic_instructions(agent: Agent, run_context=None) -> str:
             # 从 run_context 获取当前输入，提取原始用户消息用于 RAG
             user_input = ""
-            if run_context and hasattr(run_context, 'input') and run_context.input:
-                user_input = self._extract_user_message_from_input(str(run_context.input))
+            if run_context and hasattr(run_context, "input") and run_context.input:
+                user_input = self._extract_user_message_from_input(
+                    str(run_context.input)
+                )
 
             # 同步 RAG 搜索相关记忆
-            relevant_memories = self._search_relevant_memories_sync(agent_name, user_input)
+            relevant_memories = self._search_relevant_memories_sync(
+                agent_name, user_input
+            )
 
             # 加载 memory.md 最后10行作为 recent_memories
             recent_memories = self._load_recent_memory(agent_name, lines=10)
@@ -157,7 +165,9 @@ class AgentManager:
             all_lines = f.readlines()
             # 过滤空行，取最后 N 行
             content_lines = [line for line in all_lines if line.strip()]
-            tail_lines = content_lines[-lines:] if len(content_lines) >= lines else content_lines
+            tail_lines = (
+                content_lines[-lines:] if len(content_lines) >= lines else content_lines
+            )
             return "".join(tail_lines).strip()
 
     def _load_growth(self, agent_name: str) -> str:

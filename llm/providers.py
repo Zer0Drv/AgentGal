@@ -68,8 +68,7 @@ def _create_anthropic_model(
         )
     except ImportError:
         raise ImportError(
-            "使用 Anthropic 模型需要安装 anthropic 包: "
-            "pip install anthropic"
+            "使用 Anthropic 模型需要安装 anthropic 包: pip install anthropic"
         )
 
 
@@ -145,9 +144,7 @@ def get_consolidation_model() -> "Model":
     api_url = api_url or os.getenv("LLM_API_URL")
 
     if not api_key:
-        raise ValueError(
-            "CONSOLIDATION_LLM_API_KEY or LLM_API_KEY must be set"
-        )
+        raise ValueError("CONSOLIDATION_LLM_API_KEY or LLM_API_KEY must be set")
 
     return get_model(
         provider=provider,

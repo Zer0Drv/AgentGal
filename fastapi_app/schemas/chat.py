@@ -4,7 +4,9 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="用户输入")
     user_id: str | None = Field(default=None, description="用户ID，不传则使用默认用户")
-    conversation_id: str | None = Field(default=None, description="会话ID，不传则使用默认会话")
+    conversation_id: str | None = Field(
+        default=None, description="会话ID，不传则使用默认会话"
+    )
 
 
 class AgentReply(BaseModel):

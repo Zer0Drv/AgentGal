@@ -15,6 +15,7 @@ sys.path.insert(0, str(project_root))
 
 # 必须先加载环境变量，再导入 vector_store
 from dotenv import load_dotenv
+
 load_dotenv(project_root / ".env")
 
 from log_config.routing import routing_logger
@@ -57,8 +58,7 @@ async def main():
     try:
         # 并行重建所有角色的向量库
         await asyncio.gather(
-            *(rebuild_agent_vectors(name) for name in agents),
-            return_exceptions=True
+            *(rebuild_agent_vectors(name) for name in agents), return_exceptions=True
         )
         routing_logger.info("[向量重建] 全部完成")
     except Exception as e:

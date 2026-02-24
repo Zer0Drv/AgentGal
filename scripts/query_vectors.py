@@ -16,6 +16,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from dotenv import load_dotenv
+
 load_dotenv(project_root / ".env")
 
 from memory.vector_store import vector_store
@@ -33,7 +34,9 @@ async def cmd_list():
         chunk_counts = {row[0]: row[1] for row in await cursor.fetchall()}
 
         # 同步状态
-        cursor = await db.execute("SELECT agent_name, sync_offset, content_hash FROM sync_state")
+        cursor = await db.execute(
+            "SELECT agent_name, sync_offset, content_hash FROM sync_state"
+        )
         sync_rows = {row[0]: (row[1], row[2]) for row in await cursor.fetchall()}
 
         all_agents = sorted(set(list(chunk_counts.keys()) + list(sync_rows.keys())))
@@ -47,7 +50,11 @@ async def cmd_list():
         for name in all_agents:
             count = chunk_counts.get(name, 0)
             offset, hash_val = sync_rows.get(name, (0, ""))
-            short_hash = hash_val[:12] + "…" if hash_val and len(hash_val) > 12 else hash_val or "-"
+            short_hash = (
+                hash_val[:12] + "…"
+                if hash_val and len(hash_val) > 12
+                else hash_val or "-"
+            )
             print(f"{name:<20} {count:>8} {offset:>13} {short_hash:>16}")
     finally:
         await db.close()
@@ -108,10 +115,14 @@ async def cmd_stats():
         print(f"总计: {total_agents} 个 agent, {total_chunks} 个 chunks\n")
 
         if rows:
-            print(f"{'Agent':<20} {'Chunks':>8} {'总字符':>10} {'最短':>8} {'最长':>8} {'平均':>8}")
+            print(
+                f"{'Agent':<20} {'Chunks':>8} {'总字符':>10} {'最短':>8} {'最长':>8} {'平均':>8}"
+            )
             print("-" * 65)
             for name, count, total_len, min_len, max_len, avg_len in rows:
-                print(f"{name:<20} {count:>8} {total_len:>10} {min_len:>8} {max_len:>8} {avg_len:>8.0f}")
+                print(
+                    f"{name:<20} {count:>8} {total_len:>10} {min_len:>8} {max_len:>8} {avg_len:>8.0f}"
+                )
     finally:
         await db.close()
 
@@ -125,7 +136,9 @@ async def main():
 
     show_parser = sub.add_parser("show", help="查看某个 agent 的 chunks")
     show_parser.add_argument("agent_name", help="角色名称")
-    show_parser.add_argument("--limit", type=int, default=20, help="显示条数（默认 20）")
+    show_parser.add_argument(
+        "--limit", type=int, default=20, help="显示条数（默认 20）"
+    )
 
     args = parser.parse_args()
 

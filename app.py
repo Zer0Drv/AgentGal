@@ -88,7 +88,9 @@ def _parse_narrator_response(content: str) -> tuple[list[str], str]:
     """解析 narrator 响应，提取 TARGETS 和场景描述"""
     valid_agents = get_valid_response_agents()
 
-    targets_pattern = re.compile(r"\*{0,2}TARGETS\*{0,2}:?\s*\[([^\]]*)\]", re.IGNORECASE)
+    targets_pattern = re.compile(
+        r"\*{0,2}TARGETS\*{0,2}:?\s*\[([^\]]*)\]", re.IGNORECASE
+    )
     all_matches = list(targets_pattern.finditer(content))
 
     if not all_matches:
@@ -102,7 +104,7 @@ def _parse_narrator_response(content: str) -> tuple[list[str], str]:
         if t.strip() and t.strip().lower() in valid_agents
     ]
 
-    scene_description = content[targets_match.end():].strip()
+    scene_description = content[targets_match.end() :].strip()
     return targets, scene_description
 
 
@@ -113,7 +115,8 @@ async def _call_narrator_and_route(user_input: str) -> tuple[list[str], str, boo
     )
     narrator_input = (
         f"最近对话历史:\n\n{narrator_history}\n\n---\n\n玩家新消息: {user_input}"
-        if narrator_history else user_input
+        if narrator_history
+        else user_input
     )
 
     narrator_response = await agent_manager.run_agent("narrator", narrator_input)
@@ -162,7 +165,9 @@ async def _process_target_agents(
 
             # 只有有效响应才广播到 jsonl（让后续角色能看到）
             if is_valid:
-                await message_router.broadcast_agent_response(agent_name, targets, response)
+                await message_router.broadcast_agent_response(
+                    agent_name, targets, response
+                )
 
             results.append((agent_name, response, is_valid))
 
@@ -236,7 +241,9 @@ async def on_message(message: cl.Message):
     routing_logger.info(f"玩家输入: {user_input}")
 
     # 1. 调用 narrator 获取路由决策和场景描述
-    targets, scene_description, is_narrator_valid = await _call_narrator_and_route(user_input)
+    targets, scene_description, is_narrator_valid = await _call_narrator_and_route(
+        user_input
+    )
 
     # 2. 广播玩家消息到所有 targets
     await message_router.broadcast_player_message(targets, user_input)

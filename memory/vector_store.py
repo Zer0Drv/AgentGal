@@ -11,6 +11,7 @@ from engine.config import character_path
 # 可选依赖：evermemos
 try:
     from evermemos import EverMemOS
+
     _HAS_EVERMEMOS = True
 except ImportError:
     _HAS_EVERMEMOS = False
@@ -28,10 +29,7 @@ class VectorStore:
         """获取 EverMemOS 客户端（延迟初始化）"""
         if self._client is None:
             if not _HAS_EVERMEMOS:
-                raise ImportError(
-                    "evermemos SDK not installed. "
-                    "Run: uv add evermemos"
-                )
+                raise ImportError("evermemos SDK not installed. Run: uv add evermemos")
             api_key = os.getenv("EVERMEMOS_API_KEY")
             if not api_key:
                 raise ValueError("EVERMEMOS_API_KEY environment variable not set")
@@ -44,7 +42,9 @@ class VectorStore:
 
     # --- 存入 ---
 
-    async def _add_one(self, agent_name: str, message_id: str, content: str, flush: bool = True) -> bool:
+    async def _add_one(
+        self, agent_name: str, message_id: str, content: str, flush: bool = True
+    ) -> bool:
         """向 EverMemOS 写入单条事件（所有写入路径的统一入口）。"""
         try:
             response = self._get_client().v0.memories.add(
@@ -61,9 +61,7 @@ class VectorStore:
                     f"[EverMemOS] {agent_name} {message_id} 写入失败: {response.message}"
                 )
                 return False
-            routing_logger.info(
-                f"[EverMemOS] {agent_name} {message_id} 写入成功"
-            )
+            routing_logger.info(f"[EverMemOS] {agent_name} {message_id} 写入成功")
             return True
         except Exception as e:
             routing_logger.error(f"[EverMemOS] {agent_name} {message_id} 写入异常: {e}")
@@ -94,13 +92,17 @@ class VectorStore:
 
         path = Path(character_path(agent_name, "memory.md"))
         if not path.exists():
-            routing_logger.warning(f"[EverMemOS] {agent_name} memory.md 不存在，跳过重建")
+            routing_logger.warning(
+                f"[EverMemOS] {agent_name} memory.md 不存在，跳过重建"
+            )
             return
 
         content = normalize(path.read_text(encoding="utf-8"))
         sections = split_by_date(content)
         if not sections:
-            routing_logger.warning(f"[EverMemOS] {agent_name} memory.md 无有效日期段，跳过重建")
+            routing_logger.warning(
+                f"[EverMemOS] {agent_name} memory.md 无有效日期段，跳过重建"
+            )
             return
 
         total = 0
@@ -128,11 +130,13 @@ class VectorStore:
                 for mem in response.result.memories:
                     # SDK 返回 pydantic model；episode 优先，其次 summary
                     content = getattr(mem, "episode", "") or getattr(mem, "summary", "")
-                    results.append({
-                        "id": getattr(mem, "id", ""),
-                        "content": content,
-                        "distance": getattr(mem, "score", 0.0) or 0.0,
-                    })
+                    results.append(
+                        {
+                            "id": getattr(mem, "id", ""),
+                            "content": content,
+                            "distance": getattr(mem, "score", 0.0) or 0.0,
+                        }
+                    )
             routing_logger.info(
                 f"[EverMemOS] {agent_name} 搜索 '{query[:30]}...' 召回 {len(results)} 条"
             )

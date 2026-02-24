@@ -97,8 +97,6 @@ def split_events_raw(content: str) -> list[tuple[str | None, str]]:
 def split_into_events(day_content: str) -> list[str]:
     """将单日内容按事件分割为列表。无法识别时整体作为一个事件返回。"""
     events = [
-        event_text for _, event_text in split_events_raw(day_content)
-        if event_text
+        event_text for _, event_text in split_events_raw(day_content) if event_text
     ]
     return events if events else [day_content.strip()]
-

@@ -65,20 +65,20 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
         return
 
     # 提取信息
-    agent_name = agent.name if hasattr(agent, 'name') else 'unknown'
+    agent_name = agent.name if hasattr(agent, "name") else "unknown"
     timestamp = datetime.now().isoformat()
 
     # 从 run_output 提取内容
-    content = run_output.content if hasattr(run_output, 'content') else str(run_output)
-    messages = run_output.messages if hasattr(run_output, 'messages') else []
-    tools = run_output.tools if hasattr(run_output, 'tools') else []
-    metrics = run_output.metrics if hasattr(run_output, 'metrics') else None
-    model = run_output.model if hasattr(run_output, 'model') else None
+    content = run_output.content if hasattr(run_output, "content") else str(run_output)
+    messages = run_output.messages if hasattr(run_output, "messages") else []
+    tools = run_output.tools if hasattr(run_output, "tools") else []
+    metrics = run_output.metrics if hasattr(run_output, "metrics") else None
+    model = run_output.model if hasattr(run_output, "model") else None
 
     # 提取 user input
     user_input = ""
-    if hasattr(run_output, 'input') and run_output.input:
-        if hasattr(run_output.input, 'input_content'):
+    if hasattr(run_output, "input") and run_output.input:
+        if hasattr(run_output.input, "input_content"):
             user_input = run_output.input.input_content
         else:
             user_input = str(run_output.input)
@@ -88,11 +88,11 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
     if messages:
         for msg in messages:
             msg_dict = {
-                "role": msg.role if hasattr(msg, 'role') else 'unknown',
-                "content": msg.content if hasattr(msg, 'content') else str(msg),
+                "role": msg.role if hasattr(msg, "role") else "unknown",
+                "content": msg.content if hasattr(msg, "content") else str(msg),
             }
             # 如果有 name 属性（如 tool 调用结果），也记录下来
-            if hasattr(msg, 'name') and msg.name:
+            if hasattr(msg, "name") and msg.name:
                 msg_dict["name"] = msg.name
             full_messages.append(msg_dict)
 
@@ -101,21 +101,31 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
         "timestamp": timestamp,
         "agent": agent_name,
         "model": model,
-        "request": full_messages if full_messages else [{"role": "user", "content": user_input}],
+        "request": full_messages
+        if full_messages
+        else [{"role": "user", "content": user_input}],
         "response": content,
         "tools_used": [
             {
-                "name": t.tool_name if hasattr(t, 'tool_name') else str(t),
-                "input": t.tool_input if hasattr(t, 'tool_input') else None,
-                "output": t.tool_output if hasattr(t, 'tool_output') else None,
+                "name": t.tool_name if hasattr(t, "tool_name") else str(t),
+                "input": t.tool_input if hasattr(t, "tool_input") else None,
+                "output": t.tool_output if hasattr(t, "tool_output") else None,
             }
             for t in (tools or [])
         ],
         "metrics": {
-            "input_tokens": metrics.input_tokens if hasattr(metrics, 'input_tokens') else None,
-            "output_tokens": metrics.output_tokens if hasattr(metrics, 'output_tokens') else None,
-            "total_tokens": metrics.total_tokens if hasattr(metrics, 'total_tokens') else None,
-        } if metrics else None,
+            "input_tokens": metrics.input_tokens
+            if hasattr(metrics, "input_tokens")
+            else None,
+            "output_tokens": metrics.output_tokens
+            if hasattr(metrics, "output_tokens")
+            else None,
+            "total_tokens": metrics.total_tokens
+            if hasattr(metrics, "total_tokens")
+            else None,
+        }
+        if metrics
+        else None,
     }
 
     # 写入 JSONL 格式（便于后续分析，自动轮转）
@@ -123,9 +133,9 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
 
     # 写入可读的文本日志（自动轮转）
     lines = []
-    lines.append(f"\n{'='*80}")
+    lines.append(f"\n{'=' * 80}")
     lines.append(f"Agent: {agent_name} | Model: {model} | Time: {timestamp}")
-    lines.append(f"{'='*80}")
+    lines.append(f"{'=' * 80}")
     # 直接显示完整的 message 流
     if full_messages:
         for msg in full_messages:
@@ -140,20 +150,20 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
         # 如果 Agno 没有返回 messages，显示 input
         lines.append(f"[input]\n{user_input}\n")
     if tools:
-        lines.append(f"{'-'*40}")
+        lines.append(f"{'-' * 40}")
         lines.append("[tools]")
         for t in tools:
-            tool_name = t.tool_name if hasattr(t, 'tool_name') else str(t)
+            tool_name = t.tool_name if hasattr(t, "tool_name") else str(t)
             lines.append(f"  - {tool_name}")
     if metrics:
-        lines.append(f"{'-'*40}")
+        lines.append(f"{'-' * 40}")
         metrics_parts = []
-        if hasattr(metrics, 'input_tokens'):
+        if hasattr(metrics, "input_tokens"):
             metrics_parts.append(f"in: {metrics.input_tokens}")
-        if hasattr(metrics, 'output_tokens'):
+        if hasattr(metrics, "output_tokens"):
             metrics_parts.append(f"out: {metrics.output_tokens}")
-        if hasattr(metrics, 'total_tokens'):
+        if hasattr(metrics, "total_tokens"):
             metrics_parts.append(f"total: {metrics.total_tokens}")
         lines.append("[metrics] " + " | ".join(metrics_parts))
-    lines.append(f"{'='*80}\n")
+    lines.append(f"{'=' * 80}\n")
     _text_logger.info("\n".join(lines))

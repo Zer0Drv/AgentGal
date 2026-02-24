@@ -1,9 +1,9 @@
 import httpx
 import asyncio
-import json
 from abc import ABC, abstractmethod
-from typing import List, Dict, AsyncGenerator, Any, Optional, Union
+from typing import List, Dict, AsyncGenerator, Any, Optional
 from loguru import logger
+
 
 class BaseLLMClient(ABC):
     """
@@ -36,7 +36,7 @@ class BaseLLMClient(ABC):
                 base_url=self.api_url,
                 timeout=httpx.Timeout(self.timeout, connect=10.0),
                 limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
-                headers=self._get_headers() # 初始化时注入 Header
+                headers=self._get_headers(),  # 初始化时注入 Header
             )
             logger.debug(f"Client initialized for {self.model}")
 
@@ -61,7 +61,9 @@ class BaseLLMClient(ABC):
         pass
 
     @abstractmethod
-    def _build_payload(self, messages: List[Dict], stream: bool, **kwargs) -> Dict[str, Any]:
+    def _build_payload(
+        self, messages: List[Dict], stream: bool, **kwargs
+    ) -> Dict[str, Any]:
         """定义发送给大模型的 JSON Body"""
         pass
 
@@ -82,9 +84,7 @@ class BaseLLMClient(ABC):
     # ================= 公共调用接口 =================
 
     async def stream_chat(
-        self, 
-        messages: List[Dict], 
-        **kwargs
+        self, messages: List[Dict], **kwargs
     ) -> AsyncGenerator[Dict[str, str], None]:
         """
         流式对话接口
@@ -95,26 +95,30 @@ class BaseLLMClient(ABC):
 
         for attempt in range(self.retries_safe):
             try:
-                async with self._client.stream("POST", "/chat/completions", json=payload) as response:
+                async with self._client.stream(
+                    "POST", "/chat/completions", json=payload
+                ) as response:
                     response.raise_for_status()
-                    
+
                     async for line in response.aiter_lines():
                         line = line.strip()
                         if not line.startswith("data: ") or line == "data: [DONE]":
                             continue
-                        
+
                         # 移除前缀
                         raw_data = line[6:]
-                        
+
                         try:
                             # 调用子类解析逻辑
                             parsed_item = self._parse_stream_chunk(raw_data)
                             if parsed_item:
                                 yield parsed_item
                         except Exception as e:
-                            logger.warning(f"Parse chunk error: {e} | Raw: {raw_data[:50]}")
+                            logger.warning(
+                                f"Parse chunk error: {e} | Raw: {raw_data[:50]}"
+                            )
                             continue
-                return # 成功后退出重试循环
+                return  # 成功后退出重试循环
 
             except httpx.HTTPError as e:
                 await self._handle_http_error(e, attempt)
@@ -131,11 +135,11 @@ class BaseLLMClient(ABC):
                 return self._parse_response(response.json())
             except httpx.HTTPError as e:
                 await self._handle_http_error(e, attempt)
-        
+
         raise RuntimeError("Max retries exceeded")
 
     # ================= 内部辅助 =================
-    
+
     @property
     def retries_safe(self):
         return self.max_retries + 1
@@ -145,8 +149,8 @@ class BaseLLMClient(ABC):
             await self.initialize()
 
     async def _handle_http_error(self, e: Exception, attempt: int):
-        logger.error(f"Request failed (Attempt {attempt+1}): {str(e)}")
+        logger.error(f"Request failed (Attempt {attempt + 1}): {str(e)}")
         if attempt < self.max_retries:
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
         else:
             raise e

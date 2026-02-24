@@ -14,11 +14,13 @@ class StartGameResponse(BaseModel):
     opening: str | None = None
     recent_messages: list[RecentMessage] = Field(default_factory=list)
 
+
 class StartOptionsResponse(BaseModel):
     has_save: bool
     recommended_action: Literal["new", "continue"]
     prompt: str
     recent_messages: list[RecentMessage] = Field(default_factory=list)
+
 
 class StartActionRequest(BaseModel):
     action: Literal["new", "continue"] = Field(description="用户选择的新开局/继续")

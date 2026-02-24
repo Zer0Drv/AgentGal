@@ -48,6 +48,7 @@ def _build_start_history(start_payload: dict) -> list[dict]:
     history.extend(_recent_messages_to_chatbot(recent_messages))
     return history
 
+
 # 全局状态管理
 class UserSession:
     def __init__(self):
@@ -55,22 +56,23 @@ class UserSession:
         self.token = None
         self.username = None
         self.chat_history = []
-    
+
     def login(self, username, token):
         self.logged_in = True
         self.username = username
         self.token = token
         logger.info(f"用户 {username} 登录成功")
-    
+
     def logout(self):
         self.logged_in = False
         self.token = None
         self.username = None
         self.chat_history = []
         logger.info("用户已登出")
-    
+
     def add_chat(self, query, response):
         self.chat_history.append({"query": query, "response": response})
+
 
 # 创建用户会话实例
 user_session = UserSession()
@@ -78,6 +80,7 @@ user_session = UserSession()
 # ===================================================================
 # 登录和认证函数
 # ===================================================================
+
 
 def login(username, password):
     """处理用户登录"""
@@ -94,13 +97,12 @@ def login(username, password):
             gr.update(visible=True, interactive=False),
             [],
         )
-    
+
     try:
         response = requests.post(
-            _api_url("/User/login"),
-            json={"username": username, "password": password}
+            _api_url("/User/login"), json={"username": username, "password": password}
         )
-        
+
         if response.status_code == 200:
             data = response.json()
             if data.get("success"):
@@ -115,7 +117,9 @@ def login(username, password):
                         timeout=15,
                     )
                     if options_resp.status_code != 200:
-                        raise RuntimeError(f"获取开局选项失败: HTTP {options_resp.status_code}")
+                        raise RuntimeError(
+                            f"获取开局选项失败: HTTP {options_resp.status_code}"
+                        )
                     options = options_resp.json()
                 except Exception as e:
                     logger.error(f"获取开局选项异常: {str(e)}")
@@ -134,7 +138,9 @@ def login(username, password):
 
                 has_save = bool(options.get("has_save"))
                 prompt = str(options.get("prompt", "")).strip()
-                preview_messages = options.get("recent_messages", []) if has_save else []
+                preview_messages = (
+                    options.get("recent_messages", []) if has_save else []
+                )
                 preview_lines = []
                 for msg in preview_messages:
                     author = str(msg.get("author", ""))
@@ -142,7 +148,9 @@ def login(username, password):
                     if not content:
                         continue
                     preview_lines.append(f"{author}: {content}")
-                preview_text = "\n\n".join(preview_lines) if preview_lines else "暂无历史回顾。"
+                preview_text = (
+                    "\n\n".join(preview_lines) if preview_lines else "暂无历史回顾。"
+                )
 
                 return (
                     f"已登录: {username}",
@@ -196,6 +204,7 @@ def login(username, password):
             gr.update(visible=True, interactive=False),
             [],
         )
+
 
 def logout():
     """处理用户登出"""
@@ -255,6 +264,7 @@ def choose_start_mode(action: str):
             gr.update(value=""),
         )
 
+
 # ===================================================================
 # 流式聊天函数
 # ===================================================================
@@ -267,26 +277,24 @@ def stream_chat(query, history):
         history.append({"role": "assistant", "content": "请先登录！"})
         yield history
         return
-    
+
     # 准备API请求
     headers = {
         "Authorization": f"Bearer {user_session.token}",
-        "Accept": "text/event-stream"
+        "Accept": "text/event-stream",
     }
     params = {"query": query}
-    
+
     # 添加用户和助手占位消息到历史（Gradio messages 格式）
     history.append({"role": "user", "content": query})
     history.append({"role": "assistant", "content": "思考中..."})
     # 先回传一次，让前端立即有反馈
     yield list(history)
-    
+
     try:
         # 创建SSE客户端
-        messages = SSEClient(_api_url("/chat/sse"), 
-                           params=params, 
-                           headers=headers)
-        
+        messages = SSEClient(_api_url("/chat/sse"), params=params, headers=headers)
+
         response_text = ""
         has_started_streaming = False
         for msg in messages:
@@ -294,37 +302,39 @@ def stream_chat(query, history):
             if msg is None:
                 logger.debug("收到空消息，流结束")
                 break
-                
+
             # 打印原始消息用于调试
             logger.debug(f"原始消息: {msg.data}")
-            
+
             try:
                 # 解析JSON数据
                 data = json.loads(msg.data)
-                
+
                 # 检查是否为结束标志
                 if data.get("type") == "stream_end":
                     logger.debug("收到流结束标志，停止接收")
                     break
-                
+
                 # 处理text_delta类型的消息
                 if data.get("type") == "text_delta":
                     content = data.get("delta", {}).get("content", "")
-                    
+
                     # 处理Unicode转义字符
-                    if isinstance(content, str) and any(c in content for c in ["\\u", "\\U"]):
+                    if isinstance(content, str) and any(
+                        c in content for c in ["\\u", "\\U"]
+                    ):
                         try:
-                            content = content.encode('utf-8').decode('unicode_escape')
+                            content = content.encode("utf-8").decode("unicode_escape")
                         except:
                             pass
-                    
+
                     response_text += content
                     has_started_streaming = True
-                    
+
                     # 更新最后一条助手回复
                     history[-1]["content"] = response_text
                     yield list(history)
-                    
+
             except json.JSONDecodeError:
                 # 处理非JSON响应
                 if msg.data == "[DONE]":
@@ -335,16 +345,16 @@ def stream_chat(query, history):
             except Exception as e:
                 logger.error(f"处理消息时出错: {str(e)}")
                 continue
-                
+
             # 添加延迟使UI更新更平滑
             time.sleep(0.02)
-        
+
         # 保存到聊天历史
         final_text = response_text if has_started_streaming else "（未收到响应内容）"
         history[-1]["content"] = final_text
         yield list(history)
         user_session.add_chat(query, final_text)
-        
+
     except Exception as e:
         logger.error(f"聊天请求出错: {str(e)}")
         error_msg = f"聊天请求出错: {str(e)}"
@@ -353,26 +363,28 @@ def stream_chat(query, history):
         else:
             history.append({"role": "assistant", "content": error_msg})
         yield list(history)
+
+
 # ===================================================================
 # Gradio UI 界面定义
 # ===================================================================
 
 with gr.Blocks(title="RAG 智能问答系统") as chat_demo_ui:
     gr.Markdown("# 🧠 RAG 智能问答系统")
-    
+
     # 登录状态显示
     with gr.Row():
         status_display = gr.Textbox(label="登录状态", value="未登录", interactive=False)
-    
+
     # 登录界面
     with gr.Column(visible=True) as login_section:
         with gr.Row():
             username = gr.Textbox(label="用户名", placeholder="输入用户名")
             password = gr.Textbox(label="密码", placeholder="输入密码", type="password")
-        
+
         login_btn = gr.Button("登录", variant="primary")
         login_result = gr.Textbox(label="登录结果", interactive=False)
-    
+
     # 开局选择界面
     with gr.Column(visible=False, elem_id="start-section") as start_section:
         start_prompt = gr.Markdown("请选择开局方式")
@@ -382,7 +394,9 @@ with gr.Blocks(title="RAG 智能问答系统") as chat_demo_ui:
             interactive=False,
         )
         with gr.Row():
-            start_new_btn = gr.Button("新开局", variant="primary", elem_id="start-new-btn")
+            start_new_btn = gr.Button(
+                "新开局", variant="primary", elem_id="start-new-btn"
+            )
             start_continue_btn = gr.Button("继续上次游戏", elem_id="start-continue-btn")
 
     # 主功能界面
@@ -390,22 +404,23 @@ with gr.Blocks(title="RAG 智能问答系统") as chat_demo_ui:
         with gr.Tabs():
             # --- 智能问答 ---
             with gr.TabItem("智能问答"):
-                chatbot = gr.Chatbot(label="对话历史", height=400, elem_id="chatbot-history")
+                chatbot = gr.Chatbot(
+                    label="对话历史", height=400, elem_id="chatbot-history"
+                )
                 msg = gr.Textbox(
                     label="输入问题",
                     placeholder="在此输入您的问题...",
                     elem_id="chat-input",
                 )
-                
+
                 with gr.Row():
                     submit_btn = gr.Button("发送", variant="primary")
                     logout_btn = gr.Button("登出")
 
-    
     # ===================================================================
     # 事件处理
     # ===================================================================
-    
+
     # 登录/登出事件
     login_btn.click(
         login,
@@ -423,7 +438,7 @@ with gr.Blocks(title="RAG 智能问答系统") as chat_demo_ui:
             chatbot,
         ],
     )
-    
+
     logout_btn.click(
         logout,
         outputs=[
@@ -447,22 +462,16 @@ with gr.Blocks(title="RAG 智能问答系统") as chat_demo_ui:
         lambda: choose_start_mode("continue"),
         outputs=[login_result, start_section, main_section, chatbot, msg],
     )
-    
+
     # 聊天事件
     msg.submit(
-        stream_chat,
-        inputs=[msg, chatbot],
-        outputs=[chatbot],
-        show_progress="hidden"
+        stream_chat, inputs=[msg, chatbot], outputs=[chatbot], show_progress="hidden"
     )
-    
+
     submit_btn.click(
-        stream_chat,
-        inputs=[msg, chatbot],
-        outputs=[chatbot],
-        show_progress="hidden"
+        stream_chat, inputs=[msg, chatbot], outputs=[chatbot], show_progress="hidden"
     )
-    
+
     gr.HTML(
         """
 <script>
@@ -516,8 +525,10 @@ with gr.Blocks(title="RAG 智能问答系统") as chat_demo_ui:
 
     # 状态更新
     chat_demo_ui.load(
-        fn=lambda: f"已登录: {user_session.username}" if user_session.logged_in else "未登录",
-        outputs=[status_display]
+        fn=lambda: f"已登录: {user_session.username}"
+        if user_session.logged_in
+        else "未登录",
+        outputs=[status_display],
     )
 
 # 启动Gradio应用
