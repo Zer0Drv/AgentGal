@@ -351,8 +351,9 @@ class MemoryConsolidator:
                 result.errors.append("并发冲突：检测到中间变更，已放弃写回")
                 return result
 
-            # 6. 同步到向量存储
-            await self._sync_events_to_store(agent_name, sections, dates_to_consolidate)
+            # 6. 同步到向量存储（取消）
+            # 新策略：不再将整理后的事件片段写入向量库，仅保留整轮原始对话写入。
+            # 因此这里不再做任何向量写入操作。
 
             # 7. 更新进度
             if next_date:
@@ -652,46 +653,6 @@ class MemoryConsolidator:
 
         elapsed = time.monotonic() - t0
         routing_logger.info(f"[整理器] 全部完成 (耗时 {elapsed:.1f}s)")
-
-    async def _sync_events_to_store(
-        self,
-        agent_name: str,
-        sections: OrderedDict[str, str],
-        dates_to_sync: list[str],
-    ):
-        """将整理后的事件同步到向量存储。
-
-        Args:
-            agent_name: 角色名
-            sections: 所有日期的记忆内容（日期 -> 事件列表文本）
-            dates_to_sync: 需要同步的日期列表（本次整理的日期）
-        """
-        try:
-            total_events = 0
-            for date in dates_to_sync:
-                if date not in sections:
-                    continue
-
-                day_content = sections[date].strip()
-                if not day_content:
-                    continue
-
-                # 1. 解析出事件列表
-                events = split_into_events(day_content)
-
-                # 2. 将事件传给 vector_store
-                for idx, event in enumerate(events):
-                    message_id = f"{agent_name}_{date}_{idx}"
-                    vector_store.schedule_add(agent_name, message_id, event)
-                    total_events += 1
-
-            if total_events > 0:
-                routing_logger.info(
-                    f"[整理器] {agent_name} 同步 {total_events} 个事件到向量存储"
-                )
-
-        except Exception as e:
-            routing_logger.error(f"[整理器] {agent_name} 向量存储同步失败: {e}")
 
     async def close(self):
         if self._client:
