@@ -83,43 +83,6 @@ def has_existing_save() -> bool:
     return False
 
 
-def reset_agent_memory(agent_name: str):
-    """重置指定角色的所有记忆文件（保留 soul.md）"""
-    base = agent_path(agent_name)
-    template_path = PROJECT_ROOT / "data" / "templates" / agent_name
-
-    # 1. 删除 raw/ 目录下的所有 jsonl 文件（对话历史）
-    raw_dir = agent_raw_dir(agent_name)
-    if os.path.exists(raw_dir):
-        for jsonl_file in glob.glob(f"{raw_dir}/*.jsonl"):
-            try:
-                os.remove(jsonl_file)
-                print(f"  已删除: {os.path.basename(jsonl_file)}")
-            except Exception as e:
-                print(f"  删除失败 {jsonl_file}: {e}")
-
-    # 2. 清空 memory.md（长期记忆）
-    memory_path = f"{base}/memory/memory.md"
-    if os.path.exists(memory_path):
-        try:
-            with open(memory_path, "w", encoding="utf-8") as f:
-                f.write("")
-            print(f"  已清空: memory.md")
-        except Exception as e:
-            print(f"  清空失败 memory.md: {e}")
-
-    # 3. 从 templates 恢复初始状态文件
-    for filename in ["status.md", "user.md"]:
-        template_file = template_path / filename
-        target_file = Path(base) / filename
-        if template_file.exists():
-            try:
-                shutil.copy2(template_file, target_file)
-                print(f"  已恢复: {filename}")
-            except Exception as e:
-                print(f"  恢复失败 {filename}: {e}")
-
-
 def reset_logs():
     """重置日志文件 - 清空 logs 目录下所有 .log 和 .jsonl 文件"""
     log_dir = "logs"
@@ -150,7 +113,14 @@ async def reset_game(show_opening: bool = True) -> str:
         print("重置游戏...", flush=True)
         print(f"{'=' * 40}\n", flush=True)
 
-        # 1. 删除整个 characters 目录（如果存在）
+        # 1. 删除 EverMemOS 中的向量记忆
+        from memory.vector_store import vector_store
+        all_agents = get_agent_names()
+        if all_agents:
+            print("[EverMemOS] 清理向量记忆...", flush=True)
+            await vector_store.delete_all_agents(all_agents)
+
+        # 2. 删除整个 characters 目录（如果存在）
         characters_dir = "data/characters"
         if os.path.exists(characters_dir):
             try:
