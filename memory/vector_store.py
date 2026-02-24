@@ -61,6 +61,9 @@ class VectorStore:
                     f"[EverMemOS] {agent_name} {message_id} 写入失败: {response.message}"
                 )
                 return False
+            routing_logger.info(
+                f"[EverMemOS] {agent_name} {message_id} 写入成功"
+            )
             return True
         except Exception as e:
             routing_logger.error(f"[EverMemOS] {agent_name} {message_id} 写入异常: {e}")
@@ -115,21 +118,24 @@ class VectorStore:
                 extra_query={
                     "user_id": agent_name,
                     "query": query,
-                    "limit": limit,
+                    "top_k": limit,
                 }
             )
 
             results = []
             if response.result and response.result.memories:
                 for mem in response.result.memories:
+                    # EverMemOS SDK returns pydantic models, not dicts
+                    # ResultMemoryEpisodeMemory fields: id, episode, summary, score, etc.
+                    content = getattr(mem, "episode", "") or getattr(mem, "summary", "")
                     results.append({
-                        "id": mem.get("message_id", ""),
+                        "id": getattr(mem, "id", ""),
                         "chunk_index": 0,
-                        "content": mem.get("content", ""),
-                        "distance": mem.get("score", 0.0),
+                        "content": content,
+                        "distance": getattr(mem, "score", 0.0) or 0.0,
                     })
 
-            routing_logger.debug(
+            routing_logger.info(
                 f"[EverMemOS] {agent_name} 搜索 '{query[:30]}...' 召回 {len(results)} 条"
             )
             return results
