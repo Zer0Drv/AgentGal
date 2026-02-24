@@ -58,6 +58,7 @@ TARGETS: [lilith, mitsuki]
 </rules>
 
 <fields>
+TARGETS: lilith, mitsuki
 status: 场景, 当前时间, 故事阶段, 正在发酵的冲突, 伏笔
 player: 关键选择, 玩家风格, 当前倾向
 </fields>
