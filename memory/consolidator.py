@@ -16,21 +16,24 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from functools import lru_cache
 
-import httpx
+from llm.llm_parser import OpenAICompatibleClient
 
 from log_config.routing import routing_logger
 from engine.config import character_path
 from memory.vector_store import vector_store
-from memory.text_utils import normalize, split_by_date, split_events_raw, split_into_events
+from memory.text_utils import (
+    normalize,
+    split_by_date,
+    split_events_raw,
+    split_into_events,
+)
 
 CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
 
 # 从统一配置读取，兼容旧版 DEEPSEEK_API_KEY
-_API_KEY = (
-    os.getenv("CONSOLIDATION_LLM_API_KEY")
-    or os.getenv("LLM_API_KEY")
-)
+_API_KEY = os.getenv("CONSOLIDATION_LLM_API_KEY") or os.getenv("LLM_API_KEY")
 _API_URL = (
     os.getenv("CONSOLIDATION_LLM_API_URL")
     or os.getenv("LLM_API_URL")
@@ -66,15 +69,10 @@ class _ConsolidationResult:
     skip_reason: str = ""
     errors: list[str] = field(default_factory=list)
 
-
-def _load_consolidation_prompt() -> str:
-    """从外部文件加载整合 prompt 模板"""
-    return _PROMPT_PATH.read_text(encoding="utf-8")
-
-
-def _load_player_profile_prompt() -> str:
-    """从外部文件加载玩家档案整理 prompt 模板"""
-    return _PLAYER_PROMPT_PATH.read_text(encoding="utf-8")
+@lru_cache(maxsize=4)
+def _load_text(path: Path) -> str:
+    """小型只读缓存，避免重复读文件。"""
+    return path.read_text(encoding="utf-8")
 
 
 def _cleanup_old_backups(bak_dir: Path, pattern: str, max_count: int = 10) -> int:
@@ -103,7 +101,8 @@ def _cleanup_old_backups(bak_dir: Path, pattern: str, max_count: int = 10) -> in
 class MemoryConsolidator:
     def __init__(self):
         self._locks: dict[str, asyncio.Lock] = {}
-        self._client: Optional[httpx.AsyncClient] = None
+        # 统一走项目 OpenAI 兼容客户端，避免重复实现 HTTP 细节
+        self._client: Optional[OpenAICompatibleClient] = None
 
     def _get_lock(self, name: str) -> asyncio.Lock:
         if name not in self._locks:
@@ -111,36 +110,30 @@ class MemoryConsolidator:
         return self._locks[name]
 
     async def _call_llm(self, prompt: str) -> str:
-        """调用 LLM 进行记忆整理，使用统一配置"""
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=120.0)
-
+        """调用 LLM 进行记忆整理（使用统一客户端满足 DRY/KISS）。"""
         if not _API_KEY:
             raise ValueError(
-                "LLM API key not configured. "
-                "Please set LLM_API_KEY or CONSOLIDATION_LLM_API_KEY"
+                "LLM API key not configured. Please set LLM_API_KEY or CONSOLIDATION_LLM_API_KEY"
             )
 
-        # 构建 chat completions 端点 URL
-        api_url = _API_URL.rstrip("/")
-        if not api_url.endswith("/chat/completions"):
-            api_url = f"{api_url}/chat/completions"
+        # 懒加载客户端；OpenAICompatibleClient 负责 /chat/completions 与重试逻辑
+        if self._client is None:
+            self._client = OpenAICompatibleClient(
+                api_url=_API_URL,
+                api_key=_API_KEY,
+                model=_MODEL_ID,
+                temperature=_TEMPERATURE,
+                max_tokens=_MAX_TOKENS,
+                timeout=120.0,
+                max_retries=3,
+            )
+            await self._client.initialize()
 
-        resp = await self._client.post(
-            api_url,
-            headers={
-                "Authorization": f"Bearer {_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": _MODEL_ID,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": _TEMPERATURE,
-                "max_tokens": _MAX_TOKENS,
-            },
+        resp = await self._client.chat(
+            messages=[{"role": "user", "content": prompt}],
+            enable_thinking=False,  # 整理稳定性优先
         )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+        return (resp.get("content") or "").strip()
 
     def _backup_file(self, src: Path, agent_name: str, prefix: str) -> Path:
         """
@@ -219,7 +212,7 @@ class MemoryConsolidator:
                 routing_logger.warning(
                     f"[整理器] {agent_name} 进度日期 '{last_consolidated}' 在文件中不存在"
                 )
-                return None
+                return all_dates, all_dates[-1] if all_dates else None
 
             current_idx = all_dates.index(last_consolidated)
             if current_idx == len(all_dates) - 1:
@@ -262,7 +255,7 @@ class MemoryConsolidator:
         parts = [f"## {date}\n{sections[date]}" for date in dates]
         combined_text = "\n\n".join(parts)
 
-        template = _load_consolidation_prompt()
+        template = _load_text(_PROMPT_PATH)
         return template.format(
             soul=soul_content,
             growth=growth_content,
@@ -301,7 +294,9 @@ class MemoryConsolidator:
         else:
             routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
 
-    async def consolidate_agent(self, agent_name: str) -> Optional["_ConsolidationResult"]:
+    async def consolidate_agent(
+        self, agent_name: str
+    ) -> Optional["_ConsolidationResult"]:
         """整理单个 agent 的记忆，返回结果摘要（供 consolidate_all 汇总日志）"""
         result = _ConsolidationResult(agent_name=agent_name)
         lock = self._get_lock(agent_name)
@@ -348,15 +343,16 @@ class MemoryConsolidator:
                 result.errors.append(f"整合失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
 
-            # 5. 写回文件
+            # 5. 写回文件（检测并发冲突）
             result.final_len = self._write_back(
                 path, agent_name, sections, original_content
             )
+            if result.final_len < 0:
+                result.errors.append("并发冲突：检测到中间变更，已放弃写回")
+                return result
 
             # 6. 同步到向量存储
-            await self._sync_events_to_store(
-                agent_name, sections, dates_to_consolidate
-            )
+            await self._sync_events_to_store(agent_name, sections, dates_to_consolidate)
 
             # 7. 更新进度
             if next_date:
@@ -375,9 +371,7 @@ class MemoryConsolidator:
 
     # ===== 双解析器：第一步 + 第二步 =====
 
-    def _parse_step1_memories(
-        self, llm_result: str
-    ) -> OrderedDict[str, str]:
+    def _parse_step1_memories(self, llm_result: str) -> OrderedDict[str, str]:
         """
         从 LLM 输出中提取第一步：归并整理后的日记内容。
 
@@ -405,23 +399,11 @@ class MemoryConsolidator:
         step1_content = re.sub(r"##\s*第二步.*$", "", step1_content, flags=re.DOTALL)
 
         # 解析新格式：从 - **时间**：字段中提取日期
-        return self._split_by_date_from_time_field(step1_content.strip())
-
-    def _split_by_date_from_time_field(self, content: str) -> OrderedDict[str, str]:
-        """
-        从新格式内容中按日期分割。
-        格式：- **时间**：4月3日 上午
-        """
         sections: OrderedDict[str, str] = OrderedDict()
-
-        for date, event_text in split_events_raw(content):
-            if date is None:
+        for date, event_text in split_events_raw(step1_content.strip()):
+            if not date:
                 continue
-            if date in sections:
-                sections[date] += "\n\n" + event_text
-            else:
-                sections[date] = event_text
-
+            sections[date] = (sections.get(date, "") + ("\n\n" if date in sections else "") + event_text)
         return sections
 
     def _parse_step2_growth(self, llm_result: str) -> list[dict]:
@@ -442,11 +424,13 @@ class MemoryConsolidator:
         # 解析每个 update 标签，支持自闭合和内容形式
         update_pattern = r'<update\s+type="(\w+)"\s+id="(\w+)"\s*(?:/>|>(.*?)</update>)'
         for m in re.finditer(update_pattern, match.group(1), re.DOTALL):
-            updates.append({
-                "type": m.group(1).upper(),  # ADD/UPDATE/DELETE
-                "id": m.group(2),            # P001
-                "content": m.group(3).strip() if m.group(3) else None
-            })
+            updates.append(
+                {
+                    "type": m.group(1).upper(),  # ADD/UPDATE/DELETE
+                    "id": m.group(2),  # P001
+                    "content": m.group(3).strip() if m.group(3) else None,
+                }
+            )
 
         return updates
 
@@ -479,17 +463,12 @@ class MemoryConsolidator:
                 return 0
 
         sorted_ids = sorted(entries.keys(), key=_sort_key)
-
-        lines = ["# 人格沉淀层\n", ""]
-        for id in sorted_ids:
-            lines.append(f"[{id}] {entries[id]}\n\n")
-
+        body = "\n\n".join(f"[{i}] {entries[i]}\n" for i in sorted_ids)
+        text = f"# 人格沉淀层\n\n{body}\n"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("".join(lines), encoding="utf-8")
+        path.write_text(text, encoding="utf-8")
 
-    def _apply_growth_updates(
-        self, agent_name: str, updates: list[dict]
-    ) -> str:
+    def _apply_growth_updates(self, agent_name: str, updates: list[dict]) -> str:
         """
         应用人格沉淀更新到 growth.md
 
@@ -531,17 +510,28 @@ class MemoryConsolidator:
         sections: OrderedDict[str, str],
         original_content: str,
     ) -> int:
-        """写回整理后的内容，同时保护并发追加的新记忆。返回最终字符数。"""
-        # 检查文件是否在整理期间被追加了新内容
+        """写回整理后的内容，带最小并发保护。
+
+        策略（快速对齐版）：
+        - 若 current 以 original 开头，视为尾部追加，保留该追加；
+        - 若 current == original，正常覆盖；
+        - 否则判定为中间变更，放弃写回并告警，返回 -1（让上层跳过后续流程）。
+        """
         current_content = path.read_text(encoding="utf-8")
-        if len(current_content) > len(original_content):
-            # 有新内容被追加，提取增量部分
-            appended = current_content[len(original_content):]
-            routing_logger.info(
-                f"[整理器] {agent_name} 检测到并发追加 ({len(appended)} 字符)，将保留"
-            )
-        else:
+
+        if current_content.startswith(original_content):
+            appended = current_content[len(original_content) :]
+            if appended:
+                routing_logger.info(
+                    f"[整理器] {agent_name} 检测到并发尾部追加 ({len(appended)} 字符)，将保留"
+                )
+        elif current_content == original_content:
             appended = ""
+        else:
+            routing_logger.warning(
+                f"[整理器] {agent_name} 检测到并发中间变更，已放弃写回以避免覆盖（建议稍后重试）"
+            )
+            return -1
 
         parts = [f"# {agent_name} 的长期记忆", ""]
         for date, body in sections.items():
@@ -573,7 +563,7 @@ class MemoryConsolidator:
             # 备份
             self._backup_file(user_path, agent_name, "user")
 
-            prompt = _load_player_profile_prompt().format(content=content)
+            prompt = _load_text(_PLAYER_PROMPT_PATH).format(content=content)
             consolidated = await self._call_llm(prompt)
 
             if len(consolidated.strip()) < 20:
@@ -589,7 +579,7 @@ class MemoryConsolidator:
                 re.MULTILINE,
             )
             if diary_match:
-                consolidated = consolidated[diary_match.end():].lstrip("\n")
+                consolidated = consolidated[diary_match.end() :].lstrip("\n")
 
             user_path.write_text(consolidated.strip() + "\n", encoding="utf-8")
             return len(content), len(consolidated)
@@ -704,8 +694,8 @@ class MemoryConsolidator:
             routing_logger.error(f"[整理器] {agent_name} 向量存储同步失败: {e}")
 
     async def close(self):
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
+        if self._client:
+            await self._client.close()
 
 
 memory_consolidator = MemoryConsolidator()
