@@ -75,6 +75,14 @@ class VectorStore:
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
+    def schedule_add_round(self, targets: list[str], round_id: str, content: str):
+        """每轮对话结束后调用：为每个参与角色后台写入该轮原始对话记录。
+
+        使用 group_id=agent_name 隔离，搜索时各角色只能找到自己参与的轮次。
+        """
+        for agent_name in targets:
+            self.schedule_add(agent_name, f"{agent_name}_{round_id}", content)
+
     async def rebuild(self, agent_name: str):
         """全量重建：从 memory.md 读取，按事件分割后写入 EverMemOS。
 
@@ -110,102 +118,53 @@ class VectorStore:
     def search_sync(
         self, agent_name: str, query: str, limit: int = 5
     ) -> list[dict[str, Any]]:
-        """同步语义搜索，供 Agno instructions 使用"""
+        """同步语义搜索，供 Agno instructions 使用。"""
         try:
-            memory = self._get_client().v0.memories
-
-            response = memory.search(
-                extra_query={
-                    "user_id": agent_name,
-                    "query": query,
-                    "top_k": limit,
-                }
+            response = self._get_client().v0.memories.search(
+                extra_query={"user_id": agent_name, "query": query, "top_k": limit}
             )
-
             results = []
             if response.result and response.result.memories:
                 for mem in response.result.memories:
-                    # EverMemOS SDK returns pydantic models, not dicts
-                    # ResultMemoryEpisodeMemory fields: id, episode, summary, score, etc.
+                    # SDK 返回 pydantic model；episode 优先，其次 summary
                     content = getattr(mem, "episode", "") or getattr(mem, "summary", "")
                     results.append({
                         "id": getattr(mem, "id", ""),
-                        "chunk_index": 0,
                         "content": content,
                         "distance": getattr(mem, "score", 0.0) or 0.0,
                     })
-
             routing_logger.info(
                 f"[EverMemOS] {agent_name} 搜索 '{query[:30]}...' 召回 {len(results)} 条"
             )
             return results
-
         except Exception as e:
             routing_logger.error(f"[EverMemOS] {agent_name} 搜索失败: {e}")
             return []
 
-    async def search(
-        self, agent_name: str, query: str, limit: int = 5
-    ) -> list[dict[str, Any]]:
-        """异步语义搜索（包装同步版本）"""
-        return self.search_sync(agent_name, query, limit)
-
     # --- 删除 ---
 
     async def delete(self, agent_name: str) -> bool:
-        """删除 EverMemOS 中指定角色的所有记忆。
-
-        由于 EverMemOS 使用 group_id 来隔离不同角色的记忆，
-        此方法会删除该 agent 对应 group_id 下的所有记忆。
-
-        Returns:
-            是否成功删除（或标记为已删除）
-        """
+        """删除 EverMemOS 中指定角色的所有记忆（group_id=agent_name）。"""
         try:
-            memory = self._get_client().v0.memories
-
-            # 尝试调用 delete API（如果 SDK 支持）
-            if hasattr(memory, 'delete'):
-                response = memory.delete(
-                    extra_query={
-                        "user_id": agent_name,
-                        "group_id": agent_name,
-                    }
-                )
-                if getattr(response, 'status', '') == 'success':
-                    routing_logger.info(f"[EverMemOS] {agent_name} 记忆删除成功")
-                    return True
-                else:
-                    routing_logger.warning(
-                        f"[EverMemOS] {agent_name} 记忆删除失败: {getattr(response, 'message', 'unknown')}"
-                    )
-                    return False
-
-            # 降级：如果 SDK 不支持 delete，则记录警告
-            # 根据注释，EverMemOS 目前不提供删除 API，重建通过写入新版本实现
-            routing_logger.warning(
-                f"[EverMemOS] {agent_name} SDK 不支持 delete API，"
-                "记忆将在重建时通过写入新版本覆盖"
+            response = self._get_client().v0.memories.delete(
+                extra_body={"user_id": agent_name, "group_id": agent_name}
             )
-            return False
-
+            success = getattr(response, "status", "") == "ok"
+            if success:
+                routing_logger.info(f"[EverMemOS] {agent_name} 记忆删除成功")
+            else:
+                routing_logger.warning(
+                    f"[EverMemOS] {agent_name} 记忆删除失败: {getattr(response, 'message', 'unknown')}"
+                )
+            return success
         except Exception as e:
             routing_logger.error(f"[EverMemOS] {agent_name} 删除记忆失败: {e}")
             return False
 
     async def delete_all_agents(self, agent_names: list[str]) -> dict[str, bool]:
-        """批量删除多个角色的记忆。
-
-        Args:
-            agent_names: 角色名称列表
-
-        Returns:
-            每个角色的删除结果映射
-        """
-        results = {}
-        for agent_name in agent_names:
-            results[agent_name] = await self.delete(agent_name)
-        return results
+        """并行删除多个角色的记忆。"""
+        results = await asyncio.gather(*(self.delete(name) for name in agent_names))
+        return dict(zip(agent_names, results))
 
     async def close(self):
         """等待后台任务完成"""

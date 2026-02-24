@@ -16,6 +16,7 @@ from engine.message_router import message_router
 from engine.text_utils import clean_response, is_valid_response, process_character_response
 from game.save_manager import export_save_archive, reset_game
 from memory.consolidator import CONSOLIDATION_INTERVAL, memory_consolidator
+from memory.vector_store import vector_store
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi_app.repositories.conversation_repository import (
@@ -77,6 +78,21 @@ async def _run_one_agent(agent_name: str, targets: list[str], user_input: str) -
         return AgentReply(agent=agent_name, content=response, valid=valid)
     except Exception as exc:  # pragma: no cover
         return AgentReply(agent=agent_name, content=f"[错误: {exc}]", valid=False)
+
+
+def _format_round_content(
+    user_input: str,
+    narrator_text: str | None,
+    replies: list["AgentReply"],
+) -> str:
+    """将一轮对话格式化为可存入 EverMemOS 的纯文本。"""
+    parts = [f"玩家: {user_input}"]
+    if narrator_text:
+        parts.append(f"旁白: {narrator_text}")
+    for reply in replies:
+        if reply.valid:
+            parts.append(f"{reply.agent}: {reply.content}")
+    return "\n".join(parts)
 
 
 def _build_visible_to(targets: list[str]) -> str:
@@ -243,6 +259,14 @@ async def run_chat(
             role=reply.agent,
             content=reply.content,
             visible_to=_build_visible_to(targets),
+        )
+
+    if targets:
+        # narrator 也存一份（上帝视角，需要检索所有轮次）
+        round_targets = targets if "narrator" in targets else [*targets, "narrator"]
+        round_id = f"{resolved_conversation_id}_{message_counter}"
+        vector_store.schedule_add_round(
+            round_targets, round_id, _format_round_content(user_input, narrator_text, replies)
         )
 
     _trigger_consolidation_if_needed(message_counter)
