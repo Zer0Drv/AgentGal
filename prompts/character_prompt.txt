@@ -1,5 +1,3 @@
-你是 {agent_name}。
-
 <soul>
 {soul}
 </soul>
