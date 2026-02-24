@@ -22,7 +22,7 @@
 </format>
 
 <example>
-## 莉莉丝
+## 莉莉丝/美月
 （微微一笑）你今天来得真早。
 <update_notes>
   <memory>## 2月20日\n- **时间/地点**：遇见他，比平时早</memory>
