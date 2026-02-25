@@ -1,6 +1,6 @@
 """本地向量存储（sqlite-vec）
 
-- 每 10 轮对话索引一次（每轮 = 从一条玩家消息到下一条玩家消息之间）。
+- 每轮对话后立即索引（每轮 = 从一条玩家消息到下一条玩家消息之间）。
 - 每轮作为一个 chunk 入库；为该轮所有可见角色各写一条（方便按可见性过滤）。
 - 检索时仅在当前角色可见的 chunks 中做 ANN 检索。
 """
@@ -13,7 +13,7 @@ import asyncio
 import hashlib
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -35,12 +35,14 @@ EMBED_API_URL = os.getenv("EMBEDDING_API_URL") or os.getenv("LLM_API_URL")
 # 维度：根据模型选择，text-embedding-3-small=1536；兼容 .env 的 EMBEDDING_DIM
 EMBED_DIM = int(os.getenv("EMBEDDING_DIM", "1536"))
 
-# 每多少轮触发一次索引（批量嵌入+落库）。优先 VECTOR_INDEX_INTERVAL，其次 INDEX_INTERVAL，默认 10。
-INDEX_INTERVAL = int(os.getenv("VECTOR_INDEX_INTERVAL") or os.getenv("INDEX_INTERVAL") or "10")
-
 
 def _sha1(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+
+def _utcnow_iso() -> str:
+    """UTC ISO8601，尾部使用 Z。"""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 @dataclass
@@ -136,7 +138,7 @@ class VectorStore:
         self._embedder = None
         # 允许测试替换 character_path
         self.character_path = character_path
-        # 轮次缓冲：按 conversation_id 聚合，触发每 10 轮批量入库
+        # 轮次缓冲：按 conversation_id 聚合，随后立即入库（批量接口保留）
         self._pending: dict[str, list[_Round]] = {}
         # 每个会话已落库的轮次数（偏移）
         self._flushed_count: dict[str, int] = {}
@@ -227,7 +229,7 @@ class VectorStore:
     def add_round(self, visible_to: list[str], round_id: str, content: str, game_date: str | None = None):
         """一轮对话结束时调用（对外接口）。
 
-        - 先入内存缓冲；达到 INDEX_INTERVAL 时批量嵌入+落库。
+        - 先入内存缓冲；随后立即调度批量落库（现为单轮）。
         - 存储为“每轮一条” chunk，visible_to 决定可见范围。
         """
 
@@ -276,14 +278,24 @@ class VectorStore:
         else:
             pending.append(entry)
 
-        # 达到 INDEX_INTERVAL 触发批量入库（禁止 closing 状态下创建任务）
-        if not self._closing and counter > 0 and INDEX_INTERVAL > 0 and counter % INDEX_INTERVAL == 0:
-            routing_logger.info("[VectorStore] 入库任务调度: conv_id=%s, batch_size=%s, at=%s", conv_id, INDEX_INTERVAL, datetime.utcnow().isoformat() + "Z")
-            task = asyncio.create_task(self._flush_new_chunks(conv_id, batch_size=INDEX_INTERVAL))
-            # 记录任务，以便 close() 时等待完成
-            self._pending_tasks.add(task)
-            # 任务完成时自动移除
-            task.add_done_callback(self._pending_tasks.discard)
+        # 每轮立即调度入库（禁止 closing 状态下创建任务），避免异常退出导致丢轮次。
+        if not self._closing and counter > 0:
+            routing_logger.info(
+                "[VectorStore] 入库任务调度: conv_id=%s, batch_size=%s, at=%s",
+                conv_id,
+                1,
+                _utcnow_iso(),
+            )
+            try:
+                loop = asyncio.get_running_loop()
+                task = loop.create_task(self._flush_new_chunks(conv_id, batch_size=1))
+                # 记录任务，以便 close() 时等待完成
+                self._pending_tasks.add(task)
+                # 任务完成时自动移除
+                task.add_done_callback(self._pending_tasks.discard)
+            except RuntimeError:
+                # 无运行中的事件循环（如同步测试环境），直接同步执行以避免遗漏
+                asyncio.run(self._flush_new_chunks(conv_id, batch_size=1))
 
     async def _flush_new_chunks(self, conv_id: str, batch_size: int | None = None):
         """将该会话自上次落库后的新轮次写入 sqlite-vec。
@@ -299,7 +311,12 @@ class VectorStore:
                 conv_id = derived
 
         lock = self._get_lock(conv_id)
-            routing_logger.info("[VectorStore] 入库开始: conv_id=%s, batch_size=%s, at=%s", conv_id, batch_size, datetime.utcnow().isoformat() + "Z")
+        routing_logger.info(
+            "[VectorStore] 入库开始: conv_id=%s, batch_size=%s, at=%s",
+            conv_id,
+            batch_size,
+            _utcnow_iso(),
+        )
         async with lock:
             rounds = self._pending.get(conv_id, [])
             print(f"[_flush_new_chunks] 获取锁: rounds={len(rounds)}")
@@ -320,7 +337,7 @@ class VectorStore:
             # meta: (round_id, date, created_at, visible_json, content)
 
             # 每轮只写一条记录（包含完整 visible_to）
-            now_iso = datetime.utcnow().isoformat() + "Z"
+            now_iso = _utcnow_iso()
             for rd in batch:
                 texts.append(rd.content)
                 meta.append(
@@ -393,7 +410,12 @@ class VectorStore:
                 )
 
                 await db.commit()
-                routing_logger.info("[VectorStore] 入库完成: conv_id=%s, rounds=%s, at=%s", conv_id, end - start, datetime.utcnow().isoformat() + "Z")
+                routing_logger.info(
+                    "[VectorStore] 入库完成: conv_id=%s, rounds=%s, at=%s",
+                    conv_id,
+                    end - start,
+                    _utcnow_iso(),
+                )
             except Exception as e:
                 await db.execute("ROLLBACK")
                 print(f"[VectorStore] 批量写入失败: {e}")
