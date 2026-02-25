@@ -12,7 +12,6 @@ import json
 import asyncio
 import hashlib
 import sqlite3
-import atexit
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -589,6 +588,13 @@ class VectorStore:
                 (agent_name, self._to_vec_blob(qvec), limit),
             ).fetchall()
 
+            routing_logger.info(
+                "[VectorStore] 搜索完成: agent=%s, limit=%s, 命中=%s",
+                agent_name,
+                limit,
+                len(rows),
+            )
+
             out = [
                 {"id": str(r[0]), "content": r[1], "score": float(r[2])}
                 for r in rows
@@ -598,10 +604,7 @@ class VectorStore:
             routing_logger.error(f"[VectorStore] 检索失败: {e}")
             return []
         finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
+            conn.close()
 
     # sqlite-vec 需要 BLOB 格式输入；python 包会在 SQL 边界处理，
     # 但我们在同步连接里手动处理以兼容某些平台。
