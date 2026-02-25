@@ -53,13 +53,9 @@ async def clean_store():
     """提供清理后的 VectorStore，每个测试隔离。"""
     store = vector_store
 
-    # 重置连接状态，避免跨用例共享缓存/锁/任务
+    # 重置连接状态，避免跨用例共享缓存
     store._db = None
-    store._pending.clear()
-    store._flushed_count.clear()
     store._conv_game_date.clear()
-    store._closing = False
-    store._pending_tasks.clear()
 
     await store.init_tables()
 
@@ -67,14 +63,26 @@ async def clean_store():
     db = await store._get_db()
     await db.execute("DELETE FROM vec_chunks")
     await db.execute("DELETE FROM chunks")
-    await db.execute("DELETE FROM sync_state")
     await db.commit()
 
     yield store
 
-    if store._pending_tasks:
-        await asyncio.gather(*store._pending_tasks, return_exceptions=True)
-    await store.close()
+    # 关闭数据库连接
+    if store._db is not None:
+        await store._db.close()
+        store._db = None
+
+
+async def _wait_for_tasks(store, timeout: float = 5.0):
+    """等待所有后台任务完成"""
+    # 短暂等待让任务有机会启动
+    await asyncio.sleep(0.05)
+    if not store._background_tasks:
+        return
+    await asyncio.wait_for(
+        asyncio.gather(*store._background_tasks, return_exceptions=True),
+        timeout=timeout
+    )
 
 
 class TestVectorStoreBasic:
@@ -96,9 +104,7 @@ class TestVectorStoreBasic:
             "testcase_2",
             "玩家: 去篮球场吗\n旁白: **时间**：4月3日 08:10\nmitsuki: 一起吧",
         )
-
-        # 显式 flush 所有数据（避开后台任务时序问题）
-        await store._flush_new_chunks("testcase", batch_size=None)
+        await _wait_for_tasks(store)
 
         # 查询验证：只返回各自可见的内容
         res_lilith = store.search("lilith", "早上好")
@@ -123,9 +129,7 @@ class TestVectorStoreBasic:
             "testcase_2",
             "玩家: 去篮球场吗\n旁白: **时间**：4月3日 08:10\nmitsuki: 一起吧",
         )
-
-        # 显式 flush 所有数据
-        await store._flush_new_chunks("testcase", batch_size=None)
+        await _wait_for_tasks(store)
 
         # lilith 与 mitsuki 分别只能看到自己的记录
         res_lilith = store.search("lilith", "随便问一句")
@@ -144,9 +148,8 @@ class TestVectorStoreBasic:
             "testcase_1",
             "玩家: 你好\n旁白: **时间**：4月3日 08:00\nlilith: 早上好",
         )
+        await _wait_for_tasks(store)
 
-        # 显式 flush 所有数据
-        await store._flush_new_chunks("testcase", batch_size=None)
         db = await store._get_db()
         cur = await db.execute(
             "SELECT round_id, date, created_at, visible_to FROM chunks ORDER BY id ASC LIMIT 1"
@@ -176,8 +179,7 @@ class TestVectorStoreBasic:
             "testcase_1",
             "玩家: 你好\n旁白: **时间**：4月3日 08:00\nlilith: 早上好",
         )
-        # 显式 flush 所有数据
-        await store._flush_new_chunks("testcase", batch_size=None)
+        await _wait_for_tasks(store)
 
         # 确认有数据
         res_before = store.search("lilith", "早上好")
@@ -223,11 +225,8 @@ class TestVectorStoreRebuild:
                 return str(base / subpath)
             return str(base)
 
-        # 在 import 之前 mock
-        import engine.config
-        monkeypatch.setattr(engine.config, "character_path", mock_character_path)
-        # 同时 mock vector_store 模块中可能已经导入的引用
-        monkeypatch.setattr(vs_module, "character_path", mock_character_path)
+        # mock store 实例的 character_path 方法
+        monkeypatch.setattr(store, "character_path", mock_character_path)
 
         # 执行重建：jsonl -> 轮次 -> 向量库
         await store.rebuild("narrator")
@@ -262,10 +261,10 @@ class TestVectorStoreEdgeCases:
 
     @pytest.mark.asyncio
     async def test_duplicate_round_id(self, clean_store):
-        """测试重复 round_id 不会导致重复数据"""
+        """测试重复 round_id 不会导致重复数据（INSERT OR REPLACE）"""
         store = clean_store
 
-        # 写入相同 round_id 两次：第二次应覆盖/去重
+        # 写入相同 round_id 两次：第二次应覆盖
         store.add_round(
             ["lilith", "narrator"],
             "same_id",
@@ -276,9 +275,8 @@ class TestVectorStoreEdgeCases:
             "same_id",
             "玩家: 第二次\n旁白: **时间**：4月3日 08:10\nlilith: 重复",
         )
+        await _wait_for_tasks(store)
 
-        # 显式 flush 所有数据
-        await store._flush_new_chunks("same_id", batch_size=None)
         # 查询数据库确认只写入了一条
         db = await store._get_db()
         cur = await db.execute("SELECT COUNT(*) FROM chunks WHERE round_id = ?", ("same_id",))
@@ -293,10 +291,7 @@ class TestVectorStoreEdgeCases:
         # 使用不同的 conv_id（通过 round_id 前缀区分）
         store.add_round(["lilith", "narrator"], "conv1_1", "玩家: 你好\n旁白: **时间**：4月3日\nlilith: 早上好")
         store.add_round(["lilith", "narrator"], "conv2_1", "玩家: 再见\n旁白: **时间**：4月3日\nlilith: 晚安")
-
-        # 显式 flush 所有 conv 数据
-        await store._flush_new_chunks("conv1", batch_size=None)
-        await store._flush_new_chunks("conv2", batch_size=None)
+        await _wait_for_tasks(store)
 
         # 两个对话的数据都应该能搜索到
         res = store.search("lilith", "你好")

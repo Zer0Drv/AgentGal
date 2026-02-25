@@ -53,8 +53,6 @@ async def main():
     except Exception as e:
         routing_logger.error(f"[向量重建] 执行失败: {e}")
         raise
-    finally:
-        await vector_store.close()
 
 
 if __name__ == "__main__":

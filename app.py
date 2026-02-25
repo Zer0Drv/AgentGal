@@ -297,7 +297,7 @@ async def on_message(message: cl.Message):
     if game_date:
         cl.user_session.set("game_date", game_date)
     round_content = _format_round_content(user_input, scene_description if is_narrator_valid else None, results)
-    # 这里不会阻塞：底层仅在第 10/20/... 轮触发批量嵌入
+    # 每轮对话结束后后台索引（不阻塞）
     vector_store.add_round(visible_to, round_id, round_content, game_date=game_date)
 
     # 7. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
@@ -314,7 +314,6 @@ async def on_message(message: cl.Message):
 async def on_chat_end():
     """聊天结束时的清理"""
     await memory_consolidator.close()
-    await vector_store.close()
 
 
 if __name__ == "__main__":

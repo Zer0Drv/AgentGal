@@ -148,15 +148,12 @@ async def main():
 
     args = parser.parse_args()
 
-    try:
-        if args.command == "list":
-            await cmd_list()
-        elif args.command == "show":
-            await cmd_show(args.limit, args.visible, args.date, args.order)
-        elif args.command == "stats":
-            await cmd_stats()
-    finally:
-        await vector_store.close()
+    if args.command == "list":
+        await cmd_list()
+    elif args.command == "show":
+        await cmd_show(args.limit, args.visible, args.date, args.order)
+    elif args.command == "stats":
+        await cmd_stats()
 
 
 if __name__ == "__main__":
