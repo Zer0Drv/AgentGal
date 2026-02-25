@@ -95,7 +95,7 @@ def _format_round_content(
     narrator_text: str | None,
     replies: list["AgentReply"],
 ) -> str:
-    """将一轮对话格式化为可存入 EverMemOS 的纯文本。"""
+    """将一轮对话格式化为可存入向量数据库的纯文本。"""
     parts = [f"玩家: {user_input}"]
     if narrator_text:
         parts.append(f"旁白: {narrator_text}")

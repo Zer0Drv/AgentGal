@@ -112,12 +112,12 @@ async def reset_game(show_opening: bool = True) -> str:
         print("重置游戏...", flush=True)
         print(f"{'=' * 40}\n", flush=True)
 
-        # 1. 删除 EverMemOS 中的向量记忆
+        # 1. 删除向量记忆
         from memory.vector_store import vector_store
 
         all_agents = get_agent_names()
         if all_agents:
-            print("[EverMemOS] 清理向量记忆...", flush=True)
+            print("[Reset] 清理向量记忆...", flush=True)
             await vector_store.delete_all_agents(all_agents)
 
         # 2. 删除整个 characters 目录（如果存在）
