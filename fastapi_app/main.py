@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 import sys
+import os
 
 from fastapi import FastAPI
-import gradio as gr
+from chainlit.utils import mount_chainlit
 from dotenv import load_dotenv
 
 # 兼容在 fastapi_app 目录下直接执行 `python main.py`
@@ -20,8 +21,23 @@ load_dotenv(project_root / ".env")
 from fastapi_app.api.v1.router import api_router
 from fastapi_app.core.config import settings
 from fastapi_app.db.session import close_db, init_db
-from fastapi_app.web.web import chat_demo_ui
 from memory.consolidator import memory_consolidator
+
+
+def _prepare_chainlit_database_url() -> None:
+    """
+    Chainlit 优先读取 CHAINLIT_DATABASE_URL；
+    若未设置则回退到 DATABASE_URL，并兼容 postgresql+asyncpg:// 前缀。
+    """
+    chainlit_db_url = os.getenv("CHAINLIT_DATABASE_URL", "").strip()
+    db_url = chainlit_db_url or os.getenv("DATABASE_URL", "").strip()
+
+    if db_url.startswith("postgresql+asyncpg://"):
+        db_url = db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+    if db_url:
+        # Chainlit data layer 读取的是 DATABASE_URL
+        os.environ["DATABASE_URL"] = db_url
 
 
 @asynccontextmanager
@@ -39,7 +55,8 @@ app = FastAPI(
 )
 
 app.include_router(api_router, prefix=settings.api_prefix)
-app = gr.mount_gradio_app(app, chat_demo_ui, path="/web")
+_prepare_chainlit_database_url()
+mount_chainlit(app, target=str(project_root / "fastapi_app" / "web" / "web.py"), path="/web")
 
 
 @app.get("/")
