@@ -135,11 +135,7 @@ def _build_agent_input(history: str, user_input: str) -> str:
     parts = []
     if history:
         parts.append(f"最近对话历史:\n\n{history}")
-        # 检查历史中是否已经包含本轮玩家消息（避免重复）
-        if f"玩家: {user_input}" not in history:
-            parts.append(f"玩家新消息: {user_input}")
-    else:
-        parts.append(f"玩家新消息: {user_input}")
+    parts.append(f"玩家新消息: {user_input}")
     return "\n\n---\n\n".join(parts)
 
 

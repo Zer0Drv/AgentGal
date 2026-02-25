@@ -43,25 +43,12 @@ class AgentManager:
     def _extract_user_message_from_input(full_input: str) -> str:
         """从拼接的完整输入中提取原始用户消息。
 
-        输入格式有两种:
-        1. narrator:
+        输入格式:
             最近对话历史:\n\n{history}\n\n---\n\n玩家新消息: {user_input}
-        2. 其他角色 (history 中已包含玩家消息):
-            最近对话历史:\n\n...\n玩家: {user_input}
         """
-        # 优先匹配 "玩家新消息:" (narrator 格式)
         match = re.search(r"玩家新消息:\s*(.+)$", full_input, re.MULTILINE | re.DOTALL)
         if match:
             return match.group(1).strip()
-
-        # 匹配 history 中最后的 "玩家:" 行 (其他角色格式)
-        # 从后往前找最后一个 "玩家:" 开头的行
-        lines = full_input.split("\n")
-        for line in reversed(lines):
-            if line.startswith("玩家:"):
-                return line[len("玩家:") :].strip()
-
-        # 都没找到，返回完整输入（兜底）
         return full_input.strip()
 
     def _create_agent(self, agent_name: str) -> Agent:
