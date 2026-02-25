@@ -278,6 +278,7 @@ class VectorStore:
 
         # 达到 INDEX_INTERVAL 触发批量入库（禁止 closing 状态下创建任务）
         if not self._closing and counter > 0 and INDEX_INTERVAL > 0 and counter % INDEX_INTERVAL == 0:
+            routing_logger.info("[VectorStore] 入库任务调度: conv_id=%s, batch_size=%s, at=%s", conv_id, INDEX_INTERVAL, datetime.utcnow().isoformat() + "Z")
             task = asyncio.create_task(self._flush_new_chunks(conv_id, batch_size=INDEX_INTERVAL))
             # 记录任务，以便 close() 时等待完成
             self._pending_tasks.add(task)
@@ -298,7 +299,7 @@ class VectorStore:
                 conv_id = derived
 
         lock = self._get_lock(conv_id)
-        print(f"[_flush_new_chunks] 开始: conv_id={conv_id}, batch_size={batch_size}")
+            routing_logger.info("[VectorStore] 入库开始: conv_id=%s, batch_size=%s, at=%s", conv_id, batch_size, datetime.utcnow().isoformat() + "Z")
         async with lock:
             rounds = self._pending.get(conv_id, [])
             print(f"[_flush_new_chunks] 获取锁: rounds={len(rounds)}")
@@ -392,7 +393,7 @@ class VectorStore:
                 )
 
                 await db.commit()
-                print(f"[VectorStore] 事务已提交: {conv_id}, {end - start} 轮")
+                routing_logger.info("[VectorStore] 入库完成: conv_id=%s, rounds=%s, at=%s", conv_id, end - start, datetime.utcnow().isoformat() + "Z")
             except Exception as e:
                 await db.execute("ROLLBACK")
                 print(f"[VectorStore] 批量写入失败: {e}")
