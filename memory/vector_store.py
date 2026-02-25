@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import aiosqlite
+import httpx
 
 from log_config.routing import routing_logger
 from engine.config import character_path, PROJECT_ROOT
@@ -30,10 +31,46 @@ DB_PATH = str(PROJECT_ROOT / "data" / "vectors.sqlite")
 # 默认使用 OpenAI 兼容 Embeddings 接口；兼容 EMBEDDING_MODEL 与 EMBEDDING_MODEL_ID 两种变量名
 EMBED_MODEL = os.getenv("EMBEDDING_MODEL_ID") or os.getenv("EMBEDDING_MODEL") or "text-embedding-3-small"
 EMBED_API_KEY = os.getenv("EMBEDDING_API_KEY") or os.getenv("LLM_API_KEY", "")
-EMBED_API_URL = os.getenv("EMBEDDING_API_URL") or os.getenv("LLM_API_URL")
+EMBED_API_URL = os.getenv("EMBEDDING_API_URL") or os.getenv("LLM_API_URL", "")
 
 # 维度：根据模型选择，text-embedding-3-small=1536；兼容 .env 的 EMBEDDING_DIM
 EMBED_DIM = int(os.getenv("EMBEDDING_DIM", "1536"))
+
+
+# ----------------------------- 嵌入函数 -----------------------------
+
+def _embed_sync(texts: list[str]) -> list[list[float]]:
+    """同步计算嵌入（用于 search）"""
+    if not EMBED_API_KEY:
+        raise ValueError("EMBEDDING_API_KEY 或 LLM_API_KEY 未配置，无法计算向量")
+    if not EMBED_API_URL:
+        raise ValueError("EMBEDDING_API_URL 或 LLM_API_URL 未配置，无法计算向量")
+
+    resp = httpx.post(
+        EMBED_API_URL,
+        headers={"Authorization": f"Bearer {EMBED_API_KEY}", "Content-Type": "application/json"},
+        json={"model": EMBED_MODEL, "input": texts},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return [d["embedding"] for d in resp.json()["data"]]
+
+
+async def _embed_async(texts: list[str]) -> list[list[float]]:
+    """异步计算嵌入（用于批量写入）"""
+    if not EMBED_API_KEY:
+        raise ValueError("EMBEDDING_API_KEY 或 LLM_API_KEY 未配置，无法计算向量")
+    if not EMBED_API_URL:
+        raise ValueError("EMBEDDING_API_URL 或 LLM_API_URL 未配置，无法计算向量")
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            EMBED_API_URL,
+            headers={"Authorization": f"Bearer {EMBED_API_KEY}", "Content-Type": "application/json"},
+            json={"model": EMBED_MODEL, "input": texts},
+        )
+        resp.raise_for_status()
+        return [d["embedding"] for d in resp.json()["data"]]
 
 
 def _sha1(text: str) -> str:
@@ -55,73 +92,6 @@ class _Round:
     date: str  # 游戏内日期，如 "4月3日"（不含具体时间）
 
 
-class _EmbeddingClient:
-    """极薄封装：OpenAI 兼容 Embeddings 客户端（同步 & 异步两用）。"""
-
-    def __init__(self):
-        self._sync_client = None
-        self._async_client = None
-
-    # 同步
-    def embed_sync(self, texts: list[str]) -> list[list[float]]:
-        try:
-            from openai import OpenAI
-
-            if not EMBED_API_KEY:
-                raise ValueError(
-                    "EMBEDDING_API_KEY 或 LLM_API_KEY 未配置，无法计算向量"
-                )
-            if self._sync_client is None:
-                self._sync_client = OpenAI(api_key=EMBED_API_KEY, base_url=EMBED_API_URL)
-
-            resp = self._sync_client.embeddings.create(model=EMBED_MODEL, input=texts)
-            return [d.embedding for d in resp.data]
-        except Exception as e:
-            raise RuntimeError(f"计算嵌入失败: {e}")
-
-    # 异步
-    async def embed_async(self, texts: list[str]) -> list[list[float]]:
-        try:
-            from openai import AsyncOpenAI
-
-            if not EMBED_API_KEY:
-                raise ValueError(
-                    "EMBEDDING_API_KEY 或 LLM_API_KEY 未配置，无法计算向量"
-                )
-            if self._async_client is None:
-                self._async_client = AsyncOpenAI(
-                    api_key=EMBED_API_KEY, base_url=EMBED_API_URL
-                )
-
-            resp = await self._async_client.embeddings.create(
-                model=EMBED_MODEL, input=texts
-            )
-            return [d.embedding for d in resp.data]
-        except Exception as e:
-            raise RuntimeError(f"计算嵌入失败: {e}")
-
-    async def close(self):
-        """关闭所有 OpenAI 客户端，释放资源。"""
-        if self._sync_client is not None:
-            try:
-                self._sync_client.close()
-            except Exception:
-                pass
-            finally:
-                self._sync_client = None
-        
-        if self._async_client is not None:
-            try:
-                await self._async_client.close()
-            except Exception:
-                pass
-            finally:
-                self._async_client = None
-
-
-_embedder = _EmbeddingClient()
-
-
 class VectorStore:
     """sqlite-vec 本地向量库。
 
@@ -134,8 +104,6 @@ class VectorStore:
     def __init__(self):
         self._db: aiosqlite.Connection | None = None
         self._locks: dict[str, asyncio.Lock] = {}
-        # 允许测试替换 embedder
-        self._embedder = None
         # 允许测试替换 character_path
         self.character_path = character_path
         # 轮次缓冲：按 conversation_id 聚合，随后立即入库（批量接口保留）
@@ -175,9 +143,6 @@ class VectorStore:
             await self._db.execute("PRAGMA journal_mode=WAL;")
             await self._load_sqlite_vec(self._db)
         return self._db
-
-    def _get_embedder(self):
-        return self._embedder or _embedder
 
     async def init_tables(self):
         db = await self._get_db()
@@ -352,7 +317,7 @@ class VectorStore:
 
             # 计算 embedding（异步批量）
             try:
-                embeddings = await self._get_embedder().embed_async(texts)
+                embeddings = await _embed_async(texts)
             except Exception as e:
                 routing_logger.error(f"[VectorStore] 计算嵌入失败，批量写入中止: {e}")
                 return
@@ -565,7 +530,7 @@ class VectorStore:
 
         # 1) 计算查询向量
         try:
-            qvec = self._get_embedder().embed_sync([query])[0]
+            qvec = _embed_sync([query])[0]
         except Exception as e:
             routing_logger.error(f"[VectorStore] 查询嵌入失败: {e}")
             return []
@@ -698,8 +663,6 @@ class VectorStore:
         except Exception:
             pass
 
-
-
     async def close(self):
         """公开方法：可选的显式清理（应用通常无需调用）。
         
@@ -753,17 +716,6 @@ class VectorStore:
                 pass
             finally:
                 self._db = None
-        
-        # 7) 关闭 OpenAI 客户端
-        try:
-            embedder = self._get_embedder()
-            close_fn = getattr(embedder, "close", None)
-            if close_fn:
-                res = close_fn()
-                if asyncio.iscoroutine(res):
-                    await res
-        except Exception:
-            pass
 
 
 # 全局实例

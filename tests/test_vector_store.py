@@ -2,6 +2,7 @@
 向量库 pytest 测试
 
 测试 sqlite-vec 向量库的增/查/删/重建功能
+使用真实 embedding API 请求（不 mock）
 """
 
 import asyncio
@@ -10,54 +11,36 @@ import os
 import sys
 from pathlib import Path
 from typing import List
-from unittest.mock import Mock
 
 import pytest
 import pytest_asyncio
-import types
-
-# 为避免测试环境缺少 httpx 等依赖导致导入失败，注入最小 mock。
-sys.modules.setdefault("httpx", types.SimpleNamespace())
 
 # 设置项目根目录，确保相对路径与模块导入一致
 project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
+# 必须在导入 vector_store 之前加载 .env
 try:
     from dotenv import load_dotenv
-except ImportError:  # 在缺少依赖的环境里优雅降级
-    def load_dotenv(*args, **kwargs):
-        return False
+    load_dotenv(project_root / ".env")
+except ImportError:
+    pass
 
-# 读取 .env，允许测试用到本地配置（如 EMBEDDING_DIM）
-load_dotenv(project_root / ".env")
-
+# 现在导入 vector_store，此时环境变量已加载
 try:
     from memory import vector_store as vs_module
-    from memory.vector_store import vector_store, EMBED_DIM
-except ModuleNotFoundError as exc:  # 依赖缺失时跳过整文件
+    from memory.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
+except ModuleNotFoundError as exc:
     pytest.skip(f"skip vector_store tests: missing dependency ({exc})", allow_module_level=True)
 
 
-# 生成固定向量，保证测试可重复且不依赖外部服务
-def _fake_vec(n: int) -> List[float]:
-    return [0.01] * n
+# 检查 embedding 配置是否可用
+pytestmark = pytest.mark.skipif(
+    not EMBED_API_URL or not EMBED_API_KEY,
+    reason="EMBEDDING_API_URL 或 EMBEDDING_API_KEY 未配置，跳过测试"
+)
 
-
-# 打桩 embedding，避免外网依赖与请求波动
-def fake_embed_sync(texts: List[str]) -> List[List[float]]:
-    return [_fake_vec(EMBED_DIM) for _ in texts]
-
-
-async def fake_embed_async(texts: List[str]) -> List[List[float]]:
-    return [_fake_vec(EMBED_DIM) for _ in texts]
-
-
-# 创建 mock 对象并替换，确保所有 embedding 调用走本地 fake
-vs_module._embedder = Mock()
-vs_module._embedder.embed_sync = fake_embed_sync
-vs_module._embedder.embed_async = Mock(side_effect=fake_embed_async)
 
 # 使用测试数据库路径，避免污染真实数据
 test_db_path = str(project_root / "data" / "test_vectors.sqlite")
