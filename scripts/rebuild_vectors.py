@@ -39,28 +39,17 @@ def get_all_agents() -> list[str]:
     return sorted(agents)
 
 
-async def rebuild_agent_vectors(agent_name: str):
-    """重建单个角色的向量库"""
-    routing_logger.info(f"[向量重建] 开始重建 {agent_name} 的向量库")
-    await vector_store.rebuild(agent_name)
-    routing_logger.info(f"[向量重建] {agent_name} 重建完成")
+async def rebuild_all_vectors():
+    """重建向量库（从 narrator/raw 回放一次即可）"""
+    routing_logger.info("[向量重建] 开始重建向量库（从 narrator raw 回放）")
+    await vector_store.rebuild("narrator")
+    routing_logger.info("[向量重建] 向量库重建完成")
 
 
 async def main():
     """主函数：重建所有角色的向量库"""
-    agents = get_all_agents()
-    if not agents:
-        routing_logger.error("未找到任何角色")
-        return
-
-    routing_logger.info(f"[向量重建] 发现 {len(agents)} 个角色: {agents}")
-
     try:
-        # 并行重建所有角色的向量库
-        await asyncio.gather(
-            *(rebuild_agent_vectors(name) for name in agents), return_exceptions=True
-        )
-        routing_logger.info("[向量重建] 全部完成")
+        await rebuild_all_vectors()
     except Exception as e:
         routing_logger.error(f"[向量重建] 执行失败: {e}")
         raise

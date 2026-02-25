@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""向量库查询脚本 - 查看 chunks 信息
+"""向量库查询脚本（适配新表结构：每轮一条 chunk）
 
 Usage:
+    # 总览
     uv run python scripts/query_vectors.py list
-    uv run python scripts/query_vectors.py show <agent_name> [--limit 10]
+
+    # 查看内容（可按可见角色或日期过滤）
+    uv run python scripts/query_vectors.py show [--limit 20] [--visible lilith] [--date 4月3日] [--order desc]
+
+    # 统计信息
     uv run python scripts/query_vectors.py stats
 """
 
@@ -23,122 +28,123 @@ from memory.vector_store import vector_store
 
 
 async def cmd_list():
-    """列出所有 agent 及其 chunk 数量和同步状态"""
+    """显示全库总览：总条数、覆盖日期、最近写入时间等"""
     await vector_store.init_tables()
     db = await vector_store._get_db()
     try:
-        # 每个 agent 的 chunk 数量
-        cursor = await db.execute(
-            "SELECT agent_name, COUNT(*) FROM chunks GROUP BY agent_name ORDER BY agent_name"
-        )
-        chunk_counts = {row[0]: row[1] for row in await cursor.fetchall()}
-
-        # 同步状态
-        cursor = await db.execute(
-            "SELECT agent_name, sync_offset, content_hash FROM sync_state"
-        )
-        sync_rows = {row[0]: (row[1], row[2]) for row in await cursor.fetchall()}
-
-        all_agents = sorted(set(list(chunk_counts.keys()) + list(sync_rows.keys())))
-
-        if not all_agents:
-            print("向量库为空，没有任何 agent 数据。")
-            return
-
-        print(f"{'Agent':<20} {'Chunks':>8} {'Sync Offset':>13} {'Content Hash':>16}")
-        print("-" * 60)
-        for name in all_agents:
-            count = chunk_counts.get(name, 0)
-            offset, hash_val = sync_rows.get(name, (0, ""))
-            short_hash = (
-                hash_val[:12] + "…"
-                if hash_val and len(hash_val) > 12
-                else hash_val or "-"
+        row = await (await db.execute("SELECT COUNT(*), COUNT(DISTINCT date) FROM chunks")).fetchone()
+        total, days = row if row else (0, 0)
+        row = await (
+            await db.execute(
+                "SELECT MIN(created_at), MAX(created_at) FROM chunks WHERE created_at IS NOT NULL"
             )
-            print(f"{name:<20} {count:>8} {offset:>13} {short_hash:>16}")
+        ).fetchone()
+        created_min, created_max = row if row else (None, None)
+
+        print(f"总条数: {total}")
+        print(f"覆盖日期(游戏内): {days} 天")
+        if created_min or created_max:
+            print(f"写入时间范围(UTC): {created_min} ~ {created_max}")
+
+        # 按游戏日期分布（Top 10）
+        cur = await db.execute(
+            "SELECT date, COUNT(*) AS c FROM chunks GROUP BY date ORDER BY c DESC LIMIT 10"
+        )
+        rows = await cur.fetchall()
+        if rows:
+            print("\nTop 日期(按条数):")
+            for d, c in rows:
+                print(f"  {d or -}: {c}")
     finally:
         await db.close()
+        vector_store._db = None
 
 
-async def cmd_show(agent_name: str, limit: int):
-    """查看某个 agent 的 chunks 内容"""
+async def cmd_show(limit: int, visible: str | None, date: str | None, order: str):
+    """查看 chunks 内容，支持按可见角色/日期过滤"""
     await vector_store.init_tables()
     db = await vector_store._get_db()
     try:
-        cursor = await db.execute(
-            "SELECT id, chunk_index, content FROM chunks "
-            "WHERE agent_name = ? ORDER BY chunk_index ASC LIMIT ?",
-            (agent_name, limit),
-        )
-        rows = await cursor.fetchall()
+        where = []
+        params: list = []
+        if visible:
+            where.append(
+                "EXISTS (SELECT 1 FROM json_each(chunks.visible_to) WHERE json_each.value = ?)"
+            )
+            params.append(visible)
+        if date:
+            where.append("date = ?")
+            params.append(date)
+        where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+        order_sql = "DESC" if order.lower().startswith("d") else "ASC"
 
-        if not rows:
-            print(f"未找到 {agent_name} 的 chunks。")
-            return
+        sql = (
+            "SELECT id, round_id, date, created_at, visible_to, content "
+            "FROM chunks" + where_sql + f" ORDER BY id {order_sql} LIMIT ?"
+        )
+        params2 = params + [limit]
+        cur = await db.execute(sql, params2)
+        rows = await cur.fetchall()
 
         # 总数
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM chunks WHERE agent_name = ?", (agent_name,)
-        )
-        total = (await cursor.fetchone())[0]
+        sql_cnt = "SELECT COUNT(*) FROM chunks" + where_sql
+        total = (await (await db.execute(sql_cnt, params)).fetchone())[0]
 
-        print(f"=== {agent_name} 的 chunks（显示 {len(rows)}/{total}）===\n")
-        for row_id, chunk_idx, content in rows:
+        print(f"=== chunks（显示 {len(rows)}/{total}）===\n")
+        for row_id, rid, d, created_at, vis_json, content in rows:
+            vis = vis_json or "[]"
             preview = content[:200].replace("\n", "\\n")
             if len(content) > 200:
                 preview += "…"
-            print(f"[{chunk_idx}] (id={row_id}, {len(content)} 字符)")
-            print(f"    {preview}")
-            print()
+            print(f"id={row_id}, round_id={rid}, date={d or -}, created_at={created_at or -}")
+            print(f"visible_to={vis}")
+            print(f"{len(content)} chars: {preview}\n")
     finally:
         await db.close()
+        vector_store._db = None
 
 
 async def cmd_stats():
-    """显示整体统计"""
+    """显示整体统计（长度分布、日期分布 Top）"""
     await vector_store.init_tables()
     db = await vector_store._get_db()
     try:
-        cursor = await db.execute("SELECT COUNT(*) FROM chunks")
-        total_chunks = (await cursor.fetchone())[0]
-
-        cursor = await db.execute("SELECT COUNT(DISTINCT agent_name) FROM chunks")
-        total_agents = (await cursor.fetchone())[0]
-
-        cursor = await db.execute(
-            "SELECT agent_name, COUNT(*), SUM(LENGTH(content)), "
-            "MIN(LENGTH(content)), MAX(LENGTH(content)), AVG(LENGTH(content)) "
-            "FROM chunks GROUP BY agent_name ORDER BY agent_name"
-        )
-        rows = await cursor.fetchall()
-
-        print(f"总计: {total_agents} 个 agent, {total_chunks} 个 chunks\n")
-
-        if rows:
-            print(
-                f"{'Agent':<20} {'Chunks':>8} {'总字符':>10} {'最短':>8} {'最长':>8} {'平均':>8}"
+        total_chunks = (await (await db.execute("SELECT COUNT(*) FROM chunks")).fetchone())[0]
+        lens = await (
+            await db.execute(
+                "SELECT SUM(LENGTH(content)), MIN(LENGTH(content)), MAX(LENGTH(content)), AVG(LENGTH(content)) FROM chunks"
             )
-            print("-" * 65)
-            for name, count, total_len, min_len, max_len, avg_len in rows:
-                print(
-                    f"{name:<20} {count:>8} {total_len:>10} {min_len:>8} {max_len:>8} {avg_len:>8.0f}"
-                )
+        ).fetchone()
+        total_len, min_len, max_len, avg_len = lens if lens else (0, 0, 0, 0)
+
+        print(f"总计: {total_chunks} 个 chunks")
+        print(f"字符总数: {total_len}, 最短: {min_len}, 最长: {max_len}, 平均: {avg_len:.0f}")
+
+        cur = await db.execute(
+            "SELECT date, COUNT(*) AS c FROM chunks GROUP BY date ORDER BY c DESC LIMIT 10"
+        )
+        rows = await cur.fetchall()
+        if rows:
+            print("\nTop 日期(按条数):")
+            for d, c in rows:
+                print(f"  {d or -}: {c}")
     finally:
         await db.close()
+        vector_store._db = None
 
 
 async def main():
     parser = argparse.ArgumentParser(description="查询向量数据库 chunks 信息")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("list", help="列出所有 agent 及 chunk 数量")
+    sub.add_parser("list", help="显示全库总览")
     sub.add_parser("stats", help="显示整体统计")
 
-    show_parser = sub.add_parser("show", help="查看某个 agent 的 chunks")
-    show_parser.add_argument("agent_name", help="角色名称")
-    show_parser.add_argument(
-        "--limit", type=int, default=20, help="显示条数（默认 20）"
-    )
+    show_parser = sub.add_parser("show", help="查看 chunks 内容")
+    show_parser.add_argument("--limit", type=int, default=20, help="显示条数（默认 20）")
+    show_parser.add_argument("--visible", type=str, default=None, help="按可见角色过滤（如 lilith）")
+    show_parser.add_argument("--date", type=str, default=None, help="按游戏日期过滤（如 4月3日）")
+    show_parser.add_argument("--order", type=str, default="asc", help="排序：asc|desc（默认 asc）")
 
     args = parser.parse_args()
 
@@ -146,7 +152,7 @@ async def main():
         if args.command == "list":
             await cmd_list()
         elif args.command == "show":
-            await cmd_show(args.agent_name, args.limit)
+            await cmd_show(args.limit, args.visible, args.date, args.order)
         elif args.command == "stats":
             await cmd_stats()
     finally:

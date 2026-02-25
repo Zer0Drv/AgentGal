@@ -22,12 +22,10 @@ from llm.llm_parser import OpenAICompatibleClient
 
 from log_config.routing import routing_logger
 from engine.config import character_path
-from memory.vector_store import vector_store
 from memory.text_utils import (
     normalize,
     split_by_date,
     split_events_raw,
-    split_into_events,
 )
 
 CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))

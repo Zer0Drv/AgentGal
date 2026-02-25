@@ -10,6 +10,10 @@
 {user_profile}
 </context>
 
+<relevant_memories>
+{memory}
+</relevant_memories>
+
 <format>
 TARGETS: [角色列表]
 

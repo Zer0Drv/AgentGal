@@ -124,7 +124,11 @@ class AgentManager:
 
     def _search_relevant_memories_sync(self, agent_name: str, query: str) -> str:
         """同步搜索相关记忆，用于 instructions 函数"""
-        results = vector_store.search_sync(agent_name, query, limit=3)
+        try:
+            limit_env = int(os.getenv("VECTOR_SEARCH_LIMIT", "5"))
+        except ValueError:
+            limit_env = 5
+        results = vector_store.search(agent_name, query, limit=limit_env)
 
         if not results:
             return "（无相关记忆）"

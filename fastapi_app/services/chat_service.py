@@ -105,6 +105,14 @@ def _format_round_content(
     return "\n".join(parts)
 
 
+def _extract_game_date(scene_description: str | None) -> str | None:
+    if not scene_description:
+        return None
+    import re
+    m = re.search(r"\*\*时间\*\*：\s*(\d{1,2}月\d{1,2}日)", scene_description)
+    return m.group(1) if m else None
+
+
 def _build_visible_to(targets: list[str]) -> str:
     visible = list(targets)
     if "narrator" not in visible:
@@ -277,13 +285,15 @@ async def run_chat(
         )
 
     if targets:
-        # narrator 也存一份（上帝视角，需要检索所有轮次）
-        round_targets = targets if "narrator" in targets else [*targets, "narrator"]
+        # narrator 也在可见列表中（上帝视角）
+        visible_to = targets if "narrator" in targets else [*targets, "narrator"]
         round_id = f"{resolved_conversation_id}_{message_counter}"
-        vector_store.schedule_add_round(
-            round_targets,
+        game_date = _extract_game_date(narrator_text)
+        vector_store.add_round(
+            visible_to,
             round_id,
             _format_round_content(user_input, narrator_text, replies),
+            game_date=game_date,
         )
 
     _trigger_consolidation_if_needed(message_counter)
