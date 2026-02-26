@@ -30,14 +30,14 @@ def narrator_raw_dir() -> str:
 # =============================================================================
 
 
-def load_opening_text() -> str:
-    """从配置文件加载开场白"""
-    opening_path = PROJECT_ROOT / "prompts" / "opening.txt"
-    if opening_path.exists():
+def load_prompt_file(filename: str) -> str:
+    """从 prompts 目录加载文本文件"""
+    file_path = PROJECT_ROOT / "prompts" / filename
+    if file_path.exists():
         try:
-            return opening_path.read_text(encoding="utf-8")
+            return file_path.read_text(encoding="utf-8")
         except Exception as e:
-            print(f"[警告] 读取开场白文件失败: {e}")
+            print(f"[警告] 读取文件失败 {filename}: {e}")
     return ""
 
 
@@ -101,7 +101,7 @@ def reset_logs():
                     print(f"  清空失败 {filepath}: {e}", flush=True)
 
 
-async def reset_game(show_opening: bool = True) -> str:
+async def reset_game() -> tuple[str, str]:
     """重置游戏，从 templates 重新创建 characters 目录
 
     Returns:
@@ -158,14 +158,14 @@ async def reset_game(show_opening: bool = True) -> str:
 
         traceback.print_exc()
 
-    opening_text = load_opening_text()
+    # 加载两个开场白
+    intro_text = load_prompt_file("opening_intro.txt")
+    opening_text = load_prompt_file("opening.txt")
 
-    # 将开场旁白写入 narrator 的历史
-    timestamp = datetime.now().isoformat()
+    # 将故事开场旁白写入 narrator 的历史（玩法介绍不写入）
     all_agents = get_agent_names()
     visible_agents = [a for a in all_agents if a != "narrator"]
     opening_message = {
-        "timestamp": timestamp,
         "role": "narrator",
         "content": opening_text,
         "visible_to": visible_agents + ["narrator"],
@@ -178,7 +178,8 @@ async def reset_game(show_opening: bool = True) -> str:
     with open(raw_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
 
-    return opening_text if show_opening else ""
+    # 返回两个独立的开场白（玩法介绍、故事开始）
+    return intro_text, opening_text
 
 
 # =============================================================================

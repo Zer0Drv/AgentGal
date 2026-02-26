@@ -38,10 +38,10 @@ load_dotenv()
 # =============================================================================
 
 
-async def _handle_new_game() -> str:
-    """处理新游戏启动：重置记忆并返回开场白"""
+async def _handle_new_game() -> tuple[str, str]:
+    """处理新游戏启动：重置记忆并返回开场白（玩法介绍, 故事开始）"""
     await cl.Message(content="已重置记忆，开始新游戏。").send()
-    return await reset_game(show_opening=True)
+    return await reset_game()
 
 
 async def _handle_continue_game() -> None:
@@ -74,8 +74,13 @@ async def on_chat_start():
     has_save = has_existing_save()
 
     if not has_save:
-        default_opening = await _handle_new_game()
-        await cl.Message(content=default_opening, author="Narrator").send()
+        intro_text, opening_text = await _handle_new_game()
+        # 发送玩法介绍
+        if intro_text:
+            await cl.Message(content=intro_text, author="Narrator").send()
+        # 发送故事开场
+        if opening_text:
+            await cl.Message(content=opening_text, author="Narrator").send()
     else:
         await _handle_continue_game()
 
@@ -218,8 +223,13 @@ async def _handle_save_command() -> bool:
 async def _handle_reset_command() -> bool:
     """处理 /reset 命令"""
     await cl.Message(content="✅ 游戏已重置，开始新故事...").send()
-    default_opening = await reset_game(show_opening=True)
-    await cl.Message(content=default_opening, author="Narrator").send()
+    intro_text, opening_text = await reset_game()
+    # 发送玩法介绍
+    if intro_text:
+        await cl.Message(content=intro_text, author="Narrator").send()
+    # 发送故事开场
+    if opening_text:
+        await cl.Message(content=opening_text, author="Narrator").send()
     cl.user_session.set("message_counter", 0)
     return True
 
