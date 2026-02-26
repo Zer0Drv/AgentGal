@@ -119,14 +119,6 @@ class MemoryConsolidator:
             "usage": resp.get("usage") or {},
         }
 
-    @staticmethod
-    def _agent_memory_size(agent_name: str) -> str:
-        path = Path(character_path(agent_name, "memory.md"))
-        if path.exists():
-            length = len(path.read_text(encoding="utf-8"))
-            return f"{agent_name}({length}字)"
-        return f"{agent_name}(无文件)"
-
     def _load_and_normalize(
         self, agent_name: str
     ) -> tuple[Path, str, OrderedDict[str, str]] | None:
@@ -469,7 +461,14 @@ class MemoryConsolidator:
         t0 = time.monotonic()
 
         # 收集各 agent 的摘要信息用于开始日志
-        summaries = [self._agent_memory_size(name) for name in agent_names]
+        summaries: list[str] = []
+        for name in agent_names:
+            path = Path(character_path(name, "memory.md"))
+            if path.exists():
+                length = len(path.read_text(encoding="utf-8"))
+                summaries.append(f"{name}({length}字)")
+            else:
+                summaries.append(f"{name}(无文件)")
 
         routing_logger.info(f"[整理器] 开始记忆整理: {', '.join(summaries)}")
 
