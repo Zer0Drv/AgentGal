@@ -215,15 +215,32 @@ class VectorStore:
 
                 await db.execute("BEGIN")
 
-                # 插入 chunks
+                # 避免 INSERT OR REPLACE 触发 delete+insert 导致 rowid 变化，
+                # 进而在 vec_chunks 残留旧向量行。这里改为显式 update/insert，保持 rowid 稳定。
                 cur = await db.execute(
-                    """
-                    INSERT OR REPLACE INTO chunks(round_id, date, created_at, visible_to, content)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (round_id, game_date, now_iso, visible_json, content),
+                    "SELECT id FROM chunks WHERE round_id = ?",
+                    (round_id,),
                 )
-                rowid = cur.lastrowid
+                existing = await cur.fetchone()
+                if existing:
+                    rowid = int(existing[0])
+                    await db.execute(
+                        """
+                        UPDATE chunks
+                        SET date = ?, created_at = ?, visible_to = ?, content = ?
+                        WHERE id = ?
+                        """,
+                        (game_date, now_iso, visible_json, content, rowid),
+                    )
+                else:
+                    cur = await db.execute(
+                        """
+                        INSERT INTO chunks(round_id, date, created_at, visible_to, content)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (round_id, game_date, now_iso, visible_json, content),
+                    )
+                    rowid = int(cur.lastrowid or 0)
 
                 # 插入向量
                 if rowid:
@@ -348,6 +365,7 @@ class VectorStore:
             return []
 
         # 执行近邻搜索
+        conn: sqlite3.Connection | None = None
         try:
             conn = sqlite3.connect(DB_PATH)
             self._load_sqlite_vec_sync(conn)
@@ -386,7 +404,8 @@ class VectorStore:
             routing_logger.error(f"[VectorStore] 检索失败: {e}")
             return []
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
 
     @staticmethod
     def _to_vec_blob(vec: list[float]) -> bytes:
