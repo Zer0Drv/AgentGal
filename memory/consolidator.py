@@ -358,14 +358,21 @@ class MemoryConsolidator:
             return []
 
         updates = []
-        # 解析每个 update 标签，支持自闭合和内容形式
-        update_pattern = r'<update\s+type="(\w+)"\s+id="(\w+)"\s*(?:/>|>(.*?)</update>)'
-        for m in re.finditer(update_pattern, match.group(1), re.DOTALL):
+        # 解析每个 update 标签，允许属性顺序变化并兼容自闭合/有内容两种格式
+        tag_pattern = r"<update\b([^>]*)\s*(?:/>|>(.*?)</update>)"
+        attr_pattern = r'(\w+)="(.*?)"'
+        for m in re.finditer(tag_pattern, match.group(1), re.DOTALL):
+            attrs_text = m.group(1) or ""
+            attrs = {k: v for k, v in re.findall(attr_pattern, attrs_text)}
+            up_type = (attrs.get("type") or "").upper()
+            up_id = attrs.get("id")
+            if not up_type or not up_id:
+                continue
             updates.append(
                 {
-                    "type": m.group(1).upper(),  # ADD/UPDATE/DELETE
-                    "id": m.group(2),  # P001
-                    "content": m.group(3).strip() if m.group(3) else None,
+                    "type": up_type,  # ADD/UPDATE/DELETE
+                    "id": up_id,  # P001
+                    "content": m.group(2).strip() if m.group(2) else None,
                 }
             )
 

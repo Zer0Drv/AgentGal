@@ -94,7 +94,7 @@ def _parse_section_file(
                 sections[current_sec] = "\n".join(current_lines).strip()
             current_sec = line[3:].strip()
             current_lines = []
-        elif not line.startswith("# "):
+        elif current_sec is not None:
             current_lines.append(line)
 
     if current_sec:
