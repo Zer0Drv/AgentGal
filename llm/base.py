@@ -41,6 +41,7 @@ class BaseLLMClient(ABC):
         """关闭连接"""
         if self._client:
             await self._client.aclose()
+            self._client = None
 
     async def __aenter__(self):
         await self.initialize()

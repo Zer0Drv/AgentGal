@@ -353,8 +353,8 @@ class MemoryConsolidator:
             # 新策略：不再将整理后的事件片段写入向量库，仅保留整轮原始对话写入。
             # 因此这里不再做任何向量写入操作。
 
-            # 7. 更新进度
-            if next_date:
+            # 7. 更新进度（仅当成功时）
+            if next_date and not result.errors:
                 if last_consolidated and next_date != last_consolidated:
                     routing_logger.info(
                         f"[整理器] {agent_name} 进度推进: {last_consolidated} → {next_date}"
