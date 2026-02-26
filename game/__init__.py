@@ -3,7 +3,7 @@
 from .save_manager import (
     agent_path,
     narrator_raw_dir,
-    load_opening_text,
+    load_prompt_file,
     load_recent_raw_messages,
     has_existing_save,
     reset_logs,
@@ -14,7 +14,7 @@ from .save_manager import (
 __all__ = [
     "agent_path",
     "narrator_raw_dir",
-    "load_opening_text",
+    "load_prompt_file",
     "load_recent_raw_messages",
     "has_existing_save",
     "reset_logs",
