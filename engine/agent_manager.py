@@ -68,8 +68,8 @@ class AgentManager:
                 agent_name, user_input
             )
 
-            # 加载 memory.md 最后10行作为 recent_memories
-            recent_memories = self._load_recent_memory(agent_name, lines=10)
+            # 加载 memory.md 最后5行作为 recent_memories
+            recent_memories = self._load_recent_memory(agent_name, lines=5)
 
             # 加载 status.md
             status_content = self._load_agent_file(agent_name, "status.md")

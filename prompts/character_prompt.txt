@@ -3,14 +3,16 @@
 </soul>
 
 <growth>
-# 重要成长事件（按时间顺序）
-
 {growth}
 </growth>
 
 <relevant_memories>
 {memory}
 </relevant_memories>
+
+<recent_memories>
+{recent_memories}
+</recent_memories>
 
 <status>
 {status}
