@@ -1,7 +1,6 @@
-"""Agent 调用日志记录 - 使用 agno 的 post_hook 机制
+"""Agent 调用日志记录 - 使用 agno 的 post_hook 机制。
 
-通过环境变量控制:
-    AGENT_LOG_ENABLED=true  # 启用日志记录（默认关闭）
+始终记录：可读日志 + JSONL + token 用量（转写到 llm_usage）。
 """
 
 import os
@@ -11,13 +10,12 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from typing import Any, Optional
 
+from log_config.llm_usage import log_llm_usage
+
 
 # 创建 logs/agent 目录
 LOGS_DIR = "logs/agent"
 os.makedirs(LOGS_DIR, exist_ok=True)
-
-# 是否启用日志（默认关闭，需设置 AGENT_LOG_ENABLED=true 开启）
-LOG_ENABLED = os.getenv("AGENT_LOG_ENABLED", "false").lower() == "true"
 
 # ---- RotatingFileHandler 日志器 ----
 _jsonl_logger = logging.getLogger("agent_calls_jsonl")
@@ -61,9 +59,6 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
             post_hooks=[log_agent_run],
         )
     """
-    if not LOG_ENABLED:
-        return
-
     # 提取信息
     agent_name = agent.name if hasattr(agent, "name") else "unknown"
     timestamp = datetime.now().isoformat()
@@ -133,9 +128,9 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
 
     # 写入可读的文本日志（自动轮转）
     lines = []
-    lines.append(f"\n{'=' * 80}")
+    lines.append("\n" + "=" * 80)
     lines.append(f"Agent: {agent_name} | Model: {model} | Time: {timestamp}")
-    lines.append(f"{'=' * 80}")
+    lines.append("=" * 80)
     # 直接显示完整的 message 流
     if full_messages:
         for msg in full_messages:
@@ -150,13 +145,13 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
         # 如果 Agno 没有返回 messages，显示 input
         lines.append(f"[input]\n{user_input}\n")
     if tools:
-        lines.append(f"{'-' * 40}")
+        lines.append("-" * 40)
         lines.append("[tools]")
         for t in tools:
             tool_name = t.tool_name if hasattr(t, "tool_name") else str(t)
             lines.append(f"  - {tool_name}")
     if metrics:
-        lines.append(f"{'-' * 40}")
+        lines.append("-" * 40)
         metrics_parts = []
         if hasattr(metrics, "input_tokens"):
             metrics_parts.append(f"in: {metrics.input_tokens}")
@@ -165,5 +160,46 @@ def log_agent_run(run_output: Any, agent: Any, session: Optional[Any] = None):
         if hasattr(metrics, "total_tokens"):
             metrics_parts.append(f"total: {metrics.total_tokens}")
         lines.append("[metrics] " + " | ".join(metrics_parts))
-    lines.append(f"{'=' * 80}\n")
+    lines.append("=" * 80 + "\n")
     _text_logger.info("\n".join(lines))
+
+    _log_usage_only(run_output, agent)
+
+
+def _log_usage_only(run_output: Any, agent: Any):
+    """将 token 消耗写入统一 LLM usage 日志。
+
+    独立于 AGENT_LOG_ENABLED，避免漏记成本。
+    """
+
+    agent_name = agent.name if hasattr(agent, "name") else "unknown"
+    metrics = run_output.metrics if hasattr(run_output, "metrics") else None
+    model = run_output.model if hasattr(run_output, "model") else None
+    usage_dict = None
+    if metrics:
+        usage_dict = {
+            "prompt_tokens": getattr(metrics, "input_tokens", None),
+            "completion_tokens": getattr(metrics, "output_tokens", None),
+            "total_tokens": getattr(metrics, "total_tokens", None),
+        }
+
+    # user input / response 长度仅作参考
+    user_input = ""
+    if hasattr(run_output, "input") and run_output.input:
+        if hasattr(run_output.input, "input_content"):
+            user_input = run_output.input.input_content
+        else:
+            user_input = str(run_output.input)
+
+    content = run_output.content if hasattr(run_output, "content") else str(run_output)
+
+    log_llm_usage(
+        agent_name,
+        "agent_run",
+        usage_dict,
+        {
+            "model": model,
+            "user_input_len": len(user_input) if user_input else None,
+            "response_len": len(content),
+        },
+    )
