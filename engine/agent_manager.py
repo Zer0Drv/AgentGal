@@ -23,6 +23,9 @@ from memory.file_ops import (
     _read_title,
     _update_section_file,
     get_allowed_fields,
+    load_growth_for_prompt,
+    read_agent_file,
+    read_file_tail,
 )
 from memory.vector_store import vector_store
 
@@ -55,7 +58,7 @@ class AgentManager:
     def _create_agent(self, agent_name: str) -> Agent:
         """创建单个 Agent（预创建，复用）"""
         # 加载静态角色设定（soul.md 是只读的）
-        soul_content = self._load_agent_file(agent_name, "soul.md")
+        soul_content = read_agent_file(agent_name, "soul.md")
 
         # 定义动态 instructions 函数，每次运行时重新加载记忆文件
         def get_dynamic_instructions(agent: Agent, run_context=None) -> str:
@@ -69,16 +72,20 @@ class AgentManager:
             )
 
             # 加载 memory.md 最后5行作为 recent_memories
-            recent_memories = self._load_recent_memory(agent_name, lines=5)
+            recent_memories = read_file_tail(
+                character_path(agent_name, "memory.md"), lines=5
+            )
+            if not recent_memories:
+                recent_memories = "（尚无记忆）"
 
             # 加载 status.md
-            status_content = self._load_agent_file(agent_name, "status.md")
+            status_content = read_agent_file(agent_name, "status.md")
 
             # 加载 user.md
-            user_content = self._load_agent_file(agent_name, "user.md")
+            user_content = read_agent_file(agent_name, "user.md")
 
             # 加载 growth.md
-            growth_content = self._load_growth(agent_name)
+            growth_content = load_growth_for_prompt(agent_name)
 
             # 加载并填充 system prompt 模板
             prompt_template = self._load_system_prompt_template(agent_name)
@@ -136,40 +143,6 @@ class AgentManager:
             template_path = PROJECT_ROOT / "prompts" / "character_prompt.txt"
 
         return Path(template_path).read_text(encoding="utf-8")
-
-    def _load_agent_file(self, agent_name: str, filename: str) -> str:
-        """加载角色目录下的指定文件"""
-        path = character_path(agent_name, filename)
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read()
-        return ""
-
-    def _load_recent_memory(self, agent_name: str, lines: int = 10) -> str:
-        """加载 memory.md 的最后 N 行作为 recent_memories"""
-        path = character_path(agent_name, "memory.md")
-        if not os.path.exists(path):
-            return "（尚无记忆）"
-        with open(path, "r", encoding="utf-8") as f:
-            all_lines = f.readlines()
-            # 过滤空行，取最后 N 行
-            content_lines = [line for line in all_lines if line.strip()]
-            tail_lines = (
-                content_lines[-lines:] if len(content_lines) >= lines else content_lines
-            )
-            return "".join(tail_lines).strip()
-
-    def _load_growth(self, agent_name: str) -> str:
-        """加载 growth.md 人格沉淀层"""
-        path = character_path(agent_name, "growth.md")
-        if not os.path.exists(path):
-            return "（尚无人格沉淀）"
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            # 提取 ID 条目部分
-            if not content or content == "# 人格沉淀层":
-                return "（尚无人格沉淀）"
-            return content
 
     async def run_agent(self, agent_name: str, user_input: str) -> str:
         import time

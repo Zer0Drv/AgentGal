@@ -6,14 +6,11 @@ normalize → split_by_date（合并同日期段落）→ 根据进度跳过已�
 """
 
 import asyncio
-import json
 import os
 import re
-import shutil
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from functools import lru_cache
@@ -22,6 +19,15 @@ from llm.llm_parser import OpenAICompatibleClient
 
 from log_config.routing import routing_logger
 from engine.config import character_path
+from memory.file_ops import (
+    backup_file,
+    load_consolidation_state,
+    load_text,
+    read_growth_entries,
+    safe_write_memory,
+    save_consolidation_state,
+    write_growth_entries,
+)
 from memory.text_utils import (
     normalize,
     split_by_date,
@@ -67,35 +73,6 @@ class _ConsolidationResult:
     skip_reason: str = ""
     errors: list[str] = field(default_factory=list)
 
-@lru_cache(maxsize=4)
-def _load_text(path: Path) -> str:
-    """小型只读缓存，避免重复读文件。"""
-    return path.read_text(encoding="utf-8")
-
-
-def _cleanup_old_backups(bak_dir: Path, pattern: str, max_count: int = 10) -> int:
-    """清理旧备份文件，只保留最近的 max_count 个。
-
-    Args:
-        bak_dir: 备份目录路径
-        pattern: 文件匹配模式，如 "Memory_*_pre.md"
-        max_count: 最大保留数量，默认 10
-
-    Returns:
-        删除的文件数量
-    """
-    bak_files = sorted(
-        bak_dir.glob(pattern),
-        key=lambda f: f.stat().st_mtime,
-    )
-    deleted = 0
-    if len(bak_files) > max_count:
-        for old_bak in bak_files[:-max_count]:
-            old_bak.unlink()
-            deleted += 1
-    return deleted
-
-
 class MemoryConsolidator:
     def __init__(self):
         self._locks: dict[str, asyncio.Lock] = {}
@@ -107,8 +84,12 @@ class MemoryConsolidator:
             self._locks[name] = asyncio.Lock()
         return self._locks[name]
 
-    async def _call_llm(self, prompt: str) -> str:
-        """调用 LLM 进行记忆整理（使用统一客户端满足 DRY/KISS）。"""
+    async def _call_llm(self, prompt: str) -> dict:
+        """调用 LLM 进行记忆整理（使用统一客户端满足 DRY/KISS）。
+
+        Returns:
+            dict: {"content": str, "usage": dict}
+        """
         if not _API_KEY:
             raise ValueError(
                 "LLM API key not configured. Please set LLM_API_KEY or CONSOLIDATION_LLM_API_KEY"
@@ -131,47 +112,10 @@ class MemoryConsolidator:
             messages=[{"role": "user", "content": prompt}],
             enable_thinking=False,  # 整理稳定性优先
         )
-        return (resp.get("content") or "").strip()
-
-    def _backup_file(self, src: Path, agent_name: str, prefix: str) -> Path:
-        """
-        备份文件到 agent 的 bak 目录，保留最近 10 个备份。
-
-        Returns:
-            备份文件的完整路径
-        """
-        bak_dir = Path(character_path(agent_name, "bak"))
-        bak_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-        bak_path = bak_dir / f"{prefix}_{ts}_pre.md"
-        shutil.copy2(src, bak_path)
-
-        _cleanup_old_backups(bak_dir, f"{prefix}_*_pre.md", max_count=10)
-        return bak_path
-
-    def _state_path(self, agent_name: str) -> Path:
-        """整合进度文件路径"""
-        return Path(character_path(agent_name, ".consolidation_state.json"))
-
-    def _load_state(self, agent_name: str) -> Optional[str]:
-        """读取上次整合到的日期，返回如 '2月10日' 或 None"""
-        p = self._state_path(agent_name)
-        if not p.exists():
-            return None
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            return data.get("last_consolidated_date")
-        except (json.JSONDecodeError, OSError):
-            return None
-
-    def _save_state(self, agent_name: str, last_date: str):
-        """保存整合进度"""
-        p = self._state_path(agent_name)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(
-            json.dumps({"last_consolidated_date": last_date}, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        return {
+            "content": (resp.get("content") or "").strip(),
+            "usage": resp.get("usage") or {},
+        }
 
     def _load_and_normalize(
         self, agent_name: str
@@ -253,7 +197,7 @@ class MemoryConsolidator:
         parts = [f"## {date}\n{sections[date]}" for date in dates]
         combined_text = "\n\n".join(parts)
 
-        template = _load_text(_PROMPT_PATH)
+        template = load_text(_PROMPT_PATH)
         return template.format(
             soul=soul_content,
             growth=growth_content,
@@ -312,7 +256,7 @@ class MemoryConsolidator:
 
             # 2. 确定需要整合的日期
             all_dates = list(sections.keys())
-            last_consolidated = self._load_state(agent_name)
+            last_consolidated = load_consolidation_state(agent_name)
             resolved = self._resolve_dates(agent_name, all_dates, last_consolidated)
             if resolved is None:
                 return None
@@ -326,14 +270,15 @@ class MemoryConsolidator:
             result.original_len = len(original_content)
 
             # 3. 备份
-            self._backup_file(path, agent_name, "Memory")
+            backup_file(path, agent_name, "Memory")
 
             # 4. 构建 prompt 并调用 LLM
             prompt = self._build_consolidation_prompt(
                 agent_name, sections, dates_to_consolidate
             )
             try:
-                llm_result = await self._call_llm(prompt)
+                llm_response = await self._call_llm(prompt)
+                llm_result = llm_response.get("content", "")
                 self._apply_memory_result(
                     agent_name, sections, dates_to_consolidate, llm_result, result
                 )
@@ -342,8 +287,8 @@ class MemoryConsolidator:
                 routing_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
 
             # 5. 写回文件（检测并发冲突）
-            result.final_len = self._write_back(
-                path, agent_name, sections, original_content
+            result.final_len = safe_write_memory(
+                path, sections, agent_name, original_content
             )
             if result.final_len < 0:
                 result.errors.append("并发冲突：检测到中间变更，已放弃写回")
@@ -359,7 +304,7 @@ class MemoryConsolidator:
                     routing_logger.info(
                         f"[整理器] {agent_name} 进度推进: {last_consolidated} → {next_date}"
                     )
-                self._save_state(agent_name, next_date)
+                save_consolidation_state(agent_name, next_date)
 
             # 8. 顺带整理 user.md
             user_before, user_after = await self._consolidate_player_profile(agent_name)
@@ -433,40 +378,6 @@ class MemoryConsolidator:
 
         return updates
 
-    def _read_growth(self, agent_name: str) -> dict[str, str]:
-        """
-        读取 growth.md，返回 {id: content} 字典。
-
-        格式：[P001] 内容（支持多行）
-        """
-        path = Path(character_path(agent_name, "growth.md"))
-        if not path.exists():
-            return {}
-
-        content = path.read_text(encoding="utf-8")
-        entries = {}
-        # 匹配 [P001] 内容（支持多行）
-        pattern = r"\[(\w+)\]\s*(.+?)(?=\n\[|$)"
-        for m in re.finditer(pattern, content, re.DOTALL):
-            entries[m.group(1)] = m.group(2).strip()
-        return entries
-
-    def _write_growth(self, agent_name: str, entries: dict[str, str]):
-        """将 {id: content} 字典写回 growth.md，按 ID 数字部分排序。"""
-        path = Path(character_path(agent_name, "growth.md"))
-
-        def _sort_key(k: str) -> int:
-            try:
-                return int(re.sub(r"[^0-9]", "", k))
-            except ValueError:
-                return 0
-
-        sorted_ids = sorted(entries.keys(), key=_sort_key)
-        body = "\n\n".join(f"[{i}] {entries[i]}\n" for i in sorted_ids)
-        text = f"# 人格沉淀层\n\n{body}\n"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-
     def _apply_growth_updates(self, agent_name: str, updates: list[dict]) -> str:
         """
         应用人格沉淀更新到 growth.md
@@ -474,7 +385,7 @@ class MemoryConsolidator:
         Returns:
             操作日志字符串
         """
-        entries = self._read_growth(agent_name)
+        entries = read_growth_entries(agent_name)
         logs = []
 
         for up in updates:
@@ -499,52 +410,8 @@ class MemoryConsolidator:
                 else:
                     logs.append(f"DELETE警告:{up['id']}不存在")
 
-        self._write_growth(agent_name, entries)
+        write_growth_entries(agent_name, entries)
         return ";".join(logs) if logs else "无更新"
-
-    def _write_back(
-        self,
-        path: Path,
-        agent_name: str,
-        sections: OrderedDict[str, str],
-        original_content: str,
-    ) -> int:
-        """写回整理后的内容，带最小并发保护。
-
-        策略（快速对齐版）：
-        - 若 current 以 original 开头，视为尾部追加，保留该追加；
-        - 若 current == original，正常覆盖；
-        - 否则判定为中间变更，放弃写回并告警，返回 -1（让上层跳过后续流程）。
-        """
-        current_content = path.read_text(encoding="utf-8")
-
-        if current_content.startswith(original_content):
-            appended = current_content[len(original_content) :]
-            if appended:
-                routing_logger.info(
-                    f"[整理器] {agent_name} 检测到并发尾部追加 ({len(appended)} 字符)，将保留"
-                )
-        elif current_content == original_content:
-            appended = ""
-        else:
-            routing_logger.warning(
-                f"[整理器] {agent_name} 检测到并发中间变更，已放弃写回以避免覆盖（建议稍后重试）"
-            )
-            return -1
-
-        parts = [f"# {agent_name} 的长期记忆", ""]
-        for date, body in sections.items():
-            parts.append(f"## {date}")
-            parts.append(body.strip())
-            parts.append("")
-        result = "\n".join(parts).strip() + "\n"
-
-        # 追加并发期间新写入的内容
-        if appended:
-            result += appended
-
-        path.write_text(result, encoding="utf-8")
-        return len(result)
 
     async def _consolidate_player_profile(self, agent_name: str) -> tuple[int, int]:
         """整理单个角色的 user.md（去重精炼）。返回 (原始长度, 整理后长度)。"""
@@ -560,10 +427,11 @@ class MemoryConsolidator:
 
         try:
             # 备份
-            self._backup_file(user_path, agent_name, "user")
+            backup_file(user_path, agent_name, "user")
 
-            prompt = _load_text(_PLAYER_PROMPT_PATH).format(content=content)
-            consolidated = await self._call_llm(prompt)
+            prompt = load_text(_PLAYER_PROMPT_PATH).format(content=content)
+            llm_response = await self._call_llm(prompt)
+            consolidated = llm_response.get("content", "")
 
             if len(consolidated.strip()) < 20:
                 routing_logger.warning(
