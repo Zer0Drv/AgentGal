@@ -45,17 +45,6 @@ def _validate_embed_config():
         raise ValueError("EMBEDDING_API_URL 或 LLM_API_URL 未配置，无法计算向量")
 
 
-def _embedding_headers() -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {EMBED_API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-
-def _embedding_payload(texts: list[str]) -> dict[str, Any]:
-    return {"model": EMBED_MODEL, "input": texts}
-
-
 async def _embed_async(texts: list[str]) -> list[list[float]]:
     """异步计算嵌入"""
     _validate_embed_config()
@@ -63,8 +52,8 @@ async def _embed_async(texts: list[str]) -> list[list[float]]:
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             EMBED_API_URL,
-            headers=_embedding_headers(),
-            json=_embedding_payload(texts),
+            headers={"Authorization": f"Bearer {EMBED_API_KEY}", "Content-Type": "application/json"},
+            json={"model": EMBED_MODEL, "input": texts},
         )
         resp.raise_for_status()
         return [d["embedding"] for d in resp.json()["data"]]
@@ -75,8 +64,8 @@ def _embed_sync(texts: list[str]) -> list[list[float]]:
     _validate_embed_config()
     resp = httpx.post(
         EMBED_API_URL,
-        headers=_embedding_headers(),
-        json=_embedding_payload(texts),
+        headers={"Authorization": f"Bearer {EMBED_API_KEY}", "Content-Type": "application/json"},
+        json={"model": EMBED_MODEL, "input": texts},
         timeout=60,
     )
     resp.raise_for_status()
@@ -109,8 +98,17 @@ class VectorStore:
         self._conv_game_date: dict[str, str] = {}
         self.character_path = character_path
         self._background_tasks: set[asyncio.Task] = set()
-        # 单连接下显式串行化写事务，避免并发任务交错导致事务冲突
-        self._write_lock = asyncio.Lock()
+        # 单连接下显式串行化写事务；按事件循环懒初始化避免跨 loop 复用报错
+        self._write_lock: asyncio.Lock | None = None
+        self._write_lock_loop: asyncio.AbstractEventLoop | None = None
+
+    def _get_write_lock(self) -> asyncio.Lock:
+        """获取当前事件循环绑定的写锁。"""
+        loop = asyncio.get_running_loop()
+        if self._write_lock is None or self._write_lock_loop is not loop:
+            self._write_lock = asyncio.Lock()
+            self._write_lock_loop = loop
+        return self._write_lock
 
     # ----------------------------- DB 基础 -----------------------------
 
@@ -209,7 +207,7 @@ class VectorStore:
         # 入库
         db: aiosqlite.Connection | None = None
         try:
-            async with self._write_lock:
+            async with self._get_write_lock():
                 await self.init_tables()
                 db = await self._get_db()
                 now_iso = _utcnow_iso()

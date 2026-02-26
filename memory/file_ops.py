@@ -85,7 +85,6 @@ def _parse_section_file(
             existing_content = f.read()
 
     sections: dict[str, str] = {}
-    section_order: list[str] = []
     current_sec = None
     current_lines: list[str] = []
 
@@ -94,8 +93,6 @@ def _parse_section_file(
             if current_sec:
                 sections[current_sec] = "\n".join(current_lines).strip()
             current_sec = line[3:].strip()
-            if current_sec not in section_order:
-                section_order.append(current_sec)
             current_lines = []
         elif not line.startswith("# "):
             current_lines.append(line)
@@ -104,26 +101,10 @@ def _parse_section_file(
         sections[current_sec] = "\n".join(current_lines).strip()
 
     for field in allowed_sections:
-        if field not in section_order:
-            section_order.append(field)
+        if field not in sections:
             sections[field] = _EMPTY_PLACEHOLDER
 
     return sections
-
-
-def _invalid_section_message(section: str, allowed_sections: list[str]) -> str:
-    return (
-        f"错误：不允许的字段「{section}」。"
-        f"只能更新以下字段：{', '.join(allowed_sections)}"
-    )
-
-
-def _numeric_suffix_sort_key(value: str) -> int:
-    """提取字符串中的数字部分用于排序，无法解析时返回 0。"""
-    try:
-        return int(re.sub(r"[^0-9]", "", value))
-    except ValueError:
-        return 0
 
 
 def _write_section_file(
@@ -165,7 +146,10 @@ def _update_section_file(
 ) -> str:
     """覆盖模式更新 section 式文件（用于 update_status）。"""
     if section not in allowed_sections:
-        return _invalid_section_message(section, allowed_sections)
+        return (
+            f"错误：不允许的字段「{section}」。"
+            f"只能更新以下字段：{', '.join(allowed_sections)}"
+        )
 
     sections, content = _prepare_section_update(file_path, content, allowed_sections)
 
@@ -191,7 +175,10 @@ def _append_section_file(
     只追加新信息，已存在的内容自动跳过。
     """
     if section not in allowed_sections:
-        return _invalid_section_message(section, allowed_sections)
+        return (
+            f"错误：不允许的字段「{section}」。"
+            f"只能更新以下字段：{', '.join(allowed_sections)}"
+        )
 
     sections, content = _prepare_section_update(file_path, content, allowed_sections)
     old_content = sections.get(section, "").strip()
@@ -244,7 +231,13 @@ def read_growth_entries(agent_name: str) -> dict[str, str]:
 def write_growth_entries(agent_name: str, entries: dict[str, str]) -> None:
     """将 {id: content} 字典写回 growth.md，按 ID 数字部分排序。"""
     path = Path(character_path(agent_name, "growth.md"))
-    sorted_ids = sorted(entries.keys(), key=_numeric_suffix_sort_key)
+    def _sort_key(value: str) -> int:
+        try:
+            return int(re.sub(r"[^0-9]", "", value))
+        except ValueError:
+            return 0
+
+    sorted_ids = sorted(entries.keys(), key=_sort_key)
 
     lines = [_GROWTH_TITLE, ""]
     for entry_id in sorted_ids:
@@ -367,22 +360,6 @@ def get_consolidation_state_path(agent_name: str) -> Path:
     return Path(character_path(agent_name, ".consolidation_state.json"))
 
 
-def _load_json_file(path: Path) -> Optional[dict]:
-    """读取 JSON 文件，失败返回 None。"""
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def _save_json_file(path: Path, data: dict) -> None:
-    """写入 JSON 文件（UTF-8）。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-
-
 def load_consolidation_state(agent_name: str) -> Optional[str]:
     """读取上次整合到的日期，返回如 '2月10日' 或 None。
 
@@ -393,8 +370,11 @@ def load_consolidation_state(agent_name: str) -> Optional[str]:
         最后整合的日期字符串，或 None（无记录/解析失败）
     """
     p = get_consolidation_state_path(agent_name)
-    data = _load_json_file(p)
-    if data is None:
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
         return None
     return data.get("last_consolidated_date")
 
@@ -407,7 +387,11 @@ def save_consolidation_state(agent_name: str, last_date: str) -> None:
         last_date: 最后整合的日期字符串，如 '2月10日'
     """
     p = get_consolidation_state_path(agent_name)
-    _save_json_file(p, {"last_consolidated_date": last_date})
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(
+        json.dumps({"last_consolidated_date": last_date}, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
 
 # ===== 安全写回（带并发保护） =====
