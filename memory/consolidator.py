@@ -13,7 +13,6 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
-from functools import lru_cache
 
 from llm.llm_parser import OpenAICompatibleClient
 
@@ -22,8 +21,10 @@ from engine.config import character_path
 from memory.file_ops import (
     backup_file,
     load_consolidation_state,
+    load_growth_for_prompt,
     load_text,
     read_growth_entries,
+    read_agent_file,
     safe_write_memory,
     save_consolidation_state,
     write_growth_entries,
@@ -80,6 +81,7 @@ class MemoryConsolidator:
         self._client: Optional[OpenAICompatibleClient] = None
 
     def _get_lock(self, name: str) -> asyncio.Lock:
+        """获取按 agent 名称隔离的整理锁。"""
         if name not in self._locks:
             self._locks[name] = asyncio.Lock()
         return self._locks[name]
@@ -182,17 +184,8 @@ class MemoryConsolidator:
         self, agent_name: str, sections: OrderedDict[str, str], dates: list[str]
     ) -> str:
         """构建记忆整合的 LLM prompt。"""
-        soul_path = Path(character_path(agent_name, "soul.md"))
-        soul_content = (
-            soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
-        )
-
-        growth_path = Path(character_path(agent_name, "growth.md"))
-        growth_content = (
-            growth_path.read_text(encoding="utf-8")
-            if growth_path.exists()
-            else "（尚无）"
-        )
+        soul_content = read_agent_file(agent_name, "soul.md")
+        growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
 
         parts = [f"## {date}\n{sections[date]}" for date in dates]
         combined_text = "\n\n".join(parts)
@@ -278,7 +271,7 @@ class MemoryConsolidator:
             )
             try:
                 llm_response = await self._call_llm(prompt)
-                llm_result = llm_response.get("content", "")
+                llm_result = (llm_response.get("content") or "").strip()
                 self._apply_memory_result(
                     agent_name, sections, dates_to_consolidate, llm_result, result
                 )
@@ -431,7 +424,7 @@ class MemoryConsolidator:
 
             prompt = load_text(_PLAYER_PROMPT_PATH).format(content=content)
             llm_response = await self._call_llm(prompt)
-            consolidated = llm_response.get("content", "")
+            consolidated = (llm_response.get("content") or "").strip()
 
             if len(consolidated.strip()) < 20:
                 routing_logger.warning(
@@ -495,19 +488,16 @@ class MemoryConsolidator:
                 routing_logger.info(f"[整理器] {r.agent_name} 跳过: {r.skip_reason}")
                 continue
 
-            # 构建压缩率
             if r.original_len > 0:
                 ratio = (1 - r.final_len / r.original_len) * 100
                 mem_part = f"{r.original_len}→{r.final_len}字({ratio:+.1f}%)"
             else:
                 mem_part = "无变化"
 
-            # user.md 部分
             user_part = ""
             if r.user_md_before > 0:
                 user_part = f" | user.md {r.user_md_before}→{r.user_md_after}"
 
-            # 错误部分
             err_part = ""
             if r.errors:
                 err_part = f" | 错误: {', '.join(r.errors)}"

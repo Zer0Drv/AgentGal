@@ -1,6 +1,7 @@
 """Chainlit 入口"""
 
 import asyncio
+import os
 import re
 
 import chainlit as cl
@@ -31,6 +32,19 @@ from memory.consolidator import CONSOLIDATION_INTERVAL, memory_consolidator
 
 # 加载环境变量
 load_dotenv()
+
+
+def _prepare_chainlit_database_url() -> None:
+    """兼容 asyncpg：将 postgresql+asyncpg:// 规范化为 postgresql://。"""
+    chainlit_db_url = os.getenv("CHAINLIT_DATABASE_URL", "").strip()
+    db_url = chainlit_db_url or os.getenv("DATABASE_URL", "").strip()
+    if db_url.startswith("postgresql+asyncpg://"):
+        db_url = db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    if db_url:
+        os.environ["DATABASE_URL"] = db_url
+
+
+_prepare_chainlit_database_url()
 
 
 # =============================================================================

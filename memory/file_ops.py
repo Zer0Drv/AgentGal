@@ -14,6 +14,9 @@ from typing import Optional
 
 from engine.config import character_path
 
+_EMPTY_PLACEHOLDER = "（暂无）"
+_GROWTH_TITLE = "# 人格沉淀层"
+
 # 每个角色 status.md 允许的字段白名单（对应 ## 标题）
 STATUS_FIELDS: dict[str, list[str]] = {
     "lilith": ["身份", "心境", "我和他", "在意的事", "打算"],
@@ -82,7 +85,6 @@ def _parse_section_file(
             existing_content = f.read()
 
     sections: dict[str, str] = {}
-    section_order: list[str] = []
     current_sec = None
     current_lines: list[str] = []
 
@@ -91,8 +93,6 @@ def _parse_section_file(
             if current_sec:
                 sections[current_sec] = "\n".join(current_lines).strip()
             current_sec = line[3:].strip()
-            if current_sec not in section_order:
-                section_order.append(current_sec)
             current_lines = []
         elif not line.startswith("# "):
             current_lines.append(line)
@@ -101,9 +101,8 @@ def _parse_section_file(
         sections[current_sec] = "\n".join(current_lines).strip()
 
     for field in allowed_sections:
-        if field not in section_order:
-            section_order.append(field)
-            sections[field] = "（暂无）"
+        if field not in sections:
+            sections[field] = _EMPTY_PLACEHOLDER
 
     return sections
 
@@ -126,6 +125,18 @@ def _write_section_file(
         f.write("\n".join(lines))
 
 
+def _prepare_section_update(
+    file_path: str,
+    content: str,
+    allowed_sections: list[str],
+) -> tuple[dict[str, str], str]:
+    """统一 section 更新前的预处理。"""
+    normalized = content.replace("\\n", "\n")
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    sections = _parse_section_file(file_path, allowed_sections)
+    return sections, normalized
+
+
 def _update_section_file(
     file_path: str,
     section: str,
@@ -140,10 +151,7 @@ def _update_section_file(
             f"只能更新以下字段：{', '.join(allowed_sections)}"
         )
 
-    content = content.replace("\\n", "\n")
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-    sections = _parse_section_file(file_path, allowed_sections)
+    sections, content = _prepare_section_update(file_path, content, allowed_sections)
 
     old_content = sections.get(section, "").strip()
     new_content = content.strip()
@@ -172,14 +180,11 @@ def _append_section_file(
             f"只能更新以下字段：{', '.join(allowed_sections)}"
         )
 
-    content = content.replace("\\n", "\n")
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-    sections = _parse_section_file(file_path, allowed_sections)
+    sections, content = _prepare_section_update(file_path, content, allowed_sections)
     old_content = sections.get(section, "").strip()
 
     # 如果字段为空或占位符，直接写入
-    if not old_content or old_content == "（暂无）":
+    if not old_content or old_content == _EMPTY_PLACEHOLDER:
         sections[section] = content.strip()
         _write_section_file(file_path, sections, allowed_sections, title_line)
         return f"已更新 [{section}]: {content[:50]}..."
@@ -226,20 +231,20 @@ def read_growth_entries(agent_name: str) -> dict[str, str]:
 def write_growth_entries(agent_name: str, entries: dict[str, str]) -> None:
     """将 {id: content} 字典写回 growth.md，按 ID 数字部分排序。"""
     path = Path(character_path(agent_name, "growth.md"))
-
-    def _sort_key(k: str) -> int:
+    def _sort_key(value: str) -> int:
         try:
-            return int(re.sub(r"[^0-9]", "", k))
+            return int(re.sub(r"[^0-9]", "", value))
         except ValueError:
             return 0
 
     sorted_ids = sorted(entries.keys(), key=_sort_key)
 
-    lines = ["# 人格沉淀层", ""]
+    lines = [_GROWTH_TITLE, ""]
     for entry_id in sorted_ids:
         lines.append(f"[{entry_id}] {entries[entry_id]}")
         lines.append("")
 
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -253,7 +258,7 @@ def load_growth_for_prompt(agent_name: str, default: str = "（尚无人格沉�
         return default
 
     content = path.read_text(encoding="utf-8").strip()
-    if not content or content == "# 人格沉淀层":
+    if not content or content == _GROWTH_TITLE:
         return default
 
     # 去掉所有空行
@@ -369,9 +374,9 @@ def load_consolidation_state(agent_name: str) -> Optional[str]:
         return None
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
-        return data.get("last_consolidated_date")
     except (json.JSONDecodeError, OSError):
         return None
+    return data.get("last_consolidated_date")
 
 
 def save_consolidation_state(agent_name: str, last_date: str) -> None:
