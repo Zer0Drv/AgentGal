@@ -12,7 +12,6 @@ import json
 import asyncio
 import sqlite3
 import re
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -39,21 +38,49 @@ EMBED_DIM = int(os.getenv("EMBEDDING_DIM", "1536"))
 
 # ----------------------------- 嵌入函数 -----------------------------
 
-async def _embed_async(texts: list[str]) -> list[list[float]]:
-    """异步计算嵌入"""
+def _validate_embed_config():
     if not EMBED_API_KEY:
         raise ValueError("EMBEDDING_API_KEY 或 LLM_API_KEY 未配置，无法计算向量")
     if not EMBED_API_URL:
         raise ValueError("EMBEDDING_API_URL 或 LLM_API_URL 未配置，无法计算向量")
 
+
+def _embedding_headers() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {EMBED_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+def _embedding_payload(texts: list[str]) -> dict[str, Any]:
+    return {"model": EMBED_MODEL, "input": texts}
+
+
+async def _embed_async(texts: list[str]) -> list[list[float]]:
+    """异步计算嵌入"""
+    _validate_embed_config()
+
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             EMBED_API_URL,
-            headers={"Authorization": f"Bearer {EMBED_API_KEY}", "Content-Type": "application/json"},
-            json={"model": EMBED_MODEL, "input": texts},
+            headers=_embedding_headers(),
+            json=_embedding_payload(texts),
         )
         resp.raise_for_status()
         return [d["embedding"] for d in resp.json()["data"]]
+
+
+def _embed_sync(texts: list[str]) -> list[list[float]]:
+    """同步计算嵌入（用于同步检索路径）。"""
+    _validate_embed_config()
+    resp = httpx.post(
+        EMBED_API_URL,
+        headers=_embedding_headers(),
+        json=_embedding_payload(texts),
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return [d["embedding"] for d in resp.json()["data"]]
 
 
 def _utcnow_iso() -> str:
@@ -69,16 +96,6 @@ def _extract_game_date(text: str) -> str | None:
     return None
 
 
-@dataclass
-class _Round:
-    """单轮对话数据"""
-
-    round_id: str
-    visible_to: list[str]
-    content: str
-    date: str  # 游戏内日期
-
-
 class VectorStore:
     """sqlite-vec 本地向量库。
 
@@ -92,6 +109,8 @@ class VectorStore:
         self._conv_game_date: dict[str, str] = {}
         self.character_path = character_path
         self._background_tasks: set[asyncio.Task] = set()
+        # 单连接下显式串行化写事务，避免并发任务交错导致事务冲突
+        self._write_lock = asyncio.Lock()
 
     # ----------------------------- DB 基础 -----------------------------
 
@@ -105,6 +124,18 @@ class VectorStore:
             await conn.execute(f"SELECT load_extension('{ext_path}')")
         except Exception as e:
             raise RuntimeError(f"加载 sqlite-vec 扩展失败，请安装 sqlite_vec: {e}")
+
+    @staticmethod
+    def _load_sqlite_vec_sync(conn: sqlite3.Connection):
+        """在同步 sqlite3 连接加载 sqlite-vec 扩展。"""
+        try:
+            import sqlite_vec  # type: ignore
+
+            ext_path = sqlite_vec.loadable_path()
+            conn.enable_load_extension(True)
+            conn.execute(f"SELECT load_extension('{ext_path}')")
+        except Exception as e:
+            raise RuntimeError(f"加载 sqlite-vec 扩展失败: {e}")
 
     async def _get_db(self) -> aiosqlite.Connection:
         if self._db is None:
@@ -176,37 +207,40 @@ class VectorStore:
             return
 
         # 入库
+        db: aiosqlite.Connection | None = None
         try:
-            await self.init_tables()
-            db = await self._get_db()
-            now_iso = _utcnow_iso()
-            visible_json = json.dumps(visible, ensure_ascii=False)
+            async with self._write_lock:
+                await self.init_tables()
+                db = await self._get_db()
+                now_iso = _utcnow_iso()
+                visible_json = json.dumps(visible, ensure_ascii=False)
 
-            await db.execute("BEGIN")
+                await db.execute("BEGIN")
 
-            # 插入 chunks
-            cur = await db.execute(
-                """
-                INSERT OR REPLACE INTO chunks(round_id, date, created_at, visible_to, content)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (round_id, game_date, now_iso, visible_json, content),
-            )
-            rowid = cur.lastrowid
-
-            # 插入向量
-            if rowid:
-                blob = self._to_vec_blob(embedding)
-                await db.execute(
-                    "INSERT OR REPLACE INTO vec_chunks(rowid, embedding) VALUES (?, ?)",
-                    (rowid, blob),
+                # 插入 chunks
+                cur = await db.execute(
+                    """
+                    INSERT OR REPLACE INTO chunks(round_id, date, created_at, visible_to, content)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (round_id, game_date, now_iso, visible_json, content),
                 )
+                rowid = cur.lastrowid
 
-            await db.commit()
+                # 插入向量
+                if rowid:
+                    blob = self._to_vec_blob(embedding)
+                    await db.execute(
+                        "INSERT OR REPLACE INTO vec_chunks(rowid, embedding) VALUES (?, ?)",
+                        (rowid, blob),
+                    )
+
+                await db.commit()
             routing_logger.info(f"[VectorStore] 入库完成: round_id={round_id}")
         except Exception as e:
             try:
-                await db.execute("ROLLBACK")
+                if db is not None:
+                    await db.execute("ROLLBACK")
             except Exception:
                 pass
             routing_logger.error(f"[VectorStore] 写入失败: round_id={round_id}, error={e}")
@@ -217,6 +251,7 @@ class VectorStore:
         """最小化重建：解析 jsonl → 直接入库。"""
         import glob
 
+        _ = agent_name  # 保持外部调用签名兼容
         await self.init_tables()
         db = await self._get_db()
 
@@ -225,7 +260,7 @@ class VectorStore:
         await db.execute("DELETE FROM chunks")
         await db.commit()
 
-        raw_dir = Path(character_path("narrator", "raw"))
+        raw_dir = Path(self.character_path("narrator", "raw"))
         files = sorted(glob.glob(str(raw_dir / "*.jsonl")))
         if not files:
             routing_logger.info("[VectorStore] 重建: 未发现任何原始对话记录，跳过")
@@ -280,9 +315,8 @@ class VectorStore:
             for m in msgs:
                 if m.get("role") != "narrator":
                     continue
-                mm = re.search(r"\*\*时间\*\*：\s*(\d{1,2}月\d{1,2}日)", str(m.get("content", "")))
-                if mm:
-                    gdate = mm.group(1)
+                gdate = _extract_game_date(str(m.get("content", "")))
+                if gdate:
                     break
             return content, vis, gdate
 
@@ -309,23 +343,8 @@ class VectorStore:
                 limit = 5
 
         # 计算查询向量（同步）
-        if not EMBED_API_KEY:
-            routing_logger.error("[VectorStore] EMBEDDING_API_KEY 未配置")
-            return []
-        if not EMBED_API_URL:
-            routing_logger.error("[VectorStore] EMBEDDING_API_URL 未配置")
-            return []
-
         try:
-            import httpx
-            resp = httpx.post(
-                EMBED_API_URL,
-                headers={"Authorization": f"Bearer {EMBED_API_KEY}", "Content-Type": "application/json"},
-                json={"model": EMBED_MODEL, "input": [query]},
-                timeout=60,
-            )
-            resp.raise_for_status()
-            qvec = resp.json()["data"][0]["embedding"]
+            qvec = _embed_sync([query])[0]
         except Exception as e:
             routing_logger.error(f"[VectorStore] 查询嵌入失败: {e}")
             return []
@@ -333,13 +352,7 @@ class VectorStore:
         # 执行近邻搜索
         try:
             conn = sqlite3.connect(DB_PATH)
-            try:
-                import sqlite_vec
-                ext_path = sqlite_vec.loadable_path()
-                conn.enable_load_extension(True)
-                conn.execute(f"SELECT load_extension('{ext_path}')")
-            except Exception as e:
-                raise RuntimeError(f"加载 sqlite-vec 扩展失败: {e}")
+            self._load_sqlite_vec_sync(conn)
 
             rows = conn.execute(
                 """

@@ -13,7 +13,6 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
-from functools import lru_cache
 
 from llm.llm_parser import OpenAICompatibleClient
 
@@ -22,8 +21,10 @@ from engine.config import character_path
 from memory.file_ops import (
     backup_file,
     load_consolidation_state,
+    load_growth_for_prompt,
     load_text,
     read_growth_entries,
+    read_agent_file,
     safe_write_memory,
     save_consolidation_state,
     write_growth_entries,
@@ -117,6 +118,54 @@ class MemoryConsolidator:
             "usage": resp.get("usage") or {},
         }
 
+    @staticmethod
+    def _llm_content(response: dict) -> str:
+        """从统一 LLM 响应中提取文本内容。"""
+        return (response.get("content") or "").strip()
+
+    @staticmethod
+    def _is_too_short(text: str, min_len: int) -> bool:
+        return len(text.strip()) < min_len
+
+    @staticmethod
+    def _extract_after_profile_step(text: str) -> str:
+        """两步式 prompt：提取「第二步：档案」之后的内容。"""
+        diary_match = re.search(
+            r"^.*第二步.*档案.*$",
+            text,
+            re.MULTILINE,
+        )
+        if diary_match:
+            return text[diary_match.end() :].lstrip("\n")
+        return text
+
+    @staticmethod
+    def _format_memory_part(result: "_ConsolidationResult") -> str:
+        if result.original_len > 0:
+            ratio = (1 - result.final_len / result.original_len) * 100
+            return f"{result.original_len}→{result.final_len}字({ratio:+.1f}%)"
+        return "无变化"
+
+    @staticmethod
+    def _format_user_part(result: "_ConsolidationResult") -> str:
+        if result.user_md_before > 0:
+            return f" | user.md {result.user_md_before}→{result.user_md_after}"
+        return ""
+
+    @staticmethod
+    def _format_error_part(result: "_ConsolidationResult") -> str:
+        if result.errors:
+            return f" | 错误: {', '.join(result.errors)}"
+        return ""
+
+    @staticmethod
+    def _agent_memory_size(agent_name: str) -> str:
+        path = Path(character_path(agent_name, "memory.md"))
+        if path.exists():
+            length = len(path.read_text(encoding="utf-8"))
+            return f"{agent_name}({length}字)"
+        return f"{agent_name}(无文件)"
+
     def _load_and_normalize(
         self, agent_name: str
     ) -> tuple[Path, str, OrderedDict[str, str]] | None:
@@ -182,17 +231,8 @@ class MemoryConsolidator:
         self, agent_name: str, sections: OrderedDict[str, str], dates: list[str]
     ) -> str:
         """构建记忆整合的 LLM prompt。"""
-        soul_path = Path(character_path(agent_name, "soul.md"))
-        soul_content = (
-            soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
-        )
-
-        growth_path = Path(character_path(agent_name, "growth.md"))
-        growth_content = (
-            growth_path.read_text(encoding="utf-8")
-            if growth_path.exists()
-            else "（尚无）"
-        )
+        soul_content = read_agent_file(agent_name, "soul.md")
+        growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
 
         parts = [f"## {date}\n{sections[date]}" for date in dates]
         combined_text = "\n\n".join(parts)
@@ -213,7 +253,7 @@ class MemoryConsolidator:
         result: "_ConsolidationResult",
     ):
         """解析 LLM 结果并应用更新到 sections。"""
-        if len(llm_result.strip()) < 50:
+        if self._is_too_short(llm_result, 50):
             result.errors.append("LLM返回过短，跳过整理")
             return
 
@@ -278,7 +318,7 @@ class MemoryConsolidator:
             )
             try:
                 llm_response = await self._call_llm(prompt)
-                llm_result = llm_response.get("content", "")
+                llm_result = self._llm_content(llm_response)
                 self._apply_memory_result(
                     agent_name, sections, dates_to_consolidate, llm_result, result
                 )
@@ -431,22 +471,15 @@ class MemoryConsolidator:
 
             prompt = load_text(_PLAYER_PROMPT_PATH).format(content=content)
             llm_response = await self._call_llm(prompt)
-            consolidated = llm_response.get("content", "")
+            consolidated = self._llm_content(llm_response)
 
-            if len(consolidated.strip()) < 20:
+            if self._is_too_short(consolidated, 20):
                 routing_logger.warning(
                     f"[整理器] {agent_name} user.md LLM 返回过短，跳过"
                 )
                 return 0, 0
 
-            # 两步式 prompt：提取「第二步：档案」之后的内容
-            diary_match = re.search(
-                r"^.*第二步.*档案.*$",
-                consolidated,
-                re.MULTILINE,
-            )
-            if diary_match:
-                consolidated = consolidated[diary_match.end() :].lstrip("\n")
+            consolidated = self._extract_after_profile_step(consolidated)
 
             user_path.write_text(consolidated.strip() + "\n", encoding="utf-8")
             return len(content), len(consolidated)
@@ -468,14 +501,7 @@ class MemoryConsolidator:
         t0 = time.monotonic()
 
         # 收集各 agent 的摘要信息用于开始日志
-        summaries: list[str] = []
-        for name in agent_names:
-            path = Path(character_path(name, "memory.md"))
-            if path.exists():
-                length = len(path.read_text(encoding="utf-8"))
-                summaries.append(f"{name}({length}字)")
-            else:
-                summaries.append(f"{name}(无文件)")
+        summaries = [self._agent_memory_size(name) for name in agent_names]
 
         routing_logger.info(f"[整理器] 开始记忆整理: {', '.join(summaries)}")
 
@@ -495,22 +521,9 @@ class MemoryConsolidator:
                 routing_logger.info(f"[整理器] {r.agent_name} 跳过: {r.skip_reason}")
                 continue
 
-            # 构建压缩率
-            if r.original_len > 0:
-                ratio = (1 - r.final_len / r.original_len) * 100
-                mem_part = f"{r.original_len}→{r.final_len}字({ratio:+.1f}%)"
-            else:
-                mem_part = "无变化"
-
-            # user.md 部分
-            user_part = ""
-            if r.user_md_before > 0:
-                user_part = f" | user.md {r.user_md_before}→{r.user_md_after}"
-
-            # 错误部分
-            err_part = ""
-            if r.errors:
-                err_part = f" | 错误: {', '.join(r.errors)}"
+            mem_part = self._format_memory_part(r)
+            user_part = self._format_user_part(r)
+            err_part = self._format_error_part(r)
 
             routing_logger.info(
                 f"[整理器] {r.agent_name} 完成: "
