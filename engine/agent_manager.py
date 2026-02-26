@@ -32,6 +32,7 @@ class AgentManager:
 
     def __init__(self):
         self.agents: dict[str, Agent] = {}
+        self._current_input: str = ""  # 用于传递当前用户输入给 instructions 回调
         self._init_agents()
 
     def _init_agents(self):
@@ -58,12 +59,9 @@ class AgentManager:
 
         # 定义动态 instructions 函数，每次运行时重新加载记忆文件
         def get_dynamic_instructions(agent: Agent, run_context=None) -> str:
-            # 从 run_context 获取当前输入，提取原始用户消息用于 RAG
-            user_input = ""
-            if run_context and hasattr(run_context, "input") and run_context.input:
-                user_input = self._extract_user_message_from_input(
-                    str(run_context.input)
-                )
+            # 从实例变量获取当前输入，提取原始用户消息用于 RAG
+            user_input = self._current_input
+            routing_logger.debug(f"[AgentManager] instructions 回调: agent={agent_name}, input_len={len(user_input)}")
 
             # 同步 RAG 搜索相关记忆
             relevant_memories = self._search_relevant_memories_sync(
@@ -183,6 +181,9 @@ class AgentManager:
         if not agent:
             routing_logger.error(f"[{agent_name}] Agent 未初始化")
             return f"[{agent_name} 系统错误]"
+
+        # 保存当前输入（提取纯玩家消息），供 instructions 回调使用
+        self._current_input = self._extract_user_message_from_input(user_input)
 
         try:
             response = await asyncio.wait_for(
