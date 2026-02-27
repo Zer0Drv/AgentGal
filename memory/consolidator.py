@@ -24,17 +24,16 @@ from memory.file_ops import (
     load_consolidation_state,
     load_growth_for_prompt,
     load_text,
+    normalize,
     read_growth_entries,
     read_agent_file,
     safe_write_memory,
     save_consolidation_state,
-    write_growth_entries,
-)
-from memory.text_utils import (
-    normalize,
     split_by_date,
     split_events_raw,
+    write_growth_entries,
 )
+from memory.vector_store import vector_store
 
 CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
 
@@ -316,9 +315,10 @@ class MemoryConsolidator:
                 result.errors.append("并发冲突：检测到中间变更，已放弃写回")
                 return result
 
-            # 6. 同步到向量存储（取消）
-            # 新策略：不再将整理后的事件片段写入向量库，仅保留整轮原始对话写入。
-            # 因此这里不再做任何向量写入操作。
+            # 6. 同步到向量存储（在进度变更前索引当前指针日期）
+            # 仅当 last_consolidated 有值时进行索引
+            if last_consolidated:
+                await vector_store.add_memory(agent_name, last_consolidated)
 
             # 7. 更新进度（仅当成功时）
             if next_date and not result.errors:

@@ -9,7 +9,7 @@ import os
 import re
 import shutil
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +17,34 @@ from engine.config import character_path
 
 _EMPTY_PLACEHOLDER = "（暂无）"
 _GROWTH_TITLE = "# 人格沉淀层"
+
+
+def extract_game_date(text: str) -> str | None:
+    """从文本中提取游戏日期（如 4月3日）"""
+    m = re.search(r"\*\*时间\*\*：\s*(\d{1,2}月\d{1,2}日)", text)
+    if m:
+        return m.group(1)
+    return None
+
+
+def parse_cn_date(date_text: str) -> tuple[int, int] | None:
+    """解析中文日期格式（如 4月3日）为元组 (月, 日)"""
+    m = re.fullmatch(r"(\d{1,2})月(\d{1,2})日", (date_text or "").strip())
+    if not m:
+        return None
+    month, day = int(m.group(1)), int(m.group(2))
+    if 1 <= month <= 12 and 1 <= day <= 31:
+        return month, day
+    return None
+
+
+def is_date_before(date_text: str, cutoff_date: str) -> bool:
+    """判断 date_text 是否在 cutoff_date 之前"""
+    left = parse_cn_date(date_text)
+    right = parse_cn_date(cutoff_date)
+    if left is None or right is None:
+        return False
+    return left < right
 
 # 每个角色 status.md 允许的字段白名单（对应 ## 标题）
 STATUS_FIELDS: dict[str, list[str]] = {
@@ -230,6 +258,92 @@ def _prepare_section_update(
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     sections = _parse_section_file(file_path, allowed_sections)
     return sections, normalized
+
+
+def _read_title(file_path: str, default_title: str = "# 标题") -> str:
+    """读取文件的标题行（第一行）。
+
+    Args:
+        file_path: 文件路径
+        default_title: 默认标题，文件不存在或第一行不是标题时使用
+
+    Returns:
+        标题行内容
+    """
+    if not os.path.exists(file_path):
+        return default_title
+    with open(file_path, "r", encoding="utf-8") as f:
+        first_line = f.readline().strip()
+    if first_line.startswith("# "):
+        return first_line
+    return default_title
+
+
+def _update_section_file(
+    file_path: str,
+    section: str,
+    content: str,
+    allowed_sections: list[str],
+    title_line: str,
+) -> str:
+    """覆盖更新 section 文件中的指定字段。
+
+    Args:
+        file_path: 文件路径
+        section: 要更新的 section 名称
+        content: 新内容
+        allowed_sections: 允许的 section 白名单
+        title_line: 文件标题行
+
+    Returns:
+        更新结果描述
+    """
+    sections, normalized = _prepare_section_update(
+        file_path, content, allowed_sections
+    )
+
+    if section not in allowed_sections:
+        return f"字段 {section} 不在白名单中"
+
+    sections[section] = normalized
+    _write_section_file(file_path, sections, allowed_sections, title_line)
+    return f"已更新 {section}"
+
+
+def _append_section_file(
+    file_path: str,
+    section: str,
+    content: str,
+    allowed_sections: list[str],
+    title_line: str,
+) -> str:
+    """追加内容到 section 文件的指定字段（保留原有内容）。
+
+    Args:
+        file_path: 文件路径
+        section: 要追加的 section 名称
+        content: 要追加的内容
+        allowed_sections: 允许的 section 白名单
+        title_line: 文件标题行
+
+    Returns:
+        更新结果描述
+    """
+    sections, normalized = _prepare_section_update(
+        file_path, content, allowed_sections
+    )
+
+    if section not in allowed_sections:
+        return f"字段 {section} 不在白名单中"
+
+    existing = sections.get(section, _EMPTY_PLACEHOLDER)
+    if existing == _EMPTY_PLACEHOLDER:
+        sections[section] = normalized
+    else:
+        sections[section] = existing + "\n\n" + normalized
+
+    _write_section_file(file_path, sections, allowed_sections, title_line)
+    return f"已追加到 {section}"
 
 
 def read_growth_entries(agent_name: str) -> dict[str, str]:
