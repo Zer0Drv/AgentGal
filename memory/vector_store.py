@@ -370,6 +370,10 @@ class VectorStore:
             conn = sqlite3.connect(DB_PATH)
             self._load_sqlite_vec_sync(conn)
 
+            # 策略：先扩大候选集搜索，再精确过滤
+            # sqlite-vec 要求 MATCH 必须有 LIMIT，所以先在 CTE 中搜更多候选
+            candidate_limit = max(limit * 10, 50)  # 至少 50 个候选
+
             rows = conn.execute(
                 """
                 WITH scope AS (
@@ -390,8 +394,9 @@ class VectorStore:
                 JOIN scope s ON s.id = v.rowid
                 JOIN chunks c ON c.id = v.rowid
                 ORDER BY v.distance
+                LIMIT ?
                 """,
-                (agent_name, self._to_vec_blob(qvec), limit),
+                (agent_name, self._to_vec_blob(qvec), candidate_limit, limit),
             ).fetchall()
 
             routing_logger.info(
