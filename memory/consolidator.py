@@ -19,6 +19,7 @@ from llm.llm_parser import OpenAICompatibleClient
 from log_config.routing import routing_logger
 from engine.config import character_path
 from memory.file_ops import (
+    _get_fields_from_file,
     backup_file,
     load_consolidation_state,
     load_growth_for_prompt,
@@ -57,6 +58,34 @@ _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt.
 _PLAYER_PROMPT_PATH = (
     Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 )
+
+# 字段描述映射（用于 user.md 整理）
+_USER_FIELD_DESCRIPTIONS: dict[str, str] = {
+    "基本信息": "最多 5 条基础信息（名字/称呼、身份、核心性格标签等）",
+    "观察到的特质": "最多 8 条跨情境的深层理解（角色对玩家的判断）",
+    "互动模式": "最多 5 条关系中的行为规律",
+    "玩家风格": "最多 5 条玩家在游戏中的行为风格特征",
+    "关键选择": "最多 8 条玩家做出的重要选择及其倾向",
+    "当前倾向": "最多 5 条玩家当前的行为/情感倾向",
+}
+
+
+def build_fields_definition(agent_name: str) -> str:
+    """根据当前使用的文件生成 user.md 字段定义文本
+
+    从 data/characters/{agent}/user.md 读取字段结构，
+    不存在则使用默认字段。
+    """
+    file_path = character_path(agent_name, "user.md")
+    fields = _get_fields_from_file(file_path)
+    if fields is None:
+        fields = ["基本信息", "观察到的特质", "互动模式"]
+
+    lines = []
+    for field in fields:
+        desc = _USER_FIELD_DESCRIPTIONS.get(field, "")
+        lines.append(f"- 「{field}」：{desc}")
+    return "\n".join(lines)
 
 
 @dataclass
@@ -429,7 +458,10 @@ class MemoryConsolidator:
             # 备份
             backup_file(user_path, agent_name, "user")
 
-            prompt = load_text(_PLAYER_PROMPT_PATH).format(content=content)
+            fields_def = build_fields_definition(agent_name)
+            prompt = load_text(_PLAYER_PROMPT_PATH).format(
+                fields_definition=fields_def, content=content
+            )
             llm_response = await self._call_llm(prompt)
             consolidated = (llm_response.get("content") or "").strip()
 
