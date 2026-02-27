@@ -21,6 +21,8 @@ import httpx
 
 from log_config.routing import routing_logger
 from engine.config import character_path, PROJECT_ROOT
+from memory.file_ops import load_consolidation_state
+from memory.text_utils import normalize, split_by_date, split_into_events
 
 
 # ----------------------------- 配置与常量 -----------------------------
@@ -85,6 +87,32 @@ def _extract_game_date(text: str) -> str | None:
     return None
 
 
+def _parse_cn_date(date_text: str) -> tuple[int, int] | None:
+    m = re.fullmatch(r"(\d{1,2})月(\d{1,2})日", (date_text or "").strip())
+    if not m:
+        return None
+    month, day = int(m.group(1)), int(m.group(2))
+    if 1 <= month <= 12 and 1 <= day <= 31:
+        return month, day
+    return None
+
+
+def _is_date_before(date_text: str, cutoff_date: str) -> bool:
+    left = _parse_cn_date(date_text)
+    right = _parse_cn_date(cutoff_date)
+    if left is None or right is None:
+        return False
+    return left < right
+
+
+def _date_key(date_text: str) -> int | None:
+    parsed = _parse_cn_date(date_text)
+    if parsed is None:
+        return None
+    month, day = parsed
+    return month * 100 + day
+
+
 class VectorStore:
     """sqlite-vec 本地向量库。
 
@@ -98,6 +126,8 @@ class VectorStore:
         self._conv_game_date: dict[str, str] = {}
         self.character_path = character_path
         self._background_tasks: set[asyncio.Task] = set()
+        self._memory_index_tasks: set[asyncio.Task] = set()
+        self._memory_index_cutoff: dict[str, str] = {}
         # 单连接下显式串行化写事务；按事件循环懒初始化避免跨 loop 复用报错
         self._write_lock: asyncio.Lock | None = None
         self._write_lock_loop: asyncio.AbstractEventLoop | None = None
@@ -160,6 +190,14 @@ class VectorStore:
         await db.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_chunks_round_id ON chunks(round_id)"
         )
+        cols = {
+            row[1]
+            for row in await (await db.execute("PRAGMA table_info(chunks)")).fetchall()
+        }
+        if "source" not in cols:
+            await db.execute("ALTER TABLE chunks ADD COLUMN source TEXT NOT NULL DEFAULT 'round'")
+        if "owner_agent" not in cols:
+            await db.execute("ALTER TABLE chunks ADD COLUMN owner_agent TEXT")
         await db.execute(
             f"""
             CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
@@ -185,6 +223,7 @@ class VectorStore:
         """实际执行入库（内部方法）。"""
         # 解析会话 ID
         conv_id = round_id.rsplit("_", 1)[0]
+        prev_game_date = self._conv_game_date.get(conv_id)
 
         # 统一可见性：调用方已保证含 narrator
         visible = list(dict.fromkeys(visible_to))
@@ -227,7 +266,7 @@ class VectorStore:
                     await db.execute(
                         """
                         UPDATE chunks
-                        SET date = ?, created_at = ?, visible_to = ?, content = ?
+                        SET date = ?, created_at = ?, visible_to = ?, content = ?, source = 'round', owner_agent = NULL
                         WHERE id = ?
                         """,
                         (game_date, now_iso, visible_json, content, rowid),
@@ -235,8 +274,8 @@ class VectorStore:
                 else:
                     cur = await db.execute(
                         """
-                        INSERT INTO chunks(round_id, date, created_at, visible_to, content)
-                        VALUES (?, ?, ?, ?, ?)
+                        INSERT INTO chunks(round_id, date, created_at, visible_to, content, source, owner_agent)
+                        VALUES (?, ?, ?, ?, ?, 'round', NULL)
                         """,
                         (round_id, game_date, now_iso, visible_json, content),
                     )
@@ -252,6 +291,8 @@ class VectorStore:
 
                 await db.commit()
             routing_logger.info(f"[VectorStore] 入库完成: round_id={round_id}")
+            if prev_game_date and game_date and game_date != prev_game_date:
+                self._trigger_memory_indexing(visible, game_date)
         except Exception as e:
             try:
                 if db is not None:
@@ -259,6 +300,123 @@ class VectorStore:
             except Exception:
                 pass
             routing_logger.error(f"[VectorStore] 写入失败: round_id={round_id}, error={e}")
+
+    def _trigger_memory_indexing(self, visible_to: list[str], game_date: str):
+        for agent in list(dict.fromkeys(visible_to)):
+            routing_logger.info(
+                "[VectorStore] 触发长期记忆索引: agent=%s, game_date=%s",
+                agent, game_date
+            )
+            task = asyncio.create_task(self._index_memory_before_date(agent, game_date))
+            self._memory_index_tasks.add(task)
+            task.add_done_callback(self._memory_index_tasks.discard)
+
+    async def _index_memory_before_date(self, agent_name: str, fallback_cutoff: str):
+        cutoff = load_consolidation_state(agent_name) or fallback_cutoff
+        if not _parse_cn_date(cutoff):
+            routing_logger.info(
+                "[VectorStore] 跳过长期记忆索引: agent=%s, 无效cutoff=%s",
+                agent_name, cutoff
+            )
+            return
+        if self._memory_index_cutoff.get(agent_name) == cutoff:
+            routing_logger.info(
+                "[VectorStore] 跳过长期记忆索引: agent=%s, cutoff未变化=%s",
+                agent_name, cutoff
+            )
+            return
+
+        path = Path(self.character_path(agent_name, "memory.md"))
+        if not path.exists():
+            alt = Path(self.character_path(agent_name, "Memory.md"))
+            if not alt.exists():
+                routing_logger.info(
+                    "[VectorStore] 跳过长期记忆索引: agent=%s, 未找到memory文件",
+                    agent_name
+                )
+                return
+            path = alt
+
+        raw = path.read_text(encoding="utf-8")
+        sections = split_by_date(normalize(raw))
+        payloads: list[tuple[str, str, str]] = []
+        for date, body in sections.items():
+            if not _is_date_before(date, cutoff):
+                continue
+            events = split_into_events(body)
+            for idx, event in enumerate(events, start=1):
+                text = event.strip()
+                if text:
+                    payloads.append((f"memory::{agent_name}::{date}::{idx}", date, text))
+        routing_logger.info(
+            "[VectorStore] 开始长期记忆索引: agent=%s, cutoff=%s, 待写入事件=%s",
+            agent_name, cutoff, len(payloads)
+        )
+
+        db: aiosqlite.Connection | None = None
+        try:
+            async with self._get_write_lock():
+                await self.init_tables()
+                db = await self._get_db()
+
+                await db.execute("BEGIN")
+                await db.execute(
+                    "DELETE FROM vec_chunks WHERE rowid IN ("
+                    "SELECT id FROM chunks WHERE source = 'memory' AND owner_agent = ?"
+                    ")",
+                    (agent_name,),
+                )
+                await db.execute(
+                    "DELETE FROM chunks WHERE source = 'memory' AND owner_agent = ?",
+                    (agent_name,),
+                )
+
+                if payloads:
+                    embeddings = await _embed_async([item[2] for item in payloads])
+                    visible_json = json.dumps([agent_name], ensure_ascii=False)
+                    now_iso = _utcnow_iso()
+                    for i, (chunk_id, date, text) in enumerate(payloads):
+                        cur = await db.execute(
+                            "SELECT id FROM chunks WHERE round_id = ?",
+                            (chunk_id,),
+                        )
+                        row = await cur.fetchone()
+                        if row:
+                            rowid = int(row[0])
+                            await db.execute(
+                                "UPDATE chunks SET date = ?, created_at = ?, visible_to = ?, "
+                                "content = ?, source = 'memory', owner_agent = ? WHERE id = ?",
+                                (date, now_iso, visible_json, text, agent_name, rowid),
+                            )
+                        else:
+                            cur = await db.execute(
+                                "INSERT INTO chunks(round_id, date, created_at, visible_to, content, source, owner_agent) "
+                                "VALUES (?, ?, ?, ?, ?, 'memory', ?)",
+                                (chunk_id, date, now_iso, visible_json, text, agent_name),
+                            )
+                            rowid = int(cur.lastrowid or 0)
+                        if rowid:
+                            await db.execute(
+                                "INSERT OR REPLACE INTO vec_chunks(rowid, embedding) VALUES (?, ?)",
+                                (rowid, self._to_vec_blob(embeddings[i])),
+                            )
+
+                await db.commit()
+                self._memory_index_cutoff[agent_name] = cutoff
+                routing_logger.info(
+                    "[VectorStore] 长期记忆索引完成: agent=%s, cutoff=%s, 写入事件=%s",
+                    agent_name, cutoff, len(payloads)
+                )
+        except Exception as e:
+            try:
+                if db is not None:
+                    await db.execute("ROLLBACK")
+            except Exception:
+                pass
+            routing_logger.error(
+                "[VectorStore] 索引长期记忆失败: agent=%s, cutoff=%s, error=%s",
+                agent_name, cutoff, e
+            )
 
     # ----------------------------- 重建 -----------------------------
 
@@ -369,6 +527,13 @@ class VectorStore:
         try:
             conn = sqlite3.connect(DB_PATH)
             self._load_sqlite_vec_sync(conn)
+            cutoff = load_consolidation_state(agent_name)
+            cutoff_is_valid = bool(_parse_cn_date(cutoff or ""))
+            cutoff_key = _date_key(cutoff or "") or -1
+            routing_logger.info(
+                "[VectorStore] 搜索范围: agent=%s, cutoff=%s, cutoff_valid=%s",
+                agent_name, cutoff, cutoff_is_valid
+            )
 
             # 策略：先扩大候选集搜索，再精确过滤
             # sqlite-vec 要求 MATCH 必须有 LIMIT，所以先在 CTE 中搜更多候选
@@ -379,9 +544,26 @@ class VectorStore:
                 WITH scope AS (
                   SELECT id
                   FROM chunks
-                  WHERE EXISTS (
-                    SELECT 1 FROM json_each(chunks.visible_to)
-                    WHERE json_each.value = ?
+                  WHERE (
+                    source = 'round'
+                    AND EXISTS (
+                      SELECT 1 FROM json_each(chunks.visible_to)
+                      WHERE json_each.value = ?
+                    )
+                  ) OR (
+                    source = 'memory'
+                    AND owner_agent = ?
+                    AND ? = 1
+                    AND instr(date, '月') > 1
+                    AND instr(date, '日') > instr(date, '月')
+                    AND (
+                      CAST(substr(date, 1, instr(date, '月') - 1) AS INTEGER) * 100
+                      + CAST(substr(
+                          date,
+                          instr(date, '月') + 1,
+                          instr(date, '日') - instr(date, '月') - 1
+                        ) AS INTEGER)
+                    ) < ?
                   )
                 ),
                 vec_results AS (
@@ -389,19 +571,30 @@ class VectorStore:
                   WHERE embedding MATCH ?
                   LIMIT ?
                 )
-                SELECT c.id, c.content, v.distance
+                SELECT c.id, c.content, v.distance, c.source
                 FROM vec_results v
                 JOIN scope s ON s.id = v.rowid
                 JOIN chunks c ON c.id = v.rowid
                 ORDER BY v.distance
                 LIMIT ?
                 """,
-                (agent_name, self._to_vec_blob(qvec), candidate_limit, limit),
+                (
+                    agent_name,
+                    agent_name,
+                    1 if cutoff_is_valid else 0,
+                    cutoff_key,
+                    self._to_vec_blob(qvec),
+                    candidate_limit,
+                    limit,
+                ),
             ).fetchall()
 
+            round_hits = sum(1 for r in rows if len(r) > 3 and r[3] == "round")
+            memory_hits = sum(1 for r in rows if len(r) > 3 and r[3] == "memory")
+
             routing_logger.info(
-                "[VectorStore] 搜索完成: agent=%s, limit=%s, 命中=%s",
-                agent_name, limit, len(rows)
+                "[VectorStore] 搜索完成: agent=%s, limit=%s, 命中=%s(round=%s,memory=%s)",
+                agent_name, limit, len(rows), round_hits, memory_hits
             )
 
             return [{"id": str(r[0]), "content": r[1], "score": float(r[2])} for r in rows]

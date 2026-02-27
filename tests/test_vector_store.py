@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import importlib
 import json
 import os
 import sys
@@ -29,7 +30,7 @@ except ImportError:
 
 # 现在导入 vector_store，此时环境变量已加载
 try:
-    from memory import vector_store as vs_module
+    vector_store_module = importlib.import_module("memory.vector_store")
     from memory.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip vector_store tests: missing dependency ({exc})", allow_module_level=True)
@@ -45,7 +46,7 @@ pytestmark = pytest.mark.skipif(
 # 使用测试数据库路径，避免污染真实数据
 test_db_path = str(project_root / "data" / "test_vectors.sqlite")
 os.makedirs(os.path.dirname(test_db_path), exist_ok=True)
-vs_module.DB_PATH = test_db_path
+vector_store_module.DB_PATH = test_db_path
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -299,3 +300,64 @@ class TestVectorStoreEdgeCases:
 
         res = store.search("lilith", "再见")
         assert len(res) >= 1
+
+    @pytest.mark.asyncio
+    async def test_layered_search_memory_before_today_only(self, clean_store, tmp_path, monkeypatch):
+        """测试分层检索：长期记忆仅索引并检索到“今天之前”内容。"""
+        store = clean_store
+
+        # 使用临时目录承载角色 memory.md
+        lilith_dir = tmp_path / "lilith"
+        lilith_dir.mkdir(parents=True)
+        (lilith_dir / "memory.md").write_text(
+            (
+                "# lilith 的长期记忆\n\n"
+                "## 4月2日\n"
+                "- **时间**：4月2日 晚上\n"
+                "- **地点**：天台\n"
+                "- **在场**：莉莉丝、玩家\n"
+                "- **内容**：这是昨天的长期记忆锚点。\n\n"
+                "## 4月3日\n"
+                "- **时间**：4月3日 上午\n"
+                "- **地点**：教室\n"
+                "- **在场**：莉莉丝、玩家\n"
+                "- **内容**：这是今天的长期记忆，不应进 memory 层。"
+            ),
+            encoding="utf-8",
+        )
+
+        # store 内部读取 memory.md 用的是实例上的 character_path
+        def mock_character_path(name, subpath=None):
+            base = tmp_path / name
+            if subpath:
+                return str(base / subpath)
+            return str(base)
+
+        monkeypatch.setattr(store, "character_path", mock_character_path)
+        # memory 层 cutoff 由 load_consolidation_state 决定，这里固定为“4月3日”
+        monkeypatch.setattr(vector_store_module, "load_consolidation_state", lambda _: "4月3日")
+
+        # 触发一次 round 写入（“今天”语义），round 层仍可检索
+        store.add_round(
+            ["lilith", "narrator"],
+            "layer_case_1",
+            "玩家: 现在聊今天\n旁白: **时间**：4月3日 09:00\nlilith: 今天轮次内容",
+            game_date="4月3日",
+        )
+        await _wait_for_tasks(store)
+
+        # 索引长期记忆层（只应写入 4月2日）
+        await store._index_memory_before_date("lilith", "4月3日")
+
+        # 查询“昨天锚点”应命中长期记忆层
+        res_old = store.search("lilith", "昨天的长期记忆锚点")
+        assert any("昨天的长期记忆锚点" in r["content"] for r in res_old)
+
+        # 查询“今天长期记忆”不应从 memory 层命中
+        # （今天只应由 round 层承担，因此这个短语不在 round 内容里时应查不到）
+        res_today_mem = store.search("lilith", "今天的长期记忆，不应进 memory 层")
+        assert not any("今天的长期记忆，不应进 memory 层" in r["content"] for r in res_today_mem)
+
+        # 查询“今天轮次内容”应命中 round 层
+        res_today_round = store.search("lilith", "今天轮次内容")
+        assert any("今天轮次内容" in r["content"] for r in res_today_round)
