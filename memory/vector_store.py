@@ -20,7 +20,7 @@ import aiosqlite
 import httpx
 
 from log_config.routing import routing_logger
-from engine.config import character_path, PROJECT_ROOT
+from engine.config import character_path, PROJECT_ROOT, get_agent_names
 from memory.file_ops import load_consolidation_state
 from memory.text_utils import normalize, split_by_date, split_into_events
 
@@ -640,8 +640,35 @@ class VectorStore:
             return False
 
     async def delete_all_agents(self, agent_names: list[str]) -> dict[str, bool]:
-        results = await asyncio.gather(*(self.delete(name) for name in agent_names))
-        return dict(zip(agent_names, results))
+        unique_names = list(dict.fromkeys(agent_names))
+        if not unique_names:
+            return {}
+
+        all_agents = set(get_agent_names())
+        if all_agents and set(unique_names) == all_agents:
+            db: aiosqlite.Connection | None = None
+            try:
+                await self.init_tables()
+                db = await self._get_db()
+                async with self._get_write_lock():
+                    await db.execute("BEGIN")
+                    await db.execute("DELETE FROM vec_chunks")
+                    await db.execute("DELETE FROM chunks")
+                    await db.commit()
+                self._conv_game_date.clear()
+                self._memory_index_cutoff.clear()
+                routing_logger.info("[VectorStore] delete_all_agents 命中全角色，已全量清空向量库")
+                return {name: True for name in unique_names}
+            except Exception as e:
+                try:
+                    if db is not None:
+                        await db.execute("ROLLBACK")
+                except Exception:
+                    pass
+                routing_logger.error(f"[VectorStore] 全量清理失败，回退逐角色删除: {e}")
+
+        results = await asyncio.gather(*(self.delete(name) for name in unique_names))
+        return dict(zip(unique_names, results))
 
 
 # 全局实例

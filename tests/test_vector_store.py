@@ -361,3 +361,55 @@ class TestVectorStoreEdgeCases:
         # 查询“今天轮次内容”应命中 round 层
         res_today_round = store.search("lilith", "今天轮次内容")
         assert any("今天轮次内容" in r["content"] for r in res_today_round)
+
+    @pytest.mark.asyncio
+    async def test_delete_all_agents_partial(self, clean_store):
+        """测试 delete_all_agents 的逐角色删除路径。"""
+        store = clean_store
+
+        store.add_round(
+            ["lilith", "narrator"],
+            "partial_1",
+            "玩家: 你好\n旁白: **时间**：4月3日 10:00\nlilith: 仅 lilith 可见",
+        )
+        store.add_round(
+            ["mitsuki", "narrator"],
+            "partial_2",
+            "玩家: 你好\n旁白: **时间**：4月3日 10:01\nmitsuki: 仅 mitsuki 可见",
+        )
+        await _wait_for_tasks(store)
+
+        result = await store.delete_all_agents(["lilith"])
+        assert result == {"lilith": True}
+
+        res_lilith = store.search("lilith", "仅 lilith 可见")
+        res_mitsuki = store.search("mitsuki", "仅 mitsuki 可见")
+        assert len(res_lilith) == 0
+        assert len(res_mitsuki) >= 1
+
+    @pytest.mark.asyncio
+    async def test_delete_all_agents_full_clear(self, clean_store, monkeypatch):
+        """测试 delete_all_agents 命中全角色时走全量清理。"""
+        store = clean_store
+
+        # 先写入 round 层
+        store.add_round(
+            ["lilith", "narrator"],
+            "full_1",
+            "玩家: 你好\n旁白: **时间**：4月3日 11:00\nlilith: round 数据",
+        )
+        await _wait_for_tasks(store)
+
+        # 再写入 memory 层，确保全量清理会清除两层
+        await store._index_memory_before_date("lilith", "4月4日")
+
+        # monkeypatch 全角色集合，强制进入全量清理分支
+        monkeypatch.setattr(vector_store_module, "get_agent_names", lambda: ["lilith", "mitsuki", "narrator"])
+        result = await store.delete_all_agents(["lilith", "mitsuki", "narrator"])
+        assert result == {"lilith": True, "mitsuki": True, "narrator": True}
+
+        db = await store._get_db()
+        chunk_count = (await (await db.execute("SELECT COUNT(*) FROM chunks")).fetchone())[0]
+        vec_count = (await (await db.execute("SELECT COUNT(*) FROM vec_chunks")).fetchone())[0]
+        assert chunk_count == 0
+        assert vec_count == 0
