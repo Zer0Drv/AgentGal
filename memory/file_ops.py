@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -30,6 +31,100 @@ USER_FIELDS: dict[str, list[str]] = {
     "mitsuki": ["基本信息", "观察到的特质", "互动模式"],
     "narrator": ["玩家风格", "关键选择", "当前倾向"],
 }
+
+
+def normalize(content: str) -> str:
+    """修复常见格式问题：字面\\n、日期标题不规范"""
+    # 1. 字面 \n → 真换行
+    content = content.replace("\\n", "\n")
+    # 2. 清理 HTML 注释
+    content = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+    # 3. 统一日期标题为 ## X月X日（只处理独占一行的日期标题）
+    lines = content.split("\n")
+    out = []
+    for line in lines:
+        m = re.match(r"^(?:##\s*|\*\*)?(\d{1,2}月\d{1,2}日)(?:\*\*)?\s*$", line.strip())
+        if m:
+            out.append(f"## {m.group(1)}")
+        else:
+            out.append(line)
+    # 4. 压缩连续空行
+    content = "\n".join(out)
+    content = re.sub(r"\n{3,}", "\n\n", content)
+    return content
+
+
+def split_by_date(content: str) -> OrderedDict[str, str]:
+    """按 ## X月X日 切分，同日期自动合并。
+
+    Returns:
+        sections: 日期 → 合并后的内容（保持出现顺序）
+    """
+    sections: OrderedDict[str, str] = OrderedDict()
+    current_date = None
+    current_lines: list[str] = []
+
+    for line in content.split("\n"):
+        m = re.match(r"^##\s*(\d{1,2}月\d{1,2}日)$", line.strip())
+        if m:
+            if current_date:
+                body = "\n".join(current_lines).strip()
+                if current_date in sections:
+                    sections[current_date] += "\n" + body
+                else:
+                    sections[current_date] = body
+            current_date = m.group(1)
+            current_lines = []
+        elif current_date:
+            current_lines.append(line)
+        # 忽略日期之前的内容（标题行等）
+
+    # 最后一段
+    if current_date:
+        body = "\n".join(current_lines).strip()
+        if current_date in sections:
+            sections[current_date] += "\n" + body
+        else:
+            sections[current_date] = body
+
+    return sections
+
+
+def split_events_raw(content: str) -> list[tuple[str | None, str]]:
+    """按 - **时间**：字段分割内容为事件列表。
+
+    格式：- **时间**：4月3日 上午
+
+    Returns:
+        [(日期, 事件内容), ...]，日期从时间字段的日期部分提取
+    """
+    time_pattern = re.compile(r"^-\s+\*\*时间\*\*：(\d{1,2}月\d{1,2}日)")
+    events: list[tuple[str | None, str]] = []
+    current_date: str | None = None
+    current_lines: list[str] = []
+
+    for line in content.split("\n"):
+        m = time_pattern.match(line.strip())
+        if m:
+            if current_lines:
+                events.append((current_date, "\n".join(current_lines).strip()))
+            current_date = m.group(1)
+            current_lines = [line]
+        elif current_date is not None:
+            current_lines.append(line)
+
+    if current_lines:
+        events.append((current_date, "\n".join(current_lines).strip()))
+
+    return events
+
+
+def split_into_events(day_content: str) -> list[str]:
+    """将单日内容按事件分割为列表。无法识别时整体作为一个事件返回。"""
+    events = [
+        event_text for _, event_text in split_events_raw(day_content) if event_text
+    ]
+    return events if events else [day_content.strip()]
 
 
 def _get_fields_from_file(file_path: str) -> list[str] | None:
@@ -135,79 +230,6 @@ def _prepare_section_update(
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     sections = _parse_section_file(file_path, allowed_sections)
     return sections, normalized
-
-
-def _update_section_file(
-    file_path: str,
-    section: str,
-    content: str,
-    allowed_sections: list[str],
-    title_line: str,
-) -> str:
-    """覆盖模式更新 section 式文件（用于 update_status）。"""
-    if section not in allowed_sections:
-        return (
-            f"错误：不允许的字段「{section}」。"
-            f"只能更新以下字段：{', '.join(allowed_sections)}"
-        )
-
-    sections, content = _prepare_section_update(file_path, content, allowed_sections)
-
-    old_content = sections.get(section, "").strip()
-    new_content = content.strip()
-    if old_content == new_content:
-        return f"[{section}] 内容未变化，无需更新。"
-
-    sections[section] = content
-    _write_section_file(file_path, sections, allowed_sections, title_line)
-    return f"已更新 [{section}]: {content[:50]}..."
-
-
-def _append_section_file(
-    file_path: str,
-    section: str,
-    content: str,
-    allowed_sections: list[str],
-    title_line: str,
-) -> str:
-    """追加模式更新 section 式文件（用于 update_player）。
-
-    只追加新信息，已存在的内容自动跳过。
-    """
-    if section not in allowed_sections:
-        return (
-            f"错误：不允许的字段「{section}」。"
-            f"只能更新以下字段：{', '.join(allowed_sections)}"
-        )
-
-    sections, content = _prepare_section_update(file_path, content, allowed_sections)
-    old_content = sections.get(section, "").strip()
-
-    # 如果字段为空或占位符，直接写入
-    if not old_content or old_content == _EMPTY_PLACEHOLDER:
-        sections[section] = content.strip()
-        _write_section_file(file_path, sections, allowed_sections, title_line)
-        return f"已更新 [{section}]: {content[:50]}..."
-
-    # 去重：新内容已是已有内容的子串 → 跳过
-    new_stripped = content.strip()
-    if new_stripped in old_content:
-        return f"[{section}] 内容已存在，无需重复追加。"
-
-    # 追加到末尾（换行分隔）
-    sections[section] = old_content + "\n" + new_stripped
-    _write_section_file(file_path, sections, allowed_sections, title_line)
-    return f"已追加 [{section}]: {content[:50]}..."
-
-
-def _read_title(file_path: str, default: str) -> str:
-    """读取文件首行标题，不存在则返回默认值。"""
-    if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
-            first_line = f.readline().strip()
-            if first_line.startswith("# "):
-                return first_line
-    return default
 
 
 def read_growth_entries(agent_name: str) -> dict[str, str]:
