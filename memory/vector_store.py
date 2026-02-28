@@ -18,7 +18,7 @@ from typing import Any
 import aiosqlite
 import httpx
 
-from log_config.routing import routing_logger
+from log_config.memory import memory_logger as routing_logger
 from engine.config import character_path, PROJECT_ROOT, get_agent_names
 from memory.file_ops import (
     load_consolidation_state,

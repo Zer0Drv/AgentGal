@@ -16,19 +16,21 @@ from typing import Optional
 
 from llm.llm_parser import OpenAICompatibleClient
 
-from log_config.routing import routing_logger
+from log_config.memory import memory_logger as routing_logger
 from engine.config import character_path
 from memory.file_ops import (
     _get_fields_from_file,
     backup_file,
     load_consolidation_state,
     load_growth_for_prompt,
+    load_last_memory_size,
     load_text,
     normalize,
     read_growth_entries,
     read_agent_file,
     safe_write_memory,
     save_consolidation_state,
+    save_memory_size,
     split_by_date,
     split_events_raw,
     write_growth_entries,
@@ -54,9 +56,14 @@ _TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.0"))
 _MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "8192"))
 
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt.txt"
+_PROMPT_STEP1_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step1.txt"
+_PROMPT_STEP2_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step2.txt"
 _PLAYER_PROMPT_PATH = (
     Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 )
+
+# 文件大小变化阈值（字节）：当文件比上次长了 200 字以上，才触发整理
+_CONSOLIDATION_SIZE_THRESHOLD = 200
 
 # 字段描述映射（用于 user.md 整理）
 _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
@@ -98,6 +105,7 @@ class _ConsolidationResult:
     final_len: int = 0
     user_md_before: int = 0
     user_md_after: int = 0
+    growth_log: str = ""
     skipped: bool = False
     skip_reason: str = ""
     errors: list[str] = field(default_factory=list)
@@ -208,49 +216,74 @@ class MemoryConsolidator:
         )
         return all_dates, all_dates[-1] if all_dates else None
 
-    def _build_consolidation_prompt(
-        self, agent_name: str, sections: OrderedDict[str, str], dates: list[str]
+    def _build_consolidation_prompt_step1(
+        self, sections: OrderedDict[str, str], dates: list[str]
     ) -> str:
-        """构建记忆整合的 LLM prompt。"""
-        soul_content = read_agent_file(agent_name, "soul.md")
-        growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
-
+        """构建第一步 prompt：归并整理。"""
         parts = [f"## {date}\n{sections[date]}" for date in dates]
         combined_text = "\n\n".join(parts)
 
-        template = load_text(_PROMPT_PATH)
+        template = load_text(_PROMPT_STEP1_PATH)
+        return template.format(content=combined_text)
+
+    def _build_consolidation_prompt_step2(
+        self, agent_name: str, step1_result: str
+    ) -> str:
+        """构建第二步 prompt：成长事件判断。"""
+        growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
+
+        template = load_text(_PROMPT_STEP2_PATH)
         return template.format(
-            soul=soul_content,
             growth=growth_content,
-            content=combined_text,
+            content=step1_result,
         )
 
-    def _apply_memory_result(
+    async def _apply_memory_result(
         self,
         agent_name: str,
         sections: OrderedDict[str, str],
         dates: list[str],
-        llm_result: str,
         result: "_ConsolidationResult",
     ):
-        """解析 LLM 结果并应用更新到 sections。"""
-        if len(llm_result.strip()) < 50:
-            result.errors.append("LLM返回过短，跳过整理")
+        """两步调用：第一步整理，第二步判断成长事件。"""
+        # ===== 第一步：调用 LLM 进行归并整理 =====
+        prompt_step1 = self._build_consolidation_prompt_step1(sections, dates)
+        try:
+            llm_response_step1 = await self._call_llm(prompt_step1)
+            step1_result = (llm_response_step1.get("content") or "").strip()
+        except Exception as e:
+            result.errors.append(f"第一步调用失败: {e}")
+            routing_logger.error(f"[整理器] {agent_name} 第一步调用失败: {e}")
             return
 
-        # ===== 第一步：更新 memory.md =====
-        step1_sections = self._parse_step1_memories(llm_result)
+        if len(step1_result) < 50:
+            result.errors.append("第一步返回过短，跳过整理")
+            return
+
+        # 解析第一步结果并更新 sections
+        step1_sections = self._parse_step1_memories(step1_result)
         if step1_sections:
             for date in dates:
                 if date in step1_sections:
                     sections[date] = step1_sections[date]
                 else:
-                    result.errors.append(f"{date} 未在LLM返回中找到")
+                    result.errors.append(f"{date} 未在第一步返回中找到")
         else:
             result.errors.append("未能解析第一步:归并整理")
+            return
 
-        # ===== 第二步：更新 growth.md =====
-        step2_updates = self._parse_step2_growth(llm_result)
+        # ===== 第二步：调用 LLM 进行成长事件判断 =====
+        prompt_step2 = self._build_consolidation_prompt_step2(agent_name, step1_result)
+        try:
+            llm_response_step2 = await self._call_llm(prompt_step2)
+            step2_result = (llm_response_step2.get("content") or "").strip()
+        except Exception as e:
+            result.errors.append(f"第二步调用失败: {e}")
+            routing_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
+            return
+
+        # 解析第二步结果并更新 growth.md
+        step2_updates = self._parse_step2_growth(step2_result)
         if step2_updates:
             growth_log = self._apply_growth_updates(agent_name, step2_updates)
             routing_logger.info(f"[整理器] {agent_name} growth.md: {growth_log}")
@@ -290,18 +323,22 @@ class MemoryConsolidator:
             result.date_range = f"{dates_to_consolidate[0]}~{dates_to_consolidate[-1]}"
             result.original_len = len(original_content)
 
+            # 2.5. 检查文件大小变化，仅当增长超过阈值时才触发整理
+            last_size = load_last_memory_size(agent_name)
+            current_size = len(original_content)
+            if last_size is not None and (current_size - last_size) < _CONSOLIDATION_SIZE_THRESHOLD:
+                result.skipped = True
+                result.skip_reason = f"文件增长不足 {_CONSOLIDATION_SIZE_THRESHOLD} 字 ({last_size}→{current_size})"
+                routing_logger.info(f"[整理器] {agent_name} 跳过: {result.skip_reason}")
+                return result
+
             # 3. 备份
             backup_file(path, agent_name, "Memory")
 
-            # 4. 构建 prompt 并调用 LLM
-            prompt = self._build_consolidation_prompt(
-                agent_name, sections, dates_to_consolidate
-            )
+            # 4. 两步调用 LLM（第一步整理，第二步判断成长）
             try:
-                llm_response = await self._call_llm(prompt)
-                llm_result = (llm_response.get("content") or "").strip()
-                self._apply_memory_result(
-                    agent_name, sections, dates_to_consolidate, llm_result, result
+                await self._apply_memory_result(
+                    agent_name, sections, dates_to_consolidate, result
                 )
             except Exception as e:
                 result.errors.append(f"整合失败: {e}")
@@ -328,6 +365,10 @@ class MemoryConsolidator:
                     )
                 save_consolidation_state(agent_name, next_date)
 
+            # 7.5. 保存当前文件大小（用于下次检测增长）
+            if not result.errors:
+                save_memory_size(agent_name, result.final_len)
+
             # 8. 顺带整理 user.md
             user_before, user_after = await self._consolidate_player_profile(agent_name)
             result.user_md_before = user_before
@@ -339,10 +380,9 @@ class MemoryConsolidator:
 
     def _parse_step1_memories(self, llm_result: str) -> OrderedDict[str, str]:
         """
-        从 LLM 输出中提取第一步：归并整理后的日记内容。
+        从第一步 LLM 输出中提取归并整理后的日记内容。
 
-        新格式（扁平列表，日期在时间字段中）：
-        ## 第一步：归并整理
+        格式（扁平列表，日期在时间字段中）：
         - **时间**：4月3日 上午
         - **地点**：教室
         - **在场**：莉莉丝、李小明
@@ -351,22 +391,9 @@ class MemoryConsolidator:
         Returns:
             OrderedDict[日期, 该日期的内容]
         """
-        # 提取 "## 第一步" 到 "## 第二步" 之间的内容
-        step1_pattern = r"##\s*第一步.*?(?:##\s*第二步|$)"
-        step1_match = re.search(step1_pattern, llm_result, re.DOTALL)
-
-        if not step1_match:
-            return OrderedDict()
-
-        step1_content = step1_match.group(0)
-        # 移除第一步标题本身
-        step1_content = re.sub(r"^##\s*第一步.*\n", "", step1_content, count=1)
-        # 移除第二步标记（如果有）
-        step1_content = re.sub(r"##\s*第二步.*$", "", step1_content, flags=re.DOTALL)
-
-        # 解析新格式：从 - **时间**：字段中提取日期
+        # 第一步 prompt 只输出归并整理的内容，直接解析
         sections: OrderedDict[str, str] = OrderedDict()
-        for date, event_text in split_events_raw(step1_content.strip()):
+        for date, event_text in split_events_raw(llm_result.strip()):
             if not date:
                 continue
             sections[date] = (sections.get(date, "") + ("\n\n" if date in sections else "") + event_text)
@@ -528,7 +555,7 @@ class MemoryConsolidator:
                 continue
 
             if r.original_len > 0:
-                ratio = (1 - r.final_len / r.original_len) * 100
+                ratio = (r.final_len - r.original_len) / r.original_len * 100
                 mem_part = f"{r.original_len}→{r.final_len}字({ratio:+.1f}%)"
             else:
                 mem_part = "无变化"
