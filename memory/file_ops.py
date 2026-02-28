@@ -16,7 +16,7 @@ from typing import Optional
 from engine.config import character_path
 
 _EMPTY_PLACEHOLDER = "（暂无）"
-_GROWTH_TITLE = "# 人格沉淀层"
+_GROWTH_TITLE = "# 心路历程"
 
 
 def extract_game_date(text: str) -> str | None:
@@ -526,6 +526,50 @@ def save_consolidation_state(agent_name: str, last_date: str) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(
         json.dumps({"last_consolidated_date": last_date}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def load_last_memory_size(agent_name: str) -> Optional[int]:
+    """读取上次整合时的 memory.md 文件大小（字节）。
+
+    Args:
+        agent_name: 角色名
+
+    Returns:
+        上次整合时的文件大小，或 None（无记录）
+    """
+    p = get_consolidation_state_path(agent_name)
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data.get("last_memory_size")
+
+
+def save_memory_size(agent_name: str, size: int) -> None:
+    """保存当前 memory.md 的文件大小。
+
+    Args:
+        agent_name: 角色名
+        size: 文件大小（字节）
+    """
+    p = get_consolidation_state_path(agent_name)
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    # 读取现有状态，保留 last_consolidated_date
+    data = {}
+    if p.exists():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    data["last_memory_size"] = size
+    p.write_text(
+        json.dumps(data, ensure_ascii=False),
         encoding="utf-8",
     )
 

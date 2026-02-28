@@ -55,7 +55,6 @@ _MODEL_ID = (
 _TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.0"))
 _MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "8192"))
 
-_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt.txt"
 _PROMPT_STEP1_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step1.txt"
 _PROMPT_STEP2_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step2.txt"
 _PLAYER_PROMPT_PATH = (

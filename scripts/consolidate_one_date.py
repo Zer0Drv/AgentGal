@@ -28,25 +28,26 @@ async def main(agent: str, date: str) -> None:
     old_text = sections[date]
     print(f"原始: {len(old_text)} 字")
 
-    # 读 soul
-    soul_path = Path(f"data/characters/{agent}/soul.md")
-    soul = soul_path.read_text().strip() if soul_path.exists() else ""
-
-    # 加载 prompt
-    prompt_tpl = Path("prompts/consolidation_prompt.txt").read_text()
-    full_text = f"## {date}\n{old_text}"
-    prompt = prompt_tpl.format(soul=soul, content=full_text)
-
-    # 调 LLM
+    # 第一步：调用 LLM 进行归并整理
     consolidator = MemoryConsolidator()
-    print("调用 LLM 中...")
-    result = await consolidator._call_llm(prompt)
+    print("第一步：调用 LLM 进行归并整理...")
 
-    # 提取第二步
-    m = re.search(r"^.*第二步.*日记.*$", result, re.MULTILINE)
+    full_text = f"## {date}\n{old_text}"
+    prompt_step1_tpl = Path("prompts/consolidation_prompt_step1.txt").read_text()
+    prompt_step1 = prompt_step1_tpl.format(content=full_text)
+
+    result_step1 = await consolidator._call_llm(prompt_step1)
+    step1_result = (result_step1.get("content") or "").strip()
+
+    # 从第一步结果中提取整理后的内容
+    m = re.search(r"^.*## 归并整理.*?(?:## |$)", step1_result, re.DOTALL)
     if m:
-        result = result[m.end() :].lstrip("\n")
-    result = re.sub(r"^#{1,6}\s*\d{1,2}月\d{1,2}日\s*\n?", "", result).strip()
+        step1_content = step1_result[m.end():].strip()
+    else:
+        step1_content = step1_result.strip()
+
+    # 提取日期对应的内容
+    result = re.sub(r"^#{1,6}\s*\d{1,2}月\d{1,2}日\s*\n?", "", step1_content).strip()
 
     print(
         f"整理后: {len(result)} 字 (压缩 {(1 - len(result) / len(old_text)) * 100:.1f}%)"
