@@ -531,7 +531,7 @@ class MemoryConsolidator:
             path = Path(character_path(name, "memory.md"))
             if path.exists():
                 length = len(path.read_text(encoding="utf-8"))
-                summaries.append(f"{name}({length}字)")
+                summaries.append(f"{name}.memory({length}字)")
             else:
                 summaries.append(f"{name}(无文件)")
 
