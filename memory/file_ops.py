@@ -50,7 +50,7 @@ def is_date_before(date_text: str, cutoff_date: str) -> bool:
 STATUS_FIELDS: dict[str, list[str]] = {
     "lilith": ["身份", "心境", "我和他", "在意的事", "打算"],
     "mitsuki": ["心境", "我和他", "在意的事", "打算"],
-    "narrator": ["故事阶段", "当前时间", "场景", "正在发酵的冲突", "伏笔"],
+    "narrator": ["故事阶段", "当前时间", "场景", "叙事焦点", "待触发事件"],
 }
 
 # 每个角色 user.md 允许的字段白名单
@@ -277,6 +277,31 @@ def _read_title(file_path: str, default_title: str = "# 标题") -> str:
     if first_line.startswith("# "):
         return first_line
     return default_title
+
+
+def mark_event_triggered(agent_name: str, event_name: str) -> str:
+    """将 status.md 中【event_name】对应行的 [ ] 精准替换为 [x]。
+
+    Args:
+        agent_name: 角色名称
+        event_name: 事件名称（不含【】括号，如"破绽初现"）
+
+    Returns:
+        操作结果描述
+    """
+    status_path = character_path(agent_name, "status.md")
+    if not os.path.exists(status_path):
+        return "status.md 不存在"
+
+    content = Path(status_path).read_text(encoding="utf-8")
+    pattern = rf"- \[ \] (【{re.escape(event_name)}】)"
+    new_content, count = re.subn(pattern, r"- [x] \1", content)
+
+    if count == 0:
+        return f"未找到事件【{event_name}】"
+
+    Path(status_path).write_text(new_content, encoding="utf-8")
+    return f"已标记【{event_name}】为已触发"
 
 
 def _update_section_file(

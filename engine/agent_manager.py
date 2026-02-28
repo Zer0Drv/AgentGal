@@ -24,6 +24,7 @@ from memory.file_ops import (
     _update_section_file,
     get_allowed_fields,
     load_growth_for_prompt,
+    mark_event_triggered,
     read_agent_file,
     read_file_tail,
 )
@@ -219,6 +220,16 @@ class AgentManager:
                 routing_logger.error(f"[{agent_name}] 更新 player 失败: {e}")
                 results.append("player: 失败")
 
+        # --- triggered: 精准标记 status.md 中的待触发事件 ---
+        if parsed.triggered:
+            try:
+                for event_name in parsed.triggered:
+                    result = mark_event_triggered(agent_name, event_name)
+                    results.append(f"triggered[{event_name}]: {result}")
+            except Exception as e:
+                routing_logger.error(f"[{agent_name}] 标记触发事件失败: {e}")
+                results.append("triggered: 失败")
+
         if results:
             routing_logger.info(f"[{agent_name}] 文件更新: {'; '.join(results)}")
 
@@ -274,9 +285,7 @@ class AgentManager:
             with open(memory_path, "w", encoding="utf-8") as f:
                 f.write(f"# {agent_name} 的长期记忆\n\n{to_append}")
 
-        msg = f"已追加 {len(unique_entries)} 个新 entry"
-        routing_logger.info(f"[{agent_name}] {msg}")
-        return msg
+        return f"已追加 {len(unique_entries)} 个新 entry"
 
     def _update_status(self, agent_name: str, field: str, content: str) -> str:
         """覆盖更新 status.md 的指定字段"""

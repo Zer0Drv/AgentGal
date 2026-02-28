@@ -16,6 +16,7 @@ class ParsedResponse:
     memory: Optional[str] = None  # 需要追加到 memory.md 的内容
     status: Optional[dict] = None  # 需要更新到 status.md 的字段
     player: Optional[dict] = None  # 需要追加到 user.md 的字段
+    triggered: Optional[list[str]] = None  # 需要标记为已触发的事件名列表
 
 
 def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
@@ -60,18 +61,23 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
     memory = _extract_xml_field(xml_content, "memory")
     status = _extract_xml_field(xml_content, "status")
     player = _extract_xml_field(xml_content, "player")
+    triggered_raw = _extract_xml_field(xml_content, "triggered")
 
     # 解析 JSON 字段
     status_dict = _parse_json_field(status, "status", agent_name)
     player_dict = _parse_json_field(player, "player", agent_name)
 
+    # 解析 triggered：逗号或换行分隔的事件名列表
+    triggered_list = _parse_triggered_field(triggered_raw, agent_name)
+
     # 记录解析结果
-    has_updates = any([memory, status_dict, player_dict])
+    has_updates = any([memory, status_dict, player_dict, triggered_list])
     if has_updates:
         routing_logger.info(
             f"[{agent_name}] 解析到更新: memory={'有' if memory else '无'}, "
             f"status={list(status_dict.keys()) if status_dict else '无'}, "
-            f"player={list(player_dict.keys()) if player_dict else '无'}"
+            f"player={list(player_dict.keys()) if player_dict else '无'}, "
+            f"triggered={triggered_list or '无'}"
         )
 
     return ParsedResponse(
@@ -79,6 +85,7 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
         memory=memory.strip() if memory else None,
         status=status_dict,
         player=player_dict,
+        triggered=triggered_list,
     )
 
 
@@ -131,6 +138,20 @@ def _extract_xml_field(xml_content: str, field_name: str) -> Optional[str]:
     if match:
         return match.group(1).strip()
     return None
+
+
+def _parse_triggered_field(
+    content: Optional[str], agent_name: str
+) -> Optional[list[str]]:
+    """解析 triggered 字段，返回事件名列表（支持逗号或换行分隔）"""
+    if not content:
+        return None
+    # 支持逗号或换行分隔，去除空项和多余空白
+    names = [name.strip() for name in re.split(r"[,\n]", content) if name.strip()]
+    if not names:
+        routing_logger.warning(f"[{agent_name}] triggered 字段内容为空")
+        return None
+    return names
 
 
 def _parse_json_field(
