@@ -23,6 +23,8 @@ from engine.text_utils import (
 from game.save_manager import (
     export_save_archive,
     has_existing_save,
+    import_save_archive,
+    list_save_archives,
     load_recent_raw_messages,
     reset_game,
 )
@@ -269,7 +271,54 @@ async def _handle_reset_command() -> bool:
     return True
 
 
-# 命令处理器映射表
+async def _handle_load_command(user_input: str) -> bool:
+    """处理 /load list 和 /load <序号> 命令"""
+    parts = user_input.strip().split()
+
+    if len(parts) < 2:
+        await cl.Message(content="用法：`/load list` 查看存档，`/load <序号>` 加载存档").send()
+        return True
+
+    sub = parts[1].lower()
+
+    # /load list：展示存档列表
+    if sub == "list":
+        saves = list_save_archives()
+        if not saves:
+            await cl.Message(content="暂无存档。先用 `/save` 保存一个吧。").send()
+            return True
+        lines = ["📂 **存档列表：**"]
+        for i, s in enumerate(saves, start=1):
+            lines.append(f"{i}. {s['display_time']}  `{s['filename']}`")
+        lines.append("\n使用 `/load <序号>` 加载对应存档。")
+        await cl.Message(content="\n".join(lines)).send()
+        return True
+
+    # /load <n>：按序号加载
+    if not sub.isdigit():
+        await cl.Message(content="用法：`/load list` 查看存档，`/load <序号>` 加载存档").send()
+        return True
+
+    index = int(sub)
+    saves = list_save_archives()
+    if index < 1 or index > len(saves):
+        await cl.Message(content=f"序号 {index} 不存在，请先用 `/load list` 查看。").send()
+        return True
+
+    target = saves[index - 1]
+    await cl.Message(content=f"⏳ 正在读取存档：{target['display_time']}…").send()
+
+    success = await import_save_archive(target["filename"])
+    if success:
+        await cl.Message(content=f"✅ 读档成功：{target['display_time']}").send()
+        cl.user_session.set("message_counter", 0)
+    else:
+        await cl.Message(content="❌ 读档失败，请检查日志。").send()
+
+    return True
+
+
+# 命令处理器映射表（精确匹配）
 _COMMAND_HANDLERS: dict[str, callable] = {
     "/save": _handle_save_command,
     "/reset": _handle_reset_command,
@@ -289,7 +338,12 @@ async def on_message(message: cl.Message):
     # 获取当前计数器（从 session 中）
     message_counter = cl.user_session.get("message_counter", 0)
 
-    # 命令分发处理
+    # 命令分发处理：前缀命令（/load 需要子参数）
+    if user_input.lower().startswith("/load"):
+        await _handle_load_command(user_input)
+        return
+
+    # 精确匹配命令（/save、/reset）
     handler = _COMMAND_HANDLERS.get(user_input)
     if handler:
         await handler()
