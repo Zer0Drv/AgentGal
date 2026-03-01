@@ -24,7 +24,7 @@
 </recent_memories>
 
 <format>
-## 莉莉丝/美月
+## {display_name}
 （动作）对话内容，150字以内
 
 <update_notes>
@@ -51,7 +51,7 @@ player: {player_fields}
 </fields>
 
 <example>
-## 莉莉丝
+## {display_name}
 （微微一笑）你今天来得真早。
 <update_notes>
   <memory>## 2月20日\n- **放学后/教室**：他留下来帮我收拾料理教室，我说不用他非要留，最后我们一起把锅洗完了。他说我做的汤比昨天鲜，我不知道为什么听到这句话特别在意。</memory>

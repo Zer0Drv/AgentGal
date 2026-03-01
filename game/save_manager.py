@@ -9,6 +9,8 @@ from datetime import datetime
 
 from engine.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
 
+TEMPLATES_DIR = PROJECT_ROOT / "data" / "templates"
+
 
 # =============================================================================
 # 路径工具
@@ -31,13 +33,24 @@ def narrator_raw_dir() -> str:
 
 
 def load_prompt_file(filename: str) -> str:
-    """从 prompts 目录加载文本文件"""
+    """从 prompts 目录加载文本文件（全局配置，如 opening_intro.txt）"""
     file_path = PROJECT_ROOT / "prompts" / filename
     if file_path.exists():
         try:
             return file_path.read_text(encoding="utf-8")
         except Exception as e:
             print(f"[警告] 读取文件失败 {filename}: {e}")
+    return ""
+
+
+def load_story_file(story_id: str, filename: str) -> str:
+    """从故事模板目录加载文本文件（如 opening.txt）"""
+    file_path = TEMPLATES_DIR / story_id / filename
+    if file_path.exists():
+        try:
+            return file_path.read_text(encoding="utf-8")
+        except Exception as e:
+            print(f"[警告] 读取故事文件失败 {story_id}/{filename}: {e}")
     return ""
 
 
@@ -101,11 +114,14 @@ def reset_logs():
                     print(f"  清空失败 {filepath}: {e}", flush=True)
 
 
-async def reset_game() -> tuple[str, str]:
-    """重置游戏，从 templates 重新创建 characters 目录
+async def reset_game(story_id: str = "school") -> tuple[str, str]:
+    """重置游戏，从 templates/{story_id} 重新创建 characters 目录
+
+    Args:
+        story_id: 故事ID，对应 data/templates/ 下的子目录名
 
     Returns:
-        开场白内容（如果 show_opening=True）或空字符串
+        (opening_intro 文本, opening 文本)
     """
     try:
         print(f"\n{'=' * 40}", flush=True)
@@ -129,16 +145,16 @@ async def reset_game() -> tuple[str, str]:
             except Exception as e:
                 print(f"  删除失败 {characters_dir}: {e}", flush=True)
 
-        # 2. 从 templates 完整复制
-        templates_dir = "data/templates"
-        if os.path.exists(templates_dir):
+        # 2. 从对应故事模板完整复制
+        story_template_dir = str(TEMPLATES_DIR / story_id)
+        if os.path.exists(story_template_dir):
             try:
-                shutil.copytree(templates_dir, characters_dir)
-                print(f"  已复制: {templates_dir} -> {characters_dir}", flush=True)
+                shutil.copytree(story_template_dir, characters_dir)
+                print(f"  已复制: {story_template_dir} -> {characters_dir}", flush=True)
             except Exception as e:
                 print(f"  复制失败: {e}", flush=True)
         else:
-            print(f"  [警告] 模板目录不存在: {templates_dir}", flush=True)
+            print(f"  [警告] 故事模板目录不存在: {story_template_dir}", flush=True)
 
         # 3. 只为 narrator 创建 raw 目录（对话历史集中存储）
         raw_dir = narrator_raw_dir()
@@ -158,9 +174,9 @@ async def reset_game() -> tuple[str, str]:
 
         traceback.print_exc()
 
-    # 加载两个开场白
+    # 加载两个开场白：玩法介绍从 prompts/ 取（全局），故事开场从故事目录取
     intro_text = load_prompt_file("opening_intro.txt")
-    opening_text = load_prompt_file("opening.txt")
+    opening_text = load_story_file(story_id, "opening.txt")
 
     # 将故事开场旁白写入 narrator 的历史（玩法介绍不写入）
     all_agents = get_agent_names()

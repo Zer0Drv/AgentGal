@@ -271,7 +271,12 @@ class MemoryConsolidator:
             routing_logger.warning(f"[整理器] {agent_name} 第三步解析结果为空，跳过")
             return
 
-        write_growth_entries(agent_name, entries)
+        # 重新从 P001 顺序编号，消除合并后的空缺
+        reindexed = {
+            f"P{i:03d}": content
+            for i, content in enumerate(entries.values(), start=1)
+        }
+        write_growth_entries(agent_name, reindexed)
         routing_logger.info(
             f"[整理器] {agent_name} 第三步合并完成，条目数: {len(entries)}"
         )
@@ -328,11 +333,11 @@ class MemoryConsolidator:
         else:
             routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
 
-        # ===== 第三步：条目超限时触发合并压缩 =====
+        # ===== 第三步：每轮去重合并 growth.md =====
         current_count = len(read_growth_entries(agent_name))
-        if current_count > 15:
+        if current_count > 0:
             routing_logger.info(
-                f"[整理器] {agent_name} growth.md 条目数 {current_count} > 15，触发第三步合并"
+                f"[整理器] {agent_name} 触发第三步去重合并（当前 {current_count} 条）"
             )
             prompt_step3 = self._build_consolidation_prompt_step3(agent_name)
             try:

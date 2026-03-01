@@ -52,10 +52,29 @@ _prepare_chainlit_database_url()
 # =============================================================================
 
 
-async def _handle_new_game() -> tuple[str, str]:
+STORY_OPTIONS = [
+    cl.Action(name="school", payload={"story": "school"}, label="🏫 私立城川中学 · 青春校园"),
+    cl.Action(name="ancient", payload={"story": "ancient"}, label="🏯 烟雨江湖 · 宋代武侠"),
+    cl.Action(name="modern", payload={"story": "modern"}, label="🌆 不期而遇 · 现代都市"),
+]
+
+
+async def _ask_story_choice() -> str:
+    """弹出故事选择，返回 story_id；超时或取消则默认 school"""
+    res = await cl.AskActionMessage(
+        content="请选择你想要进入的故事世界：",
+        actions=STORY_OPTIONS,
+        timeout=120,
+    ).send()
+    if res and res.get("payload"):
+        return res["payload"].get("story", "school")
+    return "school"
+
+
+async def _handle_new_game(story_id: str) -> tuple[str, str]:
     """处理新游戏启动：重置记忆并返回开场白（玩法介绍, 故事开始）"""
     await cl.Message(content="已重置记忆，开始新游戏。").send()
-    return await reset_game()
+    return await reset_game(story_id)
 
 
 async def _handle_continue_game() -> None:
@@ -88,7 +107,8 @@ async def on_chat_start():
     has_save = has_existing_save()
 
     if not has_save:
-        intro_text, opening_text = await _handle_new_game()
+        story_id = await _ask_story_choice()
+        intro_text, opening_text = await _handle_new_game(story_id)
         # 发送玩法介绍
         if intro_text:
             await cl.Message(content=intro_text, author="Narrator").send()
@@ -236,8 +256,9 @@ async def _handle_save_command() -> bool:
 
 async def _handle_reset_command() -> bool:
     """处理 /reset 命令"""
+    story_id = await _ask_story_choice()
     await cl.Message(content="✅ 游戏已重置，开始新故事...").send()
-    intro_text, opening_text = await reset_game()
+    intro_text, opening_text = await reset_game(story_id)
     # 发送玩法介绍
     if intro_text:
         await cl.Message(content=intro_text, author="Narrator").send()

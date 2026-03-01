@@ -33,7 +33,8 @@ me moBot/
 │   │   └── narrator/           # 旁白角色
 │   │       ├── soul.md         # 定义：故事主持人、上帝视角
 │   │       ├── memory.md       # 故事事件记录
-│   │       └── ...
+│   │       ├── status.md       # 故事状态（无 user.md）
+│   │       └── raw/            # YYYY-MM-DD.jsonl 对话流水
 │   └── templates/              # 角色模板（用于重置游戏）
 │       └── ...                 # 结构同 characters
 ├── engine/                     # 核心引擎
@@ -84,22 +85,31 @@ me moBot/
 
 ## System Prompt 组成
 
-所有角色使用相同的 prompt 模板：
-
+**角色（lilith、mitsuki）使用的 prompt 模板**：
 ```
 1. soul.md（性格定义）
 2. memory.md（长期记忆）
 3. user.md（对玩家的认知）
-4. tasks.md（当前目标）
+4. growth.md（人格沉淀）
 5. 运行时信息：时间、时区、语言
 6. Tools 描述
 7. 行为指引
 ```
 
-**narrator 的差异只在 soul.md 和 tasks.md 内容**：
-- 告知它是故事主持人
-- 告知拥有上帝视角（可读取所有角色记忆）
-- 职责：推进故事、控制时间、描述环境
+**narrator（旁白）使用的 prompt 模板**：
+```
+1. soul.md（故事主持人定义）
+2. memory.md（故事事件记录）
+3. status.md（故事状态）
+4. growth.md（故事发展记录）
+5. 运行时信息：时间、时区、语言
+6. Tools 描述
+7. 行为指引
+```
+
+**narrator 不需要 user.md**：
+- narrator 是全知的叙述者，不需要记录对玩家的主观认知
+- narrator 的职责：推进故事、控制时间、描述环境、路由决策
 
 ## Agent Tools（所有角色共享）
 
@@ -107,12 +117,13 @@ me moBot/
 |------|------|
 | `search_memory` | 语义搜索自己的向量库 |
 | `update_memory` | 追加/编辑自己的 memory.md |
-| `update_player_profile` | 更新自己的 user.md |
+| `update_player_profile` | 更新自己的 user.md（仅 lilith、mitsuki） |
 | `update_tasks` | 更新自己的 tasks.md |
 
 **narrator 使用方式**：
 - `tasks.md` = 故事主线任务（"推进到月圆之夜"、"制造冲突"）
 - `memory.md` = 已发生的故事事件
+- 不使用 `update_player_profile`（narrator 无 user.md）
 
 ## 单轮对话流程
 

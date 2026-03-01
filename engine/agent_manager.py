@@ -12,6 +12,7 @@ from engine.config import (
     PROJECT_ROOT,
     character_path,
     get_agent_names,
+    get_valid_response_agents,
 )
 from engine.response_parser import parse_agent_response
 from engine.text_utils import clean_response
@@ -96,8 +97,20 @@ class AgentManager:
             # 动态获取字段白名单（从文件读取，失败回退到默认值）
             status_fields = "、".join(get_allowed_fields(agent_name, "status"))
             player_fields = "、".join(get_allowed_fields(agent_name, "user")) if agent_name != "narrator" else ""
+            # 角色显示名（soul.md 首行 <role> 内的中文名，回退到 agent_name）
+            display_name = self._get_display_name(agent_name, soul_content)
+
+            # narrator 专用：在场角色列表 / 有效 targets 字段
+            characters = get_valid_response_agents()
+            characters_scene_list = "\n".join(
+                f"- {self._get_display_name(c, read_agent_file(c, 'soul.md'))}：[位置] 或 不在场"
+                for c in characters
+            )
+            valid_targets = ", ".join(characters)
+
             return prompt_template.format(
                 agent_name=agent_name,
+                display_name=display_name,
                 soul=soul_content,
                 growth=growth_content,
                 memory=relevant_memories,
@@ -106,6 +119,8 @@ class AgentManager:
                 user_profile=user_content if user_content else "（尚无玩家认知）",
                 status_fields=status_fields,
                 player_fields=player_fields,
+                characters_scene_list=characters_scene_list,
+                valid_targets=valid_targets,
             )
 
         return Agent(
@@ -117,6 +132,28 @@ class AgentManager:
             # 禁用 Agno 内部历史管理，由应用层通过 jsonl 自行管理
             add_history_to_context=False,
         )
+
+    @staticmethod
+    def _get_display_name(agent_name: str, soul_content: str) -> str:
+        """从 soul.md 内容提取中文显示名，回退到 agent_name。
+
+        优先取第一个 <role> 标签内第一行的中文姓名，
+        否则取 soul.md 第一个非空行中第一个中文词组（逗号/空格前）。
+        """
+        import re
+        # 尝试从 <role> 标签第一行提取
+        role_match = re.search(r"<role>\s*([^\n<]+)", soul_content)
+        if role_match:
+            first_line = role_match.group(1).strip()
+            # 取第一个中文名（逗号、顿号、空格前）
+            name_match = re.match(r"([\u4e00-\u9fff·]+)", first_line)
+            if name_match:
+                return name_match.group(1)
+        # 尝试 # 标题行
+        title_match = re.search(r"^#\s+(.+)$", soul_content, re.MULTILINE)
+        if title_match:
+            return title_match.group(1).strip()
+        return agent_name
 
     def _search_relevant_memories_sync(self, agent_name: str, query: str) -> str:
         """同步搜索相关记忆，用于 instructions 函数"""
