@@ -174,30 +174,6 @@ class VectorStore:
 
     # ----------------------------- 写入 -----------------------------
 
-    def add(
-        self,
-        visible_to: list[str],
-        chunk_id: str,
-        content: str,
-        game_date: str | None = None,
-        kind: str = "round",
-        owner_agent: str | None = None,
-    ):
-        """写入一个 chunk，后台写入数据库（不阻塞）。
-
-        - kind: "round"/"dialogue" 或 "memory"
-        - visible_to 决定可见范围；memory 默认仅 owner_agent 可见
-        - 失败时仅记录日志，不抛异常影响主流程。
-        """
-        task = asyncio.create_task(
-            self._do_add(visible_to, chunk_id, content, game_date, kind, owner_agent)
-        )
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
-
-    def add_round(self, visible_to: list[str], round_id: str, content: str, game_date: str | None = None):
-        """兼容旧接口：对话轮次写入。"""
-        self.add(visible_to, round_id, content, game_date, kind="round")
 
     async def _do_add(
         self,
@@ -391,9 +367,7 @@ class VectorStore:
     # ----------------------------- 重建 -----------------------------
 
     async def rebuild(self, agent_name: str):
-        """重建：解析 jsonl（round）+ memory.md（memory） → 直接入库。"""
-        import glob
-
+        """重建：从各 agent 的 memory.md 重建 memory 层向量索引。"""
         _ = agent_name  # 保持外部调用签名兼容
         await self.init_tables()
         db = await self._get_db()
@@ -402,75 +376,6 @@ class VectorStore:
         await db.execute("DELETE FROM vec_chunks")
         await db.execute("DELETE FROM chunks")
         await db.commit()
-
-        raw_dir = Path(self.character_path("narrator", "raw"))
-        files = sorted(glob.glob(str(raw_dir / "*.jsonl")))
-        if not files:
-            routing_logger.info("[VectorStore] 重建: 未发现任何原始对话记录，跳过")
-            return
-
-        def _iter_rounds():
-            for fp in files:
-                with open(fp, "r", encoding="utf-8") as f:
-                    cur: list[dict] = []
-                    for line in f:
-                        if not line.strip():
-                            continue
-                        obj = json.loads(line)
-                        if obj.get("role") == "player" and cur:
-                            yield cur
-                            cur = [obj]
-                        else:
-                            cur.append(obj)
-                    if cur:
-                        yield cur
-
-        def _format_round(msgs: list[dict]) -> tuple[str, list[str], str | None]:
-            parts = []
-            for m in msgs:
-                role = m.get("role", "unknown")
-                text = m.get("content", "")
-                if role == "player":
-                    parts.append(f"玩家: {text}")
-                elif role == "narrator":
-                    parts.append(f"旁白: {text}")
-                else:
-                    parts.append(f"{role}: {text}")
-            content = "\n".join(parts)
-
-            vis_set, vis = set(), []
-            for m in msgs:
-                v = m.get("visible_to", [])
-                if isinstance(v, str):
-                    try:
-                        v = json.loads(v)
-                    except Exception:
-                        v = []
-                for x in v or []:
-                    x = str(x)
-                    if x not in vis_set:
-                        vis_set.add(x)
-                        vis.append(x)
-            if "narrator" not in vis_set:
-                vis.append("narrator")
-
-            gdate = None
-            for m in msgs:
-                if m.get("role") != "narrator":
-                    continue
-                gdate = extract_game_date(str(m.get("content", "")))
-                if gdate:
-                    break
-            return content, vis, gdate
-
-        counter = 0
-        for msgs in _iter_rounds():
-            counter += 1
-            content, vis, gdate = _format_round(msgs)
-            round_id = f"rebuild_{counter}"
-            await self._do_add(vis, round_id, content, gdate, "round", None)
-
-        routing_logger.info(f"[VectorStore] 重建完成：共 {counter} 轮")
 
         # ===== memory 层重建：根据 consolidation_state 之前的日期 =====
         for agent in get_agent_names():

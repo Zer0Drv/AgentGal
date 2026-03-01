@@ -29,7 +29,7 @@ from game.save_manager import (
     reset_game,
 )
 from log_config.routing import routing_logger
-from memory.vector_store import vector_store
+
 from memory.consolidator import CONSOLIDATION_INTERVAL, memory_consolidator
 
 # 加载环境变量
@@ -217,23 +217,6 @@ async def _process_target_agents(
     return results
 
 
-def _format_round_content(user_input: str, narrator_text: str | None, replies: list[tuple[str, str, bool]]) -> str:
-    parts = [f"玩家: {user_input}"]
-    if narrator_text:
-        parts.append(f"旁白: {narrator_text}")
-    for agent_name, content, valid in replies:
-        if valid and content:
-            parts.append(f"{agent_name}: {content}")
-    return "\n".join(parts)
-
-
-def _extract_game_date(scene_description: str | None) -> str | None:
-    if not scene_description:
-        return None
-    import re
-    m = re.search(r"\*\*时间\*\*：\s*(\d{1,2}月\d{1,2}日)", scene_description)
-    return m.group(1) if m else None
-
 
 # =============================================================================
 # 命令处理
@@ -386,16 +369,6 @@ async def on_message(message: cl.Message):
                 content=response,
                 author=agent_name.capitalize(),
             ).send()
-
-    # 6.1 向量索引（每 N 轮一次）：一轮为“玩家→下一次玩家”之间
-    visible_to = targets if "narrator" in targets else [*targets, "narrator"]
-    round_id = f"chainlit_{message_counter}"
-    game_date = _extract_game_date(scene_description) or cl.user_session.get("game_date")
-    if game_date:
-        cl.user_session.set("game_date", game_date)
-    round_content = _format_round_content(user_input, scene_description if is_narrator_valid else None, results)
-    # 每轮对话结束后后台索引（不阻塞）
-    vector_store.add(visible_to, round_id, round_content, game_date=game_date, kind="round")
 
     # 7. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
     print(
