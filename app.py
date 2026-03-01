@@ -312,6 +312,7 @@ async def _handle_load_command(user_input: str) -> bool:
     if success:
         await cl.Message(content=f"✅ 读档成功：{target['display_time']}").send()
         cl.user_session.set("message_counter", 0)
+        await _handle_continue_game()
     else:
         await cl.Message(content="❌ 读档失败，请检查日志。").send()
 
