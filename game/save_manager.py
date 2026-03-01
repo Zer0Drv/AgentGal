@@ -301,8 +301,8 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     files = []
     base = agent_path(agent_name)
 
-    # 核心记忆文件（growth.md 由 consolidator 生成，属于运行时状态，需存档）
-    for filename in ["memory.md", "user.md", "status.md", "growth.md"]:
+    # 核心记忆文件（soul.md 虽只读，但存档需自包含；growth.md 由 consolidator 运行时生成）
+    for filename in ["soul.md", "memory.md", "user.md", "status.md", "growth.md"]:
         filepath = f"{base}/{filename}"
         if os.path.exists(filepath):
             files.append(filepath)
