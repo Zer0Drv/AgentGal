@@ -289,7 +289,8 @@ async def _handle_load_command(user_input: str) -> bool:
             return True
         lines = ["📂 **存档列表：**"]
         for i, s in enumerate(saves, start=1):
-            lines.append(f"{i}. {s['display_time']}  `{s['filename']}`")
+            focus_label = f"  · {s['focus']}" if s.get("focus") else ""
+            lines.append(f"{i}. {s['display_time']}{focus_label}")
         lines.append("\n使用 `/load <序号>` 加载对应存档。")
         await cl.Message(content="\n".join(lines)).send()
         return True

@@ -3,6 +3,7 @@
 import glob
 import json
 import os
+import re
 import shutil
 import zipfile
 from datetime import datetime
@@ -216,12 +217,16 @@ def list_save_archives() -> list[dict]:
     saves = []
     for zip_file in sorted(save_dir.glob("save_*.zip"), reverse=True):
         try:
-            ts_str = zip_file.stem[5:]  # "save_20240101_120000" → "20240101_120000"
+            # 文件名格式：save_YYYYMMDD_HHMMSS[_叙事焦点].zip
+            stem_body = zip_file.stem[5:]  # 去掉前缀 "save_"
+            ts_str = stem_body[:15]        # "20240101_120000"
+            focus = stem_body[16:] if len(stem_body) > 15 else ""
             dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
             display_time = dt.strftime("%Y-%m-%d %H:%M:%S")
         except (ValueError, IndexError):
             display_time = zip_file.name
-        saves.append({"filename": zip_file.name, "display_time": display_time})
+            focus = ""
+        saves.append({"filename": zip_file.name, "display_time": display_time, "focus": focus})
 
     return saves
 
@@ -296,8 +301,8 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     files = []
     base = agent_path(agent_name)
 
-    # 核心记忆文件
-    for filename in ["memory.md", "user.md", "status.md"]:
+    # 核心记忆文件（growth.md 由 consolidator 生成，属于运行时状态，需存档）
+    for filename in ["memory.md", "user.md", "status.md", "growth.md"]:
         filepath = f"{base}/{filename}"
         if os.path.exists(filepath):
             files.append(filepath)
@@ -323,6 +328,24 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     return files
 
 
+def _read_narrator_focus() -> str:
+    """从 narrator/status.md 读取叙事焦点，用于存档命名"""
+    status_path = character_path("narrator", "status.md")
+    try:
+        lines = open(status_path, encoding="utf-8").read().splitlines()
+        for i, line in enumerate(lines):
+            if "叙事焦点" in line:
+                for j in range(i + 1, len(lines)):
+                    content = lines[j].strip()
+                    if content:
+                        # 过滤文件名中不合法的字符，限制长度
+                        safe = re.sub(r'[/\\:*?"<>|\n]', "", content)[:20].strip()
+                        return safe if safe else ""
+    except Exception:
+        pass
+    return ""
+
+
 async def export_save_archive() -> str | None:
     """导出存档文件，返回存档文件路径
 
@@ -330,10 +353,13 @@ async def export_save_archive() -> str | None:
         存档文件路径，如果失败返回 None
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    focus = _read_narrator_focus()
+    filename = f"save_{timestamp}_{focus}.zip" if focus else f"save_{timestamp}.zip"
+
     save_dir = PROJECT_ROOT / "saves"
     os.makedirs(save_dir, exist_ok=True)
 
-    save_path = str(save_dir / f"save_{timestamp}.zip")
+    save_path = str(save_dir / filename)
 
     all_agents = get_agent_names()
     if not all_agents:
