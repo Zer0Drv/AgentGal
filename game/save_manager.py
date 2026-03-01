@@ -274,6 +274,9 @@ async def import_save_archive(save_filename: str) -> bool:
                 zf.extract(member, characters_dir)
                 print(f"[读档] 已恢复: {member}", flush=True)
 
+        # 4. 重建向量库（从 jsonl 历史重新索引）
+        print("[读档] 重建向量库...", flush=True)
+        await vector_store.rebuild("narrator")
         print(f"[读档] 读档完成: {save_filename}", flush=True)
         return True
 
