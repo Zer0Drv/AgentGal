@@ -57,6 +57,7 @@ _MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "8192"))
 
 _PROMPT_STEP1_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step1.txt"
 _PROMPT_STEP2_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step2.txt"
+_PROMPT_STEP3_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step3.txt"
 _PLAYER_PROMPT_PATH = (
     Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 )
@@ -231,10 +232,48 @@ class MemoryConsolidator:
         """构建第二步 prompt：成长事件判断。"""
         growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
 
+        count = len(read_growth_entries(agent_name))
+        if count >= 15:
+            count_hint = f"⚠️ 当前已有 {count} 条（已超过上限 15），本次严禁 ADD，只能 UPDATE 合并现有条目"
+        else:
+            count_hint = f"当前已有 {count} 条（上限 15），还可新增 {15 - count} 条"
+
         template = load_text(_PROMPT_STEP2_PATH)
         return template.format(
             growth=growth_content,
             content=step1_result,
+            count_hint=count_hint,
+        )
+
+    def _build_consolidation_prompt_step3(self, agent_name: str) -> str:
+        """构建第三步 prompt：growth.md 超限合并压缩。"""
+        growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
+        template = load_text(_PROMPT_STEP3_PATH)
+        return template.format(growth=growth_content)
+
+    def _apply_step3_growth(self, agent_name: str, llm_result: str) -> None:
+        """解析第三步输出并整体覆写 growth.md。"""
+        match = re.search(r"<merged_growth>(.*?)</merged_growth>", llm_result, re.DOTALL)
+        if not match:
+            routing_logger.warning(f"[整理器] {agent_name} 第三步未找到 <merged_growth> 标签，跳过")
+            return
+
+        raw = match.group(1).strip()
+        # 解析每行 [Pxxx] [日期] 内容
+        entries: dict[str, str] = {}
+        for line in raw.splitlines():
+            line = line.strip()
+            m = re.match(r"\[(P\d+)\]\s*(.*)", line)
+            if m:
+                entries[m.group(1)] = m.group(2).strip()
+
+        if not entries:
+            routing_logger.warning(f"[整理器] {agent_name} 第三步解析结果为空，跳过")
+            return
+
+        write_growth_entries(agent_name, entries)
+        routing_logger.info(
+            f"[整理器] {agent_name} 第三步合并完成，条目数: {len(entries)}"
         )
 
     async def _apply_memory_result(
@@ -288,6 +327,21 @@ class MemoryConsolidator:
             routing_logger.info(f"[整理器] {agent_name} growth.md: {growth_log}")
         else:
             routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
+
+        # ===== 第三步：条目超限时触发合并压缩 =====
+        current_count = len(read_growth_entries(agent_name))
+        if current_count > 15:
+            routing_logger.info(
+                f"[整理器] {agent_name} growth.md 条目数 {current_count} > 15，触发第三步合并"
+            )
+            prompt_step3 = self._build_consolidation_prompt_step3(agent_name)
+            try:
+                llm_response_step3 = await self._call_llm(prompt_step3)
+                step3_result = (llm_response_step3.get("content") or "").strip()
+                self._apply_step3_growth(agent_name, step3_result)
+            except Exception as e:
+                result.errors.append(f"第三步调用失败: {e}")
+                routing_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
 
     async def consolidate_agent(
         self, agent_name: str

@@ -1,0 +1,28 @@
+<task>growth.md 条目已超过上限，将现有条目合并压缩至 12 条以内</task>
+
+<existing_growth>
+{growth}
+</existing_growth>
+
+<rules>
+  1. 合并核心词汇相同或高度重叠的条目，将两条合写为一条，体现认知的深化
+  2. 每条合并后仍须保持"因为[关键事件]，我意识到[核心认知]"的结构
+  3. 保留所有独特认知维度，不得删除无法合并的条目
+  4. 最终条目数必须 ≤ 12
+  5. 日期取被合并条目中最新的一个
+</rules>
+
+<format>
+[YYYY-MM-DD] 因为[单一关键事件]，我意识到[单一核心认知]（一句话，禁止分号并列）
+</format>
+
+<output>
+在 <merged_growth> 标签内输出合并后的完整列表，ID 从 P001 顺序重新编排：
+
+<merged_growth>
+[P001] [YYYY-MM-DD] 因为...，我意识到...
+[P002] [YYYY-MM-DD] 因为...，我意识到...
+...
+</merged_growth>
+</output>
+

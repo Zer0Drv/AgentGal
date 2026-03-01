@@ -31,14 +31,14 @@
     优先级：UPDATE（去重合并）> ADD（新增）> 跳过
 
     特殊规则：
-    - 条目数 ≥ 15 时，只能 UPDATE 合并，禁止新增
+    - {count_hint}
     - 新增 ID 接着现有最大 ID 顺延（如现有最大为 P012，则新增为 P013）
     - 无任何更新时，personality_updates 标签内留空
   </step>
 </workflow>
 
 <format>
-[YYYY-MM-DD] 因为[单一关键事件]，我意识到[单一核心认知]
+[YYYY-MM-DD] 因为[单一关键事件]，我意识到[单一核心认知]（50字以内，一句话，禁止分号并列）
 </format>
 
 <output_example>
