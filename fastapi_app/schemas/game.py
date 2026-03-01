@@ -41,3 +41,22 @@ class ResetGameResponse(BaseModel):
 class EndGameResponse(BaseModel):
     success: bool
     detail: str
+
+
+class SaveInfo(BaseModel):
+    index: int
+    filename: str
+    display_time: str
+
+
+class ListSavesResponse(BaseModel):
+    saves: list[SaveInfo]
+
+
+class LoadGameRequest(BaseModel):
+    save_filename: str = Field(description="存档文件名，如 save_20240101_120000.zip")
+
+
+class LoadGameResponse(BaseModel):
+    success: bool
+    detail: str

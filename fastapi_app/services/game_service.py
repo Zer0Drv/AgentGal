@@ -1,6 +1,8 @@
 from game.save_manager import (
     export_save_archive,
     has_existing_save,
+    import_save_archive,
+    list_save_archives,
     load_recent_raw_messages,
     reset_game,
 )
@@ -8,9 +10,12 @@ from memory.consolidator import memory_consolidator
 
 from fastapi_app.schemas.game import (
     EndGameResponse,
+    ListSavesResponse,
+    LoadGameResponse,
     RecentMessage,
     ResetGameResponse,
     SaveGameResponse,
+    SaveInfo,
     StartOptionsResponse,
     StartGameResponse,
 )
@@ -93,6 +98,22 @@ async def save_game() -> SaveGameResponse:
 async def reset_current_game() -> ResetGameResponse:
     opening = await reset_game(show_opening=True)
     return ResetGameResponse(success=True, opening=opening, detail="游戏已重置")
+
+
+def list_saves() -> ListSavesResponse:
+    raw = list_save_archives()
+    saves = [
+        SaveInfo(index=i + 1, filename=item["filename"], display_time=item["display_time"])
+        for i, item in enumerate(raw)
+    ]
+    return ListSavesResponse(saves=saves)
+
+
+async def load_game(save_filename: str) -> LoadGameResponse:
+    success = await import_save_archive(save_filename)
+    if not success:
+        return LoadGameResponse(success=False, detail=f"读档失败：{save_filename}")
+    return LoadGameResponse(success=True, detail=f"读档成功：{save_filename}")
 
 
 async def end_game() -> EndGameResponse:

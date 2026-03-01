@@ -96,6 +96,8 @@ async def _show_help() -> None:
             "- `/start new` 新开局\n"
             "- `/start continue` 继续上次游戏\n"
             "- `/save` 导出存档\n"
+            "- `/load list` 查看存档列表\n"
+            "- `/load <序号>` 加载对应存档\n"
             "- `/reset` 重置当前游戏\n"
             "- `/logout` 登出\n"
             "- `/help` 查看帮助"
@@ -244,6 +246,75 @@ async def _handle_save() -> None:
         await cl.Message(content=f"存档异常：{exc}").send()
 
 
+async def _handle_load(parts: list[str]) -> None:
+    if not _is_logged_in():
+        await cl.Message(content="请先登录。").send()
+        return
+
+    if len(parts) < 2:
+        await cl.Message(content="用法: `/load list` 或 `/load <序号>`").send()
+        return
+
+    sub = parts[1].strip().lower()
+
+    # /load list：列出存档
+    if sub == "list":
+        try:
+            resp = await _api_request("GET", "/game/saves", headers=_auth_headers())
+            if resp.status_code != 200:
+                await cl.Message(content=f"获取存档列表失败：HTTP {resp.status_code}").send()
+                return
+            saves = resp.json().get("saves", [])
+            if not saves:
+                await cl.Message(content="暂无存档。").send()
+                return
+            lines = ["存档列表："]
+            for s in saves:
+                lines.append(f"{s['index']}. {s['display_time']}  ({s['filename']})")
+            lines.append("\n使用 `/load <序号>` 加载对应存档。")
+            await cl.Message(content="\n".join(lines)).send()
+        except Exception as exc:
+            logger.exception("获取存档列表异常")
+            await cl.Message(content=f"获取存档列表异常：{exc}").send()
+        return
+
+    # /load <n>：按序号加载
+    if not sub.isdigit():
+        await cl.Message(content="用法: `/load list` 或 `/load <序号>`").send()
+        return
+
+    index = int(sub)
+    try:
+        # 先拉存档列表，按序号找文件名
+        resp = await _api_request("GET", "/game/saves", headers=_auth_headers())
+        if resp.status_code != 200:
+            await cl.Message(content=f"获取存档列表失败：HTTP {resp.status_code}").send()
+            return
+        saves = resp.json().get("saves", [])
+        match = next((s for s in saves if s["index"] == index), None)
+        if not match:
+            await cl.Message(content=f"序号 {index} 不存在，请用 `/load list` 查看存档列表。").send()
+            return
+
+        await cl.Message(content=f"正在读取存档：{match['display_time']}…").send()
+        load_resp = await _api_request(
+            "POST",
+            "/game/load",
+            headers=_auth_headers(),
+            json_body={"save_filename": match["filename"]},
+            timeout=30,
+        )
+        if load_resp.status_code != 200:
+            await cl.Message(content=f"读档失败：HTTP {load_resp.status_code}").send()
+            return
+        data = load_resp.json()
+        cl.user_session.set("started", True)
+        await cl.Message(content=data.get("detail", "读档成功。")).send()
+    except Exception as exc:
+        logger.exception("读档异常")
+        await cl.Message(content=f"读档异常：{exc}").send()
+
+
 async def _handle_reset() -> None:
     if not _is_logged_in():
         await cl.Message(content="请先登录。").send()
@@ -307,6 +378,9 @@ async def on_message(message: cl.Message) -> None:
             return
         if command == "/save":
             await _handle_save()
+            return
+        if command == "/load":
+            await _handle_load(parts)
             return
         if command == "/reset":
             await _handle_reset()

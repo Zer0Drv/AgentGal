@@ -199,6 +199,87 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
 
 
 # =============================================================================
+# 存档列表 / 导入
+# =============================================================================
+
+
+def list_save_archives() -> list[dict]:
+    """列出 saves/ 目录下所有存档，按时间倒序
+
+    Returns:
+        存档信息列表，每项包含 filename、display_time
+    """
+    save_dir = PROJECT_ROOT / "saves"
+    if not save_dir.exists():
+        return []
+
+    saves = []
+    for zip_file in sorted(save_dir.glob("save_*.zip"), reverse=True):
+        try:
+            ts_str = zip_file.stem[5:]  # "save_20240101_120000" → "20240101_120000"
+            dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+            display_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, IndexError):
+            display_time = zip_file.name
+        saves.append({"filename": zip_file.name, "display_time": display_time})
+
+    return saves
+
+
+async def import_save_archive(save_filename: str) -> bool:
+    """从指定存档文件恢复游戏状态
+
+    Args:
+        save_filename: 存档文件名（仅文件名，不含路径）
+
+    Returns:
+        成功返回 True，失败返回 False
+    """
+    # 安全检查：防止路径遍历
+    if not save_filename.endswith(".zip") or os.sep in save_filename or "/" in save_filename:
+        print(f"[读档] 非法文件名: {save_filename}", flush=True)
+        return False
+
+    save_path = PROJECT_ROOT / "saves" / save_filename
+    if not save_path.exists():
+        print(f"[读档] 存档文件不存在: {save_path}", flush=True)
+        return False
+
+    try:
+        # 1. 清空向量记忆
+        from memory.vector_store import vector_store
+
+        all_agents = get_agent_names()
+        if all_agents:
+            print("[读档] 清理向量记忆...", flush=True)
+            await vector_store.delete_all_agents(all_agents)
+
+        # 2. 删除当前 characters 目录
+        characters_dir = str(CHARACTERS_DIR)
+        if os.path.exists(characters_dir):
+            shutil.rmtree(characters_dir)
+            print(f"[读档] 已删除: {characters_dir}", flush=True)
+
+        # 3. 解压存档到 characters 目录（跳过 metadata.json）
+        os.makedirs(characters_dir, exist_ok=True)
+        with zipfile.ZipFile(str(save_path), "r") as zf:
+            for member in zf.namelist():
+                if member == "metadata.json":
+                    continue
+                zf.extract(member, characters_dir)
+                print(f"[读档] 已恢复: {member}", flush=True)
+
+        print(f"[读档] 读档完成: {save_filename}", flush=True)
+        return True
+
+    except Exception as e:
+        print(f"[读档] 读档失败: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+# =============================================================================
 # 存档导出
 # =============================================================================
 
