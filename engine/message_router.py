@@ -81,50 +81,7 @@ class MessageRouter:
         }
         await self._broadcast_message(targets, message)
 
-    def load_recent_history(self, agent_name: str, limit: int = 10) -> str:
-        """
-        加载某角色的最近对话历史
 
-        统一从 narrator 的 jsonl 读取（上帝视角，最完整），
-        然后按 visible_to 字段过滤该角色可见的消息。
-
-        Args:
-            agent_name: 角色名
-            limit: 返回最近多少条
-
-        Returns:
-            格式化的对话历史文本
-        """
-        # 统一从 narrator 的 jsonl 读取
-        raw_path = self._get_raw_path("narrator")
-
-        if not os.path.exists(raw_path):
-            return ""
-
-        lines = []
-        with open(raw_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    lines.append(json.loads(line.strip()))
-
-        # 按 visible_to 过滤：narrator 看全部，其他角色只看自己可见的
-        if agent_name != "narrator":
-            lines = [msg for msg in lines if agent_name in msg.get("visible_to", [])]
-
-        # 取最近 limit 条
-        recent = lines[-limit:]
-
-        # 格式化为文本
-        formatted = []
-        for msg in recent:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
-            if role == "player":
-                formatted.append(f"玩家: {content}")
-            else:
-                formatted.append(f"{role}: {content}")
-
-        return "\n".join(formatted)
 
 
 # 全局实例

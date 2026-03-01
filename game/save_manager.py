@@ -55,8 +55,17 @@ def load_story_file(story_id: str, filename: str) -> str:
     return ""
 
 
-def load_recent_raw_messages(limit: int = 10) -> list:
-    """从 narrator 的 raw/ 目录加载最近的原始消息（narrator 拥有上帝视角，包含所有消息）"""
+def load_conversation_history(limit: int = 10) -> list:
+    """从 narrator 的 raw/ 目录加载最近的对话历史（跨所有日期的 jsonl 文件）
+
+    narrator 拥有上帝视角，包含所有消息。返回原始消息列表（未过滤、未格式化）。
+
+    Args:
+        limit: 返回最近多少条消息
+
+    Returns:
+        最近 limit 条消息的列表，每条是 dict（包含 role, content, visible_to 等字段）
+    """
     raw_dir = character_path("narrator", "raw")
     if not os.path.exists(raw_dir):
         return []

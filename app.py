@@ -25,7 +25,7 @@ from game.save_manager import (
     has_existing_save,
     import_save_archive,
     list_save_archives,
-    load_recent_raw_messages,
+    load_conversation_history,
     reset_game,
 )
 from log_config.routing import routing_logger
@@ -47,6 +47,45 @@ def _prepare_chainlit_database_url() -> None:
 
 
 _prepare_chainlit_database_url()
+
+
+# =============================================================================
+# 对话历史辅助函数
+# =============================================================================
+
+
+def _format_conversation_history(messages: list, agent_name: str, limit: int = 10) -> str:
+    """格式化对话历史为文本字符串
+
+    Args:
+        messages: 原始消息列表（来自 load_conversation_history）
+        agent_name: 角色名，用于按 visible_to 过滤
+        limit: 返回最近多少条
+
+    Returns:
+        格式化的对话历史文本，如果无消息返回空字符串
+    """
+    if not messages:
+        return ""
+
+    # 按 visible_to 过滤：narrator 看全部，其他角色只看自己可见的
+    if agent_name != "narrator":
+        messages = [msg for msg in messages if agent_name in msg.get("visible_to", [])]
+
+    # 取最近 limit 条
+    recent = messages[-limit:]
+
+    # 格式化为文本
+    formatted = []
+    for msg in recent:
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        if role == "player":
+            formatted.append(f"玩家: {content}")
+        else:
+            formatted.append(f"{role}: {content}")
+
+    return "\n".join(formatted)
 
 
 # =============================================================================
@@ -81,7 +120,7 @@ async def _handle_new_game(story_id: str) -> tuple[str, str]:
 
 async def _handle_continue_game() -> None:
     """处理续档：加载并显示最近对话历史"""
-    recent_messages = load_recent_raw_messages(limit=5)
+    recent_messages = load_conversation_history(limit=5)
 
     if not recent_messages:
         await cl.Message(content="继续上次游戏。").send()
@@ -152,9 +191,8 @@ def _parse_narrator_response(content: str) -> tuple[list[str], str]:
 
 async def _call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool]:
     """调用 narrator 获取路由决策和场景描述"""
-    narrator_history = message_router.load_recent_history(
-        "narrator", limit=HISTORY_LIMIT_NARRATOR
-    )
+    raw_messages = load_conversation_history(limit=HISTORY_LIMIT_NARRATOR)
+    narrator_history = _format_conversation_history(raw_messages, "narrator", limit=HISTORY_LIMIT_NARRATOR)
     narrator_input = (
         f"最近对话历史:\n\n{narrator_history}\n\n---\n\n玩家新消息: {user_input}"
         if narrator_history
@@ -189,9 +227,8 @@ async def _process_target_agents(
 
     for agent_name in targets:
         try:
-            history = message_router.load_recent_history(
-                agent_name, limit=HISTORY_LIMIT_DEFAULT
-            )
+            raw_messages = load_conversation_history(limit=HISTORY_LIMIT_DEFAULT)
+            history = _format_conversation_history(raw_messages, agent_name, limit=HISTORY_LIMIT_DEFAULT)
             full_input = _build_agent_input(history, user_input)
 
             response = await agent_manager.run_agent(agent_name, full_input)
