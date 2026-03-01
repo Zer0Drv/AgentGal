@@ -28,7 +28,9 @@ except ImportError:
 
 # 现在导入 vector_store，此时环境变量已加载
 try:
-    import memory.vector_store as vector_store_module
+    import importlib
+    import memory.vector_store  # 确保子模块被加载进 sys.modules
+    vector_store_module = importlib.import_module("memory.vector_store")
     from memory.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip vector_store tests: missing dependency ({exc})", allow_module_level=True)
@@ -157,7 +159,7 @@ class TestVectorStoreRebuild:
     @pytest.mark.asyncio
     async def test_rebuild_memory_layer(self, clean_store, tmp_path, monkeypatch):
         """测试 rebuild() 从 memory.md + consolidation_state 重建 memory 层向量索引"""
-        import memory.vector_store as vs_mod
+        import importlib; vs_mod = importlib.import_module("memory.vector_store")
 
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
@@ -277,7 +279,7 @@ class TestVectorStoreEdgeCases:
     @pytest.mark.asyncio
     async def test_delete_all_agents_full_clear(self, clean_store, tmp_path, monkeypatch):
         """测试 delete_all_agents 命中全角色时走全量清理。"""
-        import memory.vector_store as vs_mod
+        import importlib; vs_mod = importlib.import_module("memory.vector_store")
 
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))

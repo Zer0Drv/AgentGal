@@ -96,6 +96,7 @@ class VectorStore:
         # 单连接下显式串行化写事务；按事件循环懒初始化避免跨 loop 复用报错
         self._write_lock: asyncio.Lock | None = None
         self._write_lock_loop: asyncio.AbstractEventLoop | None = None
+        self._memory_index_cutoff: dict[str, str] = {}
 
     def _get_write_lock(self) -> asyncio.Lock:
         """获取当前事件循环绑定的写锁。"""
