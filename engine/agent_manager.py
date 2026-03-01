@@ -21,6 +21,7 @@ from log_config.routing import routing_logger
 from memory.file_ops import (
     _append_section_file,
     _read_title,
+    add_pending_event,
     _update_section_file,
     get_allowed_fields,
     load_growth_for_prompt,
@@ -82,8 +83,10 @@ class AgentManager:
             # 加载 status.md
             status_content = read_agent_file(agent_name, "status.md")
 
-            # 加载 user.md
-            user_content = read_agent_file(agent_name, "user.md")
+            # 加载 user.md（narrator 不需要）
+            user_content = ""
+            if agent_name != "narrator":
+                user_content = read_agent_file(agent_name, "user.md")
 
             # 加载 growth.md
             growth_content = load_growth_for_prompt(agent_name)
@@ -92,7 +95,7 @@ class AgentManager:
             prompt_template = self._load_system_prompt_template(agent_name)
             # 动态获取字段白名单（从文件读取，失败回退到默认值）
             status_fields = "、".join(get_allowed_fields(agent_name, "status"))
-            player_fields = "、".join(get_allowed_fields(agent_name, "user"))
+            player_fields = "、".join(get_allowed_fields(agent_name, "user")) if agent_name != "narrator" else ""
             return prompt_template.format(
                 agent_name=agent_name,
                 soul=soul_content,
@@ -229,6 +232,16 @@ class AgentManager:
             except Exception as e:
                 routing_logger.error(f"[{agent_name}] 标记触发事件失败: {e}")
                 results.append("triggered: 失败")
+
+        # --- add_event: 在待触发事件队列顶部插入新事件 ---
+        if parsed.add_event:
+            try:
+                for event_desc in parsed.add_event:
+                    result = add_pending_event(agent_name, event_desc)
+                    results.append(f"add_event: {result}")
+            except Exception as e:
+                routing_logger.error(f"[{agent_name}] 插入新事件失败: {e}")
+                results.append("add_event: 失败")
 
         if results:
             routing_logger.info(f"[{agent_name}] 文件更新: {'; '.join(results)}")

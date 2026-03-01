@@ -17,6 +17,7 @@ class ParsedResponse:
     status: Optional[dict] = None  # 需要更新到 status.md 的字段
     player: Optional[dict] = None  # 需要追加到 user.md 的字段
     triggered: Optional[list[str]] = None  # 需要标记为已触发的事件名列表
+    add_event: Optional[list[str]] = None  # 需要插入到待触发事件队列的新事件描述列表
 
 
 def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
@@ -62,6 +63,7 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
     status = _extract_xml_field(xml_content, "status")
     player = _extract_xml_field(xml_content, "player")
     triggered_raw = _extract_xml_field(xml_content, "triggered")
+    add_event_list = _extract_all_xml_tags(xml_content, "add_event")
 
     # 解析 JSON 字段
     status_dict = _parse_json_field(status, "status", agent_name)
@@ -71,13 +73,14 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
     triggered_list = _parse_triggered_field(triggered_raw, agent_name)
 
     # 记录解析结果
-    has_updates = any([memory, status_dict, player_dict, triggered_list])
+    has_updates = any([memory, status_dict, player_dict, triggered_list, add_event_list])
     if has_updates:
         routing_logger.info(
             f"[{agent_name}] 解析到更新: memory={'有' if memory else '无'}, "
             f"status={list(status_dict.keys()) if status_dict else '无'}, "
             f"player={list(player_dict.keys()) if player_dict else '无'}, "
-            f"triggered={triggered_list or '无'}"
+            f"triggered={triggered_list or '无'}, "
+            f"add_event={add_event_list or '无'}"
         )
 
     return ParsedResponse(
@@ -86,6 +89,7 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
         status=status_dict,
         player=player_dict,
         triggered=triggered_list,
+        add_event=add_event_list,
     )
 
 
@@ -132,12 +136,20 @@ def _extract_update_notes(raw_response: str) -> tuple[Optional[str], int]:
 
 
 def _extract_xml_field(xml_content: str, field_name: str) -> Optional[str]:
-    """从 XML 内容中提取指定字段"""
+    """从 XML 内容中提取指定字段（仅第一个匹配）"""
     pattern = rf"<{field_name}>(.*?)</{field_name}>"
     match = re.search(pattern, xml_content, re.DOTALL)
     if match:
         return match.group(1).strip()
     return None
+
+
+def _extract_all_xml_tags(xml_content: str, tag_name: str) -> Optional[list[str]]:
+    """从 XML 内容中提取所有同名标签的内容列表（支持多次出现）"""
+    pattern = rf"<{tag_name}>(.*?)</{tag_name}>"
+    matches = re.findall(pattern, xml_content, re.DOTALL)
+    results = [m.strip() for m in matches if m.strip()]
+    return results if results else None
 
 
 def _parse_triggered_field(
