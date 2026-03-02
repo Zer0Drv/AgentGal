@@ -27,7 +27,7 @@
 <format>
 TARGETS: [角色列表]
 
-**时间**：X月X日 XX:XX
+**时间**：X月X日 星期X XX:XX
 **地点**：具体场景
 **在场**：
 - 玩家：[位置]
@@ -62,7 +62,7 @@ status: {status_fields}
 </fields>
 
 <example>
-TARGETS: [云栖, 沈微澜]
+TARGETS: [chenxiao, shenweilan]
 
 **时间**：3月3日 星期一 午时
 **地点**：醉渡客栈大堂
