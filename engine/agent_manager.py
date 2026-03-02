@@ -112,9 +112,8 @@ def _build_memory_prefix(agent_name: str, user_input: str) -> str:
     relevant = _search_memories(agent_name, user_input)
     parts = [f"<relevant_memories>\n{relevant}\n</relevant_memories>"]
 
-    if agent_name != "narrator":
-        recent = read_file_tail(character_path(agent_name, "memory.md"), lines=5) or "（尚无记忆）"
-        parts.append(f"<recent_memories>\n{recent}\n</recent_memories>")
+    recent = read_file_tail(character_path(agent_name, "memory.md"), lines=5) or "（尚无记忆）"
+    parts.append(f"<recent_memories>\n{recent}\n</recent_memories>")
 
     return "\n\n".join(parts)
 
