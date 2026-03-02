@@ -54,9 +54,11 @@ def get_agent_names() -> list[str]:
 
 
 def get_valid_response_agents() -> list[str]:
-    """获取可以回应用户的角色列表（排除 narrator，每次动态扫描）"""
-    agents = _scan_agent_names()
-    return [name for name in agents if name != "narrator"]
+    """获取可以回应用户的角色列表（排除 narrator，每次动态扫描）
+
+    这是 get_agent_names() 的便利函数，用于需要排除 narrator 的场景。
+    """
+    return [name for name in get_agent_names() if name != "narrator"]
 
 
 # 历史限制配置
