@@ -48,17 +48,19 @@ def _scan_agent_names() -> list[str]:
     )
 
 
-def get_agent_names() -> list[str]:
-    """获取所有角色名称列表（每次动态扫描 data/characters/）"""
-    return _scan_agent_names()
+def get_agent_names(include_narrator: bool = True) -> list[str]:
+    """获取角色名称列表（每次动态扫描 data/characters/）
 
+    Args:
+        include_narrator: 是否包含 narrator，默认 True
 
-def get_valid_response_agents() -> list[str]:
-    """获取可以回应用户的角色列表（排除 narrator，每次动态扫描）
-
-    这是 get_agent_names() 的便利函数，用于需要排除 narrator 的场景。
+    Returns:
+        角色名称列表，按字母顺序排序
     """
-    return [name for name in get_agent_names() if name != "narrator"]
+    agents = _scan_agent_names()
+    if not include_narrator:
+        agents = [name for name in agents if name != "narrator"]
+    return agents
 
 
 # 历史限制配置

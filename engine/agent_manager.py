@@ -12,7 +12,6 @@ from engine.config import (
     PROJECT_ROOT,
     character_path,
     get_agent_names,
-    get_valid_response_agents,
 )
 from engine.response_parser import parse_agent_response
 from engine.text_utils import clean_response
@@ -101,7 +100,7 @@ class AgentManager:
             display_name = self._get_display_name(agent_name, soul_content)
 
             # narrator 专用：在场角色列表 / 有效 targets 字段
-            characters = get_valid_response_agents()
+            characters = get_agent_names(include_narrator=False)
             characters_scene_list = "\n".join(
                 f"- {self._get_display_name(c, read_agent_file(c, 'soul.md'))}：[位置] 或 不在场"
                 for c in characters

@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 from engine.agent_manager import agent_manager
 from engine.config import (
     get_agent_names,
-    get_valid_response_agents,
     HISTORY_LIMIT_DEFAULT,
     HISTORY_LIMIT_NARRATOR,
 )
@@ -188,7 +187,7 @@ async def on_chat_start():
 
 def _parse_narrator_response(content: str) -> tuple[list[str], str]:
     """解析 narrator 响应，提取 TARGETS 和场景描述"""
-    valid_agents = get_valid_response_agents()
+    valid_agents = get_agent_names(include_narrator=False)
 
     targets_pattern = re.compile(
         r"TARGETS\s*:?\s*\[?([^\]\n]*)\]?", re.IGNORECASE

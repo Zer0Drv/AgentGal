@@ -195,8 +195,7 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
     opening_text = load_story_file(story_id, "opening.txt")
 
     # 将故事开场旁白写入 narrator 的历史（玩法介绍不写入）
-    all_agents = get_agent_names()
-    visible_agents = [a for a in all_agents if a != "narrator"]
+    visible_agents = get_agent_names(include_narrator=False)
     opening_message = {
         "role": "narrator",
         "content": opening_text,
