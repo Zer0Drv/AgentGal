@@ -61,23 +61,29 @@ def test_format_conversation_history_character_sees_only_visible():
 
 
 def test_format_conversation_history_limit_with_narrator():
-    """测试 limit 参数，确保返回指定数量的有效消息"""
-    # 创建 20 条消息：10 条旧 narrator + 10 条玩家消息
+    """测试 limit 参数，确保返回指定数量的有效消息（考虑visible_to过滤）"""
+    # 创建 50 条消息：
+    # - 25 条旧 narrator
+    # - 25 条玩家消息（对lilith可见）
+    # - 25 条mitsuki消息（对lilith不可见）
     messages = []
-    for i in range(10):
-        messages.append({"role": "narrator", "content": f"旧场景 {i}", "visible_to": ["narrator"]})
-        messages.append({"role": "player", "content": f"消息 {i}", "visible_to": ["narrator"]})
+    for i in range(25):
+        messages.append({"role": "narrator", "content": f"旧场景 {i}", "visible_to": ["narrator", "lilith"]})
+        messages.append({"role": "player", "content": f"消息 {i}", "visible_to": ["narrator", "lilith"]})
+        messages.append({"role": "mitsuki", "content": f"mitsuki {i}", "visible_to": ["narrator", "mitsuki"]})
     # 最后加一条新 narrator
-    messages.append({"role": "narrator", "content": "新场景", "visible_to": ["narrator"]})
+    messages.append({"role": "narrator", "content": "新场景", "visible_to": ["narrator", "lilith"]})
 
-    result = app._format_conversation_history(messages, "narrator", limit=5)
+    result = app._format_conversation_history(messages, "lilith", limit=10)
 
-    # 应该返回 5 条有效消息（不包括旧narrator）
-    # 由于加载 limit*3=15 条，会包含最后 5 个玩家消息 + 最新narrator
+    # lilith 应该看到 10 条有效消息
+    # 由于加载 limit*5=50 条，过滤后只有lilith可见的消息
+    # 然后过滤旧narrator，最后取10条
     lines = result.split("\n")
-    assert len(lines) == 5, f"应该有 5 条消息，实际: {len(lines)}, 内容: {result}"
+    assert len(lines) == 10, f"应该有 10 条消息，实际: {len(lines)}, 内容: {result}"
     assert "新场景" in result
     assert "旧场景" not in result
+    assert "mitsuki" not in result  # lilith 看不到 mitsuki 的消息
 
 
 def test_format_conversation_history_empty():
