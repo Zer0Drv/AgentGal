@@ -34,7 +34,7 @@ async def main(agent: str, date: str) -> None:
 
     full_text = f"## {date}\n{old_text}"
     prompt_step1_tpl = Path("prompts/consolidation_prompt_step1.txt").read_text()
-    prompt_step1 = prompt_step1_tpl.format(content=full_text)
+    prompt_step1 = prompt_step1_tpl.format(agent_name=agent, content=full_text)
 
     result_step1 = await consolidator._call_llm(prompt_step1)
     step1_result = (result_step1.get("content") or "").strip()

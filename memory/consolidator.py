@@ -62,8 +62,8 @@ _PLAYER_PROMPT_PATH = (
     Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 )
 
-# 文件大小变化阈值（字节）：当文件比上次长了 200 字以上，才触发整理
-_CONSOLIDATION_SIZE_THRESHOLD = 200
+# 文件大小变化阈值（字节）：当文件比上次长了 100 字以上，才触发整理
+_CONSOLIDATION_SIZE_THRESHOLD = 100
 
 # 字段描述映射（用于 user.md 整理）
 _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
