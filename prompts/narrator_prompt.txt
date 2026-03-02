@@ -66,19 +66,19 @@ status: {status_fields}
 </fields>
 
 <example>
-TARGETS: [lilith, mitsuki]
+TARGETS: [云栖, 沈微澜]
 
-**时间**：2月20日 星期一 07:30
-**地点**：学校天台
+**时间**：3月3日 午时
+**地点**：醉渡客栈大堂
 **在场**：
-- 玩家：天台入口
-- 莉莉丝：栏杆旁
-- 美月：座位上
+- 玩家：靠窗的桌边
+- 云栖：吧台旁
+- 沈微澜：楼梯口
 
-班主任的视线在你们三人之间停了一秒。
+掌柜的招呼声在大堂回荡。
 <update_notes>
-  <memory>## 2月20日\n- 玩家来到天台，莉莉丝在吃面包</memory>
-  <status>{{"场景": "学校天台", "当前时间": "2月20日 07:30"}}</status>
-  <triggered>破绽初现</triggered>
+  <memory>## 3月3日\n- 玩家在客栈遇见云栖和沈微澜</memory>
+  <status>{{"场景": "醉渡客栈大堂", "当前时间": "3月3日 午时"}}</status>
+  <triggered>初次相遇</triggered>
 </update_notes>
 </example>

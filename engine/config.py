@@ -48,13 +48,20 @@ def _scan_agent_names() -> list[str]:
     )
 
 
-# 应用启动时扫描一次，后续不再变更
+# 应用启动时扫描一次，后续可通过 refresh_agent_names() 更新
 AGENT_NAMES: list[str] = _scan_agent_names()
 VALID_RESPONSE_AGENTS: list[str] = [name for name in AGENT_NAMES if name != "narrator"]
 
 
+def refresh_agent_names() -> None:
+    """刷新角色列表缓存（在 reset_game() 后调用）"""
+    global AGENT_NAMES, VALID_RESPONSE_AGENTS
+    AGENT_NAMES = _scan_agent_names()
+    VALID_RESPONSE_AGENTS = [name for name in AGENT_NAMES if name != "narrator"]
+
+
 def get_agent_names() -> list[str]:
-    """获取所有角色名称列表（应用启动时已预加载）"""
+    """获取所有角色名称列表"""
     return AGENT_NAMES
 
 

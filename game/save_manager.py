@@ -8,7 +8,7 @@ import shutil
 import zipfile
 from datetime import datetime
 
-from engine.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
+from engine.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names, refresh_agent_names
 
 TEMPLATES_DIR = PROJECT_ROOT / "data" / "templates"
 
@@ -189,6 +189,10 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
         import traceback
 
         traceback.print_exc()
+
+    # 刷新角色列表缓存（data/characters 已被替换为新故事的角色）
+    refresh_agent_names()
+    print("[Reset] 已刷新角色列表缓存", flush=True)
 
     # 加载两个开场白：玩法介绍从 prompts/ 取（全局），故事开场从故事目录取
     intro_text = load_prompt_file("opening_intro.txt")
