@@ -1,11 +1,10 @@
-"""Agent 管理器 - 初始化 Agent 并处理运行"""
+"""Agent 运行器 - 按需构建 system prompt 并调用 LLM"""
 
 import asyncio
 import os
 import re
+import time
 from pathlib import Path
-
-from agno.agent import Agent
 
 from engine.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
@@ -15,8 +14,9 @@ from engine.config import (
 )
 from engine.response_parser import parse_agent_response
 from engine.text_utils import clean_response
-from llm.providers import get_model
-from log_config.agent_calls import log_agent_run
+from llm.llm_parser import OpenAICompatibleClient
+from llm.providers import get_llm_config
+from log_config.agent_calls import log_agent_call
 from log_config.routing import routing_logger
 from memory.file_ops import (
     _append_section_file,
@@ -32,342 +32,232 @@ from memory.file_ops import (
 from memory.vector_store import vector_store
 
 
-class AgentManager:
-    """管理所有角色的 Agent 实例"""
+# ---------------------------------------------------------------------------
+# Agent 构建
+# ---------------------------------------------------------------------------
 
-    def __init__(self):
-        self.agents: dict[str, Agent] = {}
-        self._current_input: str = ""  # 用于传递当前用户输入给 instructions 回调
-        self._init_agents()
+def _get_display_name(agent_name: str, soul_content: str) -> str:
+    """从 soul.md 内容提取中文显示名，回退到 agent_name。"""
+    role_match = re.search(r"<role>\s*([^\n<]+)", soul_content)
+    if role_match:
+        name_match = re.match(r"([\u4e00-\u9fff·]+)", role_match.group(1).strip())
+        if name_match:
+            return name_match.group(1)
+    title_match = re.search(r"^#\s+(.+)$", soul_content, re.MULTILINE)
+    if title_match:
+        return title_match.group(1).strip()
+    return agent_name
 
-    def _init_agents(self):
-        """初始化所有角色 Agent"""
-        for agent_name in get_agent_names():
-            self.agents[agent_name] = self._create_agent(agent_name)
 
-    @staticmethod
-    def _extract_user_message_from_input(full_input: str) -> str:
-        """从拼接的完整输入中提取原始用户消息。
+def _load_prompt_template(agent_name: str) -> str:
+    """加载 system prompt 模板文件。"""
+    filename = "narrator_prompt.txt" if agent_name == "narrator" else "character_prompt.txt"
+    return (PROJECT_ROOT / "prompts" / filename).read_text(encoding="utf-8")
 
-        输入格式:
-            最近对话历史:\n\n{history}\n\n---\n\n玩家新消息: {user_input}
-        """
-        match = re.search(r"玩家新消息:\s*(.+)$", full_input, re.MULTILINE | re.DOTALL)
-        if match:
-            return match.group(1).strip()
-        return full_input.strip()
 
-    def _create_agent(self, agent_name: str) -> Agent:
-        """创建单个 Agent（预创建，复用）"""
-        # 加载静态角色设定（soul.md 是只读的）
-        soul_content = read_agent_file(agent_name, "soul.md")
+def _build_system_prompt(agent_name: str, soul_content: str) -> str:
+    """构建 system prompt（每次调用时重新读取记忆文件）。"""
+    status_content = read_agent_file(agent_name, "status.md")
+    user_content = read_agent_file(agent_name, "user.md") if agent_name != "narrator" else ""
+    growth_content = load_growth_for_prompt(agent_name)
+    prompt_template = _load_prompt_template(agent_name)
+    status_fields = "、".join(get_allowed_fields(agent_name, "status"))
+    player_fields = "、".join(get_allowed_fields(agent_name, "user")) if agent_name != "narrator" else ""
+    display_name = _get_display_name(agent_name, soul_content)
 
-        # 定义动态 instructions 函数，每次运行时重新加载记忆文件
-        def get_dynamic_instructions(agent: Agent, run_context=None) -> str:
-            # 从实例变量获取当前输入，提取原始用户消息用于 RAG
-            user_input = self._current_input
-            routing_logger.debug(f"[AgentManager] instructions 回调: agent={agent_name}, input_len={len(user_input)}")
+    characters = get_agent_names(include_narrator=False)
+    characters_scene_list = "\n".join(
+        f"- {_get_display_name(c, read_agent_file(c, 'soul.md'))}：[位置] 或 不在场"
+        for c in characters
+    )
+    valid_targets = ", ".join(characters)
 
-            # 同步 RAG 搜索相关记忆
-            relevant_memories = self._search_relevant_memories_sync(
-                agent_name, user_input
-            )
+    return prompt_template.format(
+        agent_name=agent_name,
+        display_name=display_name,
+        soul=soul_content,
+        growth=growth_content,
+        status=status_content if status_content else "（尚无状态记录）",
+        user_profile=user_content if user_content else "（尚无玩家认知）",
+        status_fields=status_fields,
+        player_fields=player_fields,
+        characters_scene_list=characters_scene_list,
+        valid_targets=valid_targets,
+    )
 
-            # 加载 memory.md 最后5行作为 recent_memories
-            recent_memories = read_file_tail(
-                character_path(agent_name, "memory.md"), lines=5
-            )
-            if not recent_memories:
-                recent_memories = "（尚无记忆）"
 
-            # 加载 status.md
-            status_content = read_agent_file(agent_name, "status.md")
+# ---------------------------------------------------------------------------
+# 记忆注入
+# ---------------------------------------------------------------------------
 
-            # 加载 user.md（narrator 不需要）
-            user_content = ""
-            if agent_name != "narrator":
-                user_content = read_agent_file(agent_name, "user.md")
+def _extract_user_message(full_input: str) -> str:
+    """从拼接输入中提取原始玩家消息，用于 RAG 搜索。"""
+    match = re.search(r"玩家新消息:\s*(.+)$", full_input, re.MULTILINE | re.DOTALL)
+    return match.group(1).strip() if match else full_input.strip()
 
-            # 加载 growth.md
-            growth_content = load_growth_for_prompt(agent_name)
 
-            # 加载并填充 system prompt 模板
-            prompt_template = self._load_system_prompt_template(agent_name)
-            # 动态获取字段白名单（从文件读取，失败回退到默认值）
-            status_fields = "、".join(get_allowed_fields(agent_name, "status"))
-            player_fields = "、".join(get_allowed_fields(agent_name, "user")) if agent_name != "narrator" else ""
-            # 角色显示名（soul.md 首行 <role> 内的中文名，回退到 agent_name）
-            display_name = self._get_display_name(agent_name, soul_content)
+def _search_memories(agent_name: str, query: str) -> str:
+    """语义搜索向量库，返回格式化记忆字符串。"""
+    try:
+        limit = int(os.getenv("VECTOR_SEARCH_LIMIT", "5"))
+    except ValueError:
+        limit = 5
+    results = vector_store.search(agent_name, query, limit=limit, kind="memory")
+    memories = [r["content"].strip() for r in results if r["content"].strip()]
+    return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
 
-            # narrator 专用：在场角色列表 / 有效 targets 字段
-            characters = get_agent_names(include_narrator=False)
-            characters_scene_list = "\n".join(
-                f"- {self._get_display_name(c, read_agent_file(c, 'soul.md'))}：[位置] 或 不在场"
-                for c in characters
-            )
-            valid_targets = ", ".join(characters)
 
-            return prompt_template.format(
-                agent_name=agent_name,
-                display_name=display_name,
-                soul=soul_content,
-                growth=growth_content,
-                memory=relevant_memories,
-                recent_memories=recent_memories,
-                status=status_content if status_content else "（尚无状态记录）",
-                user_profile=user_content if user_content else "（尚无玩家认知）",
-                status_fields=status_fields,
-                player_fields=player_fields,
-                characters_scene_list=characters_scene_list,
-                valid_targets=valid_targets,
-            )
+def _build_memory_prefix(agent_name: str, user_input: str) -> str:
+    """组装记忆上下文前缀（RAG 召回 + 最近记忆）。"""
+    relevant = _search_memories(agent_name, user_input)
+    parts = [f"<relevant_memories>\n{relevant}\n</relevant_memories>"]
 
-        return Agent(
-            name=agent_name,
-            model=get_model(),
-            instructions=get_dynamic_instructions,
-            markdown=True,
-            post_hooks=[log_agent_run],
-            # 禁用 Agno 内部历史管理，由应用层通过 jsonl 自行管理
-            add_history_to_context=False,
-        )
+    if agent_name != "narrator":
+        recent = read_file_tail(character_path(agent_name, "memory.md"), lines=5) or "（尚无记忆）"
+        parts.append(f"<recent_memories>\n{recent}\n</recent_memories>")
 
-    @staticmethod
-    def _get_display_name(agent_name: str, soul_content: str) -> str:
-        """从 soul.md 内容提取中文显示名，回退到 agent_name。
+    return "\n\n".join(parts)
 
-        优先取第一个 <role> 标签内第一行的中文姓名，
-        否则取 soul.md 第一个非空行中第一个中文词组（逗号/空格前）。
-        """
-        import re
-        # 尝试从 <role> 标签第一行提取
-        role_match = re.search(r"<role>\s*([^\n<]+)", soul_content)
-        if role_match:
-            first_line = role_match.group(1).strip()
-            # 取第一个中文名（逗号、顿号、空格前）
-            name_match = re.match(r"([\u4e00-\u9fff·]+)", first_line)
-            if name_match:
-                return name_match.group(1)
-        # 尝试 # 标题行
-        title_match = re.search(r"^#\s+(.+)$", soul_content, re.MULTILINE)
-        if title_match:
-            return title_match.group(1).strip()
-        return agent_name
 
-    def _search_relevant_memories_sync(self, agent_name: str, query: str) -> str:
-        """同步搜索相关记忆，用于 instructions 函数"""
+# ---------------------------------------------------------------------------
+# 响应后处理：写回文件
+# ---------------------------------------------------------------------------
+
+def _update_memory(agent_name: str, memory_content: str) -> str:
+    """追加 memory 内容到 memory.md（带去重）。"""
+    if not memory_content or not memory_content.strip():
+        return "内容为空，跳过"
+
+    memory_path = character_path(agent_name, "memory.md")
+    os.makedirs(os.path.dirname(memory_path), exist_ok=True)
+    clean = memory_content.replace("\\n", "\n").strip()
+
+    def _parse_entries(text: str) -> list[str]:
+        entries, current = [], []
+        for line in text.split("\n"):
+            if line.strip().startswith("##") or (line.strip().startswith("-") and "**" in line):
+                if current:
+                    entries.append("\n".join(current).strip())
+                current = [line]
+            elif line.strip() or current:
+                current.append(line)
+        if current:
+            entries.append("\n".join(current).strip())
+        return entries
+
+    existing = Path(memory_path).read_text(encoding="utf-8") if os.path.exists(memory_path) else ""
+    existing_set = set(_parse_entries(existing))
+    unique = [e for e in _parse_entries(clean) if e and e not in existing_set]
+
+    if not unique:
+        return "所有 entry 已存在，跳过"
+
+    to_append = "\n\n".join(unique)
+    if existing.strip():
+        with open(memory_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n{to_append}")
+    else:
+        with open(memory_path, "w", encoding="utf-8") as f:
+            f.write(f"# {agent_name} 的长期记忆\n\n{to_append}")
+
+    return f"已追加 {len(unique)} 个新 entry"
+
+
+def _update_status(agent_name: str, field: str, content: str) -> str:
+    """覆盖更新 status.md 的指定字段。"""
+    allowed = get_allowed_fields(agent_name, "status")
+    if field not in allowed:
+        routing_logger.warning(f"[{agent_name}] 不允许的 status 字段: {field}")
+        return f"字段 {field} 不在白名单中"
+    status_path = character_path(agent_name, "status.md")
+    return _update_section_file(status_path, field, content, allowed, _read_title(status_path, "# 我的状态"))
+
+
+def _update_player(agent_name: str, field: str, content: str) -> str:
+    """追加更新 user.md 的指定字段。"""
+    allowed = get_allowed_fields(agent_name, "user")
+    if field not in allowed:
+        routing_logger.warning(f"[{agent_name}] 不允许的 player 字段: {field}")
+        return f"字段 {field} 不在白名单中"
+    user_path = character_path(agent_name, "user.md")
+    return _append_section_file(user_path, field, content, allowed, _read_title(user_path, "# 玩家档案"))
+
+
+async def _apply_response_updates(agent_name: str, parsed) -> None:
+    """将解析后的 XML 更新指令写回对应文件。"""
+    results = []
+
+    if parsed.memory:
         try:
-            limit_env = int(os.getenv("VECTOR_SEARCH_LIMIT", "5"))
-        except ValueError:
-            limit_env = 5
-        results = vector_store.search(agent_name, query, limit=limit_env, kind="memory")
+            results.append(f"memory: {_update_memory(agent_name, parsed.memory)}")
+        except Exception as e:
+            routing_logger.error(f"[{agent_name}] 更新 memory 失败: {e}")
 
-        if not results:
-            return "（无相关记忆）"
-
-        # 格式化召回的记忆
-        memories = []
-        for r in results:
-            content = r["content"].strip()
-            if content:
-                memories.append(content)
-
-        return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
-
-    def _load_system_prompt_template(self, agent_name: str) -> str:
-        """加载 system prompt 模板"""
-        # narrator 使用专用模板
-        if agent_name == "narrator":
-            template_path = PROJECT_ROOT / "prompts" / "narrator_prompt.txt"
-        else:
-            template_path = PROJECT_ROOT / "prompts" / "character_prompt.txt"
-
-        return Path(template_path).read_text(encoding="utf-8")
-
-    async def run_agent(self, agent_name: str, user_input: str) -> str:
-        import time
-
-        start = time.time()
-
-        # 获取预创建的 agent
-        agent = self.agents.get(agent_name)
-        if not agent:
-            routing_logger.error(f"[{agent_name}] Agent 未初始化")
-            return f"[{agent_name} 系统错误]"
-
-        # 保存当前输入（提取纯玩家消息），供 instructions 回调使用
-        self._current_input = self._extract_user_message_from_input(user_input)
-
+    if parsed.status:
         try:
+            for field, content in parsed.status.items():
+                results.append(f"status[{field}]: {_update_status(agent_name, field, str(content))}")
+        except Exception as e:
+            routing_logger.error(f"[{agent_name}] 更新 status 失败: {e}")
+
+    if parsed.player:
+        try:
+            for field, content in parsed.player.items():
+                results.append(f"player[{field}]: {_update_player(agent_name, field, str(content))}")
+        except Exception as e:
+            routing_logger.error(f"[{agent_name}] 更新 player 失败: {e}")
+
+    if parsed.triggered:
+        try:
+            for event_name in parsed.triggered:
+                results.append(f"triggered[{event_name}]: {mark_event_triggered(agent_name, event_name)}")
+        except Exception as e:
+            routing_logger.error(f"[{agent_name}] 标记触发事件失败: {e}")
+
+    if parsed.add_event:
+        try:
+            for event_desc in parsed.add_event:
+                results.append(f"add_event: {add_pending_event(agent_name, event_desc)}")
+        except Exception as e:
+            routing_logger.error(f"[{agent_name}] 插入新事件失败: {e}")
+
+    if results:
+        routing_logger.info(f"[{agent_name}] 文件更新: {'; '.join(results)}")
+
+
+# ---------------------------------------------------------------------------
+# 公开入口
+# ---------------------------------------------------------------------------
+
+async def run_agent(agent_name: str, user_input: str) -> str:
+    """运行指定角色的 Agent，返回清理后的响应文本。"""
+    start = time.time()
+
+    pure_input = _extract_user_message(user_input)
+    memory_prefix = _build_memory_prefix(agent_name, pure_input)
+    full_input = f"{memory_prefix}\n\n---\n\n{user_input}" if memory_prefix else user_input
+
+    soul_content = read_agent_file(agent_name, "soul.md")
+    system_prompt = _build_system_prompt(agent_name, soul_content)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": full_input},
+    ]
+
+    config = get_llm_config()
+    try:
+        async with OpenAICompatibleClient(**config) as client:
             response = await asyncio.wait_for(
-                agent.arun(user_input),
+                client.chat(messages),
                 timeout=AGENT_RUN_TIMEOUT_SECONDS,
             )
-            elapsed = time.time() - start
-            routing_logger.info(f"{agent_name} 运行完成，耗时 {elapsed:.1f}秒")
+        routing_logger.info(f"{agent_name} 运行完成，耗时 {time.time() - start:.1f}秒")
+        log_agent_call(agent_name, config["model"], messages, response)
 
-            # 解析响应中的 XML 更新指令
-            raw_content = response.content
-            parsed = parse_agent_response(raw_content, agent_name)
+        parsed = parse_agent_response(response["content"], agent_name)
+        await _apply_response_updates(agent_name, parsed)
+        return clean_response(parsed.content)
 
-            # 应用更新到文件
-            await self._apply_response_updates(agent_name, parsed)
-
-            # 清理响应内容
-            return clean_response(parsed.content)
-        except asyncio.TimeoutError:
-            elapsed = time.time() - start
-            routing_logger.error(f"{agent_name} 运行超时（{elapsed:.1f}秒），强制终止")
-            return f"[{agent_name} 回应超时，请稍后再试]"
-
-    async def _apply_response_updates(self, agent_name: str, parsed) -> None:
-        """
-        应用解析后的更新到对应文件。
-
-        Args:
-            agent_name: 角色名称
-            parsed: ParsedResponse 对象
-        """
-        results = []
-
-        # --- memory: 追加到 memory.md（带去重） ---
-        if parsed.memory:
-            try:
-                result = self._update_memory(agent_name, parsed.memory)
-                results.append(f"memory: {result}")
-            except Exception as e:
-                routing_logger.error(f"[{agent_name}] 更新 memory 失败: {e}")
-                results.append("memory: 失败")
-
-        # --- status: 覆盖更新到 status.md ---
-        if parsed.status:
-            try:
-                for field, content in parsed.status.items():
-                    result = self._update_status(agent_name, field, str(content))
-                    results.append(f"status[{field}]: {result}")
-            except Exception as e:
-                routing_logger.error(f"[{agent_name}] 更新 status 失败: {e}")
-                results.append("status: 失败")
-
-        # --- player: 追加更新到 user.md ---
-        if parsed.player:
-            try:
-                for field, content in parsed.player.items():
-                    result = self._update_player(agent_name, field, str(content))
-                    results.append(f"player[{field}]: {result}")
-            except Exception as e:
-                routing_logger.error(f"[{agent_name}] 更新 player 失败: {e}")
-                results.append("player: 失败")
-
-        # --- triggered: 精准标记 status.md 中的待触发事件 ---
-        if parsed.triggered:
-            try:
-                for event_name in parsed.triggered:
-                    result = mark_event_triggered(agent_name, event_name)
-                    results.append(f"triggered[{event_name}]: {result}")
-            except Exception as e:
-                routing_logger.error(f"[{agent_name}] 标记触发事件失败: {e}")
-                results.append("triggered: 失败")
-
-        # --- add_event: 在待触发事件队列顶部插入新事件 ---
-        if parsed.add_event:
-            try:
-                for event_desc in parsed.add_event:
-                    result = add_pending_event(agent_name, event_desc)
-                    results.append(f"add_event: {result}")
-            except Exception as e:
-                routing_logger.error(f"[{agent_name}] 插入新事件失败: {e}")
-                results.append("add_event: 失败")
-
-        if results:
-            routing_logger.info(f"[{agent_name}] 文件更新: {'; '.join(results)}")
-
-    def _update_memory(self, agent_name: str, memory_content: str) -> str:
-        """追加 memory 内容到 memory.md（带去重）"""
-        if not memory_content or not memory_content.strip():
-            return "内容为空，跳过"
-
-        memory_path = character_path(agent_name, "memory.md")
-        os.makedirs(os.path.dirname(memory_path), exist_ok=True)
-
-        clean = memory_content.replace("\\n", "\n").strip()
-
-        # 解析 entries
-        def _parse_entries(text: str) -> list[str]:
-            entries = []
-            current_entry = []
-            for line in text.split("\n"):
-                if line.strip().startswith("##") or (
-                    line.strip().startswith("-") and "**" in line
-                ):
-                    if current_entry:
-                        entries.append("\n".join(current_entry).strip())
-                    current_entry = [line]
-                elif line.strip() or current_entry:
-                    current_entry.append(line)
-            if current_entry:
-                entries.append("\n".join(current_entry).strip())
-            return entries
-
-        # 读取现有内容
-        existing = ""
-        if os.path.exists(memory_path):
-            with open(memory_path, "r", encoding="utf-8") as f:
-                existing = f.read()
-
-        new_entries = _parse_entries(clean)
-        existing_entries = _parse_entries(existing)
-        existing_set = set(existing_entries)
-
-        # 去重
-        unique_entries = [e for e in new_entries if e and e not in existing_set]
-
-        if not unique_entries:
-            return "所有 entry 已存在，跳过"
-
-        # 写入
-        to_append = "\n\n".join(unique_entries)
-        if existing.strip():
-            with open(memory_path, "a", encoding="utf-8") as f:
-                f.write(f"\n\n{to_append}")
-        else:
-            with open(memory_path, "w", encoding="utf-8") as f:
-                f.write(f"# {agent_name} 的长期记忆\n\n{to_append}")
-
-        return f"已追加 {len(unique_entries)} 个新 entry"
-
-    def _update_status(self, agent_name: str, field: str, content: str) -> str:
-        """覆盖更新 status.md 的指定字段"""
-        allowed = get_allowed_fields(agent_name, "status")
-        if field not in allowed:
-            routing_logger.warning(
-                f"[{agent_name}] 不允许的 status 字段: {field}, "
-                f"允许的: {', '.join(allowed)}"
-            )
-            return f"字段 {field} 不在白名单中"
-
-        status_path = character_path(agent_name, "status.md")
-        title = _read_title(status_path, "# 我的状态")
-
-        result = _update_section_file(status_path, field, content, allowed, title)
-        return result
-
-    def _update_player(self, agent_name: str, field: str, content: str) -> str:
-        """追加更新 user.md 的指定字段"""
-        allowed = get_allowed_fields(agent_name, "user")
-        if field not in allowed:
-            routing_logger.warning(
-                f"[{agent_name}] 不允许的 player 字段: {field}, "
-                f"允许的: {', '.join(allowed)}"
-            )
-            return f"字段 {field} 不在白名单中"
-
-        user_path = character_path(agent_name, "user.md")
-        title = _read_title(user_path, "# 玩家档案")
-
-        result = _append_section_file(user_path, field, content, allowed, title)
-        return result
-
-
-# 全局实例
-agent_manager = AgentManager()
+    except asyncio.TimeoutError:
+        routing_logger.error(f"{agent_name} 运行超时（{time.time() - start:.1f}秒），强制终止")
+        return f"[{agent_name} 回应超时，请稍后再试]"

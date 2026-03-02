@@ -1,18 +1,13 @@
-"""LLM 配置 - 支持多提供商（OpenAI、DeepSeek、Anthropic、OpenRouter 等）"""
+"""LLM 配置 - 支持多提供商（OpenAI、DeepSeek、OpenRouter 等 OpenAI 兼容 API）"""
 
 import os
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from agno.model import Model
+SUPPORTED_PROVIDERS = ("openai", "deepseek", "openrouter")
 
-
-SUPPORTED_PROVIDERS = {
-    "openai": "OpenAI",
-    "anthropic": "Anthropic",
-    "deepseek": "DeepSeek",
-    "openrouter": "OpenRouter",
-}
+# OpenAI 官方 API URL
+_OPENAI_API_URL = "https://api.openai.com/v1"
+_DEEPSEEK_API_URL = "https://api.deepseek.com"
+_OPENROUTER_API_URL = "https://openrouter.ai/api/v1"
 
 
 def _get_required_env(key: str) -> str:
@@ -23,119 +18,59 @@ def _get_required_env(key: str) -> str:
     return value
 
 
-def _create_openai_compatible_model(
-    model_id: str,
-    api_key: str,
-    api_url: str | None = None,
-    provider: str | None = None,
-) -> "Model":
-    """创建 OpenAI 兼容格式的模型实例
-
-    支持：OpenAI、DeepSeek、OpenRouter、SiliconFlow 等任何 OpenAI 兼容 API
-    """
-    from agno.models.openai import OpenAIChat
-
-    # agno 默认将 system 映射为 "developer"（OpenAI 新约定），
-    # DeepSeek 等兼容 API 不支持，需要覆盖回 "system"
-    fixed_role_map = dict(OpenAIChat.default_role_map, system="system")
-
-    # DeepSeek 支持 prefix caching，可大幅降低长 system prompt 的成本
-    # 其他提供商忽略此参数
-    client_params = {}
+def _resolve_api_url(provider: str, api_url: str | None) -> str:
+    """根据 provider 决定最终 API URL。"""
+    if api_url:
+        return api_url
     if provider == "deepseek":
-        client_params["extra_headers"] = {"x-deepseek-cache": "true"}
-
-    return OpenAIChat(
-        id=model_id,
-        api_key=api_key,
-        base_url=api_url if api_url else None,
-        role_map=fixed_role_map,
-        **client_params,
+        return _DEEPSEEK_API_URL
+    if provider == "openrouter":
+        return _OPENROUTER_API_URL
+    if provider == "openai":
+        return _OPENAI_API_URL
+    # 未知 provider 但没有 api_url
+    raise ValueError(
+        f"Unsupported LLM provider: '{provider}'. "
+        f"Supported: {', '.join(SUPPORTED_PROVIDERS)}. "
+        "Or set LLM_API_URL for any OpenAI-compatible endpoint. "
+        "To use Anthropic models, route them via OpenRouter (e.g. model: anthropic/claude-3-5-sonnet)."
     )
 
 
-def _create_anthropic_model(
-    model_id: str,
-    api_key: str,
-) -> "Model":
-    """创建 Anthropic Claude 模型实例"""
-    try:
-        from agno.models.anthropic import Claude
-
-        return Claude(
-            id=model_id,
-            api_key=api_key,
-        )
-    except ImportError:
-        raise ImportError(
-            "使用 Anthropic 模型需要安装 anthropic 包: pip install anthropic"
-        )
-
-
-def get_model(
+def get_llm_config(
     provider: str | None = None,
     model_id: str | None = None,
     api_key: str | None = None,
     api_url: str | None = None,
-) -> "Model":
-    """获取配置的模型实例
+) -> dict:
+    """返回创建 OpenAICompatibleClient 所需的配置 dict。
 
     参数优先级：传入参数 > 环境变量 > 默认值
 
-    Args:
-        provider: 模型提供商 (openai, anthropic, deepseek, openrouter)
-        model_id: 模型 ID
-        api_key: API 密钥
-        api_url: API 端点 URL（OpenAI 兼容格式需要）
-
     Returns:
-        Model: agno 模型实例
+        {"api_url": str, "api_key": str, "model": str}
     """
-    # 从环境变量或参数获取配置
     provider = (provider or os.getenv("LLM_PROVIDER", "deepseek")).lower()
     model_id = model_id or os.getenv("LLM_MODEL_ID", "deepseek-chat")
     api_key = api_key or _get_required_env("LLM_API_KEY")
-    api_url = api_url or os.getenv("LLM_API_URL")
+    api_url = _resolve_api_url(provider, api_url or os.getenv("LLM_API_URL"))
 
-    # 根据不同提供商创建对应模型
-    if provider in ("openai", "deepseek", "openrouter"):
-        # 设置默认 API URL（如果未指定）
-        if not api_url:
-            if provider == "deepseek":
-                api_url = "https://api.deepseek.com"
-            elif provider == "openrouter":
-                api_url = "https://openrouter.ai/api/v1"
-            # openai 不需要默认 base_url，agno 会使用官方 endpoint
-
-        return _create_openai_compatible_model(model_id, api_key, api_url, provider)
-
-    elif provider == "anthropic":
-        return _create_anthropic_model(model_id, api_key)
-
-    else:
-        # 未知提供商，尝试作为 OpenAI 兼容格式处理
-        if api_url:
-            return _create_openai_compatible_model(model_id, api_key, api_url, provider)
-        raise ValueError(
-            f"Unsupported LLM provider: {provider}. "
-            f"Supported: {', '.join(SUPPORTED_PROVIDERS.keys())}. "
-            f"Or provide LLM_API_URL for OpenAI-compatible endpoints."
-        )
+    return {"api_url": api_url, "api_key": api_key, "model": model_id}
 
 
-def get_consolidation_model() -> "Model":
-    """获取记忆整理器使用的模型
+def get_consolidation_llm_config() -> dict:
+    """返回记忆整理器使用的 LLM 配置。
 
-    优先使用 CONSOLIDATION_* 系列配置，如未设置则复用主 LLM 配置
+    优先使用 CONSOLIDATION_* 系列环境变量，未设置则复用主 LLM 配置。
     """
     provider = os.getenv("CONSOLIDATION_LLM_PROVIDER")
     model_id = os.getenv("CONSOLIDATION_LLM_MODEL_ID")
     api_key = os.getenv("CONSOLIDATION_LLM_API_KEY")
     api_url = os.getenv("CONSOLIDATION_LLM_API_URL")
 
-    # 如果没有任何独立配置，直接使用主 LLM
+    # 没有任何独立配置，直接复用主 LLM
     if not any([provider, model_id, api_key, api_url]):
-        return get_model()
+        return get_llm_config()
 
     # 部分配置时，缺失项使用主 LLM 的默认值
     provider = provider or os.getenv("LLM_PROVIDER", "deepseek")
@@ -146,9 +81,4 @@ def get_consolidation_model() -> "Model":
     if not api_key:
         raise ValueError("CONSOLIDATION_LLM_API_KEY or LLM_API_KEY must be set")
 
-    return get_model(
-        provider=provider,
-        model_id=model_id,
-        api_key=api_key,
-        api_url=api_url,
-    )
+    return get_llm_config(provider=provider, model_id=model_id, api_key=api_key, api_url=api_url)
