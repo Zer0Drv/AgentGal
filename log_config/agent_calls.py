@@ -93,6 +93,7 @@ def log_agent_call(
         role = msg.get("role", "unknown")
         content_text = msg.get("content", "")
         lines.append(f"[{role}]\n{content_text}\n")
+    lines.append(f"[assistant]\n{content}\n")
     if usage:
         lines.append("-" * 40)
         parts = []
