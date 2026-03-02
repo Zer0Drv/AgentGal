@@ -57,6 +57,9 @@ _prepare_chainlit_database_url()
 def _format_conversation_history(messages: list, agent_name: str, limit: int = 10) -> str:
     """格式化对话历史为文本字符串
 
+    策略：只保留最新的一条 narrator 发言（设置场景），其他 narrator 发言过滤掉。
+    这样可以让角色看到更多的角色/玩家互动历史，而不是被旁白占用空间。
+
     Args:
         messages: 原始消息列表（来自 load_conversation_history）
         agent_name: 角色名，用于按 visible_to 过滤
@@ -75,9 +78,21 @@ def _format_conversation_history(messages: list, agent_name: str, limit: int = 1
     # 取最近 limit 条
     recent = messages[-limit:]
 
+    # 分离 narrator 和其他发言
+    narrator_messages = [msg for msg in recent if msg.get("role") == "narrator"]
+    other_messages = [msg for msg in recent if msg.get("role") != "narrator"]
+
+    # 只保留最新的一条 narrator 发言（如果有的话）
+    final_messages = other_messages
+    if narrator_messages:
+        final_messages.append(narrator_messages[-1])
+
+    # 按原始顺序排序（保持时间顺序）
+    final_messages.sort(key=lambda m: recent.index(m))
+
     # 格式化为文本
     formatted = []
-    for msg in recent:
+    for msg in final_messages:
         role = msg.get("role", "unknown")
         content = msg.get("content", "")
         if role == "player":
