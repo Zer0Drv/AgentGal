@@ -49,14 +49,14 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
         ParsedResponse: 解析后的内容和更新指令
     """
     # 提取 XML 块（处理闭合和未闭合的情况）
-    xml_content, content_end_pos = _extract_update_notes(raw_response)
+    xml_content, block_start, block_end = _extract_update_notes(raw_response)
 
     if xml_content is None:
         # 没有 update_notes 标签，返回原始内容
         return ParsedResponse(content=raw_response.strip())
 
-    # 移除 XML 块后的干净内容
-    clean_content = raw_response[:content_end_pos].strip()
+    # 移除 XML 块，拼接 XML 块前后的内容作为对话内容
+    clean_content = (raw_response[:block_start] + raw_response[block_end:]).strip()
 
     # 解析各个字段
     memory = _extract_xml_field(xml_content, "memory")
@@ -93,21 +93,24 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
     )
 
 
-def _extract_update_notes(raw_response: str) -> tuple[Optional[str], int]:
+def _extract_update_notes(raw_response: str) -> tuple[Optional[str], int, int]:
     """
     提取 update_notes 标签内容，处理闭合和未闭合的情况。
 
     Returns:
-        (xml_content, content_end_pos): 标签内容和干净内容的结束位置
-        如果没有找到标签，返回 (None, 0)
+        (xml_content, block_start, block_end):
+          - xml_content: <update_notes> 内部的文本
+          - block_start: <update_notes> 标签在原字符串中的起始位置
+          - block_end:   </update_notes> 标签结束后的位置（用于拼接 XML 块后的内容）
+        如果没有找到标签，返回 (None, 0, 0)
     """
     # 查找 <update_notes> 开始标签
     start_match = re.search(r"<update_notes>\s*", raw_response, re.DOTALL)
     if not start_match:
-        return None, 0
+        return None, 0, 0
 
-    start_pos = start_match.start()  # <update_notes> 标签开始的位置
-    content_start = start_match.end()  # <update_notes> 标签之后的内容开始位置
+    block_start = start_match.start()    # <update_notes> 标签开始的位置
+    content_start = start_match.end()   # <update_notes> 标签之后的内容开始位置
 
     # 尝试查找闭合标签 </update_notes>
     end_match = re.search(r"</update_notes>", raw_response[content_start:], re.DOTALL)
@@ -115,24 +118,23 @@ def _extract_update_notes(raw_response: str) -> tuple[Optional[str], int]:
     if end_match:
         # 正常闭合的情况
         xml_content = raw_response[content_start : content_start + end_match.start()]
-        # 返回 <update_notes> 开始位置，作为截取干净内容的边界
-        xml_end_pos = start_pos
+        block_end = content_start + end_match.end()  # </update_notes> 之后的位置
     else:
         # 未闭合的情况：提取到字符串末尾或下一个大段落分隔符
         remaining = raw_response[content_start:]
-        # 查找可能的结束标记（如分隔线、metrics 等）
         separator_match = re.search(r"\n\s*-{10,}|\n\s*\[metrics\]|\n\s*$", remaining)
         if separator_match:
             xml_content = remaining[: separator_match.start()]
+            block_end = content_start + separator_match.start()
         else:
             xml_content = remaining
+            block_end = len(raw_response)
 
         routing_logger.warning(
-            f"检测到未闭合的 <update_notes> 标签，从位置 {start_pos} 提取"
+            f"检测到未闭合的 <update_notes> 标签，从位置 {block_start} 提取"
         )
-        xml_end_pos = start_pos
 
-    return xml_content.strip(), xml_end_pos
+    return xml_content.strip(), block_start, block_end
 
 
 def _extract_xml_field(xml_content: str, field_name: str) -> Optional[str]:
