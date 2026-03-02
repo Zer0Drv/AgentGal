@@ -24,10 +24,6 @@
 {status}
 </status>
 
-<relevant_memories>
-{memory}
-</relevant_memories>
-
 <format>
 TARGETS: [角色列表]
 
@@ -68,7 +64,7 @@ status: {status_fields}
 <example>
 TARGETS: [云栖, 沈微澜]
 
-**时间**：3月3日 午时
+**时间**：3月3日 星期一 午时
 **地点**：醉渡客栈大堂
 **在场**：
 - 玩家：靠窗的桌边
