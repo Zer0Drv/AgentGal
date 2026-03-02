@@ -112,20 +112,28 @@ def _extract_update_notes(raw_response: str) -> tuple[Optional[str], int, int]:
     block_start = start_match.start()    # <update_notes> 标签开始的位置
     content_start = start_match.end()   # <update_notes> 标签之后的内容开始位置
 
-    # 尝试查找闭合标签 </update_notes>
-    end_match = re.search(r"</update_notes>", raw_response[content_start:], re.DOTALL)
+    # 尝试查找闭合标签：先精确匹配，再模糊匹配（容错 LLM typo 如 </update_otes>）
+    remaining = raw_response[content_start:]
+    end_match = re.search(r"</update_notes>", remaining, re.DOTALL) or re.search(
+        r"</update[_a-z]*>", remaining, re.DOTALL | re.IGNORECASE
+    )
 
     if end_match:
-        # 正常闭合的情况
-        xml_content = raw_response[content_start : content_start + end_match.start()]
-        block_end = content_start + end_match.end()  # </update_notes> 之后的位置
+        # 找到闭合标签（精确或模糊）
+        xml_content = remaining[: end_match.start()]
+        block_end = content_start + end_match.end()
+        if not re.search(r"</update_notes>", end_match.group(0), re.IGNORECASE):
+            routing_logger.warning(
+                f"检测到未闭合的 <update_notes> 标签（实际为 {end_match.group(0)!r}），已模糊匹配"
+            )
     else:
-        # 未闭合的情况：提取到字符串末尾或下一个大段落分隔符
-        remaining = raw_response[content_start:]
-        separator_match = re.search(r"\n\s*-{10,}|\n\s*\[metrics\]|\n\s*$", remaining)
-        if separator_match:
-            xml_content = remaining[: separator_match.start()]
-            block_end = content_start + separator_match.start()
+        # 完全没有闭合标签：截到最后一个已知子标签结束处，避免吞掉后续对话
+        last_child_match = None
+        for m in re.finditer(r"</[a-z_]+>", remaining):
+            last_child_match = m
+        if last_child_match:
+            xml_content = remaining[: last_child_match.end()]
+            block_end = content_start + last_child_match.end()
         else:
             xml_content = remaining
             block_end = len(raw_response)
