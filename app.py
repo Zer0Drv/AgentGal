@@ -7,7 +7,7 @@ import re
 import chainlit as cl
 from dotenv import load_dotenv
 
-from engine.agent_manager import agent_manager
+from engine.agent_manager import run_agent
 from engine.config import (
     get_agent_names,
     HISTORY_LIMIT_DEFAULT,
@@ -59,11 +59,10 @@ def _format_conversation_history(messages: list, agent_name: str, limit: int = 1
     策略：只保留最新的一条 narrator 发言（设置场景），其他 narrator 发言过滤掉。
     这样可以让角色看到更多的角色/玩家互动历史，而不是被旁白占用空间。
 
-    为了保证返回 limit 条有效消息，会先加载 limit * 5 条消息（考虑到可能有很多旧narrator
-    和 visible_to 过滤），然后按 visible_to 过滤，再过滤旧narrator，最后取 limit 条。
+    调用方应传入足够多的原始消息（建议 limit * 5），以保证过滤后仍有足够的有效消息。
 
     Args:
-        messages: 原始消息列表（来自 load_conversation_history）
+        messages: 原始消息列表（来自 load_conversation_history，应传入足够多的消息）
         agent_name: 角色名，用于按 visible_to 过滤
         limit: 返回最近多少条有效消息（不包括被过滤的旧narrator）
 
@@ -73,14 +72,11 @@ def _format_conversation_history(messages: list, agent_name: str, limit: int = 1
     if not messages:
         return ""
 
-    # 为了保证返回 limit 条有效消息，先加载 limit * 5 条
-    # （考虑到可能有很多旧narrator和visible_to过滤）
-    fetch_limit = limit * 5
-    recent = messages[-fetch_limit:]
-
     # 按 visible_to 过滤：narrator 看全部，其他角色只看自己可见的
     if agent_name != "narrator":
-        recent = [msg for msg in recent if agent_name in msg.get("visible_to", [])]
+        recent = [msg for msg in messages if agent_name in msg.get("visible_to", [])]
+    else:
+        recent = messages
 
     # 分离 narrator 和其他发言
     narrator_messages = [msg for msg in recent if msg.get("role") == "narrator"]
@@ -213,7 +209,7 @@ def _parse_narrator_response(content: str) -> tuple[list[str], str]:
 
 async def _call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool]:
     """调用 narrator 获取路由决策和场景描述"""
-    raw_messages = load_conversation_history(limit=HISTORY_LIMIT_NARRATOR)
+    raw_messages = load_conversation_history(limit=HISTORY_LIMIT_NARRATOR * 5)
     narrator_history = _format_conversation_history(raw_messages, "narrator", limit=HISTORY_LIMIT_NARRATOR)
     narrator_input = (
         f"最近对话历史:\n\n{narrator_history}\n\n---\n\n玩家新消息: {user_input}"
@@ -221,7 +217,7 @@ async def _call_narrator_and_route(user_input: str) -> tuple[list[str], str, boo
         else user_input
     )
 
-    narrator_response = await agent_manager.run_agent("narrator", narrator_input)
+    narrator_response = await run_agent("narrator", narrator_input)
     narrator_content = clean_response(narrator_response)
 
     targets, scene_description = _parse_narrator_response(narrator_content)
@@ -249,11 +245,11 @@ async def _process_target_agents(
 
     for agent_name in targets:
         try:
-            raw_messages = load_conversation_history(limit=HISTORY_LIMIT_DEFAULT)
+            raw_messages = load_conversation_history(limit=HISTORY_LIMIT_DEFAULT * 5)
             history = _format_conversation_history(raw_messages, agent_name, limit=HISTORY_LIMIT_DEFAULT)
             full_input = _build_agent_input(history, user_input)
 
-            response = await agent_manager.run_agent(agent_name, full_input)
+            response = await run_agent(agent_name, full_input)
 
             # 后处理：清理 thinking 标签 + 限制动作数量 + 限制省略号
             response = process_character_response(response)
