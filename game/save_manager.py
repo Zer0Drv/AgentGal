@@ -171,6 +171,12 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
         os.makedirs(raw_dir, exist_ok=True)
         print(f"  已创建: {raw_dir}", flush=True)
 
+        # 4. 写入 story_id 标记文件，供存档命名使用
+        story_id_path = os.path.join(characters_dir, ".story_id")
+        with open(story_id_path, "w", encoding="utf-8") as f:
+            f.write(story_id)
+        print(f"  已写入: {story_id_path}", flush=True)
+
         # 4. 重置日志
         print("[日志]", flush=True)
         reset_logs()
@@ -224,18 +230,21 @@ def list_save_archives() -> list[dict]:
         return []
 
     saves = []
-    for zip_file in sorted(save_dir.glob("save_*.zip"), reverse=True):
+    # 新格式：<主题>_<焦点>_YYYYMMDD_HHMMSS.zip；时间戳永远在末尾，用正则定位
+    ts_re = re.compile(r"^(.+_)?(\d{8}_\d{6})$")
+    for zip_file in sorted(save_dir.glob("*.zip"), reverse=True):
         try:
-            # 文件名格式：save_YYYYMMDD_HHMMSS[_叙事焦点].zip
-            stem_body = zip_file.stem[5:]  # 去掉前缀 "save_"
-            ts_str = stem_body[:15]        # "20240101_120000"
-            focus = stem_body[16:] if len(stem_body) > 15 else ""
+            m = ts_re.match(zip_file.stem)
+            if not m:
+                continue
+            prefix = (m.group(1) or "").rstrip("_")  # "school_午休时间" 或 ""
+            ts_str = m.group(2)                       # "20260302_153000"
             dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
             display_time = dt.strftime("%Y-%m-%d %H:%M:%S")
-        except (ValueError, IndexError):
+        except (ValueError, AttributeError):
             display_time = zip_file.name
-            focus = ""
-        saves.append({"filename": zip_file.name, "display_time": display_time, "focus": focus})
+            prefix = ""
+        saves.append({"filename": zip_file.name, "display_time": display_time, "focus": prefix})
 
     return saves
 
@@ -340,6 +349,15 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     return files
 
 
+def _read_story_theme() -> str:
+    """读取 .story_id 标记文件，返回故事主题（如 school / modern / ancient）"""
+    story_id_path = os.path.join(str(CHARACTERS_DIR), ".story_id")
+    try:
+        return open(story_id_path, encoding="utf-8").read().strip()
+    except Exception:
+        return ""
+
+
 def _read_narrator_focus() -> str:
     """从 narrator/status.md 读取叙事焦点，用于存档命名"""
     status_path = character_path("narrator", "status.md")
@@ -365,8 +383,11 @@ async def export_save_archive() -> str | None:
         存档文件路径，如果失败返回 None
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    theme = _read_story_theme()
     focus = _read_narrator_focus()
-    filename = f"save_{timestamp}_{focus}.zip" if focus else f"save_{timestamp}.zip"
+    # 格式：<主题>_<焦点>_YYYYMMDD_HHMMSS.zip，缺失时降级
+    prefix = "_".join(part for part in [theme, focus] if part)
+    filename = f"{prefix}_{timestamp}.zip" if prefix else f"{timestamp}.zip"
 
     save_dir = PROJECT_ROOT / "saves"
     os.makedirs(save_dir, exist_ok=True)
@@ -389,6 +410,12 @@ async def export_save_archive() -> str | None:
             zf.writestr(
                 "metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2)
             )
+
+            # 添加 .story_id 标记文件（解压后主题仍可读）
+            story_id_path = str(CHARACTERS_DIR / ".story_id")
+            if os.path.exists(story_id_path):
+                zf.write(story_id_path, ".story_id")
+                print("[存档] 已添加: .story_id")
 
             # 添加每个角色的文件
             for agent_name in all_agents:
