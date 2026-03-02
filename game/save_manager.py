@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import uuid
 import zipfile
 from datetime import datetime
 
@@ -171,13 +172,19 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
         os.makedirs(raw_dir, exist_ok=True)
         print(f"  已创建: {raw_dir}", flush=True)
 
-        # 4. 写入 story_id 标记文件，供存档命名使用
+        # 4. 写入 story_id 和 save_id 标记文件
         story_id_path = os.path.join(characters_dir, ".story_id")
         with open(story_id_path, "w", encoding="utf-8") as f:
             f.write(story_id)
         print(f"  已写入: {story_id_path}", flush=True)
 
-        # 4. 重置日志
+        save_id = uuid.uuid4().hex[:8]
+        save_id_path = os.path.join(characters_dir, ".save_id")
+        with open(save_id_path, "w", encoding="utf-8") as f:
+            f.write(save_id)
+        print(f"  已写入: {save_id_path} ({save_id})", flush=True)
+
+        # 5. 重置日志
         print("[日志]", flush=True)
         reset_logs()
 
@@ -229,22 +236,26 @@ def list_save_archives() -> list[dict]:
         return []
 
     saves = []
-    # 新格式：<主题>_<焦点>_YYYYMMDD_HHMMSS.zip；时间戳永远在末尾，用正则定位
-    ts_re = re.compile(r"^(.+_)?(\d{8}_\d{6})$")
-    for zip_file in sorted(save_dir.glob("*.zip"), reverse=True):
+    for zip_file in save_dir.glob("*.zip"):
+        entry: dict = {"filename": zip_file.name, "display_time": zip_file.name, "focus": ""}
         try:
-            m = ts_re.match(zip_file.stem)
-            if not m:
-                continue
-            prefix = (m.group(1) or "").rstrip("_")  # "school_午休时间" 或 ""
-            ts_str = m.group(2)                       # "20260302_153000"
-            dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
-            display_time = dt.strftime("%Y-%m-%d %H:%M:%S")
-        except (ValueError, AttributeError):
-            display_time = zip_file.name
-            prefix = ""
-        saves.append({"filename": zip_file.name, "display_time": display_time, "focus": prefix})
+            with zipfile.ZipFile(str(zip_file), "r") as zf:
+                if "metadata.json" in zf.namelist():
+                    meta = json.loads(zf.read("metadata.json").decode("utf-8"))
+                    export_time = meta.get("export_time", "")
+                    if export_time:
+                        dt = datetime.fromisoformat(export_time)
+                        entry["display_time"] = dt.strftime("%Y-%m-%d %H:%M:%S")
+                        entry["_sort_key"] = dt.isoformat()
+                    entry["focus"] = meta.get("focus", "")
+        except Exception:
+            pass
+        saves.append(entry)
 
+    saves.sort(key=lambda s: s.get("_sort_key", ""), reverse=True)
+    # 清理内部排序字段
+    for s in saves:
+        s.pop("_sort_key", None)
     return saves
 
 
@@ -291,7 +302,15 @@ async def import_save_archive(save_filename: str) -> bool:
                 zf.extract(member, characters_dir)
                 print(f"[读档] 已恢复: {member}", flush=True)
 
-        # 4. 重建向量库（从 jsonl 历史重新索引）
+        # 4. 若旧存档没有 .save_id，生成一个新的（下次 /save 会创建新文件）
+        save_id_path = os.path.join(characters_dir, ".save_id")
+        if not os.path.exists(save_id_path):
+            new_save_id = uuid.uuid4().hex[:8]
+            with open(save_id_path, "w", encoding="utf-8") as f:
+                f.write(new_save_id)
+            print(f"[读档] 旧存档无 save_id，已生成新 id: {new_save_id}", flush=True)
+
+        # 5. 重建向量库（从 jsonl 历史重新索引）
         print("[读档] 重建向量库...", flush=True)
         await vector_store.rebuild("narrator")
         print(f"[读档] 读档完成: {save_filename}", flush=True)
@@ -348,6 +367,15 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     return files
 
 
+def _read_save_id() -> str:
+    """读取当前游戏的 save_id，用于确定覆盖哪个存档文件"""
+    save_id_path = CHARACTERS_DIR / ".save_id"
+    try:
+        return save_id_path.read_text(encoding="utf-8").strip()
+    except Exception:
+        return uuid.uuid4().hex[:8]  # 降级：生成临时 id，不至于崩溃
+
+
 def _read_story_theme() -> str:
     """读取 .story_id 标记文件，返回故事主题（如 school / modern / ancient）"""
     story_id_path = os.path.join(str(CHARACTERS_DIR), ".story_id")
@@ -381,12 +409,11 @@ async def export_save_archive() -> str | None:
     Returns:
         存档文件路径，如果失败返回 None
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_id = _read_save_id()
     theme = _read_story_theme()
     focus = _read_narrator_focus()
-    # 格式：<主题>_<焦点>_YYYYMMDD_HHMMSS.zip，缺失时降级
-    prefix = "_".join(part for part in [theme, focus] if part)
-    filename = f"{prefix}_{timestamp}.zip" if prefix else f"{timestamp}.zip"
+    # 格式：<主题>_<save_id>.zip，同一局游戏始终覆盖同一文件
+    filename = f"{theme}_{save_id}.zip" if theme else f"{save_id}.zip"
 
     save_dir = PROJECT_ROOT / "saves"
     os.makedirs(save_dir, exist_ok=True)
@@ -400,9 +427,12 @@ async def export_save_archive() -> str | None:
 
     try:
         with zipfile.ZipFile(save_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            # 添加元数据文件
+            # 添加元数据（含 save_id / focus / theme，供 list 展示用）
             metadata = {
                 "export_time": datetime.now().isoformat(),
+                "save_id": save_id,
+                "theme": theme,
+                "focus": focus,
                 "agents": all_agents,
                 "version": "1.0",
             }
@@ -410,11 +440,12 @@ async def export_save_archive() -> str | None:
                 "metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2)
             )
 
-            # 添加 .story_id 标记文件（解压后主题仍可读）
-            story_id_path = str(CHARACTERS_DIR / ".story_id")
-            if os.path.exists(story_id_path):
-                zf.write(story_id_path, ".story_id")
-                print("[存档] 已添加: .story_id")
+            # 添加 .story_id 和 .save_id 标记文件（读档后运行时可直接读取）
+            for marker in [".story_id", ".save_id"]:
+                marker_path = CHARACTERS_DIR / marker
+                if marker_path.exists():
+                    zf.write(str(marker_path), marker)
+                    print(f"[存档] 已添加: {marker}")
 
             # 添加每个角色的文件
             for agent_name in all_agents:
