@@ -32,11 +32,10 @@ async def main(agent: str, date: str) -> None:
     consolidator = MemoryConsolidator()
     print("第一步：调用 LLM 进行归并整理...")
 
-    full_text = f"## {date}\n{old_text}"
-    prompt_step1_tpl = Path("prompts/consolidation_prompt_step1.txt").read_text()
-    prompt_step1 = prompt_step1_tpl.format(agent_name=agent, content=full_text)
-
-    result_step1 = await consolidator._call_llm(prompt_step1)
+    system_step1, user_step1 = consolidator._build_consolidation_prompt_step1(
+        agent, sections, [date]
+    )
+    result_step1 = await consolidator._call_llm(system_step1, user_step1)
     step1_result = (result_step1.get("content") or "").strip()
 
     # 从第一步结果中提取整理后的内容

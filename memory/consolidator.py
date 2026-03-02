@@ -53,7 +53,7 @@ _MODEL_ID = (
     or "deepseek-chat"
 )
 # 整理用较低 temperature，保证输出稳定
-_TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.7"))
+_TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.3"))
 _MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "8192"))
 
 _PROMPT_STEP1_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step1.txt"
@@ -123,8 +123,12 @@ class MemoryConsolidator:
             self._locks[name] = asyncio.Lock()
         return self._locks[name]
 
-    async def _call_llm(self, prompt: str) -> dict:
+    async def _call_llm(self, system: str, user: str) -> dict:
         """调用 LLM 进行记忆整理（使用统一客户端满足 DRY/KISS）。
+
+        Args:
+            system: 系统 prompt（指令、角色定义等）
+            user: 用户消息（待处理的输入内容）
 
         Returns:
             dict: {"content": str, "usage": dict}
@@ -148,7 +152,10 @@ class MemoryConsolidator:
             await self._client.initialize()
 
         resp = await self._client.chat(
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
             enable_thinking=False,  # 整理稳定性优先
         )
         return {
@@ -219,8 +226,12 @@ class MemoryConsolidator:
 
     def _build_consolidation_prompt_step1(
         self, agent_name: str, sections: OrderedDict[str, str], dates: list[str]
-    ) -> str:
-        """构建第一步 prompt：归并整理（注入 soul 和 growth 让模型以角色视角重写）。"""
+    ) -> tuple[str, str]:
+        """构建第一步 prompt：归并整理（注入 soul 和 growth 让模型以角色视角重写）。
+
+        Returns:
+            (system, user): system 为指令，user 为待整理的流水账内容
+        """
         parts = [f"## {date}\n{sections[date]}" for date in dates]
         combined_text = "\n\n".join(parts)
 
@@ -228,16 +239,17 @@ class MemoryConsolidator:
         growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
 
         template = load_text(_PROMPT_STEP1_PATH)
-        return template.format(
-            soul=soul_content,
-            growth=growth_content,
-            content=combined_text,
-        )
+        system = template.format(soul=soul_content, growth=growth_content)
+        return system, combined_text
 
     def _build_consolidation_prompt_step2(
         self, agent_name: str, step1_result: str
-    ) -> str:
-        """构建第二步 prompt：成长事件判断。"""
+    ) -> tuple[str, str]:
+        """构建第二步 prompt：成长事件判断。
+
+        Returns:
+            (system, user): system 为指令，user 为第一步整理结果
+        """
         growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
 
         count = len(read_growth_entries(agent_name))
@@ -247,11 +259,8 @@ class MemoryConsolidator:
             count_hint = f"当前已有 {count} 条（上限 15），还可新增 {15 - count} 条"
 
         template = load_text(_PROMPT_STEP2_PATH)
-        return template.format(
-            growth=growth_content,
-            content=step1_result,
-            count_hint=count_hint,
-        )
+        system = template.format(growth=growth_content, count_hint=count_hint)
+        return system, step1_result
 
     def _build_consolidation_prompt_step3(self, agent_name: str) -> str:
         """构建第三步 prompt：growth.md 超限合并压缩。"""
@@ -298,12 +307,14 @@ class MemoryConsolidator:
     ):
         """两步调用：第一步整理，第二步判断成长事件。"""
         # ===== 第一步：调用 LLM 进行归并整理 =====
-        prompt_step1 = self._build_consolidation_prompt_step1(agent_name, sections, dates)
+        system_step1, user_step1 = self._build_consolidation_prompt_step1(agent_name, sections, dates)
         try:
-            llm_response_step1 = await self._call_llm(prompt_step1)
+            llm_response_step1 = await self._call_llm(system_step1, user_step1)
             step1_result = (llm_response_step1.get("content") or "").strip()
             log_consolidation_call(
-                agent_name, "step1_merge", prompt_step1, step1_result,
+                agent_name, "step1_merge",
+                f"[system]\n{system_step1}\n\n[user]\n{user_step1}",
+                step1_result,
                 llm_response_step1.get("usage"),
             )
         except Exception as e:
@@ -328,12 +339,14 @@ class MemoryConsolidator:
             return
 
         # ===== 第二步：调用 LLM 进行成长事件判断 =====
-        prompt_step2 = self._build_consolidation_prompt_step2(agent_name, step1_result)
+        system_step2, user_step2 = self._build_consolidation_prompt_step2(agent_name, step1_result)
         try:
-            llm_response_step2 = await self._call_llm(prompt_step2)
+            llm_response_step2 = await self._call_llm(system_step2, user_step2)
             step2_result = (llm_response_step2.get("content") or "").strip()
             log_consolidation_call(
-                agent_name, "step2_growth", prompt_step2, step2_result,
+                agent_name, "step2_growth",
+                f"[system]\n{system_step2}\n\n[user]\n{user_step2}",
+                step2_result,
                 llm_response_step2.get("usage"),
             )
         except Exception as e:
@@ -357,7 +370,7 @@ class MemoryConsolidator:
             )
             prompt_step3 = self._build_consolidation_prompt_step3(agent_name)
             try:
-                llm_response_step3 = await self._call_llm(prompt_step3)
+                llm_response_step3 = await self._call_llm(prompt_step3, "请执行以上任务。")
                 step3_result = (llm_response_step3.get("content") or "").strip()
                 log_consolidation_call(
                     agent_name, "step3_dedup", prompt_step3, step3_result,
@@ -469,9 +482,12 @@ class MemoryConsolidator:
         Returns:
             OrderedDict[日期, 该日期的内容]
         """
-        # 第一步 prompt 只输出归并整理的内容，直接解析
+        # 移除 analysis 标签及其内容（工作流第一步的分析部分）
+        cleaned = re.sub(r"<analysis>.*?</analysis>", "", llm_result, flags=re.DOTALL)
+        cleaned = cleaned.strip()
+
         sections: OrderedDict[str, str] = OrderedDict()
-        for date, event_text in split_events_raw(llm_result.strip()):
+        for date, event_text in split_events_raw(cleaned):
             if not date:
                 continue
             sections[date] = (sections.get(date, "") + ("\n\n" if date in sections else "") + event_text)
@@ -564,10 +580,8 @@ class MemoryConsolidator:
             backup_file(user_path, agent_name, "user")
 
             fields_def = build_fields_definition(agent_name)
-            prompt = load_text(_PLAYER_PROMPT_PATH).format(
-                fields_definition=fields_def, content=content
-            )
-            llm_response = await self._call_llm(prompt)
+            system = load_text(_PLAYER_PROMPT_PATH).format(fields_definition=fields_def)
+            llm_response = await self._call_llm(system, content)
             consolidated = (llm_response.get("content") or "").strip()
 
             if len(consolidated.strip()) < 20:
