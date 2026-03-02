@@ -61,25 +61,23 @@ def test_format_conversation_history_character_sees_only_visible():
 
 
 def test_format_conversation_history_limit_with_narrator():
-    """测试 limit 参数，且过滤旧 narrator"""
-    messages = [
-        {"role": "narrator", "content": "旧场景", "visible_to": ["narrator"]},
-        {"role": "player", "content": "消息 0", "visible_to": ["narrator"]},
-        {"role": "player", "content": "消息 1", "visible_to": ["narrator"]},
-        {"role": "narrator", "content": "新场景", "visible_to": ["narrator"]},
-        {"role": "player", "content": "消息 2", "visible_to": ["narrator"]},
-    ]
+    """测试 limit 参数，确保返回指定数量的有效消息"""
+    # 创建 20 条消息：10 条旧 narrator + 10 条玩家消息
+    messages = []
+    for i in range(10):
+        messages.append({"role": "narrator", "content": f"旧场景 {i}", "visible_to": ["narrator"]})
+        messages.append({"role": "player", "content": f"消息 {i}", "visible_to": ["narrator"]})
+    # 最后加一条新 narrator
+    messages.append({"role": "narrator", "content": "新场景", "visible_to": ["narrator"]})
 
     result = app._format_conversation_history(messages, "narrator", limit=5)
 
-    # 应该只保留最新的 narrator，其他都是玩家消息
+    # 应该返回 5 条有效消息（不包括旧narrator）
+    # 由于加载 limit*3=15 条，会包含最后 5 个玩家消息 + 最新narrator
+    lines = result.split("\n")
+    assert len(lines) == 5, f"应该有 5 条消息，实际: {len(lines)}, 内容: {result}"
     assert "新场景" in result
     assert "旧场景" not in result
-    assert "消息 0" in result
-    assert "消息 1" in result
-    assert "消息 2" in result
-    # 应该有 4 条消息（3 个玩家 + 1 个最新narrator）
-    assert result.count("\n") == 3, f"应该有 4 条消息，实际: {result}"
 
 
 def test_format_conversation_history_empty():

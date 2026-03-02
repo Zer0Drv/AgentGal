@@ -60,10 +60,12 @@ def _format_conversation_history(messages: list, agent_name: str, limit: int = 1
     策略：只保留最新的一条 narrator 发言（设置场景），其他 narrator 发言过滤掉。
     这样可以让角色看到更多的角色/玩家互动历史，而不是被旁白占用空间。
 
+    为了保证返回 limit 条有效消息，会先加载 limit * 3 条消息，然后过滤。
+
     Args:
         messages: 原始消息列表（来自 load_conversation_history）
         agent_name: 角色名，用于按 visible_to 过滤
-        limit: 返回最近多少条
+        limit: 返回最近多少条有效消息（不包括被过滤的旧narrator）
 
     Returns:
         格式化的对话历史文本，如果无消息返回空字符串
@@ -75,8 +77,9 @@ def _format_conversation_history(messages: list, agent_name: str, limit: int = 1
     if agent_name != "narrator":
         messages = [msg for msg in messages if agent_name in msg.get("visible_to", [])]
 
-    # 取最近 limit 条
-    recent = messages[-limit:]
+    # 为了保证返回 limit 条有效消息，先加载 limit * 3 条（考虑到可能有很多旧narrator）
+    fetch_limit = limit * 3
+    recent = messages[-fetch_limit:]
 
     # 分离 narrator 和其他发言
     narrator_messages = [msg for msg in recent if msg.get("role") == "narrator"]
@@ -89,6 +92,9 @@ def _format_conversation_history(messages: list, agent_name: str, limit: int = 1
 
     # 按原始顺序排序（保持时间顺序）
     final_messages.sort(key=lambda m: recent.index(m))
+
+    # 取最近 limit 条有效消息
+    final_messages = final_messages[-limit:]
 
     # 格式化为文本
     formatted = []
