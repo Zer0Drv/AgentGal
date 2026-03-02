@@ -147,7 +147,7 @@ class OpenAICompatibleClient(BaseLLMClient):
             api_key: API Key
             model: 模型名称
             temperature: 温度参数 (从 config 传入，默认 0.1)
-            max_tokens: 最大 token 数 (从 config 传入，默认 10000)
+            max_tokens: 最大 token 数，None 表示不发送此字段（由 API 使用各自默认值）
             timeout: 请求超时时间
             max_retries: 最大重试次数
         """
@@ -157,9 +157,9 @@ class OpenAICompatibleClient(BaseLLMClient):
         if api_url.endswith("/chat/completions"):
             api_url = api_url.replace("/chat/completions", "")
 
-        # 2. 保存实例级默认参数 (使用 config 中的值，如果没有则使用默认值)
+        # 2. 保存实例级默认参数 (None 表示不传给 API，由各提供商自行决定上限)
         self._temperature = temperature if temperature is not None else 0.1
-        self._max_tokens = max_tokens if max_tokens is not None else 10000
+        self._max_tokens = max_tokens  # None = 不在 payload 中发送
 
         # 3. 初始化基类
         super().__init__(
@@ -206,13 +206,14 @@ class OpenAICompatibleClient(BaseLLMClient):
                     msg["content"] = msg.get("content", "") + "/no_think"
                     break
 
-        payload = {
+        payload: Dict[str, Any] = {
             "model": self.model,
             "messages": processed_messages,
             "stream": stream,
             "temperature": temperature,
-            "max_tokens": max_tokens,
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
 
         # 传递标准可选参数
         for key in ["top_p", "frequency_penalty", "presence_penalty", "stop"]:

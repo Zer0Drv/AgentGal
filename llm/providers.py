@@ -6,7 +6,7 @@ SUPPORTED_PROVIDERS = ("openai", "deepseek", "openrouter")
 
 # OpenAI 官方 API URL
 _OPENAI_API_URL = "https://api.openai.com/v1"
-_DEEPSEEK_API_URL = "https://api.deepseek.com"
+_DEEPSEEK_API_URL = "https://api.deepseek.com/v1"
 _OPENROUTER_API_URL = "https://openrouter.ai/api/v1"
 
 
