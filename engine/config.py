@@ -1,7 +1,7 @@
 """集中配置管理 - 动态读取 data/characters 目录
 
-注意：角色列表在模块导入时（应用启动时）读取一次并缓存，
-运行期间不再重新扫描目录。
+注意：get_agent_names() 和 get_valid_response_agents() 每次调用都会扫描目录，
+确保 reset_game() 和 load 命令后能立即反映新的角色列表。
 """
 
 import os
@@ -48,26 +48,15 @@ def _scan_agent_names() -> list[str]:
     )
 
 
-# 应用启动时扫描一次，后续可通过 refresh_agent_names() 更新
-AGENT_NAMES: list[str] = _scan_agent_names()
-VALID_RESPONSE_AGENTS: list[str] = [name for name in AGENT_NAMES if name != "narrator"]
-
-
-def refresh_agent_names() -> None:
-    """刷新角色列表缓存（在 reset_game() 后调用）"""
-    global AGENT_NAMES, VALID_RESPONSE_AGENTS
-    AGENT_NAMES = _scan_agent_names()
-    VALID_RESPONSE_AGENTS = [name for name in AGENT_NAMES if name != "narrator"]
-
-
 def get_agent_names() -> list[str]:
-    """获取所有角色名称列表"""
-    return AGENT_NAMES
+    """获取所有角色名称列表（每次动态扫描 data/characters/）"""
+    return _scan_agent_names()
 
 
 def get_valid_response_agents() -> list[str]:
-    """获取可以回应用户的角色列表（排除 narrator）"""
-    return VALID_RESPONSE_AGENTS
+    """获取可以回应用户的角色列表（排除 narrator，每次动态扫描）"""
+    agents = _scan_agent_names()
+    return [name for name in agents if name != "narrator"]
 
 
 # 历史限制配置
