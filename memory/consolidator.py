@@ -17,6 +17,7 @@ from typing import Optional
 from llm.llm_parser import OpenAICompatibleClient
 
 from log_config.memory import memory_logger as routing_logger
+from log_config.consolidation_calls import log_consolidation_call
 from engine.config import character_path
 from memory.file_ops import (
     _get_fields_from_file,
@@ -52,7 +53,7 @@ _MODEL_ID = (
     or "deepseek-chat"
 )
 # 整理用较低 temperature，保证输出稳定
-_TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.0"))
+_TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.7"))
 _MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "8192"))
 
 _PROMPT_STEP1_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step1.txt"
@@ -217,14 +218,21 @@ class MemoryConsolidator:
         return all_dates, all_dates[-1] if all_dates else None
 
     def _build_consolidation_prompt_step1(
-        self, sections: OrderedDict[str, str], dates: list[str]
+        self, agent_name: str, sections: OrderedDict[str, str], dates: list[str]
     ) -> str:
-        """构建第一步 prompt：归并整理。"""
+        """构建第一步 prompt：归并整理（注入 soul 和 growth 让模型以角色视角重写）。"""
         parts = [f"## {date}\n{sections[date]}" for date in dates]
         combined_text = "\n\n".join(parts)
 
+        soul_content = read_agent_file(agent_name, "soul.md")
+        growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
+
         template = load_text(_PROMPT_STEP1_PATH)
-        return template.format(content=combined_text)
+        return template.format(
+            soul=soul_content,
+            growth=growth_content,
+            content=combined_text,
+        )
 
     def _build_consolidation_prompt_step2(
         self, agent_name: str, step1_result: str
@@ -290,10 +298,14 @@ class MemoryConsolidator:
     ):
         """两步调用：第一步整理，第二步判断成长事件。"""
         # ===== 第一步：调用 LLM 进行归并整理 =====
-        prompt_step1 = self._build_consolidation_prompt_step1(sections, dates)
+        prompt_step1 = self._build_consolidation_prompt_step1(agent_name, sections, dates)
         try:
             llm_response_step1 = await self._call_llm(prompt_step1)
             step1_result = (llm_response_step1.get("content") or "").strip()
+            log_consolidation_call(
+                agent_name, "step1_merge", prompt_step1, step1_result,
+                llm_response_step1.get("usage"),
+            )
         except Exception as e:
             result.errors.append(f"第一步调用失败: {e}")
             routing_logger.error(f"[整理器] {agent_name} 第一步调用失败: {e}")
@@ -320,6 +332,10 @@ class MemoryConsolidator:
         try:
             llm_response_step2 = await self._call_llm(prompt_step2)
             step2_result = (llm_response_step2.get("content") or "").strip()
+            log_consolidation_call(
+                agent_name, "step2_growth", prompt_step2, step2_result,
+                llm_response_step2.get("usage"),
+            )
         except Exception as e:
             result.errors.append(f"第二步调用失败: {e}")
             routing_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
@@ -343,6 +359,10 @@ class MemoryConsolidator:
             try:
                 llm_response_step3 = await self._call_llm(prompt_step3)
                 step3_result = (llm_response_step3.get("content") or "").strip()
+                log_consolidation_call(
+                    agent_name, "step3_dedup", prompt_step3, step3_result,
+                    llm_response_step3.get("usage"),
+                )
                 self._apply_step3_growth(agent_name, step3_result)
             except Exception as e:
                 result.errors.append(f"第三步调用失败: {e}")
