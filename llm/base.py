@@ -140,7 +140,7 @@ class BaseLLMClient(ABC):
         return self.max_retries + 1
 
     async def _ensure_client(self):
-        if not self._client:
+        if not self._client or self._client.is_closed:
             await self.initialize()
 
     async def _handle_http_error(self, e: Exception, attempt: int):
