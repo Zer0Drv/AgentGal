@@ -92,7 +92,8 @@ class BaseLLMClient(ABC):
 
         for attempt in range(self.retries_safe):
             try:
-                async with self._client.stream(
+                client = await self._get_client_snapshot()
+                async with client.stream(
                     "POST", "/chat/completions", json=payload
                 ) as response:
                     response.raise_for_status()
@@ -115,7 +116,7 @@ class BaseLLMClient(ABC):
                             continue
                 return  # 成功后退出重试循环
 
-            except httpx.HTTPError as e:
+            except (httpx.HTTPError, RuntimeError, AttributeError) as e:
                 await self._handle_http_error(e, attempt)
 
     async def chat(self, messages: List[Dict], **kwargs) -> Dict[str, Any]:
@@ -125,10 +126,11 @@ class BaseLLMClient(ABC):
 
         for attempt in range(self.retries_safe):
             try:
-                response = await self._client.post("/chat/completions", json=payload)
+                client = await self._get_client_snapshot()
+                response = await client.post("/chat/completions", json=payload)
                 response.raise_for_status()
                 return self._parse_response(response.json())
-            except httpx.HTTPError as e:
+            except (httpx.HTTPError, RuntimeError, AttributeError) as e:
                 await self._handle_http_error(e, attempt)
 
         raise RuntimeError("Max retries exceeded")
@@ -142,6 +144,18 @@ class BaseLLMClient(ABC):
     async def _ensure_client(self):
         if not self._client or self._client.is_closed:
             await self.initialize()
+
+    async def _get_client_snapshot(self) -> httpx.AsyncClient:
+        """返回当前可用 client 快照，规避并发 close 造成的空引用。"""
+        await self._ensure_client()
+        client = self._client
+        if client is None:
+            # 极端并发下可能刚 initialize 又被 close，重试一次。
+            await self.initialize()
+            client = self._client
+        if client is None:
+            raise RuntimeError("HTTP client unavailable")
+        return client
 
     async def _handle_http_error(self, e: Exception, attempt: int):
         if attempt < self.max_retries:

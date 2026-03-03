@@ -48,14 +48,15 @@ def get_llm_config(
     参数优先级：传入参数 > 环境变量 > 默认值
 
     Returns:
-        {"api_url": str, "api_key": str, "model": str}
+        {"api_url": str, "api_key": str, "model": str, "temperature": float}
     """
     provider = (provider or os.getenv("LLM_PROVIDER", "deepseek")).lower()
     model_id = model_id or os.getenv("LLM_MODEL_ID", "deepseek-chat")
     api_key = api_key or _get_required_env("LLM_API_KEY")
     api_url = _resolve_api_url(provider, api_url or os.getenv("LLM_API_URL"))
+    temperature = float(os.getenv("LLM_TEMPERATURE", "1.0"))
 
-    return {"api_url": api_url, "api_key": api_key, "model": model_id}
+    return {"api_url": api_url, "api_key": api_key, "model": model_id, "temperature": temperature}
 
 
 def get_consolidation_llm_config() -> dict:
