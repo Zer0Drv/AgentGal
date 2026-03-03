@@ -278,12 +278,13 @@ def _read_title(file_path: str, default_title: str = "# 标题") -> str:
     return default_title
 
 
-def mark_event_triggered(agent_name: str, event_name: str) -> str:
-    """将 status.md 中【event_name】对应的未触发事件行直接删除（触发即归档，不留痕迹）。
+def mark_event_triggered(agent_name: str, event_name: str, section_name: str = "待触发事件") -> str:
+    """将 status.md 中指定 section 里【event_name】对应的未触发事件行直接删除。
 
     Args:
         agent_name: 角色名称
         event_name: 事件名称（不含【】括号，如"破绽初现"）
+        section_name: 要操作的 section 标题，默认 "待触发事件"，角色传 "打算"
 
     Returns:
         操作结果描述
@@ -301,16 +302,17 @@ def mark_event_triggered(agent_name: str, event_name: str) -> str:
         return f"未找到事件【{event_name}】"
 
     Path(status_path).write_text(new_content, encoding="utf-8")
-    return f"已触发并移除【{event_name}】"
+    return f"已完成并移除【{event_name}】"
 
 
-def add_pending_event(agent_name: str, event_line: str) -> str:
-    """在 status.md 的「待触发事件」区块中，于第一个未触发事件前插入新事件。
-    插入前检查同名事件是否已存在（按【】内名称匹配），存在则跳过。
+def add_pending_event(agent_name: str, event_line: str, section_name: str = "待触发事件") -> str:
+    """在 status.md 的指定区块中，于第一个未触发条目前插入新条目。
+    插入前检查同名条目是否已存在（按【】内名称匹配），存在则跳过。
 
     Args:
         agent_name: 角色名称
-        event_line: 新事件描述（如"【新事件】描述文字"，函数会自动补 `- [ ] ` 前缀）
+        event_line: 新条目描述（如"【名称】描述文字"，函数会自动补 `- [ ] ` 前缀）
+        section_name: 要操作的 section 标题，默认 "待触发事件"，角色传 "打算"
 
     Returns:
         操作结果描述
@@ -319,32 +321,31 @@ def add_pending_event(agent_name: str, event_line: str) -> str:
     if not os.path.exists(status_path):
         return "status.md 不存在"
 
-    # 规范化事件行格式
+    # 规范化条目行格式
     stripped = event_line.strip()
     if not stripped.startswith("- [ ]"):
         stripped = f"- [ ] {stripped}"
 
     content = Path(status_path).read_text(encoding="utf-8")
 
-    # 去重：提取新事件名，检查文件中是否已存在同名事件
+    # 去重：提取名称，检查文件中是否已存在同名条目
     name_match = re.search(r"【(.+?)】", stripped)
     if name_match:
         event_name = name_match.group(1)
         if re.search(rf"【{re.escape(event_name)}】", content):
-            return f"事件【{event_name}】已存在，跳过"
+            return f"【{event_name}】已存在，跳过"
 
     lines = content.split("\n")
 
-    # 找到「待触发事件」区块内的第一个 [ ] 行，在其前插入
+    # 找到目标 section 内的第一个 [ ] 行，在其前插入；没有则追加到 section 末尾
     in_section = False
     insert_idx = None
     for i, line in enumerate(lines):
-        if line.startswith("## 待触发事件"):
+        if line.startswith(f"## {section_name}"):
             in_section = True
             continue
         if in_section:
             if line.startswith("## "):
-                # 进入下一个 section，没找到 [ ]，追加到 section 末尾
                 insert_idx = i
                 break
             if re.match(r"- \[ \]", line):
@@ -357,7 +358,7 @@ def add_pending_event(agent_name: str, event_line: str) -> str:
         lines.insert(insert_idx, stripped)
 
     Path(status_path).write_text("\n".join(lines), encoding="utf-8")
-    return f"已插入新事件: {stripped}"
+    return f"已插入: {stripped}"
 
 
 def _update_section_file(

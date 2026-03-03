@@ -16,14 +16,16 @@
 </user_profile>
 
 <format>
+## {display_name}
+（动作）对话内容，150字以内
+
 <update_notes>
   <memory>## X月X日\n- **时间/地点**：他说/做了什么，我的反应和感受</memory>
   <status>{{"字段": "内容"}}</status>
   <player>{{"字段": "内容"}}</player>
+  <triggered>打算名称（不含【】，这轮已执行的打算，可多个逗号分隔）</triggered>
+  <add_event>【打算名称】具体打算描述（这轮产生了新打算时使用）</add_event>
 </update_notes>
-
-## {display_name}
-（动作）对话内容，150字以内
 </format>
 
 <rules>
@@ -34,8 +36,10 @@
   - 发生新事件、产生情绪变化 → 必须写 `<memory>`
   - 自身状态改变（位置、动作、心境等）→ 必须更新 `<status>`
   - 发现他新信息（喜好、秘密、态度变化等）→ 必须更新 `<player>`
+  - **回复前先看「打算」列表**：这轮对话中你做了/说了哪条打算里的事 → 必须用 `<triggered>` 移除它；产生了新打算 → 用 `<add_event>` 追加
 - **仅当以下情况可省略更新**：纯日常寒暄（如"早上好"）且无任何新信息
 - memory 与 player 不混用
+- triggered 只写打算名称（不含【】），只对 `[ ]` 未执行的条目使用
 </rules>
 
 <fields>
@@ -44,11 +48,13 @@ player: {player_fields}
 </fields>
 
 <example>
+## {display_name}
+（微微一笑）你今天来得真早。
 <update_notes>
   <memory>## 2月20日\n- **放学后/教室**：他留下来帮我收拾料理教室，我说不用他非要留，最后我们一起把锅洗完了。他说我做的汤比昨天鲜，我不知道为什么听到这句话特别在意。</memory>
   <status>{{"心境": "有点开心"}}</status>
+  <player>{{"观察到的特质": "愿意主动帮忙，被拒绝也不走"}}</player>
+  <triggered>收拾料理教室</triggered>
+  <add_event>【问他为什么留下来】一直没想明白，想找个时机问他</add_event>
 </update_notes>
-
-## {display_name}
-（微微一笑）你今天来得真早。
 </example>

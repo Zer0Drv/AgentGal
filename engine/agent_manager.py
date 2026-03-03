@@ -61,7 +61,9 @@ def _build_system_prompt(agent_name: str, soul_content: str) -> str:
     user_content = read_agent_file(agent_name, "user.md") if agent_name != "narrator" else ""
     growth_content = load_growth_for_prompt(agent_name)
     prompt_template = _load_prompt_template(agent_name)
-    status_fields = "、".join(get_allowed_fields(agent_name, "status"))
+    # 「打算」由 <triggered>/<add_event> 专用标签管理，不暴露给 <status> 覆盖
+    _status_excluded = {"打算"} if agent_name != "narrator" else set()
+    status_fields = "、".join(f for f in get_allowed_fields(agent_name, "status") if f not in _status_excluded)
     player_fields = "、".join(get_allowed_fields(agent_name, "user")) if agent_name != "narrator" else ""
     display_name = _get_display_name(agent_name, soul_content)
 
@@ -164,6 +166,10 @@ def _update_memory(agent_name: str, memory_content: str) -> str:
 
 def _update_status(agent_name: str, field: str, content: str) -> str:
     """覆盖更新 status.md 的指定字段。"""
+    # 「打算」只能通过 add_pending_event/mark_event_triggered 操作，禁止整体覆盖
+    if agent_name != "narrator" and field == "打算":
+        routing_logger.warning(f"[{agent_name}] 禁止通过 <status> 覆盖「打算」字段，请使用 <triggered>/<add_event>")
+        return "禁止覆盖「打算」字段，请用 <triggered>/<add_event> 逐条管理"
     allowed = get_allowed_fields(agent_name, "status")
     if field not in allowed:
         routing_logger.warning(f"[{agent_name}] 不允许的 status 字段: {field}")
@@ -206,17 +212,20 @@ async def _apply_response_updates(agent_name: str, parsed) -> None:
         except Exception as e:
             routing_logger.error(f"[{agent_name}] 更新 player 失败: {e}")
 
+    # narrator 操作「待触发事件」，其他角色操作「打算」
+    event_section = "待触发事件" if agent_name == "narrator" else "打算"
+
     if parsed.triggered:
         try:
             for event_name in parsed.triggered:
-                results.append(f"triggered[{event_name}]: {mark_event_triggered(agent_name, event_name)}")
+                results.append(f"triggered[{event_name}]: {mark_event_triggered(agent_name, event_name, event_section)}")
         except Exception as e:
             routing_logger.error(f"[{agent_name}] 标记触发事件失败: {e}")
 
     if parsed.add_event:
         try:
             for event_desc in parsed.add_event:
-                results.append(f"add_event: {add_pending_event(agent_name, event_desc)}")
+                results.append(f"add_event: {add_pending_event(agent_name, event_desc, event_section)}")
         except Exception as e:
             routing_logger.error(f"[{agent_name}] 插入新事件失败: {e}")
 
