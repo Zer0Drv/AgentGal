@@ -331,7 +331,14 @@ class MemoryConsolidator:
         if step1_sections:
             for date in dates:
                 if date in step1_sections:
-                    sections[date] = step1_sections[date]
+                    missing = self._check_event_fields(step1_sections[date])
+                    if missing:
+                        routing_logger.warning(
+                            f"[整理器] {agent_name} {date} 整理结果缺少字段 {missing}，保留原始内容"
+                        )
+                        result.errors.append(f"{date} 字段不完整({','.join(missing)})，已跳过")
+                    else:
+                        sections[date] = step1_sections[date]
                 else:
                     result.errors.append(f"{date} 未在第一步返回中找到")
         else:
@@ -468,6 +475,23 @@ class MemoryConsolidator:
             return result
 
     # ===== 双解析器：第一步 + 第二步 =====
+
+    _REQUIRED_EVENT_FIELDS = ["**时间**", "**地点**", "**在场**", "**内容**"]
+
+    def _check_event_fields(self, section_content: str) -> list[str]:
+        """检查一个日期的整理结果是否每个事件块都包含必要字段。
+
+        Args:
+            section_content: 某一天的整理后内容（可能含多个事件块）
+
+        Returns:
+            缺失的字段名列表，空列表表示完整
+        """
+        missing: list[str] = []
+        for field in self._REQUIRED_EVENT_FIELDS:
+            if field not in section_content:
+                missing.append(field)
+        return missing
 
     def _parse_step1_memories(self, llm_result: str) -> OrderedDict[str, str]:
         """
