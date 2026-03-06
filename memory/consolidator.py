@@ -227,10 +227,10 @@ class MemoryConsolidator:
     def _build_consolidation_prompt_step1(
         self, agent_name: str, sections: OrderedDict[str, str], dates: list[str]
     ) -> tuple[str, str]:
-        """构建第一步 prompt：归并整理（注入 soul 和 growth 让模型以角色视角重写）。
+        """构建第一步 prompt：归并整理（soul 和 growth 放 user message 供模型以角色视角重写）。
 
         Returns:
-            (system, user): system 为指令，user 为待整理的流水账内容
+            (system, user): system 为纯指令，user 为结构化数据 + 待整理内容
         """
         parts = [f"## {date}\n{sections[date]}" for date in dates]
         combined_text = "\n\n".join(parts)
@@ -238,18 +238,23 @@ class MemoryConsolidator:
         soul_content = read_agent_file(agent_name, "soul.md")
         growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
 
-        template = load_text(_PROMPT_STEP1_PATH)
-        system = template.format(soul=soul_content, growth=growth_content)
-        return system, combined_text
+        system = load_text(_PROMPT_STEP1_PATH)
+        user = (
+            f"<soul>\n{soul_content}\n</soul>\n\n"
+            f"<growth>\n{growth_content}\n</growth>\n\n"
+            f"<input>\n{combined_text}\n</input>"
+        )
+        return system, user
 
     def _build_consolidation_prompt_step2(
         self, agent_name: str, step1_result: str
     ) -> tuple[str, str]:
-        """构建第二步 prompt：成长事件判断。
+        """构建第二步 prompt：成长事件判断（soul/growth/input 放 user message）。
 
         Returns:
-            (system, user): system 为指令，user 为第一步整理结果
+            (system, user): system 为纯指令，user 为结构化数据 + 第一步整理结果
         """
+        soul_content = read_agent_file(agent_name, "soul.md")
         growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
 
         count = len(read_growth_entries(agent_name))
@@ -258,15 +263,24 @@ class MemoryConsolidator:
         else:
             count_hint = f"当前已有 {count} 条（上限 15），还可新增 {15 - count} 条"
 
-        template = load_text(_PROMPT_STEP2_PATH)
-        system = template.format(growth=growth_content, count_hint=count_hint)
-        return system, step1_result
+        system = load_text(_PROMPT_STEP2_PATH).format(count_hint=count_hint)
+        user = (
+            f"<soul>\n{soul_content}\n</soul>\n\n"
+            f"<existing_growth>\n{growth_content}\n</existing_growth>\n\n"
+            f"<consolidated_memory>\n{step1_result}\n</consolidated_memory>"
+        )
+        return system, user
 
-    def _build_consolidation_prompt_step3(self, agent_name: str) -> str:
-        """构建第三步 prompt：growth.md 超限合并压缩。"""
+    def _build_consolidation_prompt_step3(self, agent_name: str) -> tuple[str, str]:
+        """构建第三步 prompt：growth.md 超限合并压缩（growth 放 user message）。
+
+        Returns:
+            (system, user): system 为纯指令，user 为待合并的 growth 数据
+        """
         growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
-        template = load_text(_PROMPT_STEP3_PATH)
-        return template.format(growth=growth_content)
+        system = load_text(_PROMPT_STEP3_PATH)
+        user = f"<existing_growth>\n{growth_content}\n</existing_growth>"
+        return system, user
 
     def _apply_step3_growth(self, agent_name: str, llm_result: str) -> None:
         """解析第三步输出并整体覆写 growth.md。"""
@@ -287,6 +301,11 @@ class MemoryConsolidator:
         if not entries:
             routing_logger.warning(f"[整理器] {agent_name} 第三步解析结果为空，跳过")
             return
+
+        # 备份 growth.md
+        growth_path = Path(character_path(agent_name, "growth.md"))
+        if growth_path.exists():
+            backup_file(growth_path, agent_name, "growth")
 
         # 重新从 P001 顺序编号，消除合并后的空缺
         reindexed = {
@@ -375,12 +394,14 @@ class MemoryConsolidator:
             routing_logger.info(
                 f"[整理器] {agent_name} 触发第三步去重合并（当前 {current_count} 条）"
             )
-            prompt_step3 = self._build_consolidation_prompt_step3(agent_name)
+            system_step3, user_step3 = self._build_consolidation_prompt_step3(agent_name)
             try:
-                llm_response_step3 = await self._call_llm(prompt_step3, "请执行以上任务。")
+                llm_response_step3 = await self._call_llm(system_step3, user_step3)
                 step3_result = (llm_response_step3.get("content") or "").strip()
                 log_consolidation_call(
-                    agent_name, "step3_dedup", prompt_step3, step3_result,
+                    agent_name, "step3_dedup",
+                    f"[system]\n{system_step3}\n\n[user]\n{user_step3}",
+                    step3_result,
                     llm_response_step3.get("usage"),
                 )
                 self._apply_step3_growth(agent_name, step3_result)
