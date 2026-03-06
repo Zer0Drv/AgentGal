@@ -1,213 +1,216 @@
 # CLAUDE.md
 
-多 Agent 角色扮演游戏。每个角色（包括旁白）拥有独立记忆，通过 Tools 自主管理记忆和目标。
-
-使用 uv 作为项目管理器。
+多 Agent 角色扮演 / 叙事游戏项目。当前实现以 **Chainlit + OpenAI 兼容 LLM + 文件记忆 + sqlite-vec** 为核心，使用 `uv` 作为项目管理器。
 
 ## 核心设计
 
-- **记忆系统**：文件（人类可读）+ 向量数据库（可搜索）双存储
-- **信息差**：角色各自维护独立的对话历史
-- **自主更新**：Agent 通过 Tools 决定何时搜索/更新记忆
+- **独立记忆**：每个角色维护自己的 `memory.md / status.md / user.md`（旁白无 `user.md`）
+- **信息差**：消息按 `visible_to` 控制可见范围，未参与场景的角色不会看到该轮内容
+- **旁白先行**：`narrator` 先做路由与场景推进，再并行调用目标角色
+- **结构化更新**：Agent 不直接调用“记忆工具”写文件，而是输出 `<update_notes>`，由系统解析并写回
+- **双层记忆**：Markdown 文件可读可编辑，向量库负责检索
 
 ## 技术栈
 
-Chainlit + OpenRouter + sqlite-vec + asyncio
+- Python 3.11+
+- Chainlit
+- OpenAI-compatible LLM client（支持 `openai` / `deepseek` / `openrouter`）
+- sqlite-vec + aiosqlite
+- asyncio
 
-## 项目结构
+## 当前项目结构
 
-```
-me moBot/
+```text
+agentgal-memos/
 ├── app.py                      # Chainlit 入口
 ├── data/
-│   ├── characters/             # 角色数据（运行时）
-│   │   ├── lilith/
-│   │   │   ├── soul.md         # 性格定义（手写，只读）
-│   │   │   ├── memory.md       # 长期记忆（Agent 更新）
-│   │   │   ├── status.md       # 当前状态
-│   │   │   ├── user.md         # 对玩家的认知
-│   │   │   ├── growth.md       # 人格沉淀（整理器生成）
-│   │   │   └── raw/            # YYYY-MM-DD.jsonl 对话流水（仅 narrator 有）
-│   │   ├── mitsuki/
-│   │   │   └── ...             # 结构同 lilith
-│   │   └── narrator/           # 旁白角色
-│   │       ├── soul.md         # 定义：故事主持人、上帝视角
-│   │       ├── memory.md       # 故事事件记录
-│   │       ├── status.md       # 故事状态（无 user.md）
-│   │       └── raw/            # YYYY-MM-DD.jsonl 对话流水
-│   └── templates/              # 角色模板（用于重置游戏）
-│       └── ...                 # 结构同 characters
-├── engine/                     # 核心引擎
-│   ├── agent_manager.py        # Agent 管理
-│   ├── config.py               # 配置管理
-│   ├── message_router.py       # 消息路由
-│   └── response_parser.py      # 响应解析
-├── memory/                     # 记忆系统
-│   ├── consolidator.py         # 后台记忆整理器
-│   ├── file_ops.py             # 文件操作
-│   └── vector_store.py         # 向量存储
-├── prompts/                    # 系统 Prompt 模板
+│   ├── characters/             # 运行时角色数据
+│   ├── templates/              # 故事模板（school / modern / ancient）
+│   └── vectors.sqlite          # 向量库
+├── engine/
+│   ├── agent_manager.py        # Agent prompt 构建、LLM 调用、结果写回
+│   ├── config.py               # 路径与运行配置
+│   ├── message_router.py       # 对话写入 / 可见性过滤
+│   ├── response_parser.py      # 解析 <update_notes>
+│   └── text_utils.py           # 文本清理
+├── game/
+│   └── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
+├── llm/
+│   ├── llm_parser.py           # OpenAI 兼容客户端
+│   └── providers.py            # Provider 配置与 URL 解析
+├── log_config/                 # 路由、记忆、调用日志
+├── memory/
+│   ├── consolidator.py         # 记忆整理器
+│   ├── file_ops.py             # md 文件读写工具
+│   └── vector_store.py         # 向量索引与检索
+├── prompts/                    # narrator / character / consolidation prompts
+├── scripts/                    # 维护脚本
+├── tests/                      # pytest 测试
+├── README.md
+├── CLAUDE.md
 └── .env
 ```
 
+## 运行时文件职责
+
+### 角色文件
+
+- `soul.md`：手写角色定义，只读
+- `memory.md`：长期记忆，记录事件与情绪变化
+- `status.md`：当前状态；角色包含“打算”，旁白包含“待触发事件”
+- `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
+- `growth.md`：人格沉淀，由整理器维护并在 prompt 中注入
+
+### 历史文件
+
+- 当前对话历史**只写入** `data/characters/narrator/raw/YYYY-MM-DD.jsonl`
+- 每条消息带 `visible_to`
+- 角色读取上下文时，通过可见性过滤出自己能看到的消息
+
 ## 消息路由
 
-由 **narrator（旁白）** 负责路由决策。
+由 `narrator` 负责决定谁参与当前回合。
 
-```
-用户输入 → narrator → {"targets": ["alice", "bob", "narrator"]}
-```
-
-`targets` 包含谁，谁就回应。
-
-| 用户输入 | targets | 行为 |
-|---------|---------|------|
-| "大家好啊" | [alice, bob] | Alice、Bob 回应 |
-| "悄悄对 Alice 说..." | [alice] | 仅 Alice（私密） |
-| "现在几点了？" | [narrator] | 仅旁白回应 |
-| "等到明天" | [narrator, alice, bob] | 旁白+角色都回应 |
-
-**narrator 的路由职责**：
-- 分析玩家输入，判断哪些角色需要回应
-- 在回应开头输出 `TARGETS: [角色名列表]`
-- 仅决定**谁参与**，绝不**替角色说话或决定行为**
-
-## 上下文规则
-
-**消息广播**（系统自动）：
-- 玩家消息 → 写入所有 targets 的 jsonl
-- 角色回应→ 广播给所有其他 targets，写入所有 targets 的 jsonl
-- 每个角色从自己的 jsonl 读取最近 N 条作为上下文
-
-**可见性规则**：
-- targets 互相可见
-- 非 targets 不可见
-
-## System Prompt 组成
-
-**角色（lilith、mitsuki）使用的 prompt 模板**：
-```
-1. soul.md（性格定义）
-2. memory.md（长期记忆）
-3. user.md（对玩家的认知）
-4. growth.md（人格沉淀）
-5. 运行时信息：时间、时区、语言
-6. Tools 描述
-7. 行为指引
+```text
+用户输入 → narrator → TARGETS: [角色列表]
 ```
 
-**narrator（旁白）使用的 prompt 模板**：
-```
-1. soul.md（故事主持人定义）
-2. memory.md（故事事件记录）
-3. status.md（故事状态）
-4. growth.md（故事发展记录）
-5. 运行时信息：时间、时区、语言
-6. Tools 描述
-7. 行为指引
-```
+### narrator 的职责
 
-**narrator 不需要 user.md**：
-- narrator 是全知的叙述者，不需要记录对玩家的主观认知
-- narrator 的职责：推进故事、控制时间、描述环境、路由决策
-
-## Agent Tools（所有角色共享）
-
-| Tool | 功能 |
-|------|------|
-| `search_memory` | 语义搜索自己的向量库 |
-| `update_memory` | 追加/编辑自己的 memory.md |
-| `update_player_profile` | 更新自己的 user.md（仅 lilith、mitsuki） |
-| `update_tasks` | 更新自己的 tasks.md |
-
-**narrator 使用方式**：
-- `tasks.md` = 故事主线任务（"推进到月圆之夜"、"制造冲突"）
-- `memory.md` = 已发生的故事事件
-- 不使用 `update_player_profile`（narrator 无 user.md）
+- 分析玩家输入，输出 `TARGETS: [...]`
+- 描述时间、地点、在场信息与环境
+- 推进剧情、切换场景、安排纯 NPC 行为
+- **绝不替角色说话或决定角色行动**
 
 ## 单轮对话流程
 
-```
+```text
 用户消息
-    ↓
-调用 narrator，获取路由决策 + 旁白描述
-    ↓
-解析 narrator 输出的 TARGETS 列表
-    ↓
- narrator 的旁白内容写入所有 targets 的 jsonl
-    ↓
-并行调用每个 target：
-  1. 读取自己的 jsonl 历史（包含 narrator 的旁白）
-  2. 拼装 system prompt
-  3. 调 LLM（流式 + tools）
-  4. 响应完成
-    ↓
-所有角色回应广播到各自 jsonl
-    ↓
-合并展示给玩家（旁白 + 角色回应）
+  ↓
+调用 narrator，得到 TARGETS + 旁白内容
+  ↓
+将 narrator 内容写入单一 raw 历史（带 visible_to）
+  ↓
+并行调用各 target Agent
+  ↓
+解析每个 Agent 的 <update_notes>
+  ↓
+写回 memory.md / status.md / user.md
+  ↓
+广播回应并展示给玩家
 ```
 
-**注意**：narrator 先执行，其输出作为后续角色的上下文输入，但 narrator **不得**在旁白中替其他角色说话或预设行为。
+## Agent 输出与写回机制
 
-## 文件更新规则
+当前实现不是“Tools 直接修改文件”，而是：
 
-- **jsonl**：系统维护，自动追加
-- **md 文件**：Agent 通过 Tools 自主更新
-- **soul.md**：手写，只读
-- md 文件更新后自动触发 embedding
-- 日期使用 ISO 8601（YYYY-MM-DD）
+1. Agent 输出正常回复正文
+2. 同时在末尾输出 `<update_notes>`
+3. `engine/response_parser.py` 解析以下标签：
+   - `<memory>`
+   - `<status>`
+   - `<player>`
+   - `<triggered>`
+   - `<add_event>`
+4. `engine/agent_manager.py` 将解析结果写回文件
 
-## 开发指南
+### 写回规则
 
-### 代码设计原则
+- `<memory>` → 追加/更新 `memory.md`
+- `<status>` → 覆盖更新 `status.md` 对应字段
+- `<player>` → 更新 `user.md` 对应字段
+- `<triggered>` → 从 `status.md` 中移除已执行条目
+- `<add_event>` → 向 `status.md` 中插入新条目
 
-**DRY (Don't Repeat Yourself)**
-- 重复逻辑抽为公共函数/模块
-- 配置集中管理，禁止硬编码多处
-- Agent 共享的 Tools 统一放在 `core/tools/`，禁止各 Agent 自行实现相似功能
+其中：
 
-**KISS (Keep It Simple, Stupid)**
-- 优先使用简单方案，避免过度设计
-- 不要为 hypothetical 未来需求添加抽象层
-- 三行相似代码优于一个仅用一次的通用封装
+- `narrator` 操作区块：`待触发事件`
+- 其他角色操作区块：`打算`
 
-**YAGNI (You Aren't Gonna Need It)**
-- 只实现当前必需的功能
-- 不预置未使用的配置项
-- 不添加当前业务不需要的数据库字段
+## Prompt 组成
 
-**单一职责 (Single Responsibility)**
-- 一个函数只做一件事，控制行数在 50 行以内
-- 一个模块只负责一类功能（如 `llm.py` 只处理 OpenRouter 调用）
-- Agent 的 soul.md 定义性格，memory.md 存储事实，职责分离
+### 角色 prompt
 
-**显式优于隐式 (Explicit over Implicit)**
-- 配置参数显式传递，不依赖全局状态
-- 函数返回结果明确（成功/失败/异常），不吞掉错误
-- 消息路由逻辑在 narrator 中显式声明，不自动推断
+由以下内容拼装：
+
+1. `soul.md`
+2. `growth.md`
+3. `status.md`
+4. `user.md`
+5. 最近可见对话历史
+6. `prompts/character_prompt.txt`
+
+### narrator prompt
+
+由以下内容拼装：
+
+1. `soul.md`
+2. `growth.md`
+3. `status.md`
+4. 最近对话历史
+5. `prompts/narrator_prompt.txt`
+
+## 记忆整理
+
+`memory/consolidator.py` 负责后台整理：
+
+- 归并 `memory.md`
+- 提炼 / 更新 `growth.md`
+- 去重压缩 `growth.md`
+- 顺带精炼 `user.md`
+- 按进度同步向量索引
+
+默认按 `CONSOLIDATION_INTERVAL` 控制触发频率。
+
+## 存档与重置
+
+由 `game/save_manager.py` 负责：
+
+- `/save`：导出 zip 到 `saves/`
+- `/load list`：列出存档
+- `/load <序号>`：恢复存档并重建必要索引
+- `/reset`：从 `data/templates/{story_id}` 重置运行时数据
+
+当前内置故事模板：
+
+- `school`：`lilith` / `mitsuki` / `narrator`
+- `modern`：`chenxiao` / `guyining` / `narrator`
+- `ancient`：`shenweilan` / `yunxi` / `narrator`
+
+## 开发约定
+
+### 代码设计
+
+- 保持 DRY，但不要为了抽象而抽象
+- 优先简单、显式、当前够用的实现
+- 一个函数只做一件事，尽量控制复杂度
+- 类型注解要完整（Python 3.11+）
 
 ### 错误处理
 
-- 网络调用（LLM、embedding）必须加重试机制
-- 文件操作先检查路径存在性
-- 异常必须携带上下文信息（哪个 Agent、哪一步失败）
-- 禁止裸 `except:`，捕获具体异常类型
+- LLM / embedding / 数据库调用必须保留上下文日志
+- 文件操作前先检查路径与存在性
+- 禁止裸 `except:`，应捕获具体异常
 
 ### 并发与异步
 
-- 所有 IO 操作（LLM 调用、数据库）必须使用 `async/await`
-- 多 Agent 并行使用 `asyncio.gather()`，在 `agent_runner.py` 中统一管理
-- 共享资源（vector store、文件写入）加锁防止竞争
+- 所有 I/O 操作使用 `async/await`
+- 多角色调用使用 `asyncio.gather()` 并行执行
+- 对共享资源（文件、向量库、整理任务）要考虑并发保护
 
-### 可读性优先
+### 可读性
 
-- 变量/函数名要自解释，优先清晰而非简短
-- 复杂逻辑添加注释说明「为什么」而非「做什么」
-- 类型注解必须标注（Python 3.11+）
-- JSON 结构变化必须同步更新文档
+- 变量名与函数名优先自解释
+- 注释写“为什么”，不要复述代码表面含义
+- 结构变化时同步更新文档与 prompt
 
-### 测试约定
+## 测试约定
 
-- 纯逻辑抽离为可单元测试的函数（不依赖 Chainlit 上下文）
-- Agent 行为通过集成测试验证，模拟 LLM 响应
-- 修改记忆系统后必须验证向量搜索准确性
+- 纯逻辑尽量做成可单测函数
+- 使用 `pytest`
+- 当前已有：
+  - 对话历史相关测试
+  - 格式化测试
+  - 存档一致性测试
+  - 向量库测试
+- 涉及向量检索/embedding 的测试可能依赖 `.env` 中的 embedding 配置

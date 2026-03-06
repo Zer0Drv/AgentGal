@@ -1,15 +1,23 @@
 # MemoBot
 
-多 Agent 角色扮演游戏系统。每个角色拥有独立记忆，通过 Tools 自主管理记忆和目标，形成真实的信息差。
+多 Agent 角色扮演 / 叙事游戏系统。项目围绕 **旁白路由 + 角色独立记忆 + 结构化写回 + 向量检索** 构建，当前主要以 **Chainlit** 作为交互入口。
 
-## 项目意图
+## 项目特点
 
-传统角色扮演游戏中，NPC 通常共享同一个世界观数据库，缺乏真实的信息不对等。MemoBot 尝试模拟更真实的社交情境：
+- **独立记忆**：每个角色维护自己的 `memory.md / status.md / user.md`
+- **真实信息差**：消息通过 `visible_to` 控制可见性，不在场的角色不会自动知情
+- **旁白驱动路由**：`narrator` 决定谁参与当前回合，并推进场景与时间
+- **结构化更新**：Agent 通过 `<update_notes>` 输出记忆/状态更新，由系统统一写回
+- **双层记忆**：Markdown 文件负责可读存储，`sqlite-vec` 负责检索
 
-- **独立记忆**：每个角色维护自己的对话历史和认知，不会自动知道其他角色的秘密
-- **自主管理**：Agent 自己决定何时记录重要信息、更新对他人的印象
-- **信息差设计**：消息按可见性广播，未在场的角色不会收到那段对话
-- **故事推进**：旁白（narrator）作为上帝视角的主持人，控制时间、环境、路由决策
+## 当前技术栈
+
+- Python 3.11+
+- Chainlit
+- OpenAI-compatible LLM client
+- sqlite-vec + aiosqlite
+- asyncio
+- `uv` 包管理
 
 ## 快速开始
 
@@ -23,84 +31,195 @@ uv sync
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 LLM_API_KEY / EVERMEMOS_API_KEY / DATABASE_URL
 ```
 
-### 3. 启动
+至少需要检查 / 配置以下变量：
+
+- `LLM_PROVIDER`：当前代码支持 `openai` / `deepseek` / `openrouter`
+- `LLM_API_KEY`
+- `LLM_MODEL_ID`
+- `DATABASE_URL`
+
+如果需要向量记忆检索，还应配置：
+
+- `EMBEDDING_API_URL`
+- `EMBEDDING_MODEL`
+- `EMBEDDING_DIM`
+- `EMBEDDING_API_KEY`
+
+> 说明：如果你想使用 Anthropic 模型，请通过 `openrouter` 路由，而不是把 `LLM_PROVIDER` 直接写成 `anthropic`。
+
+### 3. 启动 Chainlit
 
 ```bash
 uv run chainlit run app.py
 ```
 
-打开 http://localhost:8000
+默认可在浏览器打开 `http://localhost:8000`。
 
-### 4. 使用 FastAPI（异步并发）
+## 使用方式
+
+启动后，系统会让你选择故事模板。当前内置三套模板：
+
+- `school`：`lilith`、`mitsuki`
+- `modern`：`chenxiao`、`guyining`
+- `ancient`：`shenweilan`、`yunxi`
+
+然后直接在聊天界面输入消息即可。
+
+## 聊天命令
+
+- `/save`：导出当前存档到 `saves/`
+- `/load list`：查看存档列表
+- `/load <序号>`：加载指定存档
+- `/reset`：重置当前游戏并重新选择故事模板
+
+## 当前运行机制
+
+### 1. narrator 先路由
+
+每轮先调用 `narrator`，由它输出：
+
+- `TARGETS: [角色列表]`
+- 当前时间、地点、在场信息
+- 必要的环境描述或纯 NPC 行为
+
+`narrator` 只能决定谁参与、环境如何变化，**不能替角色说话或行动**。
+
+### 2. 单一历史源 + 可见性过滤
+
+当前实现里，对话历史并不是“每个角色各自维护 raw 日志”。
+
+实际做法是：
+
+- 统一写入 `data/characters/narrator/raw/YYYY-MM-DD.jsonl`
+- 每条消息记录 `visible_to`
+- 各角色在读取上下文时，按 `visible_to` 过滤出自己能看到的内容
+
+### 3. 结构化写回
+
+Agent 回复由两部分组成：
+
+1. 面向玩家展示的正文
+2. 末尾的 `<update_notes>`
+
+系统会解析并写回：
+
+- `<memory>` → `memory.md`
+- `<status>` → `status.md`
+- `<player>` → `user.md`
+- `<triggered>` / `<add_event>` → `status.md` 中的事件区块
+
+其中：
+
+- `narrator` 使用 `待触发事件`
+- 角色使用 `打算`
+
+### 4. 记忆整理
+
+`memory/consolidator.py` 会定期整理：
+
+- `memory.md`
+- `growth.md`
+- `user.md`
+
+并同步更新向量索引。整理频率由 `CONSOLIDATION_INTERVAL` 控制。
+
+## 关键目录说明
+
+```text
+.
+├── app.py
+├── data/
+│   ├── characters/
+│   └── templates/
+├── engine/
+├── game/
+├── llm/
+├── log_config/
+├── memory/
+├── prompts/
+├── scripts/
+└── tests/
+```
+
+### 运行时数据
+
+- `data/characters/`：当前游戏状态
+- `data/templates/`：故事模板
+- `saves/`：导出的 zip 存档
+- `logs/`：路由、记忆、调用日志
+
+### 角色文件职责
+
+- `soul.md`：角色定义，只读
+- `memory.md`：长期记忆
+- `status.md`：当前状态 / 打算 / 待触发事件
+- `user.md`：角色对玩家的认知
+- `growth.md`：整理器维护的人格沉淀
+
+## 环境变量速览
+
+更完整说明请查看 `.env.example`。常用变量如下：
+
+| 变量 | 必需 | 说明 |
+|---|---|---|
+| `LLM_PROVIDER` | 是 | `openai` / `deepseek` / `openrouter` |
+| `LLM_API_KEY` | 是 | 主模型 API Key |
+| `LLM_MODEL_ID` | 是 | 主模型 ID |
+| `LLM_API_URL` | 否 | 自定义 OpenAI 兼容端点 |
+| `LLM_TEMPERATURE` | 否 | 对话温度 |
+| `CONSOLIDATION_LLM_*` | 否 | 记忆整理器独立模型配置 |
+| `EMBEDDING_API_URL` | 否 | embedding 接口地址 |
+| `EMBEDDING_MODEL` | 否 | embedding 模型 |
+| `EMBEDDING_DIM` | 否 | 向量维度 |
+| `EMBEDDING_API_KEY` | 否 | embedding API Key |
+| `RERANK_*` | 否 | rerank 配置 |
+| `DATABASE_URL` | 是 | Chainlit / 应用数据库连接串 |
+| `CONSOLIDATION_INTERVAL` | 否 | 记忆整理轮次间隔 |
+| `HISTORY_LIMIT_NARRATOR` | 否 | narrator 历史条数 |
+| `HISTORY_LIMIT_DEFAULT` | 否 | 角色历史条数 |
+| `MAX_CONCURRENT_AGENTS` | 否 | 角色并发上限 |
+| `VECTOR_SEARCH_LIMIT` | 否 | 向量检索条数 |
+| `AGENT_RUN_TIMEOUT_SECONDS` | 否 | Agent 超时 |
+| `MAX_ACTIONS` | 否 | 回复后处理配置 |
+| `MAX_ELLIPSIS` | 否 | 回复后处理配置 |
+
+## 存档机制
+
+- `/save` 会将当前角色数据、记忆、历史等打包为 zip 存入 `saves/`
+- `/load <序号>` 会恢复角色目录，并按需要重建向量索引
+- `/reset` 会清空当前运行数据，并从 `data/templates/{story_id}` 重建
+
+## 测试
+
+运行全部测试：
 
 ```bash
-uv run uvicorn fastapi_app.main:app --reload
+uv run pytest
 ```
 
-也可以用模块方式启动：
+当前仓库中可见的测试包括：
 
-```bash
-uv run python -m fastapi_app.main
-```
+- `tests/test_conversation_history.py`
+- `tests/test_format_history.py`
+- `tests/test_save_load_consistency.py`
+- `tests/test_vector_store.py`
 
-服务默认地址：
+> 注意：`test_vector_store.py` 依赖 embedding 相关环境变量，未配置时会跳过。
 
-- API: `http://127.0.0.1:5001`
-- Web UI: `http://127.0.0.1:5001/web`
+## 常用脚本
 
-接口示例：
+- `scripts/check_status.py`：检查状态文件
+- `scripts/consolidate_memories.py`：批量整理记忆
+- `scripts/consolidate_one_date.py`：整理单日记忆
+- `scripts/consolidate_user_md.py`：整理用户画像
+- `scripts/fix_narrator_status.py`：修复 narrator 状态文件
+- `scripts/query_vectors.py`：查询向量库
+- `scripts/rebuild_vectors.py`：重建向量索引
 
-- `GET /api/v1/health`
-- `POST /api/v1/chat`，body: `{"message":"你好"}`
+## 说明
 
-说明：FastAPI 版本使用异步 SQLAlchemy，启动时会按 `DATABASE_URL` 自动建表（默认 PostgreSQL + asyncpg）。
-
-#### DATABASE_URL 示例说明
-
-例如：
-
-```env
-DATABASE_URL=postgresql+asyncpg://seki:postgres@localhost:5432/agentgal
-```
-
-含义如下：
-
-- `postgresql+asyncpg`：数据库驱动，表示 PostgreSQL + `asyncpg` 异步驱动
-- `seki`：数据库用户名
-- `postgres`：数据库密码
-- `localhost`：数据库主机地址
-- `5432`：PostgreSQL 端口
-- `agentgal`：数据库名
-
-等价于「用账号 `seki` 连接本机 `5432` 的 `agentgal` 数据库」。
-
-## 使用方法
-
-在聊天界面输入消息。
-
-## 配置说明
-
-| 环境变量 | 必需 | 说明 |
-|---------|------|------|
-| `LLM_API_KEY` | 是 | DeepSeek API Key |
-| `LLM_MODEL_ID` | 否 | 模型 ID，默认 `deepseek-chat` |
-| `DATABASE_URL` | FastAPI 必需 | 数据库连接串，示例：`postgresql+asyncpg://seki:postgres@localhost:5432/agentgal` |
-| `AGENT_LOG_ENABLED` | 否 | 是否记录 Agent 调用日志，默认 `true` |
-| `CONSOLIDATION_INTERVAL` | 否 | 记忆整理间隔（轮数），默认 `5` |
-
-## 核心机制
-
-### 记忆系统
-
-- **对话历史**（`raw/YYYY-MM-DD.jsonl`）：自动追加，包含该角色可见的所有消息
-- **长期记忆**（`memory.md`）：Agent 通过 `update_memory` Tool 自主更新，记录重要事件和情感
-- **记忆整理**：每 N 轮自动触发，压缩冗长历史
-
-## 技术栈
-
-- **Chainlit**: Web UI 框架
-- **Agno**: Agent 框架
-- **DeepSeek**: LLM 模型
+- 当前主入口是 `app.py`
+- README 里旧的 `fastapi_app.main` 启动方式已不再适用于当前仓库结构
+- 如需了解具体 prompt 约束，请查看 `prompts/character_prompt.txt` 和 `prompts/narrator_prompt.txt`
