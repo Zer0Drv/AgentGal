@@ -98,6 +98,47 @@ def _extract_user_message(full_input: str) -> str:
     return match.group(1).strip() if match else full_input.strip()
 
 
+def _extract_status_field(status_text: str, field_name: str) -> str:
+    """从 status.md 文本中提取指定 ## 字段的值。"""
+    pattern = re.compile(
+        rf"^##\s+{re.escape(field_name)}\s*\n(.*?)(?=^##\s|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = pattern.search(status_text)
+    if not m:
+        return ""
+    return m.group(1).strip()
+
+
+def _build_search_query(agent_name: str, user_input: str, scene_summary: str = "") -> str:
+    """构建上下文感知的 RAG query。
+
+    旁白：玩家原话 + 叙事焦点 + 场景
+    角色：玩家原话 + 旁白场景摘要 + 心境 + 在意的事
+    """
+    parts = [user_input]
+    status = read_agent_file(agent_name, "status.md")
+
+    if agent_name == "narrator":
+        focus = _extract_status_field(status, "叙事焦点")
+        scene = _extract_status_field(status, "场景")
+        if focus:
+            parts.append(focus)
+        if scene:
+            parts.append(scene)
+    else:
+        if scene_summary:
+            parts.append(scene_summary)
+        mood = _extract_status_field(status, "心境")
+        concerns = _extract_status_field(status, "在意的事")
+        if mood:
+            parts.append(mood)
+        if concerns:
+            parts.append(concerns)
+
+    return " | ".join(p for p in parts if p)
+
+
 def _search_memories(agent_name: str, query: str) -> str:
     """语义搜索向量库，返回格式化记忆字符串。"""
     try:
@@ -109,9 +150,10 @@ def _search_memories(agent_name: str, query: str) -> str:
     return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
 
 
-def _build_memory_prefix(agent_name: str, user_input: str) -> str:
+def _build_memory_prefix(agent_name: str, user_input: str, scene_summary: str = "") -> str:
     """组装记忆上下文前缀（RAG 召回 + 最近记忆）。"""
-    relevant = _search_memories(agent_name, user_input)
+    query = _build_search_query(agent_name, user_input, scene_summary)
+    relevant = _search_memories(agent_name, query)
     parts = [f"<relevant_memories>\n{relevant}\n</relevant_memories>"]
 
     recent = read_file_tail(character_path(agent_name, "memory.md"), lines=5) or "（尚无记忆）"
@@ -240,12 +282,12 @@ async def _apply_response_updates(agent_name: str, parsed) -> None:
 # 公开入口
 # ---------------------------------------------------------------------------
 
-async def run_agent(agent_name: str, user_input: str) -> str:
+async def run_agent(agent_name: str, user_input: str, scene_summary: str = "") -> str:
     """运行指定角色的 Agent，返回清理后的响应文本。"""
     start = time.time()
 
     pure_input = _extract_user_message(user_input)
-    memory_prefix = _build_memory_prefix(agent_name, pure_input)
+    memory_prefix = _build_memory_prefix(agent_name, pure_input, scene_summary)
     full_input = f"{memory_prefix}\n\n---\n\n{user_input}" if memory_prefix else user_input
 
     soul_content = read_agent_file(agent_name, "soul.md")
