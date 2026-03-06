@@ -43,6 +43,11 @@ EMBED_API_URL = os.getenv("EMBEDDING_API_URL") or os.getenv("LLM_API_URL", "")
 # 维度：根据模型选择，text-embedding-3-small=1536；兼容 .env 的 EMBEDDING_DIM
 EMBED_DIM = int(os.getenv("EMBEDDING_DIM", "1536"))
 
+# Rerank 配置（可选；未配置则跳过 rerank 步骤）
+RERANK_MODEL = os.getenv("RERANK_MODEL", "")
+RERANK_API_KEY = os.getenv("RERANK_API_KEY") or EMBED_API_KEY
+RERANK_API_URL = os.getenv("RERANK_API_URL", "")
+
 
 # ----------------------------- 嵌入函数 -----------------------------
 
@@ -78,6 +83,23 @@ def _embed_sync(texts: list[str]) -> list[list[float]]:
     )
     resp.raise_for_status()
     return [d["embedding"] for d in resp.json()["data"]]
+
+
+def _rerank_sync(query: str, documents: list[str], top_n: int) -> list[int]:
+    """调用 rerank API，返回按相关性降序排列的原始索引列表。
+
+    兼容 OpenAI 兼容 rerank 端点（Jina / Cohere / Voyage 等）。
+    响应格式：{"results": [{"index": int, "relevance_score": float}, ...]}
+    """
+    resp = httpx.post(
+        RERANK_API_URL,
+        headers={"Authorization": f"Bearer {RERANK_API_KEY}", "Content-Type": "application/json"},
+        json={"model": RERANK_MODEL, "query": query, "documents": documents, "top_n": top_n},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    results = resp.json()["results"]
+    return [r["index"] for r in sorted(results, key=lambda x: x["relevance_score"], reverse=True)]
 
 
 class VectorStore:
@@ -482,17 +504,38 @@ class VectorStore:
             ORDER BY v.distance
             LIMIT ?
             """
+            # 若启用 rerank，先多取候选，rerank 后再截取
+            rerank_multiplier = int(os.getenv("RERANK_CANDIDATE_MULTIPLIER", "3"))
+            fetch_limit = limit * rerank_multiplier if RERANK_MODEL else limit
+
             rows = conn.execute(
                 sql,
-                (*scope_params, self._to_vec_blob(qvec), candidate_limit, limit),
+                (*scope_params, self._to_vec_blob(qvec), candidate_limit, fetch_limit),
             ).fetchall()
+
+            results = [{"id": str(r[0]), "content": r[1], "score": float(r[2])} for r in rows]
+
+            if RERANK_MODEL and results:
+                try:
+                    ranked_indices = _rerank_sync(query, [r["content"] for r in results], top_n=limit)
+                    results = [results[i] for i in ranked_indices][:limit]
+                    routing_logger.info(
+                        "[VectorStore] rerank 完成: agent=%s, 候选=%s, 返回=%s",
+                        agent_name, len(rows), len(results),
+                    )
+                except Exception as e:
+                    routing_logger.warning(
+                        "[VectorStore] rerank 失败，降级为 ANN 结果: agent=%s, error=%s",
+                        agent_name, e,
+                    )
+                    results = results[:limit]
 
             routing_logger.info(
                 "[VectorStore] 搜索完成: agent=%s, limit=%s, 命中=%s, kind=%s",
-                agent_name, limit, len(rows), kind_norm
+                agent_name, limit, len(results), kind_norm
             )
 
-            return [{"id": str(r[0]), "content": r[1], "score": float(r[2])} for r in rows]
+            return results
         except Exception as e:
             routing_logger.error(f"[VectorStore] 检索失败: {e}")
             return []
