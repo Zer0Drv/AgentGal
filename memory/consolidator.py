@@ -68,12 +68,9 @@ _CONSOLIDATION_SIZE_THRESHOLD = 100
 
 # 字段描述映射（用于 user.md 整理）
 _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
-    "基本信息": "最多 5 条基础信息（名字/称呼、身份、核心性格标签等）",
-    "观察到的特质": "最多 8 条跨情境的深层理解（角色对玩家的判断）",
-    "互动模式": "最多 5 条关系中的行为规律",
-    "玩家风格": "最多 5 条玩家在游戏中的行为风格特征",
-    "关键选择": "最多 8 条玩家做出的重要选择及其倾向",
-    "当前倾向": "最多 5 条玩家当前的行为/情感倾向",
+    "基本信息": "最多 5 条长期稳定的基础信息（身份、称呼、关系位置等）",
+    "观察到的特质": "最多 7 条跨情境仍成立的稳定判断",
+    "互动模式": "最多 5 条与角色相处时反复出现的规律",
 }
 
 
@@ -257,13 +254,7 @@ class MemoryConsolidator:
         soul_content = read_agent_file(agent_name, "soul.md")
         growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
 
-        count = len(read_growth_entries(agent_name))
-        if count >= 15:
-            count_hint = f"⚠️ 当前已有 {count} 条（已超过上限 15），本次严禁 ADD，只能 UPDATE 合并现有条目"
-        else:
-            count_hint = f"当前已有 {count} 条（上限 15），还可新增 {15 - count} 条"
-
-        system = load_text(_PROMPT_STEP2_PATH).format(count_hint=count_hint)
+        system = load_text(_PROMPT_STEP2_PATH)
         user = (
             f"<soul>\n{soul_content}\n</soul>\n\n"
             f"<existing_growth>\n{growth_content}\n</existing_growth>\n\n"
@@ -543,7 +534,7 @@ class MemoryConsolidator:
         从 LLM 输出中提取第二步：人格沉淀更新。
 
         Returns:
-            [{"type": "ADD|UPDATE|DELETE", "id": "P001", "content": "..."}]
+            [{"content": "..."}]
         """
         # 提取 personality_updates 部分
         pattern = r"<personality_updates>(.*?)</personality_updates>"
@@ -552,24 +543,26 @@ class MemoryConsolidator:
         if not match:
             return []
 
+        raw_updates = match.group(1).strip()
+        if not raw_updates:
+            return []
+
         updates = []
-        # 解析每个 update 标签，允许属性顺序变化并兼容自闭合/有内容两种格式
-        tag_pattern = r"<update\b([^>]*)\s*(?:/>|>(.*?)</update>)"
-        attr_pattern = r'(\w+)="(.*?)"'
-        for m in re.finditer(tag_pattern, match.group(1), re.DOTALL):
-            attrs_text = m.group(1) or ""
-            attrs = {k: v for k, v in re.findall(attr_pattern, attrs_text)}
-            up_type = (attrs.get("type") or "").upper()
-            up_id = attrs.get("id")
-            if not up_type or not up_id:
-                continue
-            updates.append(
-                {
-                    "type": up_type,  # ADD/UPDATE/DELETE
-                    "id": up_id,  # P001
-                    "content": m.group(2).strip() if m.group(2) else None,
-                }
-            )
+        # 兼容旧格式：<update>...</update>
+        tag_pattern = r"<update\b[^>]*>(.*?)</update>"
+        tagged_matches = list(re.finditer(tag_pattern, raw_updates, re.DOTALL))
+        if tagged_matches:
+            for m in tagged_matches:
+                content = m.group(1).strip() if m.group(1) else ""
+                if content:
+                    updates.append({"content": content})
+            return updates
+
+        # 新格式：<personality_updates> 内一行一条
+        for line in raw_updates.splitlines():
+            content = line.strip()
+            if content:
+                updates.append({"content": content})
 
         return updates
 
@@ -582,28 +575,20 @@ class MemoryConsolidator:
         """
         entries = read_growth_entries(agent_name)
         logs = []
+        next_index = max(
+            (int(m.group(1)) for key in entries if (m := re.fullmatch(r"P(\d{3})", key))),
+            default=0,
+        ) + 1
 
         for up in updates:
-            if up["type"] == "ADD":
-                if up["id"] in entries:
-                    logs.append(f"ADD失败:{up['id']}已存在")
-                else:
-                    entries[up["id"]] = up["content"] or ""
-                    logs.append(f"ADD {up['id']}")
+            content = (up.get("content") or "").strip()
+            if not content:
+                continue
 
-            elif up["type"] == "UPDATE":
-                if up["id"] not in entries:
-                    logs.append(f"UPDATE警告:{up['id']}不存在转为ADD")
-                else:
-                    logs.append(f"UPDATE {up['id']}")
-                entries[up["id"]] = up["content"] or ""
-
-            elif up["type"] == "DELETE":
-                if up["id"] in entries:
-                    del entries[up["id"]]
-                    logs.append(f"DELETE {up['id']}")
-                else:
-                    logs.append(f"DELETE警告:{up['id']}不存在")
+            new_id = f"P{next_index:03d}"
+            entries[new_id] = content
+            logs.append(f"ADD {new_id}")
+            next_index += 1
 
         write_growth_entries(agent_name, entries)
         return ";".join(logs) if logs else "无更新"
