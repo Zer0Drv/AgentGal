@@ -236,40 +236,37 @@ def _build_agent_input(history: str, user_input: str) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-async def _process_target_agents(
+async def _process_and_send_agent(
+    agent_name: str,
     targets: list[str],
     user_input: str,
-) -> list[tuple[str, str, bool]]:
-    """顺序处理目标角色，收集响应"""
-    results = []
+    scene_summary: str = "",
+) -> None:
+    """处理单个目标角色并立即推送响应到前端"""
+    try:
+        raw_messages = load_conversation_history(limit=HISTORY_LIMIT_DEFAULT * 5)
+        history = _format_conversation_history(raw_messages, agent_name, limit=HISTORY_LIMIT_DEFAULT)
+        full_input = _build_agent_input(history, user_input)
 
-    for agent_name in targets:
-        try:
-            raw_messages = load_conversation_history(limit=HISTORY_LIMIT_DEFAULT * 5)
-            history = _format_conversation_history(raw_messages, agent_name, limit=HISTORY_LIMIT_DEFAULT)
-            full_input = _build_agent_input(history, user_input)
+        response = await run_agent(agent_name, full_input, scene_summary=scene_summary)
 
-            response = await run_agent(agent_name, full_input)
+        # 后处理：清理 thinking 标签 + 限制动作数量 + 限制省略号
+        response = process_character_response(response)
 
-            # 后处理：清理 thinking 标签 + 限制动作数量 + 限制省略号
-            response = process_character_response(response)
+        is_valid = is_valid_response(response, agent_name)
 
-            is_valid = is_valid_response(response, agent_name)
+        # 只有有效响应才广播到 jsonl（让后续角色能看到）
+        if is_valid:
+            await message_router.broadcast_agent_response(
+                agent_name, targets, response
+            )
 
-            # 只有有效响应才广播到 jsonl（让后续角色能看到）
-            if is_valid:
-                await message_router.broadcast_agent_response(
-                    agent_name, targets, response
-                )
+        if response:
+            await cl.Message(content=response, author=agent_name.capitalize()).send()
 
-            results.append((agent_name, response, is_valid))
-
-        except Exception as e:
-            print(f"Agent {agent_name} 运行失败: {e}")
-            error_msg = f"[错误: {str(e)}]"
-            results.append((agent_name, error_msg, False))
-
-    return results
+    except Exception as e:
+        print(f"Agent {agent_name} 运行失败: {e}")
+        await cl.Message(content=f"[错误: {str(e)}]", author=agent_name.capitalize()).send()
 
 
 
@@ -414,16 +411,9 @@ async def on_message(message: cl.Message):
         print("[导演] 无角色需要回应")
         return
 
-    # 5. 顺序处理目标角色
-    results = await _process_target_agents(targets, user_input)
-
-    # 6. 展示角色响应给玩家
-    for agent_name, response, _ in results:
-        if response:
-            await cl.Message(
-                content=response,
-                author=agent_name.capitalize(),
-            ).send()
+    # 5. 顺序处理目标角色，每个完成后立即推送到前端
+    for agent_name in targets:
+        await _process_and_send_agent(agent_name, targets, user_input, scene_summary=scene_description)
 
     # 7. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
     print(
