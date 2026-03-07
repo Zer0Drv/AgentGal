@@ -59,7 +59,7 @@ agentgal-memos/
 - `memory.md`：长期记忆，记录事件与情绪变化
 - `status.md`：当前状态；角色包含“打算”，旁白包含“待触发事件”
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
-- `growth.md`：人格沉淀，由整理器维护并在 prompt 中注入
+- `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有，`narrator` 无）
 
 ### 历史文件
 
@@ -145,19 +145,18 @@ agentgal-memos/
 由以下内容拼装：
 
 1. `soul.md`
-2. `growth.md`
-3. `status.md`
-4. 最近对话历史
-5. `prompts/narrator_prompt.txt`
+2. `status.md`
+3. 最近对话历史
+4. `prompts/narrator_prompt.txt`
 
 ## 记忆整理
 
 `memory/consolidator.py` 负责后台整理：
 
 - 归并 `memory.md`
-- 提炼 / 更新 `growth.md`
-- 去重压缩 `growth.md`
-- 顺带精炼 `user.md`
+- 提炼 / 更新 `growth.md`（仅角色）
+- 去重压缩 `growth.md`（仅角色）
+- 顺带精炼 `user.md`（仅角色）
 - 按进度同步向量索引
 
 默认按 `CONSOLIDATION_INTERVAL` 控制触发频率。

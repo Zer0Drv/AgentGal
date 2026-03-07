@@ -59,7 +59,7 @@ def _build_system_prompt(agent_name: str, soul_content: str) -> str:
     """构建 system prompt（每次调用时重新读取记忆文件）。"""
     status_content = read_agent_file(agent_name, "status.md")
     user_content = read_agent_file(agent_name, "user.md") if agent_name != "narrator" else ""
-    growth_content = load_growth_for_prompt(agent_name)
+    growth_content = load_growth_for_prompt(agent_name) if agent_name != "narrator" else ""
     prompt_template = _load_prompt_template(agent_name)
     # 「打算」由 <triggered>/<add_event> 专用标签管理，不暴露给 <status> 覆盖
     _status_excluded = {"打算"} if agent_name != "narrator" else set()

@@ -120,8 +120,8 @@ Agent 回复由两部分组成：
 `memory/consolidator.py` 会定期整理：
 
 - `memory.md`
-- `growth.md`
-- `user.md`
+- `growth.md`（仅角色）
+- `user.md`（仅角色）
 
 并同步更新向量索引。整理频率由 `CONSOLIDATION_INTERVAL` 控制。
 
@@ -156,7 +156,7 @@ Agent 回复由两部分组成：
 - `memory.md`：长期记忆
 - `status.md`：当前状态 / 打算 / 待触发事件
 - `user.md`：角色对玩家的认知
-- `growth.md`：整理器维护的人格沉淀
+- `growth.md`：整理器维护的人格沉淀（仅角色有，`narrator` 无）
 
 ## 环境变量速览
 

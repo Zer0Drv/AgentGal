@@ -16,10 +16,6 @@
 如果角色已在流畅互动，可省略大段环境描写；但仍可用一句环境提示为下一个待触发事件埋下伏笔（如远处广播、窗外天色变暗）。
 </goal>
 
-<personality_growth>
-{growth}
-</personality_growth>
-
 <status>
 {status}
 </status>

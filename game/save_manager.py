@@ -172,6 +172,11 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
         os.makedirs(raw_dir, exist_ok=True)
         print(f"  已创建: {raw_dir}", flush=True)
 
+        narrator_growth_path = character_path("narrator", "growth.md")
+        if os.path.exists(narrator_growth_path):
+            os.remove(narrator_growth_path)
+            print(f"  已删除: {narrator_growth_path}", flush=True)
+
         # 4. 写入 story_id 和 save_id 标记文件
         story_id_path = os.path.join(characters_dir, ".story_id")
         with open(story_id_path, "w", encoding="utf-8") as f:
@@ -302,6 +307,11 @@ async def import_save_archive(save_filename: str) -> bool:
                 zf.extract(member, characters_dir)
                 print(f"[读档] 已恢复: {member}", flush=True)
 
+        narrator_growth_path = character_path("narrator", "growth.md")
+        if os.path.exists(narrator_growth_path):
+            os.remove(narrator_growth_path)
+            print(f"[读档] 已删除旧 narrator growth: {narrator_growth_path}", flush=True)
+
         # 4. 若旧存档没有 .save_id，生成一个新的（下次 /save 会创建新文件）
         save_id_path = os.path.join(characters_dir, ".save_id")
         if not os.path.exists(save_id_path):
@@ -340,8 +350,12 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     files = []
     base = agent_path(agent_name)
 
-    # 核心记忆文件（soul.md 虽只读，但存档需自包含；growth.md 由 consolidator 运行时生成）
-    for filename in ["soul.md", "memory.md", "user.md", "status.md", "growth.md"]:
+    # 核心记忆文件（narrator 无 user.md / growth.md）
+    core_files = ["soul.md", "memory.md", "status.md"]
+    if agent_name != "narrator":
+        core_files.extend(["user.md", "growth.md"])
+
+    for filename in core_files:
         filepath = f"{base}/{filename}"
         if os.path.exists(filepath):
             files.append(filepath)

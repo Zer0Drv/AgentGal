@@ -114,6 +114,11 @@ class MemoryConsolidator:
         # 统一走项目 OpenAI 兼容客户端，避免重复实现 HTTP 细节
         self._client: Optional[OpenAICompatibleClient] = None
 
+    @staticmethod
+    def _supports_growth(agent_name: str) -> bool:
+        """仅角色维护 growth.md，narrator 不使用。"""
+        return agent_name != "narrator"
+
     def _get_lock(self, name: str) -> asyncio.Lock:
         """获取按 agent 名称隔离的整理锁。"""
         if name not in self._locks:
@@ -224,7 +229,7 @@ class MemoryConsolidator:
     def _build_consolidation_prompt_step1(
         self, agent_name: str, sections: OrderedDict[str, str], dates: list[str]
     ) -> tuple[str, str]:
-        """构建第一步 prompt：归并整理（soul 和 growth 放 user message 供模型以角色视角重写）。
+        """构建第一步 prompt：归并整理（角色带 growth，narrator 不带）。
 
         Returns:
             (system, user): system 为纯指令，user 为结构化数据 + 待整理内容
@@ -233,14 +238,20 @@ class MemoryConsolidator:
         combined_text = "\n\n".join(parts)
 
         soul_content = read_agent_file(agent_name, "soul.md")
-        growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
 
         system = load_text(_PROMPT_STEP1_PATH)
-        user = (
-            f"<soul>\n{soul_content}\n</soul>\n\n"
-            f"<growth>\n{growth_content}\n</growth>\n\n"
-            f"<input>\n{combined_text}\n</input>"
-        )
+        if self._supports_growth(agent_name):
+            growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
+            user = (
+                f"<soul>\n{soul_content}\n</soul>\n\n"
+                f"<growth>\n{growth_content}\n</growth>\n\n"
+                f"<input>\n{combined_text}\n</input>"
+            )
+        else:
+            user = (
+                f"<soul>\n{soul_content}\n</soul>\n\n"
+                f"<input>\n{combined_text}\n</input>"
+            )
         return system, user
 
     def _build_consolidation_prompt_step2(
@@ -315,7 +326,7 @@ class MemoryConsolidator:
         dates: list[str],
         result: "_ConsolidationResult",
     ):
-        """两步调用：第一步整理，第二步判断成长事件。"""
+        """整理记忆；角色额外执行 growth 提炼与去重，narrator 只整理 memory。"""
         # ===== 第一步：调用 LLM 进行归并整理 =====
         system_step1, user_step1 = self._build_consolidation_prompt_step1(agent_name, sections, dates)
         try:
@@ -353,6 +364,10 @@ class MemoryConsolidator:
                     result.errors.append(f"{date} 未在第一步返回中找到")
         else:
             result.errors.append("未能解析第一步:归并整理")
+            return
+
+        if not self._supports_growth(agent_name):
+            routing_logger.info(f"[整理器] {agent_name} 跳过 growth.md 流程")
             return
 
         # ===== 第二步：调用 LLM 进行成长事件判断 =====
