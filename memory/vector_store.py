@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import json
 import asyncio
@@ -47,6 +48,11 @@ EMBED_DIM = int(os.getenv("EMBEDDING_DIM", "1536"))
 RERANK_MODEL = os.getenv("RERANK_MODEL", "")
 RERANK_API_KEY = os.getenv("RERANK_API_KEY") or EMBED_API_KEY
 RERANK_API_URL = os.getenv("RERANK_API_URL", "")
+
+# Time-decay 配置：语义相似度与时间新鲜度的融合权重
+# TIME_DECAY_ALPHA=1.0 时退化为纯向量搜索；=0.0 时纯按时间排序
+TIME_DECAY_ALPHA = float(os.getenv("TIME_DECAY_ALPHA", "0.7"))
+TIME_DECAY_HALF_LIFE_DAYS = float(os.getenv("TIME_DECAY_HALF_LIFE_DAYS", "14.0"))
 
 
 # ----------------------------- 嵌入函数 -----------------------------
@@ -100,6 +106,16 @@ def _rerank_sync(query: str, documents: list[str], top_n: int) -> list[int]:
     resp.raise_for_status()
     results = resp.json()["results"]
     return [r["index"] for r in sorted(results, key=lambda x: x["relevance_score"], reverse=True)]
+
+
+def _time_decay_score(created_at: str, half_life_days: float) -> float:
+    """指数衰减时间得分：score = 0.5^(days_ago / half_life_days)，越新越接近 1.0。"""
+    try:
+        ts = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        days_ago = (datetime.now(timezone.utc) - ts).total_seconds() / 86400.0
+        return math.exp(-math.log(2) * days_ago / half_life_days)
+    except Exception:
+        return 0.5  # 无法解析时返回中性值
 
 
 class VectorStore:
@@ -186,6 +202,8 @@ class VectorStore:
             await db.execute("ALTER TABLE chunks ADD COLUMN source TEXT NOT NULL DEFAULT 'round'")
         if "owner_agent" not in cols:
             await db.execute("ALTER TABLE chunks ADD COLUMN owner_agent TEXT")
+        if "last_recalled_at" not in cols:
+            await db.execute("ALTER TABLE chunks ADD COLUMN last_recalled_at TEXT")
         await db.execute(
             f"""
             CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
@@ -497,7 +515,8 @@ class VectorStore:
               WHERE embedding MATCH ?
               LIMIT ?
             )
-            SELECT c.id, c.content, v.distance
+            SELECT c.id, c.content, v.distance,
+                   COALESCE(c.last_recalled_at, c.created_at) AS time_ref
             FROM vec_results v
             JOIN scope s ON s.id = v.rowid
             JOIN chunks c ON c.id = v.rowid
@@ -512,6 +531,19 @@ class VectorStore:
                 sql,
                 (*scope_params, self._to_vec_blob(qvec), candidate_limit, fetch_limit),
             ).fetchall()
+
+            # Time-decay 融合：blended = α * semantic + (1-α) * time_score
+            # time_ref = last_recalled_at（被想起则重置计时），兜底 created_at
+            # 在 rerank 之前执行，让 reranker 见到时间调整后的候选顺序
+            if TIME_DECAY_ALPHA < 1.0 and TIME_DECAY_HALF_LIFE_DAYS > 0 and rows:
+                def _blended(row: tuple) -> float:
+                    dist, time_ref = row[2], row[3]
+                    # sqlite-vec cosine distance ∈ [0, 2]，转为 similarity ∈ [0, 1]
+                    similarity = 1.0 - min(float(dist), 2.0) / 2.0
+                    time_score = _time_decay_score(time_ref or "", TIME_DECAY_HALF_LIFE_DAYS)
+                    return TIME_DECAY_ALPHA * similarity + (1.0 - TIME_DECAY_ALPHA) * time_score
+
+                rows = sorted(rows, key=_blended, reverse=True)
 
             results = [{"id": str(r[0]), "content": r[1], "score": float(r[2])} for r in rows]
 
@@ -529,6 +561,20 @@ class VectorStore:
                         agent_name, e,
                     )
                     results = results[:limit]
+
+            # 更新 last_recalled_at：被返回的记忆视为"被想起"，遗忘时钟重置
+            recalled_ids = [r["id"] for r in results if r["id"]]
+            if recalled_ids and TIME_DECAY_ALPHA < 1.0:
+                try:
+                    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                    placeholders = ",".join("?" * len(recalled_ids))
+                    conn.execute(
+                        f"UPDATE chunks SET last_recalled_at = ? WHERE id IN ({placeholders})",
+                        (now_iso, *recalled_ids),
+                    )
+                    conn.commit()
+                except Exception as e:
+                    routing_logger.warning("[VectorStore] 更新 last_recalled_at 失败: %s", e)
 
             routing_logger.info(
                 "[VectorStore] 搜索完成: agent=%s, limit=%s, 命中=%s, kind=%s",
