@@ -38,7 +38,6 @@ cp .env.example .env
 - `LLM_PROVIDER`：当前代码支持 `openai` / `deepseek` / `openrouter`
 - `LLM_API_KEY`
 - `LLM_MODEL_ID`
-- `DATABASE_URL`
 
 如果需要向量记忆检索，还应配置：
 
@@ -59,11 +58,7 @@ uv run chainlit run app.py
 
 ## 使用方式
 
-启动后，系统会让你选择故事模板。当前内置三套模板：
-
-- `school`：`lilith`、`mitsuki`
-- `modern`：`chenxiao`、`guyining`
-- `ancient`：`shenweilan`、`yunxi`
+启动后，系统会让你选择故事。当前内置三套模板：分别是校园故事，现代都市故事，和古代故事。
 
 然后直接在聊天界面输入消息即可。
 
@@ -88,11 +83,7 @@ uv run chainlit run app.py
 
 ### 2. 单一历史源 + 可见性过滤
 
-当前实现里，对话历史并不是“每个角色各自维护 raw 日志”。
-
-实际做法是：
-
-- 统一写入 `data/characters/narrator/raw/YYYY-MM-DD.jsonl`
+- 对话统一写入 `data/characters/narrator/raw/YYYY-MM-DD.jsonl`
 - 每条消息记录 `visible_to`
 - 各角色在读取上下文时，按 `visible_to` 过滤出自己能看到的内容
 
@@ -175,7 +166,6 @@ Agent 回复由两部分组成：
 | `EMBEDDING_DIM` | 否 | 向量维度 |
 | `EMBEDDING_API_KEY` | 否 | embedding API Key |
 | `RERANK_*` | 否 | rerank 配置 |
-| `DATABASE_URL` | 是 | Chainlit / 应用数据库连接串 |
 | `CONSOLIDATION_INTERVAL` | 否 | 记忆整理轮次间隔 |
 | `HISTORY_LIMIT_NARRATOR` | 否 | narrator 历史条数 |
 | `HISTORY_LIMIT_DEFAULT` | 否 | 角色历史条数 |
@@ -221,5 +211,8 @@ uv run pytest
 ## 说明
 
 - 当前主入口是 `app.py`
-- README 里旧的 `fastapi_app.main` 启动方式已不再适用于当前仓库结构
 - 如需了解具体 prompt 约束，请查看 `prompts/character_prompt.txt` 和 `prompts/narrator_prompt.txt`
+
+## TODO
+
+- [ ] **混合检索**：在向量检索基础上引入关键字检索（BM25），使用 RRF（Reciprocal Rank Fusion，倒数排名融合）合并两路结果，提升记忆召回的准确性与覆盖率
