@@ -54,7 +54,8 @@ _MODEL_ID = (
 )
 # 整理用较低 temperature，保证输出稳定
 _TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.3"))
-_MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "8192"))
+_MAX_TOKENS_RAW = os.getenv("CONSOLIDATION_MAX_TOKENS")
+_MAX_TOKENS: Optional[int] = int(_MAX_TOKENS_RAW) if _MAX_TOKENS_RAW else None
 
 _PROMPT_STEP1_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step1.txt"
 _PROMPT_STEP2_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step2.txt"
@@ -65,6 +66,9 @@ _PLAYER_PROMPT_PATH = (
 
 # 文件大小变化阈值（字节）：当文件比上次长了 100 字以上，才触发整理
 _CONSOLIDATION_SIZE_THRESHOLD = 100
+
+# growth.md 去重合并阈值：超过该条数才触发 step3，避免每轮都被压缩重写
+_GROWTH_STEP3_MERGE_THRESHOLD = int(os.getenv("GROWTH_STEP3_MERGE_THRESHOLD", "8"))
 
 # 字段描述映射（用于 user.md 整理）
 _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
@@ -394,11 +398,11 @@ class MemoryConsolidator:
         else:
             routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
 
-        # ===== 第三步：每轮去重合并 growth.md =====
+        # ===== 第三步：超过阈值时再去重合并 growth.md =====
         current_count = len(read_growth_entries(agent_name))
-        if current_count > 0:
+        if current_count > _GROWTH_STEP3_MERGE_THRESHOLD:
             routing_logger.info(
-                f"[整理器] {agent_name} 触发第三步去重合并（当前 {current_count} 条）"
+                f"[整理器] {agent_name} 触发第三步去重合并（当前 {current_count} 条，阈值 {_GROWTH_STEP3_MERGE_THRESHOLD}）"
             )
             system_step3, user_step3 = self._build_consolidation_prompt_step3(agent_name)
             try:
@@ -414,6 +418,10 @@ class MemoryConsolidator:
             except Exception as e:
                 result.errors.append(f"第三步调用失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
+        else:
+            routing_logger.info(
+                f"[整理器] {agent_name} 跳过第三步去重合并（当前 {current_count} 条，未超过阈值 {_GROWTH_STEP3_MERGE_THRESHOLD}）"
+            )
 
     async def consolidate_agent(
         self, agent_name: str
