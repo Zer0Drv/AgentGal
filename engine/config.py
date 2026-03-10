@@ -63,16 +63,14 @@ def get_agent_names(include_narrator: bool = True) -> list[str]:
     return agents
 
 
-# 历史限制配置
-HISTORY_LIMIT_NARRATOR = int(os.getenv("HISTORY_LIMIT_NARRATOR", "20"))
-HISTORY_LIMIT_DEFAULT = int(os.getenv("HISTORY_LIMIT_DEFAULT", "10"))
-
-# 场景类型 → 历史轮数映射
+# 历史轮数配置（设计决策，不应因部署环境而变化，故写死在 config 而非 .env）
+HISTORY_LIMIT_NARRATOR = 8   # narrator 有完整 status.md 兜底，只需近几轮感知玩家动向
 SCENE_HISTORY_LIMITS: dict[str, int] = {
-    "intimate": 12,  # 亲密场景需要完整上下文
-    "social": 8,     # 社交场景中等
-    "default": HISTORY_LIMIT_DEFAULT,
+    "intimate": 12,  # 亲密/私下对话，需要更完整的关系上下文
+    "social": 8,     # 公共/社交场合
+    "default": 10,   # 普通场景
 }
+HISTORY_LIMIT_DEFAULT = SCENE_HISTORY_LIMITS["default"]  # 向后兼容的别名
 
 
 def get_history_limit_by_scene_type(scene_type: str) -> int:
