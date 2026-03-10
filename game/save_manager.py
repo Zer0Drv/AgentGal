@@ -10,6 +10,7 @@ import zipfile
 from datetime import datetime
 
 from engine.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
+from memory.file_ops import extract_status_field, read_agent_file
 
 TEMPLATES_DIR = PROJECT_ROOT / "data" / "templates"
 
@@ -17,11 +18,6 @@ TEMPLATES_DIR = PROJECT_ROOT / "data" / "templates"
 # =============================================================================
 # 路径工具
 # =============================================================================
-
-
-def agent_path(agent_name: str) -> str:
-    """获取角色基础目录路径"""
-    return character_path(agent_name)
 
 
 def narrator_raw_dir() -> str:
@@ -348,7 +344,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
         文件路径列表（相对于 data/characters/ 目录）
     """
     files = []
-    base = agent_path(agent_name)
+    base = character_path(agent_name)
 
     # 核心记忆文件（narrator 无 user.md / growth.md）
     core_files = ["soul.md", "memory.md", "status.md"]
@@ -392,26 +388,21 @@ def _read_save_id() -> str:
 
 def _read_story_theme() -> str:
     """读取 .story_id 标记文件，返回故事主题（如 school / modern / ancient）"""
-    story_id_path = os.path.join(str(CHARACTERS_DIR), ".story_id")
+    story_id_path = CHARACTERS_DIR / ".story_id"
     try:
-        return open(story_id_path, encoding="utf-8").read().strip()
+        return story_id_path.read_text(encoding="utf-8").strip()
     except Exception:
         return ""
 
 
 def _read_narrator_focus() -> str:
     """从 narrator/status.md 读取叙事焦点，用于存档命名"""
-    status_path = character_path("narrator", "status.md")
     try:
-        lines = open(status_path, encoding="utf-8").read().splitlines()
-        for i, line in enumerate(lines):
-            if "叙事焦点" in line:
-                for j in range(i + 1, len(lines)):
-                    content = lines[j].strip()
-                    if content:
-                        # 过滤文件名中不合法的字符，限制长度
-                        safe = re.sub(r'[/\\:*?"<>|\n]', "", content)[:20].strip()
-                        return safe if safe else ""
+        status_text = read_agent_file("narrator", "status.md")
+        focus = extract_status_field(status_text, "叙事焦点")
+        if focus:
+            safe = re.sub(r'[/\\:*?"<>|\n]', "", focus)[:20].strip()
+            return safe
     except Exception:
         pass
     return ""

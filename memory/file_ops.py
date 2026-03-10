@@ -19,6 +19,26 @@ _EMPTY_PLACEHOLDER = "（暂无）"
 _GROWTH_TITLE = "# 心路历程"
 
 
+def extract_status_field(status_text: str, field_name: str) -> str:
+    """从 status.md 文本中提取指定 ## 字段的值。
+
+    Args:
+        status_text: status.md 的完整文本内容
+        field_name: 要提取的字段名（如 "叙事焦点"、"心境"）
+
+    Returns:
+        字段内容，未找到返回空字符串
+    """
+    pattern = re.compile(
+        rf"^##\s+{re.escape(field_name)}\s*\n(.*?)(?=^##\s|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = pattern.search(status_text)
+    if not m:
+        return ""
+    return m.group(1).strip()
+
+
 def extract_game_date(text: str) -> str | None:
     """从文本中提取游戏日期（如 4月3日）"""
     m = re.search(r"\*\*时间\*\*：\s*(\d{1,2}月\d{1,2}日)", text)
