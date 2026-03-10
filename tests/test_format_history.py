@@ -1,22 +1,9 @@
 """测试对话历史格式化功能
 
-测试 _format_conversation_history 能否正确过滤和格式化消息
+测试 format_conversation_history 能否正确过滤和格式化消息
 """
 
-import sys
-from pathlib import Path
-
-import pytest
-
-# 设置项目根目录
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-# 导入 app.py 中的 _format_conversation_history
-import importlib.util
-spec = importlib.util.spec_from_file_location("app", project_root / "app.py")
-app = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(app)
+from engine.agent_manager import format_conversation_history
 
 
 def test_format_conversation_history_filters_old_narrator():
@@ -28,7 +15,7 @@ def test_format_conversation_history_filters_old_narrator():
         {"role": "narrator", "content": "新场景描述", "visible_to": ["narrator", "lilith"]},
     ]
 
-    result = app._format_conversation_history(messages, "lilith", limit=10)
+    result = format_conversation_history(messages, "lilith", limit=10)
 
     # 应该只保留最新的 narrator 发言
     assert "新场景描述" in result
@@ -49,7 +36,7 @@ def test_format_conversation_history_character_sees_only_visible():
         {"role": "narrator", "content": "新场景", "visible_to": ["narrator", "lilith"]},
     ]
 
-    result = app._format_conversation_history(messages, "lilith", limit=10)
+    result = format_conversation_history(messages, "lilith", limit=10)
 
     # lilith 只能看到自己可见的消息，且只有最新的 narrator
     assert "玩家消息" in result
@@ -74,7 +61,7 @@ def test_format_conversation_history_limit_with_narrator():
     # 最后加一条新 narrator
     messages.append({"role": "narrator", "content": "新场景", "visible_to": ["narrator", "lilith"]})
 
-    result = app._format_conversation_history(messages, "lilith", limit=10)
+    result = format_conversation_history(messages, "lilith", limit=10)
 
     # lilith 应该看到 10 条有效消息
     # 由于加载 limit*5=50 条，过滤后只有lilith可见的消息
@@ -88,7 +75,7 @@ def test_format_conversation_history_limit_with_narrator():
 
 def test_format_conversation_history_empty():
     """测试空消息列表返回空字符串"""
-    result = app._format_conversation_history([], "narrator", limit=10)
+    result = format_conversation_history([], "narrator", limit=10)
     assert result == "", "空消息列表应该返回空字符串"
 
 
@@ -99,7 +86,7 @@ def test_format_conversation_history_formatting():
         {"role": "narrator", "content": "你好，欢迎", "visible_to": ["narrator"]},
     ]
 
-    result = app._format_conversation_history(messages, "narrator", limit=10)
+    result = format_conversation_history(messages, "narrator", limit=10)
 
     # 检查格式
     assert "玩家: 你好" in result
@@ -114,11 +101,10 @@ def test_format_conversation_history_no_narrator():
         {"role": "player", "content": "玩家消息 2", "visible_to": ["narrator", "lilith"]},
     ]
 
-    result = app._format_conversation_history(messages, "lilith", limit=10)
+    result = format_conversation_history(messages, "lilith", limit=10)
 
     # 没有 narrator 发言，应该保留所有消息
     assert "玩家消息 1" in result
     assert "lilith 回复" in result
     assert "玩家消息 2" in result
     assert result.count("\n") == 2, "应该有 3 条消息（2 个换行符）"
-

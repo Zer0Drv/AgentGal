@@ -1,7 +1,6 @@
 """游戏状态管理模块"""
 
 from .save_manager import (
-    agent_path,
     narrator_raw_dir,
     load_prompt_file,
     load_conversation_history,
@@ -12,7 +11,6 @@ from .save_manager import (
 )
 
 __all__ = [
-    "agent_path",
     "narrator_raw_dir",
     "load_prompt_file",
     "load_conversation_history",

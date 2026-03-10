@@ -2,23 +2,17 @@
 
 import asyncio
 import os
-import re
 
 import chainlit as cl
 from dotenv import load_dotenv
 
-from engine.agent_manager import run_agent
-from engine.config import (
-    get_agent_names,
-    HISTORY_LIMIT_DEFAULT,
-    HISTORY_LIMIT_NARRATOR,
+from engine.agent_manager import (
+    call_narrator_and_route,
+    run_agent_in_scene,
 )
+from engine.config import get_agent_names
 from engine.message_router import message_router
-from engine.text_utils import (
-    clean_response,
-    is_valid_response,
-    process_character_response,
-)
+
 from game.save_manager import (
     export_save_archive,
     has_existing_save,
@@ -27,7 +21,6 @@ from game.save_manager import (
     load_conversation_history,
     reset_game,
 )
-from log_config.routing import routing_logger
 
 from memory.consolidator import CONSOLIDATION_INTERVAL, memory_consolidator
 
@@ -46,64 +39,6 @@ def _prepare_chainlit_database_url() -> None:
 
 
 _prepare_chainlit_database_url()
-
-
-# =============================================================================
-# 对话历史辅助函数
-# =============================================================================
-
-
-def _format_conversation_history(messages: list, agent_name: str, limit: int = 10) -> str:
-    """格式化对话历史为文本字符串
-
-    策略：只保留最新的一条 narrator 发言（设置场景），其他 narrator 发言过滤掉。
-    这样可以让角色看到更多的角色/玩家互动历史，而不是被旁白占用空间。
-
-    调用方应传入足够多的原始消息（建议 limit * 5），以保证过滤后仍有足够的有效消息。
-
-    Args:
-        messages: 原始消息列表（来自 load_conversation_history，应传入足够多的消息）
-        agent_name: 角色名，用于按 visible_to 过滤
-        limit: 返回最近多少条有效消息（不包括被过滤的旧narrator）
-
-    Returns:
-        格式化的对话历史文本，如果无消息返回空字符串
-    """
-    if not messages:
-        return ""
-
-    # 按 visible_to 过滤：narrator 看全部，其他角色只看自己可见的
-    if agent_name != "narrator":
-        recent = [msg for msg in messages if agent_name in msg.get("visible_to", [])]
-    else:
-        recent = messages
-
-    # 分离 narrator 和其他发言
-    narrator_messages = [msg for msg in recent if msg.get("role") == "narrator"]
-    other_messages = [msg for msg in recent if msg.get("role") != "narrator"]
-
-    # 只保留最新的一条 narrator 发言（如果有的话）
-    final_messages = other_messages
-    if narrator_messages:
-        final_messages.append(narrator_messages[-1])
-
-    # 按原始顺序排序（保持时间顺序）
-    final_messages.sort(key=lambda m: recent.index(m))
-
-    # 取最近 limit 条有效消息
-    final_messages = final_messages[-limit:]
-
-    # 格式化为文本
-    formatted = []
-    for msg in final_messages:
-        role = msg.get("role", "unknown")
-        content = msg.get("content", "")
-        if role == "player":
-            formatted.append(f"玩家: {content}")
-        else:
-            formatted.append(f"{role}: {content}")
-
-    return "\n".join(formatted)
 
 
 # =============================================================================
@@ -176,98 +111,6 @@ async def on_chat_start():
             await cl.Message(content=opening_text, author="Narrator").send()
     else:
         await _handle_continue_game()
-
-
-# =============================================================================
-# on_message 辅助函数
-# =============================================================================
-
-
-def _parse_narrator_response(content: str) -> tuple[list[str], str]:
-    """解析 narrator 响应，提取 TARGETS 和场景描述"""
-    valid_agents = get_agent_names(include_narrator=False)
-
-    targets_pattern = re.compile(
-        r"TARGETS\s*:?\s*\[?([^\]\n]*)\]?", re.IGNORECASE
-    )
-    all_matches = list(targets_pattern.finditer(content))
-
-    if not all_matches:
-        return [], content
-
-    targets_match = all_matches[-1]
-    targets_str = targets_match.group(1)
-    targets = [
-        t.strip().lower()
-        for t in targets_str.split(",")
-        if t.strip() and t.strip().lower() in valid_agents
-    ]
-
-    scene_description = content[targets_match.end() :].strip()
-    return targets, scene_description
-
-
-async def _call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool]:
-    """调用 narrator 获取路由决策和场景描述"""
-    raw_messages = load_conversation_history(limit=HISTORY_LIMIT_NARRATOR * 5)
-    narrator_history = _format_conversation_history(raw_messages, "narrator", limit=HISTORY_LIMIT_NARRATOR)
-    narrator_input = (
-        f"最近对话历史:\n\n{narrator_history}\n\n---\n\n玩家新消息: {user_input}"
-        if narrator_history
-        else user_input
-    )
-
-    narrator_response = await run_agent("narrator", narrator_input)
-    narrator_content = clean_response(narrator_response)
-
-    targets, scene_description = _parse_narrator_response(narrator_content)
-    is_valid = is_valid_response(narrator_content, "narrator")
-
-    routing_logger.info(f"narrator 决定 targets: {targets}")
-    return targets, scene_description, is_valid
-
-
-def _build_agent_input(history: str, user_input: str) -> str:
-    """构建 agent 的完整输入"""
-    parts = []
-    if history:
-        parts.append(f"最近对话历史:\n\n{history}")
-    parts.append(f"玩家新消息: {user_input}")
-    return "\n\n---\n\n".join(parts)
-
-
-async def _process_and_send_agent(
-    agent_name: str,
-    targets: list[str],
-    user_input: str,
-    scene_summary: str = "",
-) -> None:
-    """处理单个目标角色并立即推送响应到前端"""
-    try:
-        raw_messages = load_conversation_history(limit=HISTORY_LIMIT_DEFAULT * 5)
-        history = _format_conversation_history(raw_messages, agent_name, limit=HISTORY_LIMIT_DEFAULT)
-        full_input = _build_agent_input(history, user_input)
-
-        response = await run_agent(agent_name, full_input, scene_summary=scene_summary)
-
-        # 后处理：清理 thinking 标签 + 限制动作数量 + 限制省略号
-        response = process_character_response(response)
-
-        is_valid = is_valid_response(response, agent_name)
-
-        # 只有有效响应才广播到 jsonl（让后续角色能看到）
-        if is_valid:
-            await message_router.broadcast_agent_response(
-                agent_name, targets, response
-            )
-
-        if response:
-            await cl.Message(content=response, author=agent_name.capitalize()).send()
-
-    except Exception as e:
-        print(f"Agent {agent_name} 运行失败: {e}")
-        await cl.Message(content=f"[错误: {str(e)}]", author=agent_name.capitalize()).send()
-
 
 
 # =============================================================================
@@ -389,10 +232,8 @@ async def on_message(message: cl.Message):
     message_counter += 1
     cl.user_session.set("message_counter", message_counter)
 
-    routing_logger.info(f"玩家输入: {user_input}")
-
     # 1. 调用 narrator 获取路由决策和场景描述
-    targets, scene_description, is_narrator_valid = await _call_narrator_and_route(
+    targets, scene_description, is_narrator_valid = await call_narrator_and_route(
         user_input
     )
 
@@ -413,9 +254,17 @@ async def on_message(message: cl.Message):
 
     # 5. 顺序处理目标角色，每个完成后立即推送到前端
     for agent_name in targets:
-        await _process_and_send_agent(agent_name, targets, user_input, scene_summary=scene_description)
+        try:
+            response = await run_agent_in_scene(
+                agent_name, targets, user_input, scene_summary=scene_description
+            )
+            if response:
+                await cl.Message(content=response, author=agent_name.capitalize()).send()
+        except Exception as e:
+            print(f"Agent {agent_name} 运行失败: {e}")
+            await cl.Message(content=f"[错误: {str(e)}]", author=agent_name.capitalize()).send()
 
-    # 7. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
+    # 6. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
     print(
         f"[调试] 当前轮次: {message_counter}, CONSOLIDATION_INTERVAL: {CONSOLIDATION_INTERVAL}, 是否触发: {message_counter % CONSOLIDATION_INTERVAL == 0}"
     )
