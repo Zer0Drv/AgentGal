@@ -67,6 +67,18 @@ def get_agent_names(include_narrator: bool = True) -> list[str]:
 HISTORY_LIMIT_NARRATOR = int(os.getenv("HISTORY_LIMIT_NARRATOR", "20"))
 HISTORY_LIMIT_DEFAULT = int(os.getenv("HISTORY_LIMIT_DEFAULT", "10"))
 
+# 场景类型 → 历史轮数映射
+SCENE_HISTORY_LIMITS: dict[str, int] = {
+    "intimate": 12,  # 亲密场景需要完整上下文
+    "social": 8,     # 社交场景中等
+    "default": HISTORY_LIMIT_DEFAULT,
+}
+
+
+def get_history_limit_by_scene_type(scene_type: str) -> int:
+    """根据场景类型返回对应的历史轮数限制"""
+    return SCENE_HISTORY_LIMITS.get(scene_type, HISTORY_LIMIT_DEFAULT)
+
 # 超时配置
 AGENT_RUN_TIMEOUT_SECONDS = int(os.getenv("AGENT_RUN_TIMEOUT_SECONDS", "20"))
 
