@@ -241,21 +241,8 @@ class MemoryConsolidator:
         parts = [f"## {date}\n{sections[date]}" for date in dates]
         combined_text = "\n\n".join(parts)
 
-        soul_content = read_agent_file(agent_name, "soul.md")
-
         system = load_text(_PROMPT_STEP1_PATH)
-        if self._supports_growth(agent_name):
-            growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
-            user = (
-                f"<soul>\n{soul_content}\n</soul>\n\n"
-                f"<growth>\n{growth_content}\n</growth>\n\n"
-                f"<input>\n{combined_text}\n</input>"
-            )
-        else:
-            user = (
-                f"<soul>\n{soul_content}\n</soul>\n\n"
-                f"<input>\n{combined_text}\n</input>"
-            )
+        user = f"<input>\n{combined_text}\n</input>"
         return system, user
 
     def _build_consolidation_prompt_step2(
