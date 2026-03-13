@@ -48,7 +48,6 @@ _prepare_chainlit_database_url()
 
 STORY_OPTIONS = [
     cl.Action(name="school", payload={"story": "school"}, label="🏫 私立城川中学 · 青春校园"),
-    cl.Action(name="ancient", payload={"story": "ancient"}, label="🏯 烟雨江湖 · 宋代武侠"),
     cl.Action(name="modern", payload={"story": "modern"}, label="🌆 不期而遇 · 现代都市"),
 ]
 

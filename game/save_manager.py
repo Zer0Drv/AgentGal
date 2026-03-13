@@ -387,7 +387,7 @@ def _read_save_id() -> str:
 
 
 def _read_story_theme() -> str:
-    """读取 .story_id 标记文件，返回故事主题（如 school / modern / ancient）"""
+    """读取 .story_id 标记文件，返回故事主题（如 school / modern）"""
     story_id_path = CHARACTERS_DIR / ".story_id"
     try:
         return story_id_path.read_text(encoding="utf-8").strip()
