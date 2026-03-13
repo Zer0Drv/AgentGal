@@ -8,11 +8,11 @@ from pathlib import Path
 
 from engine.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
+    HISTORY_LIMIT_DEFAULT,
     HISTORY_LIMIT_NARRATOR,
     PROJECT_ROOT,
     character_path,
     get_agent_names,
-    get_history_limit_by_scene_type,
 )
 from engine.response_parser import parse_agent_response, parse_narrator_response
 from engine.text_utils import clean_response, is_valid_response, process_character_response
@@ -142,13 +142,18 @@ def _search_memories(agent_name: str, query: str) -> str:
 
 
 def _build_memory_prefix(agent_name: str, user_input: str, scene_summary: str = "") -> str:
-    """组装记忆上下文前缀（RAG 召回 + 最近记忆）。"""
+    """组装记忆上下文前缀。
+
+    角色：只用 RAG 召回（避免 memory.md 尾部重复条目形成回声室）。
+    旁白：RAG 召回 + 最近记忆（旁白需要连续性上下文把握节奏）。
+    """
     query = _build_search_query(agent_name, user_input, scene_summary)
     relevant = _search_memories(agent_name, query)
     parts = [f"<relevant_memories>\n{relevant}\n</relevant_memories>"]
 
-    recent = read_file_tail(character_path(agent_name, "memory.md"), lines=5) or "（尚无记忆）"
-    parts.append(f"<recent_memories>\n{recent}\n</recent_memories>")
+    if agent_name == "narrator":
+        recent = read_file_tail(character_path(agent_name, "memory.md"), lines=5) or "（尚无记忆）"
+        parts.append(f"<recent_memories>\n{recent}\n</recent_memories>")
 
     return "\n\n".join(parts)
 
@@ -248,12 +253,6 @@ async def _apply_response_updates(agent_name: str, parsed) -> None:
         except Exception as e:
             routing_logger.error(f"[{agent_name}] 更新 player 失败: {e}")
 
-    # narrator 特有：场景类型更新
-    if parsed.scene_type and agent_name == "narrator":
-        try:
-            results.append(f"scene_type: {_update_status(agent_name, '当前场景类型', parsed.scene_type)}")
-        except Exception as e:
-            routing_logger.error(f"[narrator] 更新场景类型失败: {e}")
 
     # narrator 操作「待触发事件」，其他角色操作「打算」
     event_section = "待触发事件" if agent_name == "narrator" else "打算"
@@ -318,16 +317,6 @@ async def run_agent(agent_name: str, user_input: str, scene_summary: str = "") -
 # 对话历史构建
 # ---------------------------------------------------------------------------
 
-
-def _get_current_scene_type() -> str:
-    """从 narrator 的 status 读取当前场景类型"""
-    try:
-        narrator_status = read_agent_file("narrator", "status.md")
-        scene_type = extract_status_field(narrator_status, "当前场景类型")
-        return scene_type.strip() if scene_type else "default"
-    except Exception as e:
-        routing_logger.warning(f"读取场景类型失败: {e}，使用默认值")
-        return "default"
 
 
 def format_conversation_history(messages: list, agent_name: str, limit: int = 10) -> str:
@@ -448,12 +437,8 @@ async def run_agent_in_scene(
     from engine.message_router import message_router
     from game.save_manager import load_conversation_history
 
-    # 根据场景类型动态调整历史限制
-    scene_type = _get_current_scene_type()
-    history_limit = get_history_limit_by_scene_type(scene_type)
-
-    raw_messages = load_conversation_history(limit=history_limit * 5)
-    history = format_conversation_history(raw_messages, agent_name, limit=history_limit)
+    raw_messages = load_conversation_history(limit=HISTORY_LIMIT_DEFAULT * 5)
+    history = format_conversation_history(raw_messages, agent_name, limit=HISTORY_LIMIT_DEFAULT)
     full_input = _build_agent_input(history, user_input)
 
     response = await run_agent(agent_name, full_input, scene_summary=scene_summary)

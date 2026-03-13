@@ -17,7 +17,6 @@ class ParsedResponse:
     memory: Optional[str] = None  # 需要追加到 memory.md 的内容
     status: Optional[dict] = None  # 需要更新到 status.md 的字段
     player: Optional[dict] = None  # 需要追加到 user.md 的字段
-    scene_type: Optional[str] = None  # narrator 特有：当前场景类型（intimate|social|default）
     triggered: Optional[list[str]] = None  # 需要标记为已触发的事件名列表
     add_event: Optional[list[str]] = None  # 需要插入到待触发事件队列的新事件描述列表
 
@@ -64,7 +63,6 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
     memory = _extract_xml_field(xml_content, "memory")
     status = _extract_xml_field(xml_content, "status")
     player = _extract_xml_field(xml_content, "player")
-    scene_type = _extract_xml_field(xml_content, "scene_type")
     triggered_raw = _extract_xml_field(xml_content, "triggered")
     add_event_list = _extract_all_xml_tags(xml_content, "add_event")
 
@@ -76,13 +74,12 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
     triggered_list = _parse_triggered_field(triggered_raw, agent_name)
 
     # 记录解析结果
-    has_updates = any([memory, status_dict, player_dict, scene_type, triggered_list, add_event_list])
+    has_updates = any([memory, status_dict, player_dict, triggered_list, add_event_list])
     if has_updates:
         routing_logger.info(
             f"[{agent_name}] 解析到更新: memory={'有' if memory else '无'}, "
             f"status={list(status_dict.keys()) if status_dict else '无'}, "
             f"player={list(player_dict.keys()) if player_dict else '无'}, "
-            f"scene_type={scene_type or '无'}, "
             f"triggered={triggered_list or '无'}, "
             f"add_event={add_event_list or '无'}"
         )
@@ -92,7 +89,6 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
         memory=memory.strip() if memory else None,
         status=status_dict,
         player=player_dict,
-        scene_type=scene_type.strip() if scene_type else None,
         triggered=triggered_list,
         add_event=add_event_list,
     )
