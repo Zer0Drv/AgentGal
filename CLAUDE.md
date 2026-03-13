@@ -25,7 +25,7 @@ agentgal-memos/
 ├── app.py                      # Chainlit 入口
 ├── data/
 │   ├── characters/             # 运行时角色数据
-│   ├── templates/              # 故事模板（school / modern / ancient）
+│   ├── templates/              # 故事模板（school / modern）
 │   └── vectors.sqlite          # 向量库
 ├── engine/
 │   ├── agent_manager.py        # Agent prompt 构建、LLM 调用、结果写回
@@ -174,7 +174,6 @@ agentgal-memos/
 
 - `school`：`lilith` / `mitsuki` / `narrator`
 - `modern`：`chenxiao` / `guyining` / `narrator`
-- `ancient`：`shenweilan` / `yunxi` / `narrator`
 
 ## 开发约定
 
