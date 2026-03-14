@@ -70,7 +70,7 @@ def is_date_before(date_text: str, cutoff_date: str) -> bool:
 STATUS_FIELDS: dict[str, list[str]] = {
     "lilith": ["身份", "心境", "我和他", "在意的事", "打算"],
     "mitsuki": ["心境", "我和他", "在意的事", "打算"],
-    "narrator": ["故事阶段", "当前时间", "场景", "叙事焦点", "待触发事件"],
+    "narrator": ["关系现状", "当前时间", "场景", "叙事焦点", "待触发事件"],
 }
 
 # 每个角色 user.md 允许的字段白名单

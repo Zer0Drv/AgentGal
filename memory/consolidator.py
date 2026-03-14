@@ -72,9 +72,9 @@ _GROWTH_STEP3_MERGE_THRESHOLD = int(os.getenv("GROWTH_STEP3_MERGE_THRESHOLD", "8
 
 # 字段描述映射（用于 user.md 整理）
 _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
-    "基本信息": "最多 5 条长期稳定的基础信息（身份、称呼、关系位置等）",
-    "观察到的特质": "最多 7 条跨情境仍成立的稳定判断",
-    "互动模式": "最多 5 条与角色相处时反复出现的规律",
+    "基本信息": "优先保留已确认的客观信息：姓名、年龄、性别/称呼、身份",
+    "他是什么人": "最多 8 条：跨情境成立的性格、习惯、边界方式与行事风格（主语是\"他\"），不要重复基本信息",
+    "我们怎么相处": "最多 5 条：我和他之间反复出现的双向互动规律（主语是\"我们/我和他\"）",
 }
 
 
@@ -87,7 +87,7 @@ def build_fields_definition(agent_name: str) -> str:
     file_path = character_path(agent_name, "user.md")
     fields = _get_fields_from_file(file_path)
     if fields is None:
-        fields = ["基本信息", "观察到的特质", "互动模式"]
+        fields = ["基本信息", "他是什么人", "我们怎么相处"]
 
     lines = []
     for field in fields:
