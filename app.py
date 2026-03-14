@@ -283,7 +283,7 @@ if __name__ == "__main__":
     # 本地运行调试
     from datetime import datetime
 
-    print("MemoBot 启动...")
+    print("AgentGal 启动...")
     print(f"时间: {datetime.now().isoformat()}")
     agents = get_agent_names()
     print(f"可用角色: {', '.join(agents)}")
