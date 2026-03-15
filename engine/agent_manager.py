@@ -407,6 +407,16 @@ async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool
     narrator_content = clean_response(narrator_response)
 
     targets, scene_description = parse_narrator_response(narrator_content)
+
+    # TARGETS 缺失时重试一次
+    if not targets:
+        routing_logger.warning("narrator 响应缺少 TARGETS，重试中...")
+        narrator_response = await run_agent("narrator", narrator_input)
+        narrator_content = clean_response(narrator_response)
+        targets, scene_description = parse_narrator_response(narrator_content)
+        if not targets:
+            routing_logger.warning("narrator 重试后仍缺少 TARGETS")
+
     is_valid = is_valid_response(narrator_content, "narrator")
 
     routing_logger.info(f"narrator 决定 targets: {targets}")
