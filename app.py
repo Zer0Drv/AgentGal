@@ -1,6 +1,7 @@
 """Chainlit 入口"""
 
 import asyncio
+import json
 import os
 
 import chainlit as cl
@@ -11,7 +12,7 @@ from engine.agent_manager import (
     generate_choices,
     run_agent_in_scene,
 )
-from engine.config import CONSOLIDATION_INTERVAL, get_agent_names
+from engine.config import CHARACTERS_DIR, CONSOLIDATION_INTERVAL, get_agent_names
 from engine.message_router import message_router
 
 from game.save_manager import (
@@ -27,6 +28,26 @@ from memory.consolidator import memory_consolidator
 
 # 加载环境变量
 load_dotenv()
+
+_LAST_CHOICES_FILE = CHARACTERS_DIR / "last_choices.json"
+
+
+def _save_last_choices(choices: list[str]) -> None:
+    """持久化最新选项到文件"""
+    _LAST_CHOICES_FILE.write_text(json.dumps(choices, ensure_ascii=False), encoding="utf-8")
+
+
+def _load_last_choices() -> list[str]:
+    """加载最新选项，不存在或失败返回空列表"""
+    try:
+        return json.loads(_LAST_CHOICES_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _clear_last_choices() -> None:
+    """清除保存的选项"""
+    _LAST_CHOICES_FILE.unlink(missing_ok=True)
 
 
 def _prepare_chainlit_database_url() -> None:
@@ -58,7 +79,7 @@ async def _ask_story_choice() -> str:
     res = await cl.AskActionMessage(
         content="请选择你想要进入的故事世界：",
         actions=STORY_OPTIONS,
-        timeout=120,
+        timeout=600,
     ).send()
     if res and res.get("payload"):
         return res["payload"].get("story", "school")
@@ -93,6 +114,19 @@ async def _handle_continue_game() -> None:
         }
         author = author_map.get(role, role.capitalize())
         await cl.Message(content=content, author=author).send()
+
+    # 恢复上次保存的选项
+    saved_choices = _load_last_choices()
+    if saved_choices:
+        actions = [
+            cl.Action(name="choice", payload={"text": c}, label=c)
+            for c in saved_choices
+        ]
+        choice_lines = "\n".join(f"{i}. {c}" for i, c in enumerate(saved_choices, 1))
+        await cl.Message(
+            content=f"你可以选择接下来的行动，或者直接输入你想做的事：\n\n{choice_lines}",
+            actions=actions,
+        ).send()
 
 
 @cl.on_chat_start
@@ -138,6 +172,7 @@ async def _handle_reset_command() -> bool:
     """处理 /reset 命令"""
     story_id = await _ask_story_choice()
     await cl.Message(content="✅ 游戏已重置，开始新故事...").send()
+    _clear_last_choices()
     intro_text, opening_text = await reset_game(story_id)
     # 发送玩法介绍
     if intro_text:
@@ -270,6 +305,7 @@ async def on_message(message: cl.Message):
     if agent_responses:
         choices = await generate_choices(scene_description, agent_responses)
         if choices:
+            _save_last_choices(choices)
             actions = [
                 cl.Action(
                     name="choice",
@@ -278,8 +314,9 @@ async def on_message(message: cl.Message):
                 )
                 for choice in choices
             ]
+            choice_lines = "\n".join(f"{i}. {c}" for i, c in enumerate(choices, 1))
             await cl.Message(
-                content="你可以选择接下来的行动，或者直接输入你想做的事：",
+                content=f"你可以选择接下来的行动，或者直接输入你想做的事：\n\n{choice_lines}",
                 actions=actions,
             ).send()
 

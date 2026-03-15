@@ -423,6 +423,7 @@ async def generate_choices(scene_description: str, agent_responses: list[tuple[s
                 client.chat(messages),
                 timeout=30,
             )
+        log_agent_call("choices", config["model"], messages, response)
         return _parse_choices(response["content"])
     except Exception as e:
         routing_logger.warning(f"选项生成失败: {e}")
