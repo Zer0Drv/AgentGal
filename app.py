@@ -10,7 +10,7 @@ from engine.agent_manager import (
     call_narrator_and_route,
     run_agent_in_scene,
 )
-from engine.config import get_agent_names
+from engine.config import CONSOLIDATION_INTERVAL, get_agent_names
 from engine.message_router import message_router
 
 from game.save_manager import (
@@ -22,7 +22,7 @@ from game.save_manager import (
     reset_game,
 )
 
-from memory.consolidator import CONSOLIDATION_INTERVAL, memory_consolidator
+from memory.consolidator import memory_consolidator
 
 # 加载环境变量
 load_dotenv()

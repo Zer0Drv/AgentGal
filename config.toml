@@ -1,0 +1,42 @@
+# ============================================
+# 应用行为配置
+# 部署相关配置（API 密钥、模型选择等）请在 .env 中设置
+# ============================================
+
+[memory]
+# 记忆整理间隔（轮）：每隔多少轮触发一次后台整理
+consolidation_interval = 5
+
+[consolidation]
+# 整理 LLM 的温度：较低值保证输出稳定
+temperature = 0.7
+# 整理 LLM 最大 token 数：0 表示不限制
+max_tokens = 0
+# growth.md 去重合并阈值：超过该条数才触发压缩，避免每轮重写
+growth_dedup_threshold = 8
+
+[vector]
+# 向量检索返回条数
+search_limit = 3
+# ANN 初筛候选数 = search_limit × 倍数
+rerank_candidate_multiplier = 3
+# 时间衰减权重：1.0 = 纯向量搜索，0.0 = 纯时间排序
+time_decay_alpha = 0.7
+# 时间衰减半衰期（天）
+time_decay_half_life_days = 14.0
+# 混合检索：BM25 关键字检索 + RRF 融合
+hybrid_search_enabled = true
+# RRF 常数：越大越平滑
+rrf_k = 60
+# BM25 初筛候选数
+bm25_candidate_limit = 20
+
+[agent]
+# Agent LLM 调用超时（秒）
+run_timeout_seconds = 120
+
+[text]
+# 角色回复后处理：最多保留的动作描写数（括号内容）
+max_actions = 3
+# 角色回复后处理：最多保留的省略号数
+max_ellipsis = 3

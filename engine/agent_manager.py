@@ -11,6 +11,7 @@ from engine.config import (
     HISTORY_LIMIT_DEFAULT,
     HISTORY_LIMIT_NARRATOR,
     PROJECT_ROOT,
+    VECTOR_SEARCH_LIMIT,
     character_path,
     get_agent_names,
 )
@@ -132,10 +133,7 @@ def _build_search_query(agent_name: str, user_input: str, scene_summary: str = "
 
 def _search_memories(agent_name: str, query: str) -> str:
     """语义搜索向量库，返回格式化记忆字符串。"""
-    try:
-        limit = int(os.getenv("VECTOR_SEARCH_LIMIT", "5"))
-    except ValueError:
-        limit = 5
+    limit = VECTOR_SEARCH_LIMIT
     results = vector_store.search(agent_name, query, limit=limit, kind="memory")
     memories = [r["content"].strip() for r in results if r["content"].strip()]
     return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"

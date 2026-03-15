@@ -18,7 +18,13 @@ from llm.llm_parser import OpenAICompatibleClient
 
 from log_config.memory import memory_logger as routing_logger
 from log_config.consolidation_calls import log_consolidation_call
-from engine.config import character_path
+from engine.config import (
+    CONSOLIDATION_INTERVAL,
+    CONSOLIDATION_MAX_TOKENS,
+    CONSOLIDATION_TEMPERATURE,
+    GROWTH_DEDUP_THRESHOLD,
+    character_path,
+)
 from memory.file_ops import (
     _get_fields_from_file,
     backup_file,
@@ -38,8 +44,6 @@ from memory.file_ops import (
 )
 from memory.vector_store import vector_store
 
-CONSOLIDATION_INTERVAL = int(os.getenv("CONSOLIDATION_INTERVAL", "10"))
-
 # 从统一配置读取，兼容旧版 DEEPSEEK_API_KEY
 _API_KEY = os.getenv("CONSOLIDATION_LLM_API_KEY") or os.getenv("LLM_API_KEY")
 _API_URL = (
@@ -52,10 +56,8 @@ _MODEL_ID = (
     or os.getenv("LLM_MODEL_ID")
     or "deepseek-chat"
 )
-# 整理用较低 temperature，保证输出稳定
-_TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.3"))
-_MAX_TOKENS_RAW = os.getenv("CONSOLIDATION_MAX_TOKENS")
-_MAX_TOKENS: Optional[int] = int(_MAX_TOKENS_RAW) if _MAX_TOKENS_RAW else None
+_TEMPERATURE = CONSOLIDATION_TEMPERATURE
+_MAX_TOKENS: int | None = CONSOLIDATION_MAX_TOKENS
 
 _PROMPT_STEP1_PATH = Path(__file__).parent.parent / "prompts" / "memory_scene_merge.txt"
 _PROMPT_STEP2_PATH = Path(__file__).parent.parent / "prompts" / "growth_extract.txt"
@@ -67,12 +69,10 @@ _PLAYER_PROMPT_PATH = (
 # 文件大小变化阈值（字节）：当文件比上次长了 100 字以上，才触发整理
 _CONSOLIDATION_SIZE_THRESHOLD = 100
 
-# growth.md 去重合并阈值：超过该条数才触发 step3，避免每轮都被压缩重写
-_GROWTH_STEP3_MERGE_THRESHOLD = int(os.getenv("GROWTH_STEP3_MERGE_THRESHOLD", "8"))
 
 # 字段描述映射（用于 user.md 整理）
 _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
-    "基本信息": "优先保留已确认的客观信息：姓名、年龄、性别/称呼、身份",
+    "基本信息": "优先保留已确认的客观信息：姓名、年龄、性别、身份",
     "他是什么人": "最多 8 条：跨情境成立的性格、习惯、边界方式与行事风格（主语是\"他\"），不要重复基本信息",
     "我们怎么相处": "最多 5 条：我和他之间反复出现的双向互动规律（主语是\"我们/我和他\"）",
 }
@@ -387,9 +387,9 @@ class MemoryConsolidator:
 
         # ===== 第三步：超过阈值时再去重合并 growth.md =====
         current_count = len(read_growth_entries(agent_name))
-        if current_count > _GROWTH_STEP3_MERGE_THRESHOLD:
+        if current_count > GROWTH_DEDUP_THRESHOLD:
             routing_logger.info(
-                f"[整理器] {agent_name} 触发第三步去重合并（当前 {current_count} 条，阈值 {_GROWTH_STEP3_MERGE_THRESHOLD}）"
+                f"[整理器] {agent_name} 触发第三步去重合并（当前 {current_count} 条，阈值 {GROWTH_DEDUP_THRESHOLD}）"
             )
             system_step3, user_step3 = self._build_consolidation_prompt_step3(agent_name)
             try:
@@ -407,7 +407,7 @@ class MemoryConsolidator:
                 routing_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
         else:
             routing_logger.info(
-                f"[整理器] {agent_name} 跳过第三步去重合并（当前 {current_count} 条，未超过阈值 {_GROWTH_STEP3_MERGE_THRESHOLD}）"
+                f"[整理器] {agent_name} 跳过第三步去重合并（当前 {current_count} 条，未超过阈值 {GROWTH_DEDUP_THRESHOLD}）"
             )
 
     async def consolidate_agent(
