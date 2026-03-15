@@ -20,7 +20,18 @@ import aiosqlite
 import httpx
 
 from log_config.memory import memory_logger as routing_logger
-from engine.config import character_path, PROJECT_ROOT, get_agent_names
+from engine.config import (
+    BM25_CANDIDATE_LIMIT,
+    HYBRID_SEARCH_ENABLED,
+    RERANK_CANDIDATE_MULTIPLIER,
+    RRF_K,
+    TIME_DECAY_ALPHA,
+    TIME_DECAY_HALF_LIFE_DAYS,
+    VECTOR_SEARCH_LIMIT,
+    character_path,
+    PROJECT_ROOT,
+    get_agent_names,
+)
 from memory.file_ops import (
     load_consolidation_state,
     normalize,
@@ -49,10 +60,34 @@ RERANK_MODEL = os.getenv("RERANK_MODEL", "")
 RERANK_API_KEY = os.getenv("RERANK_API_KEY") or EMBED_API_KEY
 RERANK_API_URL = os.getenv("RERANK_API_URL", "")
 
-# Time-decay 配置：语义相似度与时间新鲜度的融合权重
-# TIME_DECAY_ALPHA=1.0 时退化为纯向量搜索；=0.0 时纯按时间排序
-TIME_DECAY_ALPHA = float(os.getenv("TIME_DECAY_ALPHA", "0.7"))
-TIME_DECAY_HALF_LIFE_DAYS = float(os.getenv("TIME_DECAY_HALF_LIFE_DAYS", "14.0"))
+# Time-decay / 混合检索配置从 config.toml 加载（见 engine/config.py）
+
+# CJK Unicode 范围（用于 FTS5 预分词）
+_CJK_RANGES = (
+    (0x4E00, 0x9FFF),    # CJK Unified Ideographs
+    (0x3400, 0x4DBF),    # CJK Unified Ideographs Extension A
+    (0xF900, 0xFAFF),    # CJK Compatibility Ideographs
+)
+
+
+def _is_cjk(ch: str) -> bool:
+    cp = ord(ch)
+    return any(lo <= cp <= hi for lo, hi in _CJK_RANGES)
+
+
+def _tokenize_for_fts(text: str) -> str:
+    """在 CJK 字符间插入空格，使 unicode61 tokenizer 逐字拆分。
+
+    非 CJK 文本（英文、数字）保持原样，按空格/标点自然分词。
+    """
+    result: list[str] = []
+    for ch in text:
+        if _is_cjk(ch):
+            result.append(f" {ch} ")
+        else:
+            result.append(ch)
+    # 压缩连续空格
+    return " ".join("".join(result).split())
 
 
 # ----------------------------- 嵌入函数 -----------------------------
@@ -211,6 +246,15 @@ class VectorStore:
             )
             """
         )
+        # FTS5 全文索引（独立存储，手动与 chunks 表同步）
+        await db.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                content,
+                tokenize='unicode61'
+            )
+            """
+        )
         await db.commit()
 
     # ----------------------------- 写入 -----------------------------
@@ -295,6 +339,13 @@ class VectorStore:
                         "INSERT OR REPLACE INTO vec_chunks(rowid, embedding) VALUES (?, ?)",
                         (rowid, blob),
                     )
+                    # 同步 FTS5 索引
+                    if existing:
+                        await db.execute("DELETE FROM chunks_fts WHERE rowid = ?", (rowid,))
+                    await db.execute(
+                        "INSERT INTO chunks_fts(rowid, content) VALUES (?, ?)",
+                        (rowid, _tokenize_for_fts(content)),
+                    )
 
                 await db.commit()
             routing_logger.info(f"[VectorStore] 入库完成: chunk_id={chunk_id}, source={source}")
@@ -348,6 +399,14 @@ class VectorStore:
                 db = await self._get_db()
 
                 await db.execute("BEGIN")
+                # 先查出要删除的 rowid，同步清理 FTS 和向量索引
+                del_cursor = await db.execute(
+                    "SELECT id FROM chunks WHERE source = 'memory' AND owner_agent = ? AND date = ?",
+                    (agent_name, date),
+                )
+                del_rows = await del_cursor.fetchall()
+                for (del_id,) in del_rows:
+                    await db.execute("DELETE FROM chunks_fts WHERE rowid = ?", (del_id,))
                 await db.execute(
                     "DELETE FROM vec_chunks WHERE rowid IN ("
                     "SELECT id FROM chunks WHERE source = 'memory' AND owner_agent = ? AND date = ?"
@@ -376,6 +435,8 @@ class VectorStore:
                                 "content = ?, source = 'memory', owner_agent = ? WHERE id = ?",
                                 (date, now_iso, visible_json, text, agent_name, rowid),
                             )
+                            # FTS: 更新需先删后插
+                            await db.execute("DELETE FROM chunks_fts WHERE rowid = ?", (rowid,))
                         else:
                             cur = await db.execute(
                                 "INSERT INTO chunks(round_id, date, created_at, visible_to, content, source, owner_agent) "
@@ -387,6 +448,10 @@ class VectorStore:
                             await db.execute(
                                 "INSERT OR REPLACE INTO vec_chunks(rowid, embedding) VALUES (?, ?)",
                                 (rowid, self._to_vec_blob(embeddings[i])),
+                            )
+                            await db.execute(
+                                "INSERT INTO chunks_fts(rowid, content) VALUES (?, ?)",
+                                (rowid, _tokenize_for_fts(text)),
                             )
 
                 await db.commit()
@@ -415,6 +480,7 @@ class VectorStore:
 
         # 清空
         await db.execute("DELETE FROM vec_chunks")
+        await db.execute("DELETE FROM chunks_fts")
         await db.execute("DELETE FROM chunks")
         await db.commit()
 
@@ -450,6 +516,134 @@ class VectorStore:
 
     # ----------------------------- 检索 -----------------------------
 
+    @staticmethod
+    def _build_scope_sql(agent_name: str, kind_norm: str) -> tuple[str, tuple]:
+        """构建可见性过滤 SQL 片段（供向量检索和 BM25 共用）。"""
+        if kind_norm in ("round", "dialogue"):
+            return (
+                "SELECT id FROM chunks WHERE source = 'round' AND EXISTS ("
+                "SELECT 1 FROM json_each(chunks.visible_to) WHERE json_each.value = ?"
+                ")",
+                (agent_name,),
+            )
+        elif kind_norm == "all":
+            return (
+                "SELECT id FROM chunks WHERE ("
+                "source = 'memory' AND owner_agent = ?"
+                ") OR ("
+                "source = 'round' AND EXISTS ("
+                "SELECT 1 FROM json_each(chunks.visible_to) WHERE json_each.value = ?"
+                ")"
+                ")",
+                (agent_name, agent_name),
+            )
+        else:
+            return (
+                "SELECT id FROM chunks WHERE source = 'memory' AND owner_agent = ?",
+                (agent_name,),
+            )
+
+    def _vector_search(
+        self,
+        conn: sqlite3.Connection,
+        qvec: list[float],
+        scope_sql: str,
+        scope_params: tuple,
+        fetch_limit: int,
+    ) -> list[tuple]:
+        """纯向量近邻检索，返回 (id, content, distance, time_ref) 列表。"""
+        candidate_limit = max(fetch_limit * 10, 50)
+        sql = f"""
+        WITH scope AS (
+          {scope_sql}
+        ),
+        vec_results AS (
+          SELECT rowid, distance FROM vec_chunks
+          WHERE embedding MATCH ?
+          LIMIT ?
+        )
+        SELECT c.id, c.content, v.distance,
+               COALESCE(c.last_recalled_at, c.created_at) AS time_ref
+        FROM vec_results v
+        JOIN scope s ON s.id = v.rowid
+        JOIN chunks c ON c.id = v.rowid
+        ORDER BY v.distance
+        LIMIT ?
+        """
+        return conn.execute(
+            sql,
+            (*scope_params, self._to_vec_blob(qvec), candidate_limit, fetch_limit),
+        ).fetchall()
+
+    @staticmethod
+    def _bm25_search(
+        conn: sqlite3.Connection,
+        query: str,
+        scope_sql: str,
+        scope_params: tuple,
+        limit: int,
+    ) -> list[tuple[int, str, float]]:
+        """BM25 全文检索，返回 (id, content, bm25_rank) 列表。
+
+        FTS5 的 rank 值为负数（越小越相关），这里取绝对值转为正数分数。
+        """
+        fts_query = _tokenize_for_fts(query.strip())
+        if not fts_query:
+            return []
+
+        sql = f"""
+        WITH scope AS (
+          {scope_sql}
+        ),
+        fts_hits AS (
+          SELECT rowid, rank FROM chunks_fts WHERE chunks_fts MATCH ?
+        )
+        SELECT c.id, c.content, f.rank
+        FROM fts_hits f
+        JOIN scope s ON s.id = f.rowid
+        JOIN chunks c ON c.id = f.rowid
+        ORDER BY f.rank
+        LIMIT ?
+        """
+        try:
+            return conn.execute(sql, (*scope_params, fts_query, limit)).fetchall()
+        except Exception as e:
+            routing_logger.warning("[VectorStore] BM25 检索失败（降级跳过）: %s", e)
+            return []
+
+    @staticmethod
+    def _rrf_fusion(
+        vec_rows: list[tuple],
+        bm25_rows: list[tuple[int, str, float]],
+        k: int,
+    ) -> list[dict[str, Any]]:
+        """RRF（Reciprocal Rank Fusion）合并两路检索结果。
+
+        score(d) = 1/(k + rank_vec(d)) + 1/(k + rank_bm25(d))
+        未出现在某一路的文档，该路贡献为 0。
+        """
+        scores: dict[int, float] = {}
+        contents: dict[int, str] = {}
+
+        # 向量路：vec_rows = [(id, content, distance, time_ref), ...]
+        for rank, row in enumerate(vec_rows):
+            doc_id = int(row[0])
+            scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
+            contents[doc_id] = row[1]
+
+        # BM25 路：bm25_rows = [(id, content, rank_score), ...]
+        for rank, row in enumerate(bm25_rows):
+            doc_id = int(row[0])
+            scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
+            contents[doc_id] = row[1]
+
+        # 按 RRF 分数降序排列
+        sorted_ids = sorted(scores.keys(), key=lambda d: scores[d], reverse=True)
+        return [
+            {"id": str(doc_id), "content": contents[doc_id], "score": scores[doc_id]}
+            for doc_id in sorted_ids
+        ]
+
     def search(
         self,
         agent_name: str,
@@ -457,15 +651,12 @@ class VectorStore:
         limit: int | None = None,
         kind: str = "memory",
     ) -> list[dict[str, Any]]:
-        """语义搜索：按 kind 在可见范围内检索。"""
+        """语义搜索（可选混合 BM25 + RRF）：按 kind 在可见范围内检索。"""
         if not query or not query.strip():
             return []
 
         if not isinstance(limit, int) or limit <= 0:
-            try:
-                limit = int(os.getenv("VECTOR_SEARCH_LIMIT", "5"))
-            except ValueError:
-                limit = 5
+            limit = VECTOR_SEARCH_LIMIT
 
         # 计算查询向量（同步）
         try:
@@ -474,78 +665,38 @@ class VectorStore:
             routing_logger.error(f"[VectorStore] 查询嵌入失败: {e}")
             return []
 
-        # 执行近邻搜索
+        # 执行检索
         conn: sqlite3.Connection | None = None
         try:
             conn = sqlite3.connect(DB_PATH)
             self._load_sqlite_vec_sync(conn)
 
-            # sqlite-vec 要求 MATCH 必须有 LIMIT，所以先在 CTE 中搜更多候选
-            candidate_limit = max(limit * 10, 50)  # 至少 50 个候选
-
             kind_norm = (kind or "memory").strip().lower()
-            if kind_norm in ("round", "dialogue"):
-                scope_sql = (
-                    "SELECT id FROM chunks WHERE source = 'round' AND EXISTS ("
-                    "SELECT 1 FROM json_each(chunks.visible_to) WHERE json_each.value = ?"
-                    ")"
-                )
-                scope_params = (agent_name,)
-            elif kind_norm == "all":
-                scope_sql = (
-                    "SELECT id FROM chunks WHERE ("
-                    "source = 'memory' AND owner_agent = ?"
-                    ") OR ("
-                    "source = 'round' AND EXISTS ("
-                    "SELECT 1 FROM json_each(chunks.visible_to) WHERE json_each.value = ?"
-                    ")"
-                    ")"
-                )
-                scope_params = (agent_name, agent_name)
-            else:
-                scope_sql = "SELECT id FROM chunks WHERE source = 'memory' AND owner_agent = ?"
-                scope_params = (agent_name,)
+            scope_sql, scope_params = self._build_scope_sql(agent_name, kind_norm)
 
-            sql = f"""
-            WITH scope AS (
-              {scope_sql}
-            ),
-            vec_results AS (
-              SELECT rowid, distance FROM vec_chunks
-              WHERE embedding MATCH ?
-              LIMIT ?
-            )
-            SELECT c.id, c.content, v.distance,
-                   COALESCE(c.last_recalled_at, c.created_at) AS time_ref
-            FROM vec_results v
-            JOIN scope s ON s.id = v.rowid
-            JOIN chunks c ON c.id = v.rowid
-            ORDER BY v.distance
-            LIMIT ?
-            """
             # 若启用 rerank，先多取候选，rerank 后再截取
-            rerank_multiplier = int(os.getenv("RERANK_CANDIDATE_MULTIPLIER", "3"))
+            rerank_multiplier = RERANK_CANDIDATE_MULTIPLIER
             fetch_limit = limit * rerank_multiplier if RERANK_MODEL else limit
 
-            rows = conn.execute(
-                sql,
-                (*scope_params, self._to_vec_blob(qvec), candidate_limit, fetch_limit),
-            ).fetchall()
+            # 向量检索
+            vec_rows = self._vector_search(conn, qvec, scope_sql, scope_params, fetch_limit)
 
-            # Time-decay 融合：blended = α * semantic + (1-α) * time_score
-            # time_ref = last_recalled_at（被想起则重置计时），兜底 created_at
-            # 在 rerank 之前执行，让 reranker 见到时间调整后的候选顺序
-            if TIME_DECAY_ALPHA < 1.0 and TIME_DECAY_HALF_LIFE_DAYS > 0 and rows:
-                def _blended(row: tuple) -> float:
-                    dist, time_ref = row[2], row[3]
-                    # sqlite-vec cosine distance ∈ [0, 2]，转为 similarity ∈ [0, 1]
-                    similarity = 1.0 - min(float(dist), 2.0) / 2.0
-                    time_score = _time_decay_score(time_ref or "", TIME_DECAY_HALF_LIFE_DAYS)
-                    return TIME_DECAY_ALPHA * similarity + (1.0 - TIME_DECAY_ALPHA) * time_score
-
-                rows = sorted(rows, key=_blended, reverse=True)
-
-            results = [{"id": str(r[0]), "content": r[1], "score": float(r[2])} for r in rows]
+            # 混合检索：BM25 + RRF
+            if HYBRID_SEARCH_ENABLED:
+                bm25_rows = self._bm25_search(
+                    conn, query, scope_sql, scope_params, BM25_CANDIDATE_LIMIT,
+                )
+                if bm25_rows:
+                    results = self._rrf_fusion(vec_rows, bm25_rows, RRF_K)[:fetch_limit]
+                    routing_logger.info(
+                        "[VectorStore] RRF 融合: agent=%s, vec=%s, bm25=%s, merged=%s",
+                        agent_name, len(vec_rows), len(bm25_rows), len(results),
+                    )
+                else:
+                    # BM25 无结果，降级为纯向量
+                    results = self._apply_time_decay(vec_rows)
+            else:
+                results = self._apply_time_decay(vec_rows)
 
             if RERANK_MODEL and results:
                 try:
@@ -553,7 +704,7 @@ class VectorStore:
                     results = [results[i] for i in ranked_indices][:limit]
                     routing_logger.info(
                         "[VectorStore] rerank 完成: agent=%s, 候选=%s, 返回=%s",
-                        agent_name, len(rows), len(results),
+                        agent_name, len(vec_rows), len(results),
                     )
                 except Exception as e:
                     routing_logger.warning(
@@ -561,6 +712,8 @@ class VectorStore:
                         agent_name, e,
                     )
                     results = results[:limit]
+            else:
+                results = results[:limit]
 
             # 更新 last_recalled_at：被返回的记忆视为"被想起"，遗忘时钟重置
             recalled_ids = [r["id"] for r in results if r["id"]]
@@ -577,8 +730,8 @@ class VectorStore:
                     routing_logger.warning("[VectorStore] 更新 last_recalled_at 失败: %s", e)
 
             routing_logger.info(
-                "[VectorStore] 搜索完成: agent=%s, limit=%s, 命中=%s, kind=%s",
-                agent_name, limit, len(results), kind_norm
+                "[VectorStore] 搜索完成: agent=%s, limit=%s, 命中=%s, kind=%s, hybrid=%s",
+                agent_name, limit, len(results), kind_norm, HYBRID_SEARCH_ENABLED,
             )
 
             return results
@@ -588,6 +741,20 @@ class VectorStore:
         finally:
             if conn is not None:
                 conn.close()
+
+    @staticmethod
+    def _apply_time_decay(rows: list[tuple]) -> list[dict[str, Any]]:
+        """对向量检索结果应用 time-decay 融合并转为 dict 列表。"""
+        if TIME_DECAY_ALPHA < 1.0 and TIME_DECAY_HALF_LIFE_DAYS > 0 and rows:
+            def _blended(row: tuple) -> float:
+                dist, time_ref = row[2], row[3]
+                similarity = 1.0 - min(float(dist), 2.0) / 2.0
+                time_score = _time_decay_score(time_ref or "", TIME_DECAY_HALF_LIFE_DAYS)
+                return TIME_DECAY_ALPHA * similarity + (1.0 - TIME_DECAY_ALPHA) * time_score
+
+            rows = sorted(rows, key=_blended, reverse=True)
+
+        return [{"id": str(r[0]), "content": r[1], "score": float(r[2])} for r in rows]
 
     @staticmethod
     def _to_vec_blob(vec: list[float]) -> bytes:
@@ -602,6 +769,16 @@ class VectorStore:
         try:
             await self.init_tables()
             db = await self._get_db()
+            # 查出待删除 rowid，同步清理 FTS
+            del_cursor = await db.execute(
+                "SELECT id FROM chunks WHERE EXISTS (\n"
+                "  SELECT 1 FROM json_each(visible_to) WHERE json_each.value = ?\n"
+                ")",
+                (agent_name,),
+            )
+            del_rows = await del_cursor.fetchall()
+            for (del_id,) in del_rows:
+                await db.execute("DELETE FROM chunks_fts WHERE rowid = ?", (del_id,))
             await db.execute(
                 "DELETE FROM vec_chunks WHERE rowid IN (\n"
                 "  SELECT id FROM chunks WHERE EXISTS (\n"
@@ -637,6 +814,7 @@ class VectorStore:
                 async with self._get_write_lock():
                     await db.execute("BEGIN")
                     await db.execute("DELETE FROM vec_chunks")
+                    await db.execute("DELETE FROM chunks_fts")
                     await db.execute("DELETE FROM chunks")
                     await db.commit()
                 self._conv_game_date.clear()

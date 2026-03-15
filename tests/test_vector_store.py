@@ -31,7 +31,7 @@ try:
     import importlib
     import memory.vector_store  # 确保子模块被加载进 sys.modules
     vector_store_module = importlib.import_module("memory.vector_store")
-    from memory.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
+    from memory.vector_store import vector_store, VectorStore, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip vector_store tests: missing dependency ({exc})", allow_module_level=True)
 
@@ -374,3 +374,139 @@ class TestVectorStoreMemoryIndexing:
         res_miss = store.search("mitsuki", "独自待了一会儿", kind="memory")
         assert len(res_hit) >= 1, "应命中索引的日期"
         assert not any("独自待了一会儿" in r["content"] for r in res_miss), "未索引日期不应返回"
+
+
+class TestHybridSearch:
+    """BM25 + RRF 混合检索测试"""
+
+    @pytest.mark.asyncio
+    async def test_bm25_search_basic(self, clean_store, tmp_path, monkeypatch):
+        """BM25 检索能命中精确关键词。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+
+        write_memory(
+            tmp_path, "lilith",
+            "# lilith\n\n## 4月3日\n"
+            "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
+            "- **内容**：今天遇到了桥本美月，她提到了学园祭的准备工作。",
+        )
+        await store.add_memory("lilith", "4月3日")
+        await wait_for_search(store, "lilith", "学园祭", kind="memory")
+
+        # 直接测试 BM25 搜索
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect(test_db_path)
+        store._load_sqlite_vec_sync(conn)
+        scope_sql, scope_params = VectorStore._build_scope_sql("lilith", "memory")
+        results = VectorStore._bm25_search(conn, "学园祭", scope_sql, scope_params, 5)
+        conn.close()
+
+        assert len(results) >= 1, "BM25 应命中包含'学园祭'的记忆"
+        assert "学园祭" in results[0][1], "第一条结果应包含关键词"
+
+    @pytest.mark.asyncio
+    async def test_bm25_respects_scope(self, clean_store, tmp_path, monkeypatch):
+        """BM25 检索遵循角色可见性隔离。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+
+        write_memory(
+            tmp_path, "lilith",
+            "# lilith\n\n## 4月3日\n"
+            "- **时间**：4月3日 10:00\n- **地点**：走廊\n- **在场**：莉莉丝\n"
+            "- **内容**：听到了关于紫水晶项链的传闻。",
+        )
+        await store.add_memory("lilith", "4月3日")
+        await wait_for_search(store, "lilith", "紫水晶", kind="memory")
+
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect(test_db_path)
+        store._load_sqlite_vec_sync(conn)
+
+        # lilith 能搜到
+        scope_sql, scope_params = VectorStore._build_scope_sql("lilith", "memory")
+        results_lilith = VectorStore._bm25_search(conn, "紫水晶", scope_sql, scope_params, 5)
+        assert len(results_lilith) >= 1, "lilith 应能搜到自己的记忆"
+
+        # mitsuki 搜不到
+        scope_sql2, scope_params2 = VectorStore._build_scope_sql("mitsuki", "memory")
+        results_mitsuki = VectorStore._bm25_search(conn, "紫水晶", scope_sql2, scope_params2, 5)
+        assert len(results_mitsuki) == 0, "mitsuki 不应看到 lilith 的记忆"
+
+        conn.close()
+
+    @pytest.mark.asyncio
+    async def test_rrf_fusion_merges_results(self, clean_store, tmp_path, monkeypatch):
+        """RRF 融合能合并向量和 BM25 两路结果。"""
+        # 构造模拟数据测试 _rrf_fusion 纯逻辑
+        vec_rows = [
+            (1, "内容A", 0.5, "2026-01-01T00:00:00Z"),
+            (2, "内容B", 0.7, "2026-01-01T00:00:00Z"),
+        ]
+        bm25_rows = [
+            (2, "内容B", -5.0),  # BM25 排第1
+            (3, "内容C", -3.0),  # BM25 排第2
+        ]
+
+        results = VectorStore._rrf_fusion(vec_rows, bm25_rows, k=60)
+
+        ids = [r["id"] for r in results]
+        assert "2" in ids, "文档2应出现（两路都命中）"
+        assert "1" in ids, "文档1应出现（仅向量路命中）"
+        assert "3" in ids, "文档3应出现（仅BM25路命中）"
+
+        # 文档2 在两路都排名靠前，RRF 分数应最高
+        assert results[0]["id"] == "2", "两路都命中的文档应排第一"
+
+    @pytest.mark.asyncio
+    async def test_hybrid_search_end_to_end(self, clean_store, tmp_path, monkeypatch):
+        """端到端：启用混合检索后 search() 正常返回结果。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(vector_store_module, "HYBRID_SEARCH_ENABLED", True)
+
+        write_memory(
+            tmp_path, "lilith",
+            "# lilith\n\n## 4月3日\n"
+            "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
+            "- **内容**：收到了来自京都大学的录取通知书，非常激动。",
+        )
+        await store.add_memory("lilith", "4月3日")
+        await wait_for_search(store, "lilith", "录取通知书", kind="memory")
+
+        # 启用混合检索后，用精确关键词搜索
+        monkeypatch.setattr(vector_store_module, "HYBRID_SEARCH_ENABLED", True)
+        results = store.search("lilith", "京都大学", limit=5, kind="memory")
+        assert len(results) >= 1, "混合检索应能命中结果"
+        assert any("京都大学" in r["content"] for r in results), "结果应包含关键词"
+
+    @pytest.mark.asyncio
+    async def test_fts_sync_on_delete(self, clean_store, tmp_path, monkeypatch):
+        """删除角色时 FTS 索引也被清理。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+
+        write_memory(
+            tmp_path, "lilith",
+            "# lilith\n\n## 4月3日\n"
+            "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
+            "- **内容**：今天讨论了毕业典礼的安排。",
+        )
+        await store.add_memory("lilith", "4月3日")
+        await wait_for_search(store, "lilith", "毕业典礼", kind="memory")
+
+        # 确认 FTS 有数据
+        db = await store._get_db()
+        fts_count_before = (await (await db.execute(
+            "SELECT COUNT(*) FROM chunks_fts"
+        )).fetchone())[0]
+        assert fts_count_before > 0, "删除前 FTS 应有数据"
+
+        # 删除
+        await store.delete("lilith")
+
+        fts_count_after = (await (await db.execute(
+            "SELECT COUNT(*) FROM chunks_fts"
+        )).fetchone())[0]
+        assert fts_count_after == 0, "删除后 FTS 应为空"
