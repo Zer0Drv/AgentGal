@@ -227,4 +227,20 @@ def parse_narrator_response(content: str) -> tuple[list[str], str]:
     ]
 
     scene_description = content[targets_match.end():].strip()
+
+    # 防御：截断 narrator 输出中混入的角色台词
+    # 检测 "角色名:" 或 "## 角色名" 等模式并截断
+    for agent in valid_agents:
+        for pattern in [
+            re.compile(rf"^{re.escape(agent)}\s*:", re.MULTILINE | re.IGNORECASE),
+            re.compile(rf"^##\s*{re.escape(agent)}", re.MULTILINE | re.IGNORECASE),
+        ]:
+            m = pattern.search(scene_description)
+            if m:
+                routing_logger.warning(
+                    f"[narrator] 场景描述中检测到角色台词 '{agent}'，已截断"
+                )
+                scene_description = scene_description[: m.start()].strip()
+                break
+
     return targets, scene_description
