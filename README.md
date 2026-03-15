@@ -158,14 +158,22 @@ Agent 回复由两部分组成：
 | `LLM_PROVIDER` | 是 | `openai` / `deepseek` / `openrouter` |
 | `LLM_API_KEY` | 是 | 主模型 API Key |
 | `LLM_MODEL_ID` | 是 | 主模型 ID |
-| `LLM_API_URL` | 否 | 自定义 OpenAI 兼容端点 |
-| `LLM_TEMPERATURE` | 否 | 对话温度 |
-| `CONSOLIDATION_LLM_*` | 否 | 记忆整理器独立模型配置 |
+| `LLM_API_URL` | 否 | 自定义 OpenAI 兼容端点，已知 provider 可留空自动解析 |
+| `CONSOLIDATION_LLM_PROVIDER` | 否 | 记忆整理器 provider，已知 provider 可省略 URL |
+| `CONSOLIDATION_LLM_API_KEY` | 否 | 记忆整理器 API Key，不填则复用 `LLM_API_KEY` |
+| `CONSOLIDATION_LLM_MODEL_ID` | 否 | 记忆整理器模型 ID |
+| `CONSOLIDATION_LLM_API_URL` | 否 | 记忆整理器端点 URL |
+| `NARRATOR_LLM_PROVIDER` | 否 | 旁白 provider，已知 provider 可省略 URL |
+| `NARRATOR_LLM_API_KEY` | 否 | 旁白 API Key，不填则复用 `LLM_API_KEY` |
+| `NARRATOR_LLM_MODEL_ID` | 否 | 旁白模型 ID |
+| `NARRATOR_LLM_API_URL` | 否 | 旁白端点 URL |
 | `EMBEDDING_API_URL` | 否 | embedding 接口地址 |
-| `EMBEDDING_MODEL` | 否 | embedding 模型 |
-| `EMBEDDING_DIM` | 否 | 向量维度 |
+| `EMBEDDING_MODEL` | 否 | embedding 模型（默认 `BAAI/bge-m3`） |
+| `EMBEDDING_DIM` | 否 | 向量维度（默认 1024） |
 | `EMBEDDING_API_KEY` | 否 | embedding API Key |
-| `RERANK_*` | 否 | rerank 配置 |
+| `RERANK_MODEL` | 否 | rerank 模型，不配置则跳过 rerank |
+| `RERANK_API_URL` | 否 | rerank 端点 URL |
+| `RERANK_API_KEY` | 否 | rerank API Key |
 | `CONSOLIDATION_INTERVAL` | 否 | 记忆整理轮次间隔 |
 | `HISTORY_LIMIT_NARRATOR` | 否 | narrator 历史条数 |
 | `HISTORY_LIMIT_DEFAULT` | 否 | 角色历史条数 |
