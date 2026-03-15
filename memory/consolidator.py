@@ -57,9 +57,9 @@ _TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.3"))
 _MAX_TOKENS_RAW = os.getenv("CONSOLIDATION_MAX_TOKENS")
 _MAX_TOKENS: Optional[int] = int(_MAX_TOKENS_RAW) if _MAX_TOKENS_RAW else None
 
-_PROMPT_STEP1_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step1.txt"
-_PROMPT_STEP2_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step2.txt"
-_PROMPT_STEP3_PATH = Path(__file__).parent.parent / "prompts" / "consolidation_prompt_step3.txt"
+_PROMPT_STEP1_PATH = Path(__file__).parent.parent / "prompts" / "memory_scene_merge.txt"
+_PROMPT_STEP2_PATH = Path(__file__).parent.parent / "prompts" / "growth_extract.txt"
+_PROMPT_STEP3_PATH = Path(__file__).parent.parent / "prompts" / "growth_dedupe.txt"
 _PLAYER_PROMPT_PATH = (
     Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 )
