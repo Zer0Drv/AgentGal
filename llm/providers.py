@@ -59,6 +59,30 @@ def get_llm_config(
     return {"api_url": api_url, "api_key": api_key, "model": model_id, "temperature": temperature}
 
 
+def get_narrator_llm_config() -> dict:
+    """返回 narrator 使用的 LLM 配置。
+
+    优先使用 NARRATOR_LLM_* 系列环境变量，未设置则复用主 LLM 配置。
+    """
+    provider = os.getenv("NARRATOR_LLM_PROVIDER")
+    model_id = os.getenv("NARRATOR_LLM_MODEL_ID")
+    api_key = os.getenv("NARRATOR_LLM_API_KEY")
+    api_url = os.getenv("NARRATOR_LLM_API_URL")
+
+    if not any([provider, model_id, api_key, api_url]):
+        return get_llm_config()
+
+    provider = provider or os.getenv("LLM_PROVIDER", "deepseek")
+    model_id = model_id or os.getenv("LLM_MODEL_ID", "deepseek-chat")
+    api_key = api_key or os.getenv("LLM_API_KEY")
+    api_url = api_url or os.getenv("LLM_API_URL")
+
+    if not api_key:
+        raise ValueError("NARRATOR_LLM_API_KEY or LLM_API_KEY must be set")
+
+    return get_llm_config(provider=provider, model_id=model_id, api_key=api_key, api_url=api_url)
+
+
 def get_consolidation_llm_config() -> dict:
     """返回记忆整理器使用的 LLM 配置。
 

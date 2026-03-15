@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from engine.agent_manager import (
     call_narrator_and_route,
+    generate_choices,
     run_agent_in_scene,
 )
 from engine.config import CONSOLIDATION_INTERVAL, get_agent_names
@@ -252,18 +253,37 @@ async def on_message(message: cl.Message):
         return
 
     # 5. 顺序处理目标角色，每个完成后立即推送到前端
+    agent_responses: list[tuple[str, str]] = []
     for agent_name in targets:
         try:
             response = await run_agent_in_scene(
                 agent_name, targets, user_input, scene_summary=scene_description
             )
             if response:
+                agent_responses.append((agent_name, response))
                 await cl.Message(content=response, author=agent_name.capitalize()).send()
         except Exception as e:
             print(f"Agent {agent_name} 运行失败: {e}")
             await cl.Message(content=f"[错误: {str(e)}]", author=agent_name.capitalize()).send()
 
-    # 6. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
+    # 6. 生成玩家可选行动
+    if agent_responses:
+        choices = await generate_choices(scene_description, agent_responses)
+        if choices:
+            actions = [
+                cl.Action(
+                    name="choice",
+                    payload={"text": choice},
+                    label=choice,
+                )
+                for choice in choices
+            ]
+            await cl.Message(
+                content="你可以选择接下来的行动，或者直接输入你想做的事：",
+                actions=actions,
+            ).send()
+
+    # 7. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
     print(
         f"[调试] 当前轮次: {message_counter}, CONSOLIDATION_INTERVAL: {CONSOLIDATION_INTERVAL}, 是否触发: {message_counter % CONSOLIDATION_INTERVAL == 0}"
     )
@@ -271,6 +291,17 @@ async def on_message(message: cl.Message):
         all_agents = get_agent_names()
         print(f"[调试] 触发记忆整理，目标角色: {all_agents}")
         asyncio.create_task(memory_consolidator.consolidate_all(all_agents))
+
+
+@cl.action_callback("choice")
+async def on_choice_action(action: cl.Action):
+    """玩家点击选项按钮时，将选项文本作为新消息处理"""
+    choice_text = action.payload.get("text", "")
+    if choice_text:
+        # 构造一个 Message 对象交给 on_message 处理
+        msg = cl.Message(content=choice_text, author="User")
+        await msg.send()
+        await on_message(msg)
 
 
 @cl.on_chat_end

@@ -18,7 +18,7 @@ from engine.config import (
 from engine.response_parser import parse_agent_response, parse_narrator_response
 from engine.text_utils import clean_response, is_valid_response, process_character_response
 from llm.llm_parser import OpenAICompatibleClient
-from llm.providers import get_llm_config
+from llm.providers import get_llm_config, get_narrator_llm_config
 from log_config.agent_calls import log_agent_call
 from log_config.routing import routing_logger
 from memory.file_ops import (
@@ -292,7 +292,7 @@ async def run_agent(agent_name: str, user_input: str, scene_summary: str = "") -
         {"role": "user", "content": full_input},
     ]
 
-    config = get_llm_config()
+    config = get_narrator_llm_config() if agent_name == "narrator" else get_llm_config()
     try:
         async with OpenAICompatibleClient(**config) as client:
             response = await asyncio.wait_for(
@@ -382,6 +382,51 @@ def _build_agent_input(history: str, user_input: str) -> str:
 # ---------------------------------------------------------------------------
 # 多 Agent 编排
 # ---------------------------------------------------------------------------
+
+
+def _parse_choices(response_text: str) -> list[str]:
+    """从模型输出中提取 <choices> 标签内的选项列表。"""
+    match = re.search(r"<choices>(.*?)</choices>", response_text, re.DOTALL)
+    if not match:
+        return []
+    lines = [line.strip() for line in match.group(1).strip().split("\n") if line.strip()]
+    return lines[:3]
+
+
+async def generate_choices(scene_description: str, agent_responses: list[tuple[str, str]]) -> list[str]:
+    """根据当前场景和角色回应生成玩家可选行动。
+
+    Args:
+        scene_description: 旁白的场景描述
+        agent_responses: [(角色名, 回应内容), ...] 列表
+
+    Returns:
+        选项文本列表（2-3 个），失败返回空列表
+    """
+    parts = []
+    if scene_description:
+        parts.append(f"【场景】\n{scene_description}")
+    for name, response in agent_responses:
+        parts.append(f"【{name}】\n{response}")
+
+    user_content = "\n\n".join(parts)
+    choices_prompt = (PROJECT_ROOT / "prompts" / "choices_prompt.txt").read_text(encoding="utf-8")
+    messages = [
+        {"role": "system", "content": choices_prompt},
+        {"role": "user", "content": user_content},
+    ]
+
+    config = get_narrator_llm_config()
+    try:
+        async with OpenAICompatibleClient(**config) as client:
+            response = await asyncio.wait_for(
+                client.chat(messages),
+                timeout=30,
+            )
+        return _parse_choices(response["content"])
+    except Exception as e:
+        routing_logger.warning(f"选项生成失败: {e}")
+        return []
 
 
 async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool]:
