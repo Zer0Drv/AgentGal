@@ -122,9 +122,8 @@ async def _handle_continue_game() -> None:
             cl.Action(name="choice", payload={"text": c}, label=c)
             for c in saved_choices
         ]
-        choice_lines = "\n".join(f"{i}. {c}" for i, c in enumerate(saved_choices, 1))
         await cl.Message(
-            content=f"你可以选择接下来的行动，或者直接输入你想做的事：\n\n{choice_lines}",
+            content="你可以选择接下来的行动，或者直接输入你想做的事。选项只是参考，你可以做任何事情。",
             actions=actions,
         ).send()
 
@@ -314,9 +313,8 @@ async def on_message(message: cl.Message):
                 )
                 for choice in choices
             ]
-            choice_lines = "\n".join(f"{i}. {c}" for i, c in enumerate(choices, 1))
             await cl.Message(
-                content=f"你可以选择接下来的行动，或者直接输入你想做的事：\n\n{choice_lines}",
+                content="你可以选择接下来的行动，或者直接输入你想做的事。选项只是参考，你可以做任何事情。",
                 actions=actions,
             ).send()
 
