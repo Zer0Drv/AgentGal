@@ -90,7 +90,7 @@ def normalize(content: str) -> str:
     lines = content.split("\n")
     out = []
     for line in lines:
-        m = re.match(r"^(?:##\s*|\*\*)?(\d{1,2}月\d{1,2}日)(?:\*\*)?\s*$", line.strip())
+        m = re.match(r"^(?:#{1,2}\s*|\*\*)?(\d{1,2}月\d{1,2}日)(?:\*\*)?(?:\s.*)?$", line.strip())
         if m:
             out.append(f"## {m.group(1)}")
         else:
@@ -112,7 +112,7 @@ def split_by_date(content: str) -> OrderedDict[str, str]:
     current_lines: list[str] = []
 
     for line in content.split("\n"):
-        m = re.match(r"^##\s*(\d{1,2}月\d{1,2}日)$", line.strip())
+        m = re.match(r"^##\s*(\d{1,2}月\d{1,2}日)(?:\s.*)?$", line.strip())
         if m:
             if current_date:
                 body = "\n".join(current_lines).strip()
