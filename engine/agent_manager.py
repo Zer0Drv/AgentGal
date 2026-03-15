@@ -18,7 +18,7 @@ from engine.config import (
 from engine.response_parser import parse_agent_response, parse_narrator_response
 from engine.text_utils import clean_response, is_valid_response, process_character_response
 from llm.llm_parser import OpenAICompatibleClient
-from llm.providers import get_llm_config, get_narrator_llm_config
+from llm.providers import get_choices_llm_config, get_llm_config, get_narrator_llm_config
 from log_config.agent_calls import log_agent_call
 from log_config.routing import routing_logger
 from memory.file_ops import (
@@ -416,7 +416,7 @@ async def generate_choices(scene_description: str, agent_responses: list[tuple[s
         {"role": "user", "content": user_content},
     ]
 
-    config = get_narrator_llm_config()
+    config = get_choices_llm_config()
     try:
         async with OpenAICompatibleClient(**config) as client:
             response = await asyncio.wait_for(
