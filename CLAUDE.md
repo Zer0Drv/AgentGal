@@ -67,6 +67,10 @@ agentgal-memos/
 - 每条消息带 `visible_to`
 - 角色读取上下文时，通过可见性过滤出自己能看到的消息
 
+### 其他运行时文件
+
+- `data/characters/last_choices.json`：最新一组玩家选项，续档时恢复展示，重置时清除
+
 ## 消息路由
 
 由 `narrator` 负责决定谁参与当前回合。
@@ -80,7 +84,7 @@ agentgal-memos/
 - 分析玩家输入，输出 `TARGETS: [...]`
 - 描述时间、地点、在场信息与环境
 - 推进剧情、切换场景、安排纯 NPC 行为
-- **绝不替角色说话或决定角色行动**
+- **绝不替角色说话或决定角色行动**（`response_parser.py` 中有防御性截断：检测到角色名开头的行时自动截断）
 
 ## 单轮对话流程
 
@@ -98,6 +102,10 @@ agentgal-memos/
 写回 memory.md / status.md / user.md
   ↓
 广播回应并展示给玩家
+  ↓
+调用选项生成（使用 narrator 模型），展示 2-3 个可选行动
+  ↓
+持久化最新选项到 last_choices.json（供续档恢复）
 ```
 
 ## Agent 输出与写回机制
@@ -148,6 +156,17 @@ agentgal-memos/
 2. `status.md`
 3. 最近对话历史
 4. `prompts/narrator_prompt.txt`
+
+narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置时回退到主 LLM。
+
+### 选项生成
+
+每轮角色回应后，调用 `generate_choices()` 生成 2-3 个玩家可选行动：
+
+- prompt 来源：`prompts/choices_prompt.txt`
+- 使用 narrator 的 LLM 配置
+- 输出风格为玩家台词（可含括号动作描写），非行动指令
+- 选项同时以文本和按钮形式展示，持久化到 `last_choices.json`
 
 ## 记忆整理
 
