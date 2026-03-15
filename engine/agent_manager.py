@@ -207,7 +207,7 @@ def _update_status(agent_name: str, field: str, content: str) -> str:
         routing_logger.warning(f"[{agent_name}] 禁止通过 <status> 覆盖「打算」字段，请使用 <triggered>/<add_event>")
         return "禁止覆盖「打算」字段，请用 <triggered>/<add_event> 逐条管理"
     if agent_name == "narrator" and field == "待触发事件":
-        routing_logger.warning(f"[narrator] 禁止通过 <status> 覆盖「待触发事件」字段，请使用 <triggered>/<add_event>")
+        routing_logger.warning("[narrator] 禁止通过 <status> 覆盖「待触发事件」字段，请使用 <triggered>/<add_event>")
         return "禁止覆盖「待触发事件」字段，请用 <triggered>/<add_event> 逐条管理"
     allowed = get_allowed_fields(agent_name, "status")
     if field not in allowed:
