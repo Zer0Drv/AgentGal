@@ -13,11 +13,6 @@ _THINKING_PATTERN = re.compile(
     re.DOTALL,
 )
 
-# prompt 结构标签残留（模型误将 prompt 的 XML 闭合标签当作输出的一部分）
-_PROMPT_TAG_RESIDUE = re.compile(
-    r"</(?:format|rules|fields|goal|soul|growth|example|output)>",
-)
-
 
 # =============================================================================
 # 工具函数
@@ -58,7 +53,6 @@ def clean_response(content: str) -> str:
     if not content:
         return content
     content = strip_thinking(content)
-    content = _PROMPT_TAG_RESIDUE.sub("", content)
     return normalize_whitespace(content)
 
 
