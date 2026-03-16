@@ -8,8 +8,7 @@ from pathlib import Path
 
 from engine.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
-    HISTORY_LIMIT_DEFAULT,
-    HISTORY_LIMIT_NARRATOR,
+    HISTORY_LIMIT,
     PROJECT_ROOT,
     VECTOR_SEARCH_LIMIT,
     character_path,
@@ -280,8 +279,13 @@ async def run_agent(agent_name: str, user_input: str, scene_summary: str = "") -
     pure_input = _extract_user_message(user_input)
     memory_prefix = _build_memory_prefix(agent_name, pure_input, scene_summary)
 
-    # 动态上下文：status + user_profile + 记忆 + 用户输入
+    # 动态上下文：当前时间 + status + user_profile + 记忆 + 用户输入
     context_parts: list[str] = []
+    if agent_name != "narrator":
+        narrator_status = read_agent_file("narrator", "status.md")
+        current_time = extract_status_field(narrator_status, "当前时间") if narrator_status else ""
+        if current_time:
+            context_parts.append(f"<current_time>{current_time}</current_time>")
     status_content = read_agent_file(agent_name, "status.md")
     context_parts.append(f"<status>\n{status_content if status_content else '（尚无状态记录）'}\n</status>")
     if agent_name != "narrator":
@@ -349,16 +353,12 @@ def format_conversation_history(messages: list, agent_name: str, limit: int = 10
     else:
         recent = messages
 
-    # 分离 narrator 和其他发言
+    # 只保留最新一条 narrator 发言，腾出空间给更多角色/玩家互动
     narrator_messages = [msg for msg in recent if msg.get("role") == "narrator"]
     other_messages = [msg for msg in recent if msg.get("role") != "narrator"]
-
-    # 只保留最新的一条 narrator 发言（如果有的话）
     final_messages = other_messages
     if narrator_messages:
         final_messages.append(narrator_messages[-1])
-
-    # 按原始顺序排序（保持时间顺序）
     final_messages.sort(key=lambda m: recent.index(m))
 
     # 取最近 limit 条有效消息
@@ -457,8 +457,8 @@ async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool
     """
     from game.save_manager import load_conversation_history
 
-    raw_messages = load_conversation_history(limit=HISTORY_LIMIT_NARRATOR * 5)
-    narrator_history = format_conversation_history(raw_messages, "narrator", limit=HISTORY_LIMIT_NARRATOR)
+    raw_messages = load_conversation_history(limit=HISTORY_LIMIT * 5)
+    narrator_history = format_conversation_history(raw_messages, "narrator", limit=HISTORY_LIMIT)
     narrator_input = (
         f"最近对话历史:\n\n{narrator_history}\n\n---\n\n玩家新消息: {user_input}"
         if narrator_history
@@ -507,8 +507,8 @@ async def run_agent_in_scene(
     from engine.message_router import message_router
     from game.save_manager import load_conversation_history
 
-    raw_messages = load_conversation_history(limit=HISTORY_LIMIT_DEFAULT * 5)
-    history = format_conversation_history(raw_messages, agent_name, limit=HISTORY_LIMIT_DEFAULT)
+    raw_messages = load_conversation_history(limit=HISTORY_LIMIT * 5)
+    history = format_conversation_history(raw_messages, agent_name, limit=HISTORY_LIMIT)
     full_input = _build_agent_input(history, user_input)
 
     response = await run_agent(agent_name, full_input, scene_summary=scene_summary)

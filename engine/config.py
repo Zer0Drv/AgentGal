@@ -40,8 +40,7 @@ MAX_ACTIONS: int = _cfg["text"]["max_actions"]
 MAX_ELLIPSIS: int = _cfg["text"]["max_ellipsis"]
 
 # 历史轮数（设计决策，不暴露给用户修改）
-HISTORY_LIMIT_NARRATOR = 8   # narrator 有完整 status.md 兜底，只需近几轮感知玩家动向
-HISTORY_LIMIT_DEFAULT = 20
+HISTORY_LIMIT = 20
 
 
 def character_path(character_name: str, *subpaths: str) -> str:
