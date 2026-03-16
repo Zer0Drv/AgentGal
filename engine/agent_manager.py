@@ -60,9 +60,7 @@ def _load_prompt_template(agent_name: str) -> str:
 
 
 def _build_system_prompt(agent_name: str, soul_content: str) -> str:
-    """构建 system prompt（每次调用时重新读取记忆文件）。"""
-    status_content = read_agent_file(agent_name, "status.md")
-    user_content = read_agent_file(agent_name, "user.md") if agent_name != "narrator" else ""
+    """构建 system prompt（仅包含不变/极少变的身份与规则部分）。"""
     growth_content = load_growth_for_prompt(agent_name) if agent_name != "narrator" else ""
     prompt_template = _load_prompt_template(agent_name)
     # 「打算」由 <triggered>/<add_event> 专用标签管理，不暴露给 <status> 覆盖
@@ -83,8 +81,6 @@ def _build_system_prompt(agent_name: str, soul_content: str) -> str:
         display_name=display_name,
         soul=soul_content,
         growth=growth_content,
-        status=status_content if status_content else "（尚无状态记录）",
-        user_profile=user_content if user_content else "（尚无玩家认知）",
         status_fields=status_fields,
         player_fields=player_fields,
         characters_scene_list=characters_scene_list,
@@ -283,7 +279,18 @@ async def run_agent(agent_name: str, user_input: str, scene_summary: str = "") -
 
     pure_input = _extract_user_message(user_input)
     memory_prefix = _build_memory_prefix(agent_name, pure_input, scene_summary)
-    full_input = f"{memory_prefix}\n\n---\n\n{user_input}" if memory_prefix else user_input
+
+    # 动态上下文：status + user_profile + 记忆 + 用户输入
+    context_parts: list[str] = []
+    status_content = read_agent_file(agent_name, "status.md")
+    context_parts.append(f"<status>\n{status_content if status_content else '（尚无状态记录）'}\n</status>")
+    if agent_name != "narrator":
+        user_content = read_agent_file(agent_name, "user.md")
+        context_parts.append(f"<user_profile>\n{user_content if user_content else '（尚无玩家认知）'}\n</user_profile>")
+    if memory_prefix:
+        context_parts.append(memory_prefix)
+    context_parts.append(user_input)
+    full_input = "\n\n---\n\n".join(context_parts)
 
     soul_content = read_agent_file(agent_name, "soul.md")
     system_prompt = _build_system_prompt(agent_name, soul_content)
@@ -403,7 +410,16 @@ async def generate_choices(scene_description: str, agent_responses: list[tuple[s
     Returns:
         选项文本列表（2-3 个），失败返回空列表
     """
+    from game.save_manager import load_conversation_history
+
     parts = []
+
+    # 加载最近对话历史，复用现有格式化逻辑（narrator 视角跳过 visible_to 过滤，且只保留最新一条旁白）
+    raw_messages = load_conversation_history(limit=30)
+    history = format_conversation_history(raw_messages, "narrator", limit=6)
+    if history:
+        parts.append(f"【近期对话】\n{history}")
+
     if scene_description:
         parts.append(f"【场景】\n{scene_description}")
     for name, response in agent_responses:

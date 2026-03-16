@@ -17,10 +17,6 @@
 **每轮回复第一行必须是 TARGETS: [角色列表]**——缺失会导致角色无法回应。
 </goal>
 
-<status>
-{status}
-</status>
-
 <format>
 TARGETS: [角色列表]
 
