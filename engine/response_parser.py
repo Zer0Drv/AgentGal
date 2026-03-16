@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from engine.config import get_agent_names
+from engine.config import get_agent_names, character_path
 from log_config.routing import routing_logger
 
 
@@ -50,14 +50,11 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
         ParsedResponse: 解析后的内容和更新指令
     """
     # 提取 XML 块（处理闭合和未闭合的情况）
-    xml_content, content_end_pos = _extract_update_notes(raw_response)
+    xml_content, clean_content = _extract_update_notes(raw_response)
 
     if xml_content is None:
         # 没有 update_notes 标签，返回原始内容
         return ParsedResponse(content=raw_response.strip())
-
-    # 移除 XML 块后的干净内容
-    clean_content = raw_response[:content_end_pos].strip()
 
     # 解析各个字段
     memory = _extract_xml_field(xml_content, "memory")
@@ -94,18 +91,18 @@ def parse_agent_response(raw_response: str, agent_name: str) -> ParsedResponse:
     )
 
 
-def _extract_update_notes(raw_response: str) -> tuple[Optional[str], int]:
+def _extract_update_notes(raw_response: str) -> tuple[Optional[str], str]:
     """
     提取 update_notes 标签内容，处理闭合和未闭合的情况。
 
     Returns:
-        (xml_content, content_end_pos): 标签内容和干净内容的结束位置
-        如果没有找到标签，返回 (None, 0)
+        (xml_content, clean_content): 标签内容和移除标签块后的干净内容
+        如果没有找到标签，返回 (None, "")
     """
     # 查找 <update_notes> 开始标签
     start_match = re.search(r"<update_notes>\s*", raw_response, re.DOTALL)
     if not start_match:
-        return None, 0
+        return None, ""
 
     start_pos = start_match.start()  # <update_notes> 标签开始的位置
     content_start = start_match.end()  # <update_notes> 标签之后的内容开始位置
@@ -116,8 +113,16 @@ def _extract_update_notes(raw_response: str) -> tuple[Optional[str], int]:
     if end_match:
         # 正常闭合的情况
         xml_content = raw_response[content_start : content_start + end_match.start()]
-        # 返回 <update_notes> 开始位置，作为截取干净内容的边界
-        xml_end_pos = start_pos
+        # 移除整个块（包括可能紧跟的多余 </update_notes>）
+        block_end = content_start + end_match.end()
+        # 跳过紧跟的多余 </update_notes> 标签（LLM 偶尔会输出双重闭合）
+        while True:
+            extra_close = re.match(r"\s*</update_notes>", raw_response[block_end:])
+            if extra_close:
+                block_end += extra_close.end()
+            else:
+                break
+        clean_content = (raw_response[:start_pos] + raw_response[block_end:]).strip()
     else:
         # 未闭合的情况：提取到字符串末尾或下一个大段落分隔符
         remaining = raw_response[content_start:]
@@ -131,9 +136,9 @@ def _extract_update_notes(raw_response: str) -> tuple[Optional[str], int]:
         routing_logger.warning(
             f"检测到未闭合的 <update_notes> 标签，从位置 {start_pos} 提取"
         )
-        xml_end_pos = start_pos
+        clean_content = raw_response[:start_pos].strip()
 
-    return xml_content.strip(), xml_end_pos
+    return xml_content.strip(), clean_content
 
 
 def _extract_xml_field(xml_content: str, field_name: str) -> Optional[str]:
@@ -199,6 +204,29 @@ def _parse_json_field(
 # ---------------------------------------------------------------------------
 
 
+def _get_display_name(agent_name: str) -> Optional[str]:
+    """从 soul.md 提取角色中文显示名。"""
+    import os
+
+    soul_path = character_path(agent_name, "soul.md")
+    if not os.path.exists(soul_path):
+        return None
+    try:
+        with open(soul_path, encoding="utf-8") as f:
+            soul_content = f.read()
+        role_match = re.search(r"<role>\s*([^\n<]+)", soul_content)
+        if role_match:
+            name_match = re.match(r"([\u4e00-\u9fff·]+)", role_match.group(1).strip())
+            if name_match:
+                return name_match.group(1)
+        title_match = re.search(r"^#\s+(.+)$", soul_content, re.MULTILINE)
+        if title_match:
+            return title_match.group(1).strip()
+    except Exception:
+        pass
+    return None
+
+
 def parse_narrator_response(content: str) -> tuple[list[str], str]:
     """解析 narrator 响应，提取 TARGETS 和场景描述。
 
@@ -229,18 +257,24 @@ def parse_narrator_response(content: str) -> tuple[list[str], str]:
     scene_description = content[targets_match.end():].strip()
 
     # 防御：截断 narrator 输出中混入的角色台词
-    # 检测 "角色名:" 或 "## 角色名" 等模式并截断
+    # 同时匹配英文 agent name 和中文显示名
     for agent in valid_agents:
-        for pattern in [
-            re.compile(rf"^{re.escape(agent)}\s*:", re.MULTILINE | re.IGNORECASE),
-            re.compile(rf"^##\s*{re.escape(agent)}", re.MULTILINE | re.IGNORECASE),
-        ]:
-            m = pattern.search(scene_description)
-            if m:
-                routing_logger.warning(
-                    f"[narrator] 场景描述中检测到角色台词 '{agent}'，已截断"
-                )
-                scene_description = scene_description[: m.start()].strip()
-                break
+        names_to_check = [agent]
+        display_name = _get_display_name(agent)
+        if display_name:
+            names_to_check.append(display_name)
+
+        for name in names_to_check:
+            for pattern in [
+                re.compile(rf"^{re.escape(name)}\s*[:：]", re.MULTILINE | re.IGNORECASE),
+                re.compile(rf"^##\s*{re.escape(name)}", re.MULTILINE | re.IGNORECASE),
+            ]:
+                m = pattern.search(scene_description)
+                if m:
+                    routing_logger.warning(
+                        f"[narrator] 场景描述中检测到角色台词 '{name}'，已截断"
+                    )
+                    scene_description = scene_description[: m.start()].strip()
+                    break
 
     return targets, scene_description
