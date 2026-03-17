@@ -107,7 +107,7 @@ def _build_search_query(agent_name: str, user_input: str, scene_summary: str = "
         if scene_summary:
             parts.append(scene_summary)
 
-    return " | ".join(p for p in parts if p)
+    return "\n".join(p for p in parts if p)
 
 
 def _search_memories(agent_name: str, query: str) -> str:

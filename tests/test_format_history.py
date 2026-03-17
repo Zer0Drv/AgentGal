@@ -3,7 +3,7 @@
 测试 format_conversation_history 能否正确过滤和格式化消息
 """
 
-from engine.agent_manager import format_conversation_history
+from engine.agent_manager import _build_search_query, format_conversation_history
 
 
 def test_format_conversation_history_filters_old_narrator():
@@ -108,3 +108,13 @@ def test_format_conversation_history_no_narrator():
     assert "lilith 回复" in result
     assert "玩家消息 2" in result
     assert result.count("\n\n") == 2, "应该有 3 条消息（2 个双换行分隔符）"
+
+
+def test_build_search_query_uses_newlines(monkeypatch):
+    """测试记忆检索 query 使用换行拼接，避免 FTS5 保留符号。"""
+    monkeypatch.setattr("engine.agent_manager.read_agent_file", lambda agent_name, filename: "")
+
+    result = _build_search_query("lilith", "玩家原话", "场景摘要")
+
+    assert result == "玩家原话\n场景摘要"
+    assert "|" not in result
