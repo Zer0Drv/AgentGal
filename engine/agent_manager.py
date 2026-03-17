@@ -253,45 +253,36 @@ def _update_player(agent_name: str, field: str, content: str) -> str:
 
 async def _apply_response_updates(agent_name: str, parsed) -> None:
     """将解析后的 XML 更新指令写回对应文件。"""
-    results = []
+    results: list[str] = []
+
+    def _safe_update(label: str, fn) -> None:
+        """执行单次更新操作，捕获异常并记录结果。"""
+        try:
+            results.append(f"{label}: {fn()}")
+        except Exception as e:
+            routing_logger.error(f"[{agent_name}] {label} 失败: {e}")
 
     if parsed.memory:
-        try:
-            results.append(f"memory: {_update_memory(agent_name, parsed.memory)}")
-        except Exception as e:
-            routing_logger.error(f"[{agent_name}] 更新 memory 失败: {e}")
+        _safe_update("memory", lambda: _update_memory(agent_name, parsed.memory))
 
     if parsed.status:
-        try:
-            for field, content in parsed.status.items():
-                results.append(f"status[{field}]: {_update_status(agent_name, field, str(content))}")
-        except Exception as e:
-            routing_logger.error(f"[{agent_name}] 更新 status 失败: {e}")
+        for field, content in parsed.status.items():
+            _safe_update(f"status[{field}]", lambda f=field, c=content: _update_status(agent_name, f, str(c)))
 
     if parsed.player:
-        try:
-            for field, content in parsed.player.items():
-                results.append(f"player[{field}]: {_update_player(agent_name, field, str(content))}")
-        except Exception as e:
-            routing_logger.error(f"[{agent_name}] 更新 player 失败: {e}")
-
+        for field, content in parsed.player.items():
+            _safe_update(f"player[{field}]", lambda f=field, c=content: _update_player(agent_name, f, str(c)))
 
     # narrator 操作「待触发事件」，其他角色操作「打算」
     event_section = "待触发事件" if agent_name == "narrator" else "打算"
 
     if parsed.triggered:
-        try:
-            for event_name in parsed.triggered:
-                results.append(f"triggered[{event_name}]: {mark_event_triggered(agent_name, event_name, event_section)}")
-        except Exception as e:
-            routing_logger.error(f"[{agent_name}] 标记触发事件失败: {e}")
+        for event_name in parsed.triggered:
+            _safe_update(f"triggered[{event_name}]", lambda n=event_name: mark_event_triggered(agent_name, n, event_section))
 
     if parsed.add_event:
-        try:
-            for event_desc in parsed.add_event:
-                results.append(f"add_event: {add_pending_event(agent_name, event_desc, event_section)}")
-        except Exception as e:
-            routing_logger.error(f"[{agent_name}] 插入新事件失败: {e}")
+        for event_desc in parsed.add_event:
+            _safe_update("add_event", lambda d=event_desc: add_pending_event(agent_name, d, event_section))
 
     if results:
         routing_logger.info(f"[{agent_name}] 文件更新: {'; '.join(results)}")
@@ -353,8 +344,7 @@ async def run_agent(
 def format_conversation_history(messages: list, agent_name: str, limit: int = 10) -> str:
     """格式化对话历史为文本字符串
 
-    策略：只保留最新的一条 narrator 发言（设置场景），其他 narrator 发言过滤掉。
-    这样可以让角色看到更多的角色/玩家互动历史，而不是被旁白占用空间。
+    保留最新的一条 narrator 发言（设置场景）和角色与玩家的对话历史。
 
     调用方应传入足够多的原始消息（建议 limit * 5），以保证过滤后仍有足够的有效消息。
 
