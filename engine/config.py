@@ -34,6 +34,7 @@ BM25_CANDIDATE_LIMIT: int = _cfg["vector"]["bm25_candidate_limit"]
 
 # Agent 运行
 AGENT_RUN_TIMEOUT_SECONDS: int = _cfg["agent"]["run_timeout_seconds"]
+AGENT_TEMPERATURE: float = _cfg["agent"]["temperature"]
 
 # 文本后处理
 MAX_ACTIONS: int = _cfg["text"]["max_actions"]

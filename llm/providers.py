@@ -2,6 +2,8 @@
 
 import os
 
+from engine.config import AGENT_TEMPERATURE
+
 SUPPORTED_PROVIDERS = ("openai", "deepseek", "openrouter")
 
 # OpenAI 官方 API URL
@@ -54,9 +56,7 @@ def get_llm_config(
     model_id = model_id or os.getenv("LLM_MODEL_ID", "deepseek-chat")
     api_key = api_key or _get_required_env("LLM_API_KEY")
     api_url = _resolve_api_url(provider, api_url or os.getenv("LLM_API_URL"))
-    temperature = float(os.getenv("LLM_TEMPERATURE", "1.0"))
-
-    return {"api_url": api_url, "api_key": api_key, "model": model_id, "temperature": temperature}
+    return {"api_url": api_url, "api_key": api_key, "model": model_id, "temperature": AGENT_TEMPERATURE}
 
 
 def get_narrator_llm_config() -> dict:
