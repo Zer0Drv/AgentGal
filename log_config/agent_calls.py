@@ -78,7 +78,7 @@ def log_agent_call(
             "output_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),
             "prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
-            "prompt_cache_miss_tokens": usage.get("prompt_cache_miss_tokens"),
+            "prompt_cache_hit_ratio": f"{(usage.get('prompt_cache_hit_tokens') / usage.get('prompt_tokens') * 100):.2f}%" if usage.get('prompt_tokens') and usage.get('prompt_cache_hit_tokens') is not None else None
         },
         "request": messages,
         "response": content,
