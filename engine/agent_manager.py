@@ -92,7 +92,7 @@ def _build_search_query(agent_name: str, user_input: str, scene_summary: str = "
     """构建上下文感知的 RAG query。
 
     旁白：玩家原话 + 叙事焦点 + 场景
-    角色：玩家原话 + 旁白场景摘要 + 心境 + 在意的事
+    角色：玩家原话 + 旁白场景摘要（含地点、在场、环境等具体信息）
     """
     parts = [user_input]
     status = read_agent_file(agent_name, "status.md")
@@ -107,12 +107,6 @@ def _build_search_query(agent_name: str, user_input: str, scene_summary: str = "
     else:
         if scene_summary:
             parts.append(scene_summary)
-        mood = extract_status_field(status, "心境")
-        concerns = extract_status_field(status, "在意的事")
-        if mood:
-            parts.append(mood)
-        if concerns:
-            parts.append(concerns)
 
     return " | ".join(p for p in parts if p)
 
