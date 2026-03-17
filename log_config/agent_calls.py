@@ -73,8 +73,6 @@ def log_agent_call(
         "timestamp": timestamp,
         "agent": agent_name,
         "model": model,
-        "request": messages,
-        "response": content,
         "metrics": {
             "input_tokens": usage.get("prompt_tokens"),
             "output_tokens": usage.get("completion_tokens"),
@@ -82,6 +80,8 @@ def log_agent_call(
             "prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
             "prompt_cache_miss_tokens": usage.get("prompt_cache_miss_tokens"),
         },
+        "request": messages,
+        "response": content,
     }
     _jsonl_logger.info(json.dumps(log_entry, ensure_ascii=False))
 
