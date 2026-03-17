@@ -86,6 +86,26 @@ async def _ask_story_choice() -> str:
     return "school"
 
 
+async def _send_opening_messages(intro_text: str, opening_text: str) -> None:
+    """发送玩法介绍与故事开场白"""
+    if intro_text:
+        await cl.Message(content=intro_text, author="Narrator").send()
+    if opening_text:
+        await cl.Message(content=opening_text, author="Narrator").send()
+
+
+async def _send_choices_message(choices: list[str]) -> None:
+    """将选项列表渲染为按钮并发送"""
+    actions = [
+        cl.Action(name="choice", payload={"text": c}, label=c)
+        for c in choices
+    ]
+    await cl.Message(
+        content="你可以选择接下来的行动，或者直接输入你想做的事。选项只是参考，你可以做任何事情。",
+        actions=actions,
+    ).send()
+
+
 async def _handle_new_game(story_id: str) -> tuple[str, str]:
     """处理新游戏启动：重置记忆并返回开场白（玩法介绍, 故事开始）"""
     await cl.Message(content="已重置记忆，开始新游戏。").send()
@@ -118,14 +138,7 @@ async def _handle_continue_game() -> None:
     # 恢复上次保存的选项
     saved_choices = _load_last_choices()
     if saved_choices:
-        actions = [
-            cl.Action(name="choice", payload={"text": c}, label=c)
-            for c in saved_choices
-        ]
-        await cl.Message(
-            content="你可以选择接下来的行动，或者直接输入你想做的事。选项只是参考，你可以做任何事情。",
-            actions=actions,
-        ).send()
+        await _send_choices_message(saved_choices)
 
 
 @cl.on_chat_start
@@ -136,12 +149,7 @@ async def on_chat_start():
     if not has_save:
         story_id = await _ask_story_choice()
         intro_text, opening_text = await _handle_new_game(story_id)
-        # 发送玩法介绍
-        if intro_text:
-            await cl.Message(content=intro_text, author="Narrator").send()
-        # 发送故事开场
-        if opening_text:
-            await cl.Message(content=opening_text, author="Narrator").send()
+        await _send_opening_messages(intro_text, opening_text)
     else:
         await _handle_continue_game()
 
@@ -173,12 +181,7 @@ async def _handle_reset_command() -> bool:
     await cl.Message(content="✅ 游戏已重置，开始新故事...").send()
     _clear_last_choices()
     intro_text, opening_text = await reset_game(story_id)
-    # 发送玩法介绍
-    if intro_text:
-        await cl.Message(content=intro_text, author="Narrator").send()
-    # 发送故事开场
-    if opening_text:
-        await cl.Message(content=opening_text, author="Narrator").send()
+    await _send_opening_messages(intro_text, opening_text)
     cl.user_session.set("message_counter", 0)
     return True
 
@@ -305,18 +308,7 @@ async def on_message(message: cl.Message):
         choices = await generate_choices(scene_description, agent_responses)
         if choices:
             _save_last_choices(choices)
-            actions = [
-                cl.Action(
-                    name="choice",
-                    payload={"text": choice},
-                    label=choice,
-                )
-                for choice in choices
-            ]
-            await cl.Message(
-                content="你可以选择接下来的行动，或者直接输入你想做的事。选项只是参考，你可以做任何事情。",
-                actions=actions,
-            ).send()
+            await _send_choices_message(choices)
 
     # 7. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
     print(

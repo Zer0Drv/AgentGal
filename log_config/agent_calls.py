@@ -73,13 +73,15 @@ def log_agent_call(
         "timestamp": timestamp,
         "agent": agent_name,
         "model": model,
-        "request": messages,
-        "response": content,
         "metrics": {
             "input_tokens": usage.get("prompt_tokens"),
             "output_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),
+            "prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
+            "prompt_cache_miss_tokens": usage.get("prompt_cache_miss_tokens"),
         },
+        "request": messages,
+        "response": content,
     }
     _jsonl_logger.info(json.dumps(log_entry, ensure_ascii=False))
 
@@ -103,16 +105,16 @@ def log_agent_call(
             parts.append(f"out: {usage['completion_tokens']}")
         if usage.get("total_tokens") is not None:
             parts.append(f"total: {usage['total_tokens']}")
+        if usage.get("prompt_cache_hit_tokens") is not None:
+            parts.append(f"cache_hit: {usage['prompt_cache_hit_tokens']}")
+        if usage.get("prompt_cache_miss_tokens") is not None:
+            parts.append(f"cache_miss: {usage['prompt_cache_miss_tokens']}")
         lines.append("[metrics] " + " | ".join(parts))
     lines.append("=" * 80 + "\n")
     _text_logger.info("\n".join(lines))
 
     # token 用量写入统一日志
-    usage_dict = {
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-        "total_tokens": usage.get("total_tokens"),
-    } if usage else None
+    usage_dict = dict(usage) if usage else None
     log_llm_usage(
         agent_name,
         "agent_run",

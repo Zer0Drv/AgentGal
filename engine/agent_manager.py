@@ -30,7 +30,6 @@ from memory.file_ops import (
     load_growth_for_prompt,
     mark_event_triggered,
     read_agent_file,
-    read_file_tail,
 )
 from memory.vector_store import vector_store
 
@@ -59,8 +58,7 @@ def _load_prompt_template(agent_name: str) -> str:
 
 
 def _build_system_prompt(agent_name: str, soul_content: str) -> str:
-    """构建 system prompt（仅包含不变/极少变的身份与规则部分）。"""
-    growth_content = load_growth_for_prompt(agent_name) if agent_name != "narrator" else ""
+    """构建 system prompt（仅包含稳定的身份与规则部分）。"""
     prompt_template = _load_prompt_template(agent_name)
     # 「打算」由 <triggered>/<add_event> 专用标签管理，不暴露给 <status> 覆盖
     _status_excluded = {"打算"} if agent_name != "narrator" else set()
@@ -79,7 +77,6 @@ def _build_system_prompt(agent_name: str, soul_content: str) -> str:
         agent_name=agent_name,
         display_name=display_name,
         soul=soul_content,
-        growth=growth_content,
         status_fields=status_fields,
         player_fields=player_fields,
         characters_scene_list=characters_scene_list,
@@ -90,12 +87,6 @@ def _build_system_prompt(agent_name: str, soul_content: str) -> str:
 # ---------------------------------------------------------------------------
 # 记忆注入
 # ---------------------------------------------------------------------------
-
-def _extract_user_message(full_input: str) -> str:
-    """从拼接输入中提取原始玩家消息，用于 RAG 搜索。"""
-    match = re.search(r"玩家新消息:\s*(.+)$", full_input, re.MULTILINE | re.DOTALL)
-    return match.group(1).strip() if match else full_input.strip()
-
 
 def _build_search_query(agent_name: str, user_input: str, scene_summary: str = "") -> str:
     """构建上下文感知的 RAG query。
@@ -135,20 +126,58 @@ def _search_memories(agent_name: str, query: str) -> str:
 
 
 def _build_memory_prefix(agent_name: str, user_input: str, scene_summary: str = "") -> str:
-    """组装记忆上下文前缀。
-
-    角色：只用 RAG 召回（避免 memory.md 尾部重复条目形成回声室）。
-    旁白：RAG 召回 + 最近记忆（旁白需要连续性上下文把握节奏）。
-    """
+    """召回记忆组装记忆上下文前缀。"""
     query = _build_search_query(agent_name, user_input, scene_summary)
     relevant = _search_memories(agent_name, query)
-    parts = [f"<relevant_memories>\n{relevant}\n</relevant_memories>"]
+    return f"<relevant_memories>\n{relevant}\n</relevant_memories>"
 
-    if agent_name == "narrator":
-        recent = read_file_tail(character_path(agent_name, "memory.md"), lines=5) or "（尚无记忆）"
-        parts.append(f"<recent_memories>\n{recent}\n</recent_memories>")
 
-    return "\n\n".join(parts)
+def _build_dialogue_input(history: str, latest_user_input: str) -> str:
+    """构建对话输入块：最近对话历史 + 玩家新消息。"""
+    parts = []
+    if history:
+        parts.append(f"最近对话历史:\n\n{history}")
+    parts.append(f"玩家新消息: {latest_user_input}")
+    return "\n\n---\n\n".join(parts)
+
+
+def _build_runtime_context(
+    agent_name: str,
+    latest_user_input: str,
+    memory_prefix: str,
+    history: str = "",
+) -> str:
+    """
+    构建 user message，按稳定度排序动态上下文。
+
+    narrator 包含：status, 相关记忆
+    角色包含：growth, user_profile, status, 相关记忆, 当前时间（来自 narrator 的 status）
+    对话历史与本轮玩家输入通过显式参数传入，不再从拼接字符串中反解析。
+    """
+    context_parts: list[str] = []
+
+    if agent_name != "narrator":
+        growth_content = load_growth_for_prompt(agent_name)
+        if growth_content and growth_content.strip():
+            context_parts.append(f"<growth>\n{growth_content}\n</growth>")
+
+        user_content = read_agent_file(agent_name, "user.md")
+        context_parts.append(f"<user_profile>\n{user_content if user_content else '（尚无玩家认知）'}\n</user_profile>")
+
+    status_content = read_agent_file(agent_name, "status.md")
+    context_parts.append(f"<status>\n{status_content if status_content else '（尚无状态记录）'}\n</status>")
+
+    if agent_name != "narrator":
+        narrator_status = read_agent_file("narrator", "status.md")
+        current_time = extract_status_field(narrator_status, "当前时间") if narrator_status else ""
+        if current_time:
+            context_parts.append(f"<current_time>{current_time}</current_time>")
+
+    if memory_prefix:
+        context_parts.append(memory_prefix)
+
+    context_parts.append(_build_dialogue_input(history, latest_user_input))
+    return "\n\n---\n\n".join(context_parts)
 
 
 # ---------------------------------------------------------------------------
@@ -224,45 +253,36 @@ def _update_player(agent_name: str, field: str, content: str) -> str:
 
 async def _apply_response_updates(agent_name: str, parsed) -> None:
     """将解析后的 XML 更新指令写回对应文件。"""
-    results = []
+    results: list[str] = []
+
+    def _safe_update(label: str, fn) -> None:
+        """执行单次更新操作，捕获异常并记录结果。"""
+        try:
+            results.append(f"{label}: {fn()}")
+        except Exception as e:
+            routing_logger.error(f"[{agent_name}] {label} 失败: {e}")
 
     if parsed.memory:
-        try:
-            results.append(f"memory: {_update_memory(agent_name, parsed.memory)}")
-        except Exception as e:
-            routing_logger.error(f"[{agent_name}] 更新 memory 失败: {e}")
+        _safe_update("memory", lambda: _update_memory(agent_name, parsed.memory))
 
     if parsed.status:
-        try:
-            for field, content in parsed.status.items():
-                results.append(f"status[{field}]: {_update_status(agent_name, field, str(content))}")
-        except Exception as e:
-            routing_logger.error(f"[{agent_name}] 更新 status 失败: {e}")
+        for field, content in parsed.status.items():
+            _safe_update(f"status[{field}]", lambda f=field, c=content: _update_status(agent_name, f, str(c)))
 
     if parsed.player:
-        try:
-            for field, content in parsed.player.items():
-                results.append(f"player[{field}]: {_update_player(agent_name, field, str(content))}")
-        except Exception as e:
-            routing_logger.error(f"[{agent_name}] 更新 player 失败: {e}")
-
+        for field, content in parsed.player.items():
+            _safe_update(f"player[{field}]", lambda f=field, c=content: _update_player(agent_name, f, str(c)))
 
     # narrator 操作「待触发事件」，其他角色操作「打算」
     event_section = "待触发事件" if agent_name == "narrator" else "打算"
 
     if parsed.triggered:
-        try:
-            for event_name in parsed.triggered:
-                results.append(f"triggered[{event_name}]: {mark_event_triggered(agent_name, event_name, event_section)}")
-        except Exception as e:
-            routing_logger.error(f"[{agent_name}] 标记触发事件失败: {e}")
+        for event_name in parsed.triggered:
+            _safe_update(f"triggered[{event_name}]", lambda n=event_name: mark_event_triggered(agent_name, n, event_section))
 
     if parsed.add_event:
-        try:
-            for event_desc in parsed.add_event:
-                results.append(f"add_event: {add_pending_event(agent_name, event_desc, event_section)}")
-        except Exception as e:
-            routing_logger.error(f"[{agent_name}] 插入新事件失败: {e}")
+        for event_desc in parsed.add_event:
+            _safe_update("add_event", lambda d=event_desc: add_pending_event(agent_name, d, event_section))
 
     if results:
         routing_logger.info(f"[{agent_name}] 文件更新: {'; '.join(results)}")
@@ -272,29 +292,22 @@ async def _apply_response_updates(agent_name: str, parsed) -> None:
 # 公开入口
 # ---------------------------------------------------------------------------
 
-async def run_agent(agent_name: str, user_input: str, scene_summary: str = "") -> str:
+async def run_agent(
+    agent_name: str,
+    latest_user_input: str,
+    scene_summary: str = "",
+    history: str = "",
+) -> str:
     """运行指定角色的 Agent，返回清理后的响应文本。"""
     start = time.time()
 
-    pure_input = _extract_user_message(user_input)
-    memory_prefix = _build_memory_prefix(agent_name, pure_input, scene_summary)
-
-    # 动态上下文：当前时间 + status + user_profile + 记忆 + 用户输入
-    context_parts: list[str] = []
-    if agent_name != "narrator":
-        narrator_status = read_agent_file("narrator", "status.md")
-        current_time = extract_status_field(narrator_status, "当前时间") if narrator_status else ""
-        if current_time:
-            context_parts.append(f"<current_time>{current_time}</current_time>")
-    status_content = read_agent_file(agent_name, "status.md")
-    context_parts.append(f"<status>\n{status_content if status_content else '（尚无状态记录）'}\n</status>")
-    if agent_name != "narrator":
-        user_content = read_agent_file(agent_name, "user.md")
-        context_parts.append(f"<user_profile>\n{user_content if user_content else '（尚无玩家认知）'}\n</user_profile>")
-    if memory_prefix:
-        context_parts.append(memory_prefix)
-    context_parts.append(user_input)
-    full_input = "\n\n---\n\n".join(context_parts)
+    memory_prefix = _build_memory_prefix(agent_name, latest_user_input, scene_summary)
+    full_input = _build_runtime_context(
+        agent_name,
+        latest_user_input,
+        memory_prefix,
+        history=history,
+    )
 
     soul_content = read_agent_file(agent_name, "soul.md")
     system_prompt = _build_system_prompt(agent_name, soul_content)
@@ -331,8 +344,7 @@ async def run_agent(agent_name: str, user_input: str, scene_summary: str = "") -
 def format_conversation_history(messages: list, agent_name: str, limit: int = 10) -> str:
     """格式化对话历史为文本字符串
 
-    策略：只保留最新的一条 narrator 发言（设置场景），其他 narrator 发言过滤掉。
-    这样可以让角色看到更多的角色/玩家互动历史，而不是被旁白占用空间。
+    保留最新的一条 narrator 发言（设置场景）和角色与玩家的对话历史。
 
     调用方应传入足够多的原始消息（建议 limit * 5），以保证过滤后仍有足够的有效消息。
 
@@ -375,15 +387,6 @@ def format_conversation_history(messages: list, agent_name: str, limit: int = 10
             formatted.append(f"{role}: {content}")
 
     return "\n".join(formatted)
-
-
-def _build_agent_input(history: str, user_input: str) -> str:
-    """构建 agent 的完整输入"""
-    parts = []
-    if history:
-        parts.append(f"最近对话历史:\n\n{history}")
-    parts.append(f"玩家新消息: {user_input}")
-    return "\n\n---\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -459,19 +462,12 @@ async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool
 
     raw_messages = load_conversation_history(limit=HISTORY_LIMIT * 5)
     narrator_history = format_conversation_history(raw_messages, "narrator", limit=HISTORY_LIMIT)
-    narrator_input = (
-        f"最近对话历史:\n\n{narrator_history}\n\n---\n\n玩家新消息: {user_input}"
-        if narrator_history
-        else user_input
+
+    narrator_response = await run_agent(
+        "narrator",
+        user_input,
+        history=narrator_history,
     )
-
-    # 待触发事件非空时，在输入末尾追加提醒，确保 narrator 不会忽略
-    status = read_agent_file("narrator", "status.md")
-    pending = extract_status_field(status, "待触发事件")
-    if pending and pending.strip():
-        narrator_input += f"\n\n【系统提醒：当前待触发事件队列非空，请检查是否应该跳时间触发。队列内容：\n{pending}】"
-
-    narrator_response = await run_agent("narrator", narrator_input)
     narrator_content = clean_response(narrator_response)
 
     targets, scene_description = parse_narrator_response(narrator_content)
@@ -479,7 +475,11 @@ async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool
     # TARGETS 缺失时重试一次
     if not targets:
         routing_logger.warning("narrator 响应缺少 TARGETS，重试中...")
-        narrator_response = await run_agent("narrator", narrator_input)
+        narrator_response = await run_agent(
+            "narrator",
+            user_input,
+            history=narrator_history,
+        )
         narrator_content = clean_response(narrator_response)
         targets, scene_description = parse_narrator_response(narrator_content)
         if not targets:
@@ -515,9 +515,12 @@ async def run_agent_in_scene(
 
     raw_messages = load_conversation_history(limit=HISTORY_LIMIT * 5)
     history = format_conversation_history(raw_messages, agent_name, limit=HISTORY_LIMIT)
-    full_input = _build_agent_input(history, user_input)
-
-    response = await run_agent(agent_name, full_input, scene_summary=scene_summary)
+    response = await run_agent(
+        agent_name,
+        user_input,
+        scene_summary=scene_summary,
+        history=history,
+    )
     response = process_character_response(response)
     is_valid = is_valid_response(response, agent_name)
 
