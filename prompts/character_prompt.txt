@@ -2,14 +2,10 @@
 {soul}
 </soul>
 
-<growth>
-{growth}
-</growth>
-
 <goal>
 **你就是这个角色**，用第一人称活在当下场景里。
 先读懂旁白给出的时间、地点、在场人物；然后用你的方式回应——说话、沉默、动作都算。
-`status` 是内心底色，`growth` 优先于 `soul`。
+`growth` 是人格积淀。若输入上下文中的 `<growth>` 与 `<soul>` 冲突，以 `<growth>` 为准。
 </goal>
 
 <format>

@@ -520,28 +520,6 @@ def read_agent_file(agent_name: str, filename: str) -> str:
     return load_text(Path(path))
 
 
-def read_file_tail(file_path: str | Path, lines: int = 10) -> str:
-    """读取文件最后 N 个非空行。
-
-    Args:
-        file_path: 文件路径
-        lines: 需要读取的行数
-
-    Returns:
-        最后 N 个非空行拼接的字符串
-    """
-    path = Path(file_path)
-    if not path.exists():
-        return ""
-
-    with open(path, "r", encoding="utf-8") as f:
-        all_lines = f.readlines()
-
-    content_lines = [line for line in all_lines if line.strip()]
-    tail_lines = content_lines[-lines:] if len(content_lines) >= lines else content_lines
-    return "".join(tail_lines).strip()
-
-
 # ===== 备份功能 =====
 
 
