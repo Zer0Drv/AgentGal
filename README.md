@@ -45,6 +45,8 @@ cp .env.example .env
 - `EMBEDDING_MODEL`
 - `EMBEDDING_DIM`
 - `EMBEDDING_API_KEY`
+- `RERANK_ENABLED`（可选，开启后才会调用 rerank）
+- `RERANK_MODEL` / `RERANK_API_URL` / `RERANK_API_KEY`（可选）
 
 > 说明：如果你想使用 Anthropic 模型，请通过 `openrouter` 路由，而不是把 `LLM_PROVIDER` 直接写成 `anthropic`。
 
@@ -114,7 +116,14 @@ Agent 回复由两部分组成：
 - `growth.md`（仅角色）
 - `user.md`（仅角色）
 
-并同步更新向量索引。整理频率由 `CONSOLIDATION_INTERVAL` 控制。
+并同步更新向量索引。整理频率由 `config.toml` 中的 `[memory].consolidation_interval` 控制。
+
+### 5. 长期记忆检索
+
+- 只有角色会做向量召回，`narrator` 依赖 `status.md` 中的场景状态和待触发事件推进剧情
+- 向量库只索引 `memory.md` 中的长期记忆事件，不再混入其他来源
+- 检索默认走 hybrid search：向量相关性 + BM25 关键字相关性，再叠加游戏内时间 recency 排序
+- 每个角色会维护 `.memory_recall_state.json`，记录记忆最近一次被想起的游戏日期，供重建和存档恢复
 
 ## 关键目录说明
 
@@ -138,6 +147,7 @@ Agent 回复由两部分组成：
 
 - `data/characters/`：当前游戏状态
 - `data/templates/`：故事模板
+- `data/vectors.sqlite`：长期记忆向量库
 - `saves/`：导出的 zip 存档
 - `logs/`：路由、记忆、调用日志
 
@@ -148,10 +158,14 @@ Agent 回复由两部分组成：
 - `status.md`：当前状态 / 打算 / 待触发事件
 - `user.md`：角色对玩家的认知
 - `growth.md`：整理器维护的人格沉淀（仅角色有，`narrator` 无）
+- `.consolidation_state.json`：整理进度 sidecar
+- `.memory_recall_state.json`：记忆召回状态 sidecar
 
-## 环境变量速览
+## 配置速览
 
-更完整说明请查看 `.env.example`。常用变量如下：
+### `.env`
+
+密钥、模型和外部服务地址放在 `.env`。常用变量如下：
 
 | 变量 | 必需 | 说明 |
 |---|---|---|
@@ -171,23 +185,45 @@ Agent 回复由两部分组成：
 | `EMBEDDING_MODEL` | 否 | embedding 模型（默认 `BAAI/bge-m3`） |
 | `EMBEDDING_DIM` | 否 | 向量维度（默认 1024） |
 | `EMBEDDING_API_KEY` | 否 | embedding API Key |
-| `RERANK_MODEL` | 否 | rerank 模型，不配置则跳过 rerank |
+| `RERANK_ENABLED` | 否 | `true/false`，开启后才会调用 rerank |
+| `RERANK_MODEL` | 否 | rerank 模型，未开启时忽略 |
 | `RERANK_API_URL` | 否 | rerank 端点 URL |
 | `RERANK_API_KEY` | 否 | rerank API Key |
-| `CONSOLIDATION_INTERVAL` | 否 | 记忆整理轮次间隔 |
-| `HISTORY_LIMIT_NARRATOR` | 否 | narrator 历史条数 |
-| `HISTORY_LIMIT_DEFAULT` | 否 | 角色历史条数 |
-| `MAX_CONCURRENT_AGENTS` | 否 | 角色并发上限 |
-| `VECTOR_SEARCH_LIMIT` | 否 | 向量检索条数 |
-| `AGENT_RUN_TIMEOUT_SECONDS` | 否 | Agent 超时 |
-| `MAX_ACTIONS` | 否 | 回复后处理配置 |
-| `MAX_ELLIPSIS` | 否 | 回复后处理配置 |
+
+### `config.toml`
+
+运行策略和调参项放在 `config.toml`：
+
+| 键 | 说明 |
+|---|---|
+| `[memory].consolidation_interval` | 记忆整理触发频率 |
+| `[consolidation].temperature` | 整理模型温度 |
+| `[consolidation].max_tokens` | 整理输出上限 |
+| `[consolidation].growth_dedup_threshold` | `growth.md` 去重阈值 |
+| `[vector].search_limit` | 长期记忆召回条数 |
+| `[vector].rerank_candidate_multiplier` | rerank 前候选放大倍数 |
+| `[vector].relevance_weight` / `[vector].recency_weight` | relevance 与 recency 总权重 |
+| `[vector].recency_date_weight` / `[vector].recency_recall_weight` | recency 内部信号权重 |
+| `[vector].hybrid_search_enabled` | 是否启用向量 + BM25 混合检索 |
+| `[vector].bm25_candidate_limit` | BM25 初筛候选数 |
+| `[vector].vector_relevance_weight` / `[vector].bm25_relevance_weight` | hybrid relevance 内部权重 |
+| `[agent].run_timeout_seconds` | 单次 Agent 调用超时 |
+| `[agent].temperature` | 角色与 narrator 对话温度 |
+| `[text].max_actions` / `[text].max_ellipsis` | 回复后处理约束 |
+
+> 当前对话历史条数限制为代码常量 `HISTORY_LIMIT = 20`，不通过环境变量开放。
 
 ## 存档机制
 
-- `/save` 会将当前角色数据、记忆、历史等打包为 zip 存入 `saves/`
+- `/save` 会将当前角色数据、记忆、历史、整理 sidecar、recall sidecar 等打包为 zip 存入 `saves/`
 - `/load <序号>` 会恢复角色目录，并按需要重建向量索引
 - `/reset` 会清空当前运行数据，并从 `data/templates/{story_id}` 重建
+
+## 日志与观测
+
+- `logs/agent/agent_calls_readable.log`：可读的请求/响应日志
+- `logs/agent/agent_calls.jsonl`：结构化调用日志
+- Agent 调用日志会记录 token 使用量，以及 prompt cache 的 hit / miss / ratio（provider 支持时）
 
 ## 测试
 

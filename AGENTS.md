@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 多 Agent 角色扮演 / 叙事游戏项目。当前实现以 **Chainlit + OpenAI 兼容 LLM + 文件记忆 + sqlite-vec** 为核心，使用 `uv` 作为项目管理器。
 
