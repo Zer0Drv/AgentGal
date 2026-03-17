@@ -120,7 +120,12 @@ def _search_memories(agent_name: str, query: str) -> str:
 
 
 def _build_memory_prefix(agent_name: str, user_input: str, scene_summary: str = "") -> str:
-    """召回记忆组装记忆上下文前缀。"""
+    """召回记忆组装记忆上下文前缀。
+
+    旁白依赖 status.md 中的待触发事件队列管理场景，无需向量检索。
+    """
+    if agent_name == "narrator":
+        return ""
     query = _build_search_query(agent_name, user_input, scene_summary)
     relevant = _search_memories(agent_name, query)
     return f"<relevant_memories>\n{relevant}\n</relevant_memories>"
@@ -160,12 +165,6 @@ def _build_runtime_context(
 
     status_content = read_agent_file(agent_name, "status.md")
     context_parts.append(f"<status>\n{status_content if status_content else '（尚无状态记录）'}\n</status>")
-
-    if agent_name != "narrator":
-        narrator_status = read_agent_file("narrator", "status.md")
-        current_time = extract_status_field(narrator_status, "当前时间") if narrator_status else ""
-        if current_time:
-            context_parts.append(f"<current_time>{current_time}</current_time>")
 
     if memory_prefix:
         context_parts.append(memory_prefix)
@@ -374,13 +373,13 @@ def format_conversation_history(messages: list, agent_name: str, limit: int = 10
     formatted = []
     for msg in final_messages:
         role = msg.get("role", "unknown")
-        content = msg.get("content", "")
+        content = re.sub(r"\n+", "\n", msg.get("content", "").strip())
         if role == "player":
             formatted.append(f"玩家: {content}")
         else:
             formatted.append(f"{role}: {content}")
 
-    return "\n".join(formatted)
+    return "\n\n".join(formatted)
 
 
 # ---------------------------------------------------------------------------
