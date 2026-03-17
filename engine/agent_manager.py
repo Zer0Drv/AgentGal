@@ -465,6 +465,12 @@ async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool
         else user_input
     )
 
+    # 待触发事件非空时，在输入末尾追加提醒，确保 narrator 不会忽略
+    status = read_agent_file("narrator", "status.md")
+    pending = extract_status_field(status, "待触发事件")
+    if pending and pending.strip():
+        narrator_input += f"\n\n【系统提醒：当前待触发事件队列非空，请检查是否应该跳时间触发。队列内容：\n{pending}】"
+
     narrator_response = await run_agent("narrator", narrator_input)
     narrator_content = clean_response(narrator_response)
 

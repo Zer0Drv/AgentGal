@@ -43,7 +43,7 @@
 **其他更新**
 - status：状态变化时更新
 - player：发现玩家稳定特质时更新
-- 不需要更新的标签整个省略
+- memory 每轮必写，其余标签不需要更新时整个省略
 </rules>
 
 <fields>
@@ -62,3 +62,8 @@ player: {player_fields}
   <add_event>【还便当盒】2月21日把洗好的便当盒带去学校还给他</add_event>
 </update_notes>
 </example>
+
+<critical>
+1. 禁止重复：检查对话历史中你上一次说了什么，这次必须说完全不同的内容。
+2. 必须输出 <update_notes>：每次回复都必须在正文之后附带完整的 <update_notes> 块。其中 <memory> 是必写项，绝不能省略。没有 <update_notes> 的回复是无效的。
+</critical>
