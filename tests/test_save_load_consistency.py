@@ -46,6 +46,23 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def make_character_path(tmp_path):
+    def _path(name, subpath=None):
+        base = tmp_path / name
+        if subpath:
+            return str(base / subpath)
+        return str(base)
+    return _path
+
+
+def write_memory(tmp_path, agent_name: str, content: str):
+    agent_dir = tmp_path / agent_name
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    path = agent_dir / "memory.md"
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
 def _get_db_snapshot(db_path: str) -> dict:
     """获取数据库快照：chunks 和 vec_chunks 的完整内容"""
     if not os.path.exists(db_path):
@@ -64,14 +81,14 @@ def _get_db_snapshot(db_path: str) -> dict:
         
         # 获取 chunks 表数据
         chunks = conn.execute(
-            "SELECT id, round_id, date, created_at, visible_to, content, source, owner_agent FROM chunks ORDER BY id"
+            "SELECT id, round_id, date, created_at, visible_to, content, source, owner_agent, last_recalled_at FROM chunks ORDER BY id"
         ).fetchall()
         
         # 只取 vec_chunks 行数（embedding 字节不做比较，由 search 断言覆盖）
         vec_count = conn.execute("SELECT COUNT(*) FROM vec_chunks").fetchone()[0]
 
         return {
-            "chunks": [dict(zip(["id", "round_id", "date", "created_at", "visible_to", "content", "source", "owner_agent"], row)) for row in chunks],
+            "chunks": [dict(zip(["id", "round_id", "date", "created_at", "visible_to", "content", "source", "owner_agent", "last_recalled_at"], row)) for row in chunks],
             "vec_chunks": [{"rowid": i} for i in range(vec_count)],
         }
     finally:
@@ -127,30 +144,30 @@ class TestSaveLoadConsistency:
         if store._db is not None:
             await store._db.close()
         store._db = None
-        store._conv_game_date.clear()
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
 
         try:
             # 初始化表
             await store.init_tables()
 
             # 添加一些测试数据（模拟游戏进行中）
-            await store._do_add(
-                visible_to=["narrator", "lilith"],
-                chunk_id="round_001_1",
-                content="这是第一轮对话的内容，包含重要信息。",
-                game_date="4月3日",
-                kind="round",
-                owner_agent=None,
+            write_memory(
+                tmp_path,
+                "lilith",
+                "# lilith\n\n## 4月3日\n"
+                "- **时间**：4月3日 09:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
+                "- **内容**：这是第一轮对话的内容，包含重要信息。",
             )
+            await store.add_memory("lilith", "4月3日")
 
-            await store._do_add(
-                visible_to=["narrator", "mitsuki"],
-                chunk_id="round_001_2",
-                content="这是第二轮对话的内容，mitsuki 的回应。",
-                game_date="4月3日",
-                kind="round",
-                owner_agent=None,
+            write_memory(
+                tmp_path,
+                "mitsuki",
+                "# mitsuki\n\n## 4月3日\n"
+                "- **时间**：4月3日 09:30\n- **地点**：走廊\n- **在场**：美月\n"
+                "- **内容**：这是第二轮对话的内容，mitsuki 的回应。",
             )
+            await store.add_memory("mitsuki", "4月3日")
 
             # 获取 save 前的快照（包括 chunks 和向量）
             snapshot_before = _get_db_snapshot(test_db_path)
@@ -158,7 +175,7 @@ class TestSaveLoadConsistency:
             assert len(snapshot_before["vec_chunks"]) == 2, "应该有 2 条向量"
 
             # 验证数据库中的数据可以被搜索到
-            search_result = store.search("lilith", "第一轮对话", kind="round")
+            search_result = store.search("lilith", "第一轮对话", kind="memory")
             assert len(search_result) >= 1, "save 前应该能搜索到数据"
 
             # 模拟 save-load 循环：清空数据库
@@ -173,23 +190,8 @@ class TestSaveLoadConsistency:
             assert len(snapshot_empty["vec_chunks"]) == 0, "清空后应该没有向量"
 
             # 重新加载相同的数据（模拟 rebuild）
-            await store._do_add(
-                visible_to=["narrator", "lilith"],
-                chunk_id="round_001_1",
-                content="这是第一轮对话的内容，包含重要信息。",
-                game_date="4月3日",
-                kind="round",
-                owner_agent=None,
-            )
-
-            await store._do_add(
-                visible_to=["narrator", "mitsuki"],
-                chunk_id="round_001_2",
-                content="这是第二轮对话的内容，mitsuki 的回应。",
-                game_date="4月3日",
-                kind="round",
-                owner_agent=None,
-            )
+            await store.add_memory("lilith", "4月3日")
+            await store.add_memory("mitsuki", "4月3日")
 
             # 获取 load 后的快照
             snapshot_after = _get_db_snapshot(test_db_path)
@@ -205,7 +207,7 @@ class TestSaveLoadConsistency:
             assert is_consistent, f"save-load 后数据库不一致: {message}"
 
             # 验证加载后的数据可以被搜索到
-            search_result_after = store.search("lilith", "第一轮对话", kind="round")
+            search_result_after = store.search("lilith", "第一轮对话", kind="memory")
             assert len(search_result_after) >= 1, "load 后应该能搜索到数据"
         finally:
             # 确保在事件循环关闭前正确关闭 aiosqlite 连接，
@@ -213,4 +215,3 @@ class TestSaveLoadConsistency:
             if store._db is not None:
                 await store._db.close()
                 store._db = None
-

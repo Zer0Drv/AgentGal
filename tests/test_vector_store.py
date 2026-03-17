@@ -59,7 +59,6 @@ async def clean_store(monkeypatch):
     if store._db is not None:
         await store._db.close()
     store._db = None
-    store._conv_game_date.clear()
 
     # 确保目录存在
     os.makedirs(os.path.dirname(test_db_path), exist_ok=True)
@@ -115,6 +114,14 @@ def write_memory(tmp_path, agent_name: str, content: str):
     agent_dir = tmp_path / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
     path = agent_dir / "memory.md"
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def write_status(tmp_path, agent_name: str, content: str):
+    agent_dir = tmp_path / agent_name
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    path = agent_dir / "status.md"
     path.write_text(content, encoding="utf-8")
     return path
 
@@ -177,9 +184,13 @@ class TestVectorStoreRebuild:
             ),
         )
 
-        # monkeypatch get_agent_names 和 read_consolidation_data（patch vs_mod 中已导入的引用）
+        (tmp_path / "lilith" / ".consolidation_state.json").write_text(
+            json.dumps({"last_consolidated_date": "4月4日"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        # monkeypatch get_agent_names
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
-        monkeypatch.setattr(vs_mod, "read_consolidation_data", lambda agent: {"last_consolidated_date": "4月4日"})
 
         await store.rebuild("narrator")
 
@@ -377,7 +388,7 @@ class TestVectorStoreMemoryIndexing:
 
 
 class TestHybridSearch:
-    """BM25 + RRF 混合检索测试"""
+    """BM25 + vector 混合 relevance 测试"""
 
     @pytest.mark.asyncio
     async def test_bm25_search_basic(self, clean_store, tmp_path, monkeypatch):
@@ -437,27 +448,35 @@ class TestHybridSearch:
         conn.close()
 
     @pytest.mark.asyncio
-    async def test_rrf_fusion_merges_results(self, clean_store, tmp_path, monkeypatch):
-        """RRF 融合能合并向量和 BM25 两路结果。"""
-        # 构造模拟数据测试 _rrf_fusion 纯逻辑
+    async def test_hybrid_relevance_fusion_merges_results(self, clean_store, tmp_path, monkeypatch):
+        """75% vector + 25% BM25 能合并两路 relevance。"""
         vec_rows = [
-            (1, "内容A", 0.5, "2026-01-01T00:00:00Z"),
-            (2, "内容B", 0.7, "2026-01-01T00:00:00Z"),
+            (1, "内容A", 0.2, "4月3日", "4月3日"),
+            (2, "内容B", 1.0, "4月3日", "4月3日"),
         ]
         bm25_rows = [
-            (2, "内容B", -5.0),  # BM25 排第1
-            (3, "内容C", -3.0),  # BM25 排第2
+            (2, "内容B", -5.0, "4月3日", "4月3日"),
+            (3, "内容C", -3.0, "4月3日", "4月3日"),
         ]
 
-        results = VectorStore._rrf_fusion(vec_rows, bm25_rows, k=60)
+        results = VectorStore._hybrid_relevance_fusion(vec_rows, bm25_rows)
 
         ids = [r["id"] for r in results]
-        assert "2" in ids, "文档2应出现（两路都命中）"
-        assert "1" in ids, "文档1应出现（仅向量路命中）"
-        assert "3" in ids, "文档3应出现（仅BM25路命中）"
+        assert ids == ["1", "2", "3"], "vector 占 75% 时，应优先保留更强的向量相关性"
+        assert results[0]["relevance"] > results[1]["relevance"] > results[2]["relevance"]
 
-        # 文档2 在两路都排名靠前，RRF 分数应最高
-        assert results[0]["id"] == "2", "两路都命中的文档应排第一"
+    @pytest.mark.asyncio
+    async def test_apply_recency_ranking_reorders(self, clean_store, tmp_path, monkeypatch):
+        """_apply_recency_ranking 应将最近被想起的旧记忆排在前面。"""
+        results = [
+            {"id": "1", "content": "旧记忆", "relevance": 0.5, "date": "4月1日", "last_recalled_at": "4月8日"},
+            {"id": "2", "content": "新记忆", "relevance": 0.5, "date": "4月6日", "last_recalled_at": "4月6日"},
+        ]
+        monkeypatch.setattr(vector_store_module, "RELEVANCE_WEIGHT", 0.7)
+        monkeypatch.setattr(vector_store_module, "RECENCY_WEIGHT", 0.3)
+        monkeypatch.setattr(vector_store_module, "RECENCY_HALF_LIFE_DAYS", 5.0)
+        reordered = VectorStore._apply_recency_ranking(results, "4月8日")
+        assert reordered[0]["id"] == "1", "最近刚被召回的旧记忆应因 recall recency 排在前面"
 
     @pytest.mark.asyncio
     async def test_hybrid_search_end_to_end(self, clean_store, tmp_path, monkeypatch):
@@ -480,6 +499,88 @@ class TestHybridSearch:
         results = store.search("lilith", "京都大学", limit=5, kind="memory")
         assert len(results) >= 1, "混合检索应能命中结果"
         assert any("京都大学" in r["content"] for r in results), "结果应包含关键词"
+
+    @pytest.mark.asyncio
+    async def test_search_updates_recall_sidecar(self, clean_store, tmp_path, monkeypatch):
+        """search() 命中后应同时更新 SQLite 和 recall sidecar。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+
+        write_status(
+            tmp_path,
+            "narrator",
+            "# 故事状态\n\n## 当前时间\n4月8日 19:00\n",
+        )
+        write_memory(
+            tmp_path,
+            "lilith",
+            "# lilith\n\n## 4月3日\n"
+            "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
+            "- **内容**：我记住了那天的告白。",
+        )
+        await store.add_memory("lilith", "4月3日")
+
+        results = await wait_for_search(store, "lilith", "告白", kind="memory")
+        assert results, "应命中记忆"
+
+        sidecar = tmp_path / "lilith" / ".memory_recall_state.json"
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+        assert data["memory::lilith::4月3日::1"]["last_recalled_at"] == "4月8日"
+
+        conn = __import__("sqlite3").connect(test_db_path)
+        row = conn.execute(
+            "SELECT last_recalled_at FROM chunks WHERE round_id = ?",
+            ("memory::lilith::4月3日::1",),
+        ).fetchone()
+        conn.close()
+        assert row[0] == "4月8日"
+
+    @pytest.mark.asyncio
+    async def test_rebuild_restores_recall_sidecar(self, clean_store, tmp_path, monkeypatch):
+        """rebuild() 应从 recall sidecar 恢复 last_recalled_at。"""
+        import importlib
+
+        vs_mod = importlib.import_module("memory.vector_store")
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
+
+        write_memory(
+            tmp_path,
+            "lilith",
+            "# lilith\n\n## 4月3日\n"
+            "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
+            "- **内容**：这是会被恢复 recall 的记忆。",
+        )
+        (tmp_path / "lilith" / ".consolidation_state.json").write_text(
+            json.dumps({"last_consolidated_date": "4月4日"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (tmp_path / "lilith" / ".memory_recall_state.json").write_text(
+            json.dumps(
+                {
+                    "memory::lilith::4月3日::1": {
+                        "date": "4月3日",
+                        "content_hash": store._content_hash(
+                            "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n- **内容**：这是会被恢复 recall 的记忆。"
+                        ),
+                        "last_recalled_at": "4月7日",
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        await store.rebuild("narrator")
+
+        conn = __import__("sqlite3").connect(test_db_path)
+        row = conn.execute(
+            "SELECT last_recalled_at FROM chunks WHERE round_id = ?",
+            ("memory::lilith::4月3日::1",),
+        ).fetchone()
+        conn.close()
+        assert row[0] == "4月7日"
 
     @pytest.mark.asyncio
     async def test_fts_sync_on_delete(self, clean_store, tmp_path, monkeypatch):

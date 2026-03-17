@@ -11,6 +11,7 @@ import shutil
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from engine.config import character_path
 
@@ -47,14 +48,43 @@ def extract_game_date(text: str) -> str | None:
 
 
 def parse_cn_date(date_text: str) -> tuple[int, int] | None:
-    """解析中文日期格式（如 4月3日）为元组 (月, 日)"""
-    m = re.fullmatch(r"(\d{1,2})月(\d{1,2})日", (date_text or "").strip())
+    """解析中文日期格式（如 4月3日 / 4月3日 08:00）为元组 (月, 日)"""
+    m = re.search(r"(\d{1,2})月(\d{1,2})日", (date_text or "").strip())
     if not m:
         return None
     month, day = int(m.group(1)), int(m.group(2))
-    if 1 <= month <= 12 and 1 <= day <= 31:
-        return month, day
-    return None
+    try:
+        datetime(2000, month, day)
+    except ValueError:
+        return None
+    return month, day
+
+
+def canonical_cn_date(date_text: str) -> str | None:
+    """将中文日期文本规范化为 X月X日。"""
+    parsed = parse_cn_date(date_text)
+    if parsed is None:
+        return None
+    month, day = parsed
+    return f"{month}月{day}日"
+
+
+def game_day_number(date_text: str) -> int | None:
+    """将游戏日期映射到固定年份中的 day-of-year，便于比较天数差。"""
+    parsed = parse_cn_date(date_text)
+    if parsed is None:
+        return None
+    month, day = parsed
+    return datetime(2000, month, day).timetuple().tm_yday
+
+
+def game_day_diff(current_date: str, past_date: str) -> int | None:
+    """返回两个游戏日期的天数差；若无法解析返回 None。"""
+    current_day = game_day_number(current_date)
+    past_day = game_day_number(past_date)
+    if current_day is None or past_day is None:
+        return None
+    return max(current_day - past_day, 0)
 
 
 def is_date_before(date_text: str, cutoff_date: str) -> bool:
@@ -573,6 +603,39 @@ def write_consolidation_data(agent_name: str, **fields) -> None:
     data = read_consolidation_data(agent_name)
     data.update(fields)
     p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def get_memory_recall_state_path(agent_name: str) -> Path:
+    """获取记忆 recall 状态文件路径。"""
+    return Path(character_path(agent_name, ".memory_recall_state.json"))
+
+
+def read_memory_recall_state(agent_name: str) -> dict[str, dict[str, Any]]:
+    """读取 recall 状态 JSON，解析失败返回空字典。"""
+    path = get_memory_recall_state_path(agent_name)
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(key): value
+        for key, value in data.items()
+        if isinstance(value, dict)
+    }
+
+
+def write_memory_recall_state(agent_name: str, state: dict[str, dict[str, Any]]) -> None:
+    """写回 recall 状态 JSON。"""
+    path = get_memory_recall_state_path(agent_name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 
 
 # ===== 安全写回（带并发保护） =====

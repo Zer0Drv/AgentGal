@@ -40,8 +40,8 @@ def get_all_agents() -> list[str]:
 
 
 async def rebuild_all_vectors():
-    """重建向量库（从 narrator/raw 回放一次即可）"""
-    routing_logger.info("[向量重建] 开始重建向量库（从 narrator raw 回放）")
+    """重建向量库（从各角色 memory.md 重建 memory 层索引）。"""
+    routing_logger.info("[向量重建] 开始重建向量库（从 memory.md 重建）")
     await vector_store.rebuild("narrator")
     routing_logger.info("[向量重建] 向量库重建完成")
 

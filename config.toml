@@ -20,16 +20,22 @@ growth_dedup_threshold = 8
 search_limit = 3
 # ANN 初筛候选数 = search_limit × 倍数
 rerank_candidate_multiplier = 3
-# 时间衰减权重：1.0 = 纯向量搜索，0.0 = 纯时间排序
-time_decay_alpha = 0.7
-# 时间衰减半衰期（天）
-time_decay_half_life_days = 14.0
-# 混合检索：BM25 关键字检索 + RRF 融合
+# relevance 权重
+relevance_weight = 0.5
+# recency 权重
+recency_weight = 0.5
+# 游戏内时间半衰期（天）
+recency_half_life_days = 5.0
+# recency 信号开关：大于 0 即参与取 max，设为 0 可禁用对应信号
+recency_date_weight = 0.7
+recency_recall_weight = 0.3
+# 混合检索：BM25 关键字检索 + 加权融合
 hybrid_search_enabled = true
-# RRF 常数：越大越平滑
-rrf_k = 60
 # BM25 初筛候选数
 bm25_candidate_limit = 20
+# hybrid relevance 内部权重：vector vs BM25
+vector_relevance_weight = 0.75
+bm25_relevance_weight = 0.25
 
 [agent]
 # Agent LLM 调用超时（秒）

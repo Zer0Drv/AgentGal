@@ -363,9 +363,10 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
             files.append(filepath)
 
     # 整理状态文件
-    consolidation_file = f"{base}/.consolidation_state.json"
-    if os.path.exists(consolidation_file):
-        files.append(consolidation_file)
+    for hidden_file in [".consolidation_state.json", ".memory_recall_state.json"]:
+        hidden_path = f"{base}/{hidden_file}"
+        if os.path.exists(hidden_path):
+            files.append(hidden_path)
 
     # narrator 的 raw/ 对话历史（只有 narrator 有）
     if agent_name == "narrator":

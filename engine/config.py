@@ -26,11 +26,15 @@ GROWTH_DEDUP_THRESHOLD: int = _cfg["consolidation"]["growth_dedup_threshold"]
 # 向量检索
 VECTOR_SEARCH_LIMIT: int = _cfg["vector"]["search_limit"]
 RERANK_CANDIDATE_MULTIPLIER: int = _cfg["vector"]["rerank_candidate_multiplier"]
-TIME_DECAY_ALPHA: float = _cfg["vector"]["time_decay_alpha"]
-TIME_DECAY_HALF_LIFE_DAYS: float = _cfg["vector"]["time_decay_half_life_days"]
+RELEVANCE_WEIGHT: float = _cfg["vector"]["relevance_weight"]
+RECENCY_WEIGHT: float = _cfg["vector"]["recency_weight"]
+RECENCY_HALF_LIFE_DAYS: float = _cfg["vector"]["recency_half_life_days"]
+RECENCY_DATE_WEIGHT: float = _cfg["vector"]["recency_date_weight"]
+RECENCY_RECALL_WEIGHT: float = _cfg["vector"]["recency_recall_weight"]
 HYBRID_SEARCH_ENABLED: bool = _cfg["vector"]["hybrid_search_enabled"]
-RRF_K: int = _cfg["vector"]["rrf_k"]
 BM25_CANDIDATE_LIMIT: int = _cfg["vector"]["bm25_candidate_limit"]
+VECTOR_RELEVANCE_WEIGHT: float = _cfg["vector"]["vector_relevance_weight"]
+BM25_RELEVANCE_WEIGHT: float = _cfg["vector"]["bm25_relevance_weight"]
 
 # Agent 运行
 AGENT_RUN_TIMEOUT_SECONDS: int = _cfg["agent"]["run_timeout_seconds"]
