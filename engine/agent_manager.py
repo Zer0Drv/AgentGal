@@ -132,14 +132,12 @@ def _build_memory_prefix(agent_name: str, user_input: str, scene_summary: str = 
     return f"<relevant_memories>\n{relevant}\n</relevant_memories>"
 
 
-def _build_dialogue_input(history: str, latest_user_input: str, reminders: list[str] | None = None) -> str:
-    """构建对话输入块：最近对话历史 + 玩家新消息 + 额外提醒。"""
+def _build_dialogue_input(history: str, latest_user_input: str) -> str:
+    """构建对话输入块：最近对话历史 + 玩家新消息。"""
     parts = []
     if history:
         parts.append(f"最近对话历史:\n\n{history}")
     parts.append(f"玩家新消息: {latest_user_input}")
-    if reminders:
-        parts.extend(r for r in reminders if r and r.strip())
     return "\n\n---\n\n".join(parts)
 
 
@@ -148,7 +146,6 @@ def _build_runtime_context(
     latest_user_input: str,
     memory_prefix: str,
     history: str = "",
-    reminders: list[str] | None = None,
 ) -> str:
     """
     构建 user message，按稳定度排序动态上下文。
@@ -179,7 +176,7 @@ def _build_runtime_context(
     if memory_prefix:
         context_parts.append(memory_prefix)
 
-    context_parts.append(_build_dialogue_input(history, latest_user_input, reminders=reminders))
+    context_parts.append(_build_dialogue_input(history, latest_user_input))
     return "\n\n---\n\n".join(context_parts)
 
 
@@ -309,7 +306,6 @@ async def run_agent(
     latest_user_input: str,
     scene_summary: str = "",
     history: str = "",
-    reminders: list[str] | None = None,
 ) -> str:
     """运行指定角色的 Agent，返回清理后的响应文本。"""
     start = time.time()
@@ -320,7 +316,6 @@ async def run_agent(
         latest_user_input,
         memory_prefix,
         history=history,
-        reminders=reminders,
     )
 
     soul_content = read_agent_file(agent_name, "soul.md")
@@ -478,20 +473,10 @@ async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool
     raw_messages = load_conversation_history(limit=HISTORY_LIMIT * 5)
     narrator_history = format_conversation_history(raw_messages, "narrator", limit=HISTORY_LIMIT)
 
-    # 待触发事件非空时，在输入末尾追加提醒，确保 narrator 不会忽略
-    status = read_agent_file("narrator", "status.md")
-    pending = extract_status_field(status, "待触发事件")
-    reminders: list[str] = []
-    if pending and pending.strip():
-        reminders.append(
-            f"【系统提醒：当前待触发事件队列非空，请检查是否应该跳时间触发。队列内容：\n{pending}】"
-        )
-
     narrator_response = await run_agent(
         "narrator",
         user_input,
         history=narrator_history,
-        reminders=reminders,
     )
     narrator_content = clean_response(narrator_response)
 
@@ -504,7 +489,6 @@ async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool
             "narrator",
             user_input,
             history=narrator_history,
-            reminders=reminders,
         )
         narrator_content = clean_response(narrator_response)
         targets, scene_description = parse_narrator_response(narrator_content)
