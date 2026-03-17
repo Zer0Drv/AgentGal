@@ -68,17 +68,29 @@ def log_agent_call(
     content = response.get("content", "")
     usage = response.get("usage") or {}
 
+    # DeepSeek: prompt_cache_hit_tokens（平铺）
+    # OpenRouter: prompt_tokens_details.cached_tokens（嵌套）
+    prompt_tokens_details = usage.get("prompt_tokens_details") or {}
+    cache_hit_tokens = usage.get("prompt_cache_hit_tokens") or prompt_tokens_details.get("cached_tokens")
+
+    prompt_tokens = usage.get("prompt_tokens")
+    cache_hit_ratio = (
+        f"{cache_hit_tokens / prompt_tokens * 100:.2f}%"
+        if prompt_tokens and cache_hit_tokens is not None
+        else None
+    )
+
     # 构建日志条目
     log_entry = {
         "timestamp": timestamp,
         "agent": agent_name,
         "model": model,
         "metrics": {
-            "input_tokens": usage.get("prompt_tokens"),
+            "input_tokens": prompt_tokens,
             "output_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),
-            "prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
-            "prompt_cache_hit_ratio": f"{(usage.get('prompt_cache_hit_tokens') / usage.get('prompt_tokens') * 100):.2f}%" if usage.get('prompt_tokens') and usage.get('prompt_cache_hit_tokens') is not None else None
+            "prompt_cache_hit_tokens": cache_hit_tokens,
+            "prompt_cache_hit_ratio": cache_hit_ratio,
         },
         "request": messages,
         "response": content,
@@ -105,8 +117,8 @@ def log_agent_call(
             parts.append(f"out: {usage['completion_tokens']}")
         if usage.get("total_tokens") is not None:
             parts.append(f"total: {usage['total_tokens']}")
-        if usage.get("prompt_cache_hit_tokens") is not None:
-            parts.append(f"cache_hit: {usage['prompt_cache_hit_tokens']}")
+        if cache_hit_tokens is not None:
+            parts.append(f"cache_hit: {cache_hit_tokens}")
         if usage.get("prompt_cache_miss_tokens") is not None:
             parts.append(f"cache_miss: {usage['prompt_cache_miss_tokens']}")
         lines.append("[metrics] " + " | ".join(parts))
