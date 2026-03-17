@@ -28,18 +28,16 @@ from engine.config import (
 from memory.file_ops import (
     _get_fields_from_file,
     backup_file,
-    load_consolidation_state,
     load_growth_for_prompt,
-    load_last_memory_size,
     load_text,
     normalize,
+    read_consolidation_data,
     read_growth_entries,
     read_agent_file,
     safe_write_memory,
-    save_consolidation_state,
-    save_memory_size,
     split_by_date,
     split_events_raw,
+    write_consolidation_data,
     write_growth_entries,
 )
 from memory.vector_store import vector_store
@@ -430,7 +428,7 @@ class MemoryConsolidator:
 
             # 2. 确定需要整合的日期
             all_dates = list(sections.keys())
-            last_consolidated = load_consolidation_state(agent_name)
+            last_consolidated = read_consolidation_data(agent_name).get("last_consolidated_date")
             resolved = self._resolve_dates(agent_name, all_dates, last_consolidated)
             if resolved is None:
                 return None
@@ -444,7 +442,7 @@ class MemoryConsolidator:
             result.original_len = len(original_content)
 
             # 2.5. 检查文件大小变化，仅当增长超过阈值时才触发整理
-            last_size = load_last_memory_size(agent_name)
+            last_size = read_consolidation_data(agent_name).get("last_memory_size")
             current_size = len(original_content)
             if last_size is not None and (current_size - last_size) < _CONSOLIDATION_SIZE_THRESHOLD:
                 result.skipped = True
@@ -483,11 +481,11 @@ class MemoryConsolidator:
                     routing_logger.info(
                         f"[整理器] {agent_name} 进度推进: {last_consolidated} → {next_date}"
                     )
-                save_consolidation_state(agent_name, next_date)
+                write_consolidation_data(agent_name, last_consolidated_date=next_date)
 
             # 7.5. 保存当前文件大小（用于下次检测增长）
             if not result.errors:
-                save_memory_size(agent_name, result.final_len)
+                write_consolidation_data(agent_name, last_memory_size=result.final_len)
 
             # 8. 顺带整理 user.md
             user_before, user_after = await self._consolidate_player_profile(agent_name)

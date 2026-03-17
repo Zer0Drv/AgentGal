@@ -177,9 +177,9 @@ class TestVectorStoreRebuild:
             ),
         )
 
-        # monkeypatch get_agent_names 和 load_consolidation_state（patch vs_mod 中已导入的引用）
+        # monkeypatch get_agent_names 和 read_consolidation_data（patch vs_mod 中已导入的引用）
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
-        monkeypatch.setattr(vs_mod, "load_consolidation_state", lambda agent: "4月4日")
+        monkeypatch.setattr(vs_mod, "read_consolidation_data", lambda agent: {"last_consolidated_date": "4月4日"})
 
         await store.rebuild("narrator")
 

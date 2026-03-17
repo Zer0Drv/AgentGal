@@ -33,7 +33,7 @@ from engine.config import (
     get_agent_names,
 )
 from memory.file_ops import (
-    load_consolidation_state,
+    read_consolidation_data,
     normalize,
     split_by_date,
     split_into_events,
@@ -486,7 +486,7 @@ class VectorStore:
 
         # ===== memory 层重建：根据 consolidation_state 之前的日期 =====
         for agent in get_agent_names():
-            cutoff = load_consolidation_state(agent)
+            cutoff = read_consolidation_data(agent).get("last_consolidated_date")
             if not cutoff or not parse_cn_date(cutoff):
                 routing_logger.info(
                     "[VectorStore] 重建跳过 memory: agent=%s, cutoff无效=%s",

@@ -21,7 +21,6 @@ from llm.providers import get_choices_llm_config, get_llm_config, get_narrator_l
 from log_config.agent_calls import log_agent_call
 from log_config.routing import routing_logger
 from memory.file_ops import (
-    _append_section_file,
     _read_title,
     add_pending_event,
     _update_section_file,
@@ -241,7 +240,7 @@ def _update_player(agent_name: str, field: str, content: str) -> str:
         routing_logger.warning(f"[{agent_name}] 不允许的 player 字段: {field}")
         return f"字段 {field} 不在白名单中"
     user_path = character_path(agent_name, "user.md")
-    return _append_section_file(user_path, field, content, allowed, _read_title(user_path, "# 玩家档案"))
+    return _update_section_file(user_path, field, content, allowed, _read_title(user_path, "# 玩家档案"), append=True)
 
 
 async def _apply_response_updates(agent_name: str, parsed) -> None:

@@ -11,7 +11,6 @@ import shutil
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from engine.config import character_path
 
@@ -387,8 +386,10 @@ def _update_section_file(
     content: str,
     allowed_sections: list[str],
     title_line: str,
+    *,
+    append: bool = False,
 ) -> str:
-    """覆盖更新 section 文件中的指定字段。
+    """更新 section 文件中的指定字段。
 
     Args:
         file_path: 文件路径
@@ -396,6 +397,7 @@ def _update_section_file(
         content: 新内容
         allowed_sections: 允许的 section 白名单
         title_line: 文件标题行
+        append: True 时追加到已有内容后，False 时覆盖
 
     Returns:
         更新结果描述
@@ -407,45 +409,17 @@ def _update_section_file(
     if section not in allowed_sections:
         return f"字段 {section} 不在白名单中"
 
-    sections[section] = normalized
-    _write_section_file(file_path, sections, allowed_sections, title_line)
-    return f"已更新 {section}"
-
-
-def _append_section_file(
-    file_path: str,
-    section: str,
-    content: str,
-    allowed_sections: list[str],
-    title_line: str,
-) -> str:
-    """追加内容到 section 文件的指定字段（保留原有内容）。
-
-    Args:
-        file_path: 文件路径
-        section: 要追加的 section 名称
-        content: 要追加的内容
-        allowed_sections: 允许的 section 白名单
-        title_line: 文件标题行
-
-    Returns:
-        更新结果描述
-    """
-    sections, normalized = _prepare_section_update(
-        file_path, content, allowed_sections
-    )
-
-    if section not in allowed_sections:
-        return f"字段 {section} 不在白名单中"
-
-    existing = sections.get(section, _EMPTY_PLACEHOLDER)
-    if existing == _EMPTY_PLACEHOLDER:
-        sections[section] = normalized
+    if append:
+        existing = sections.get(section, _EMPTY_PLACEHOLDER)
+        if existing == _EMPTY_PLACEHOLDER:
+            sections[section] = normalized
+        else:
+            sections[section] = existing + "\n\n" + normalized
     else:
-        sections[section] = existing + "\n\n" + normalized
+        sections[section] = normalized
 
     _write_section_file(file_path, sections, allowed_sections, title_line)
-    return f"已追加到 {section}"
+    return f"已{'追加到' if append else '更新'} {section}"
 
 
 def read_growth_entries(agent_name: str) -> dict[str, str]:
@@ -576,82 +550,29 @@ def get_consolidation_state_path(agent_name: str) -> Path:
     return Path(character_path(agent_name, ".consolidation_state.json"))
 
 
-def load_consolidation_state(agent_name: str) -> Optional[str]:
-    """读取上次整合到的日期，返回如 '2月10日' 或 None。
+def read_consolidation_data(agent_name: str) -> dict:
+    """读取整合状态 JSON，解析失败返回空字典。
 
-    Args:
-        agent_name: 角色名
-
-    Returns:
-        最后整合的日期字符串，或 None（无记录/解析失败）
+    常用字段：
+    - ``last_consolidated_date``: 上次整合到的日期，如 ``"2月10日"``
+    - ``last_memory_size``: 上次整合时 memory.md 的大小（字节）
     """
     p = get_consolidation_state_path(agent_name)
     if not p.exists():
-        return None
+        return {}
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
+        return json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return None
-    return data.get("last_consolidated_date")
+        return {}
 
 
-def save_consolidation_state(agent_name: str, last_date: str) -> None:
-    """保存整合进度。
-
-    Args:
-        agent_name: 角色名
-        last_date: 最后整合的日期字符串，如 '2月10日'
-    """
+def write_consolidation_data(agent_name: str, **fields) -> None:
+    """更新整合状态 JSON 中的指定字段（read-modify-write）。"""
     p = get_consolidation_state_path(agent_name)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(
-        json.dumps({"last_consolidated_date": last_date}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def load_last_memory_size(agent_name: str) -> Optional[int]:
-    """读取上次整合时的 memory.md 文件大小（字节）。
-
-    Args:
-        agent_name: 角色名
-
-    Returns:
-        上次整合时的文件大小，或 None（无记录）
-    """
-    p = get_consolidation_state_path(agent_name)
-    if not p.exists():
-        return None
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-    return data.get("last_memory_size")
-
-
-def save_memory_size(agent_name: str, size: int) -> None:
-    """保存当前 memory.md 的文件大小。
-
-    Args:
-        agent_name: 角色名
-        size: 文件大小（字节）
-    """
-    p = get_consolidation_state_path(agent_name)
-    p.parent.mkdir(parents=True, exist_ok=True)
-
-    # 读取现有状态，保留 last_consolidated_date
-    data = {}
-    if p.exists():
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    data["last_memory_size"] = size
-    p.write_text(
-        json.dumps(data, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    data = read_consolidation_data(agent_name)
+    data.update(fields)
+    p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
 # ===== 安全写回（带并发保护） =====

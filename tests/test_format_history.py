@@ -22,8 +22,8 @@ def test_format_conversation_history_filters_old_narrator():
     assert "旧场景描述" not in result
     assert "玩家消息" in result
     assert "lilith 回复" in result
-    # 应该有 3 条消息（玩家 + lilith + 最新narrator）
-    assert result.count("\n") == 2, f"应该有 3 条消息，实际: {result}"
+    # 应该有 3 条消息（玩家 + lilith + 最新narrator），用 \n\n 分隔
+    assert result.count("\n\n") == 2, f"应该有 3 条消息，实际: {result}"
 
 
 def test_format_conversation_history_character_sees_only_visible():
@@ -44,7 +44,7 @@ def test_format_conversation_history_character_sees_only_visible():
     assert "新场景" in result
     assert "旧场景" not in result
     assert "mitsuki 回复" not in result
-    assert result.count("\n") == 2, "应该有 3 条消息（2 个换行符）"
+    assert result.count("\n\n") == 2, "应该有 3 条消息（2 个双换行分隔符）"
 
 
 def test_format_conversation_history_limit_with_narrator():
@@ -66,8 +66,8 @@ def test_format_conversation_history_limit_with_narrator():
     # lilith 应该看到 10 条有效消息
     # 由于加载 limit*5=50 条，过滤后只有lilith可见的消息
     # 然后过滤旧narrator，最后取10条
-    lines = result.split("\n")
-    assert len(lines) == 10, f"应该有 10 条消息，实际: {len(lines)}, 内容: {result}"
+    parts = result.split("\n\n")
+    assert len(parts) == 10, f"应该有 10 条消息，实际: {len(parts)}, 内容: {result}"
     assert "新场景" in result
     assert "旧场景" not in result
     assert "mitsuki" not in result  # lilith 看不到 mitsuki 的消息
@@ -107,4 +107,4 @@ def test_format_conversation_history_no_narrator():
     assert "玩家消息 1" in result
     assert "lilith 回复" in result
     assert "玩家消息 2" in result
-    assert result.count("\n") == 2, "应该有 3 条消息（2 个换行符）"
+    assert result.count("\n\n") == 2, "应该有 3 条消息（2 个双换行分隔符）"
