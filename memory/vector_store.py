@@ -841,19 +841,22 @@ class VectorStore:
         event_date: str,
         last_recalled_at: str,
     ) -> float:
-        """计算单条记忆的 recency，取启用信号里衰减值较大的那个。"""
+        """计算单条记忆的 recency，按配置权重融合日期与 recall 两个信号。"""
         if not current_game_date:
             return 0.5
         event_score = _decay_from_game_date(current_game_date, event_date, RECENCY_HALF_LIFE_DAYS)
         recall_score = _decay_from_game_date(current_game_date, last_recalled_at or event_date, RECENCY_HALF_LIFE_DAYS)
-        signals: list[float] = []
+        weighted_signals: list[tuple[float, float]] = []
         if RECENCY_DATE_WEIGHT > 0:
-            signals.append(event_score)
+            weighted_signals.append((event_score, RECENCY_DATE_WEIGHT))
         if RECENCY_RECALL_WEIGHT > 0 and last_recalled_at:
-            signals.append(recall_score)
-        if not signals:
+            weighted_signals.append((recall_score, RECENCY_RECALL_WEIGHT))
+        if not weighted_signals:
             return 0.5
-        return max(signals)
+        total_weight = sum(weight for _, weight in weighted_signals)
+        if total_weight <= 0:
+            return 0.5
+        return sum(score * weight for score, weight in weighted_signals) / total_weight
 
     @classmethod
     def _apply_vector_recency_ranking(

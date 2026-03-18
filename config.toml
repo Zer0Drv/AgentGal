@@ -26,7 +26,7 @@ relevance_weight = 0.5
 recency_weight = 0.5
 # 游戏内时间半衰期（天）
 recency_half_life_days = 5.0
-# recency 信号开关：大于 0 即参与取 max，设为 0 可禁用对应信号
+# recency 内部权重：按加权平均融合日期与 recall 两个信号，设为 0 可禁用对应信号
 recency_date_weight = 0.7
 recency_recall_weight = 0.3
 # 混合检索：BM25 关键字检索 + 加权融合

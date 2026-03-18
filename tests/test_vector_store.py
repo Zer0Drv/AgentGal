@@ -475,6 +475,8 @@ class TestHybridSearch:
         monkeypatch.setattr(vector_store_module, "RELEVANCE_WEIGHT", 0.7)
         monkeypatch.setattr(vector_store_module, "RECENCY_WEIGHT", 0.3)
         monkeypatch.setattr(vector_store_module, "RECENCY_HALF_LIFE_DAYS", 5.0)
+        monkeypatch.setattr(vector_store_module, "RECENCY_DATE_WEIGHT", 0.1)
+        monkeypatch.setattr(vector_store_module, "RECENCY_RECALL_WEIGHT", 0.9)
         reordered = VectorStore._apply_recency_ranking(results, "4月8日")
         assert reordered[0]["id"] == "1", "最近刚被召回的旧记忆应因 recall recency 排在前面"
 
@@ -493,6 +495,26 @@ class TestHybridSearch:
         assert ":" not in fts_query
         assert '"顾"' in fts_query
         assert " OR " in fts_query
+
+    @pytest.mark.asyncio
+    async def test_recency_signal_weights_take_effect(self, clean_store, tmp_path, monkeypatch):
+        """recency_date_weight / recency_recall_weight 应真实参与加权。"""
+        monkeypatch.setattr(vector_store_module, "RECENCY_HALF_LIFE_DAYS", 1.0)
+        current_game_date = "4月11日"
+        event_date = "4月11日"
+        last_recalled_at = "4月1日"
+
+        monkeypatch.setattr(vector_store_module, "RECENCY_DATE_WEIGHT", 0.8)
+        monkeypatch.setattr(vector_store_module, "RECENCY_RECALL_WEIGHT", 0.2)
+        date_heavy = VectorStore._recency_score(current_game_date, event_date, last_recalled_at)
+
+        monkeypatch.setattr(vector_store_module, "RECENCY_DATE_WEIGHT", 0.2)
+        monkeypatch.setattr(vector_store_module, "RECENCY_RECALL_WEIGHT", 0.8)
+        recall_heavy = VectorStore._recency_score(current_game_date, event_date, last_recalled_at)
+
+        assert date_heavy > recall_heavy
+        assert 0.75 < date_heavy < 0.85
+        assert 0.15 < recall_heavy < 0.25
 
     @pytest.mark.asyncio
     async def test_bm25_search_handles_markdown_query(self, clean_store, tmp_path, monkeypatch):
