@@ -478,6 +478,58 @@ class TestHybridSearch:
         reordered = VectorStore._apply_recency_ranking(results, "4月8日")
         assert reordered[0]["id"] == "1", "最近刚被召回的旧记忆应因 recall recency 排在前面"
 
+    def test_build_fts_match_query_ignores_markdown_syntax(self):
+        """FTS 查询应剔除 Markdown / FTS 特殊字符，避免 MATCH 语法报错。"""
+        query = (
+            "（深吸了一口气，认真）顾总，我怕我误会，所以直接问了，我们现在是在约会吗？\n"
+            "**时间**：10月3日 星期二 18:27\n"
+            "**地点**：梧桐街咖啡馆内"
+        )
+
+        fts_query = vector_store_module._build_fts_match_query(query)
+
+        assert fts_query
+        assert "*" not in fts_query
+        assert ":" not in fts_query
+        assert '"顾"' in fts_query
+        assert " OR " in fts_query
+
+    @pytest.mark.asyncio
+    async def test_bm25_search_handles_markdown_query(self, clean_store, tmp_path, monkeypatch):
+        """带 Markdown 场景摘要的 query 不应触发 FTS5 语法错误。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+
+        write_status(
+            tmp_path,
+            "narrator",
+            "# 故事状态\n\n## 当前时间\n10月3日 18:30\n",
+        )
+        write_memory(
+            tmp_path,
+            "lilith",
+            "# lilith\n\n## 10月3日\n"
+            "- **时间**：10月3日 18:20\n- **地点**：梧桐街咖啡馆\n- **在场**：我、玩家\n"
+            "- **内容**：玩家在咖啡馆里直接问我“我们现在是在约会吗？”，我没有否认。",
+        )
+        await store.add_memory("lilith", "10月3日")
+
+        conn = __import__("sqlite3").connect(test_db_path)
+        try:
+            scope_sql, scope_params = store._build_scope_sql("lilith", "memory")
+            rows = store._bm25_search(
+                conn,
+                "玩家新消息: （深吸了一口气）我们现在是在约会吗？\n**时间**：10月3日 星期二 18:27",
+                scope_sql,
+                scope_params,
+                limit=5,
+            )
+        finally:
+            conn.close()
+
+        assert rows, "BM25 应能处理带 Markdown 的 query 并返回结果"
+
+
     @pytest.mark.asyncio
     async def test_hybrid_search_end_to_end(self, clean_store, tmp_path, monkeypatch):
         """端到端：启用混合检索后 search() 正常返回结果。"""
