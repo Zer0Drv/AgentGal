@@ -21,6 +21,7 @@ from game.save_manager import (
     import_save_archive,
     list_save_archives,
     load_conversation_history,
+    load_story_file,
     reset_game,
 )
 
@@ -86,12 +87,17 @@ async def _ask_story_choice() -> str:
     return "school"
 
 
-async def _send_opening_messages(intro_text: str, opening_text: str) -> None:
+async def _send_opening_messages(story_id: str, intro_text: str, opening_text: str) -> None:
     """发送玩法介绍与故事开场白"""
     if intro_text:
         await cl.Message(content=intro_text, author="Narrator").send()
     if opening_text:
         await cl.Message(content=opening_text, author="Narrator").send()
+        opening_choices_text = load_story_file(story_id, "opening_choices.txt")
+        choices = [line.strip() for line in opening_choices_text.splitlines() if line.strip()]
+        if choices:
+            _save_last_choices(choices)
+            await _send_choices_message(choices)
 
 
 async def _send_choices_message(choices: list[str]) -> None:
@@ -149,7 +155,7 @@ async def on_chat_start():
     if not has_save:
         story_id = await _ask_story_choice()
         intro_text, opening_text = await _handle_new_game(story_id)
-        await _send_opening_messages(intro_text, opening_text)
+        await _send_opening_messages(story_id, intro_text, opening_text)
     else:
         await _handle_continue_game()
 
@@ -181,7 +187,7 @@ async def _handle_reset_command() -> bool:
     await cl.Message(content="✅ 游戏已重置，开始新故事...").send()
     _clear_last_choices()
     intro_text, opening_text = await reset_game(story_id)
-    await _send_opening_messages(intro_text, opening_text)
+    await _send_opening_messages(story_id, intro_text, opening_text)
     cl.user_session.set("message_counter", 0)
     return True
 
