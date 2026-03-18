@@ -12,7 +12,6 @@ import asyncio
 import sqlite3
 import hashlib
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -195,11 +194,13 @@ def _decay_from_game_date(current_game_date: str, past_game_date: str, half_life
 
 
 class VectorStore:
-    """sqlite-vec 本地向量库。
+    """sqlite-vec 本地向量库（memory-only）。
 
     表结构：
-    - chunks(id INTEGER PK, round_id TEXT UNIQUE, date TEXT, visible_to TEXT, content TEXT)
-    - vec_chunks USING vec0(embedding F32[EMBED_DIM])  -- rowid 对应 chunks.id
+    - memory_chunks(id INTEGER PK, memory_key TEXT UNIQUE, owner_agent TEXT, game_date TEXT,
+                     content TEXT, content_hash TEXT, last_recalled_at TEXT)
+    - vec_memory_chunks USING vec0(embedding F32[EMBED_DIM])  -- rowid 对应 memory_chunks.id
+    - memory_chunks_fts USING fts5(content)
     """
 
     def __init__(self):
@@ -224,9 +225,9 @@ class VectorStore:
         return hashlib.sha1(text.strip().encode("utf-8")).hexdigest()
 
     @staticmethod
-    def _memory_chunk_date(chunk_id: str) -> str | None:
-        """从 memory chunk id 中提取所属日期。"""
-        parts = chunk_id.split("::")
+    def _memory_key_date(memory_key: str) -> str | None:
+        """从 memory_key 中提取所属日期。"""
+        parts = memory_key.split("::")
         if len(parts) != 4:
             return None
         return parts[2]
@@ -234,12 +235,12 @@ class VectorStore:
     def _resolve_memory_recall_date(
         self,
         state: dict[str, dict[str, Any]],
-        chunk_id: str,
+        memory_key: str,
         event_date: str,
         content_hash: str,
     ) -> str:
         """为重建后的事件选择最合适的 last_recalled_at。"""
-        exact = state.get(chunk_id, {})
+        exact = state.get(memory_key, {})
         recall = canonical_cn_date(str(exact.get("last_recalled_at", "")))
         if recall:
             return recall
@@ -300,19 +301,22 @@ class VectorStore:
         self,
         agent_name: str,
         date: str,
-        payloads: list[tuple[str, str, str, str]],
+        payloads: list[tuple[str, str, str, str, str]],
         previous_state: dict[str, dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
-        """用当前日期的最新事件集合重写 recall sidecar。"""
+        """用当前日期的最新事件集合重写 recall sidecar。
+
+        payloads: [(memory_key, game_date, content, content_hash, recalled_at), ...]
+        """
         next_state = {
             key: value
             for key, value in previous_state.items()
-            if self._memory_chunk_date(key) != date
+            if self._memory_key_date(key) != date
         }
-        for chunk_id, event_date, text, recalled_at in payloads:
-            next_state[chunk_id] = {
+        for memory_key, event_date, _text, content_hash, recalled_at in payloads:
+            next_state[memory_key] = {
                 "date": event_date,
-                "content_hash": self._content_hash(text),
+                "content_hash": content_hash,
                 "last_recalled_at": recalled_at,
             }
         try:
@@ -368,59 +372,57 @@ class VectorStore:
             await self._load_sqlite_vec(self._db)
         return self._db
 
+    async def _has_legacy_schema(self, db: aiosqlite.Connection) -> bool:
+        """检测是否存在旧版 chunks 表。"""
+        row = await (await db.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='chunks'"
+        )).fetchone()
+        return bool(row and row[0] > 0)
+
+    async def _drop_legacy_tables(self, db: aiosqlite.Connection) -> None:
+        """删除旧版检索表。"""
+        for table in ("chunks_fts", "vec_chunks", "chunks"):
+            await db.execute(f"DROP TABLE IF EXISTS {table}")
+        await db.execute("DROP INDEX IF EXISTS idx_chunks_round_id")
+        await db.execute("DROP INDEX IF EXISTS idx_chunks_chunk_id")
+        routing_logger.info("[VectorStore] 已清除旧版 schema (chunks/vec_chunks/chunks_fts)")
+
     async def init_tables(self):
         db = await self._get_db()
+
+        # 旧版 schema 迁移：检测到 legacy 表则整体 drop，后续由 rebuild 重建
+        if await self._has_legacy_schema(db):
+            await self._drop_legacy_tables(db)
+            await db.commit()
+
         await db.execute(
             """
-            CREATE TABLE IF NOT EXISTS chunks (
+            CREATE TABLE IF NOT EXISTS memory_chunks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                round_id TEXT NOT NULL UNIQUE,
-                date TEXT,
-                created_at TEXT,
-                visible_to TEXT,
-                content TEXT NOT NULL
+                memory_key TEXT NOT NULL UNIQUE,
+                owner_agent TEXT NOT NULL,
+                game_date TEXT NOT NULL,
+                content TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                last_recalled_at TEXT
             )
             """
         )
         await db.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_chunks_round_id ON chunks(round_id)"
-        )
-        cols = {
-            row[1]
-            for row in await (await db.execute("PRAGMA table_info(chunks)")).fetchall()
-        }
-        if "source" not in cols:
-            await db.execute("ALTER TABLE chunks ADD COLUMN source TEXT NOT NULL DEFAULT 'round'")
-        if "owner_agent" not in cols:
-            await db.execute("ALTER TABLE chunks ADD COLUMN owner_agent TEXT")
-        if "last_recalled_at" not in cols:
-            await db.execute("ALTER TABLE chunks ADD COLUMN last_recalled_at TEXT")
-        await db.execute(
             f"""
-            CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+            CREATE VIRTUAL TABLE IF NOT EXISTS vec_memory_chunks USING vec0(
                 embedding F32[{EMBED_DIM}]
             )
             """
         )
-        # FTS5 全文索引（独立存储，手动与 chunks 表同步）
         await db.execute(
             """
-            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+            CREATE VIRTUAL TABLE IF NOT EXISTS memory_chunks_fts USING fts5(
                 content,
                 tokenize='unicode61'
             )
             """
         )
-        rows = await (
-            await db.execute("SELECT id, date, last_recalled_at FROM chunks WHERE last_recalled_at IS NOT NULL")
-        ).fetchall()
-        for row_id, event_date, recalled_at in rows:
-            if recalled_at and not parse_cn_date(str(recalled_at)):
-                normalized_date = canonical_cn_date(str(event_date or ""))
-                await db.execute(
-                    "UPDATE chunks SET last_recalled_at = ? WHERE id = ?",
-                    (normalized_date, row_id),
-                )
         await db.commit()
 
     async def add_memory(self, agent_name: str, date: str):
@@ -455,17 +457,17 @@ class VectorStore:
             return
 
         previous_state = self._read_memory_recall_state(agent_name)
-        payloads: list[tuple[str, str, str, str]] = []
+        payloads: list[tuple[str, str, str, str, str]] = []
         events = split_into_events(body)
         for idx, event in enumerate(events, start=1):
             text = event.strip()
             if text:
-                chunk_id = f"memory::{agent_name}::{normalized_date}::{idx}"
+                memory_key = f"memory::{agent_name}::{normalized_date}::{idx}"
                 content_hash = self._content_hash(text)
                 recalled_at = self._resolve_memory_recall_date(
-                    previous_state, chunk_id, normalized_date, content_hash
+                    previous_state, memory_key, normalized_date, content_hash
                 )
-                payloads.append((chunk_id, normalized_date, text, recalled_at))
+                payloads.append((memory_key, normalized_date, text, content_hash, recalled_at))
 
         routing_logger.info(
             "[VectorStore] 开始长期记忆索引: agent=%s, date=%s, 待写入事件=%s",
@@ -481,41 +483,39 @@ class VectorStore:
                 await db.execute("BEGIN")
                 # 先查出要删除的 rowid，同步清理 FTS 和向量索引
                 del_cursor = await db.execute(
-                    "SELECT id FROM chunks WHERE source = 'memory' AND owner_agent = ? AND date = ?",
+                    "SELECT id FROM memory_chunks WHERE owner_agent = ? AND game_date = ?",
                     (agent_name, normalized_date),
                 )
                 del_rows = await del_cursor.fetchall()
                 for (del_id,) in del_rows:
-                    await db.execute("DELETE FROM chunks_fts WHERE rowid = ?", (del_id,))
+                    await db.execute("DELETE FROM memory_chunks_fts WHERE rowid = ?", (del_id,))
                 await db.execute(
-                    "DELETE FROM vec_chunks WHERE rowid IN ("
-                    "SELECT id FROM chunks WHERE source = 'memory' AND owner_agent = ? AND date = ?"
+                    "DELETE FROM vec_memory_chunks WHERE rowid IN ("
+                    "SELECT id FROM memory_chunks WHERE owner_agent = ? AND game_date = ?"
                     ")",
                     (agent_name, normalized_date),
                 )
                 await db.execute(
-                    "DELETE FROM chunks WHERE source = 'memory' AND owner_agent = ? AND date = ?",
+                    "DELETE FROM memory_chunks WHERE owner_agent = ? AND game_date = ?",
                     (agent_name, normalized_date),
                 )
 
                 if payloads:
                     embeddings = await _embed_async([item[2] for item in payloads])
-                    visible_json = json.dumps([agent_name], ensure_ascii=False)
-                    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-                    for i, (chunk_id, event_date, text, recalled_at) in enumerate(payloads):
+                    for i, (memory_key, event_date, text, c_hash, recalled_at) in enumerate(payloads):
                         cur = await db.execute(
-                            "INSERT INTO chunks(round_id, date, created_at, visible_to, content, source, owner_agent, last_recalled_at) "
-                            "VALUES (?, ?, ?, ?, ?, 'memory', ?, ?)",
-                            (chunk_id, event_date, now_iso, visible_json, text, agent_name, recalled_at),
+                            "INSERT INTO memory_chunks(memory_key, owner_agent, game_date, content, content_hash, last_recalled_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?)",
+                            (memory_key, agent_name, event_date, text, c_hash, recalled_at),
                         )
                         rowid = int(cur.lastrowid or 0)
                         if rowid:
                             await db.execute(
-                                "INSERT OR REPLACE INTO vec_chunks(rowid, embedding) VALUES (?, ?)",
+                                "INSERT OR REPLACE INTO vec_memory_chunks(rowid, embedding) VALUES (?, ?)",
                                 (rowid, self._to_vec_blob(embeddings[i])),
                             )
                             await db.execute(
-                                "INSERT INTO chunks_fts(rowid, content) VALUES (?, ?)",
+                                "INSERT INTO memory_chunks_fts(rowid, content) VALUES (?, ?)",
                                 (rowid, _tokenize_for_fts(text)),
                             )
 
@@ -548,9 +548,9 @@ class VectorStore:
             db = await self._get_db()
 
             # 清空
-            await db.execute("DELETE FROM vec_chunks")
-            await db.execute("DELETE FROM chunks_fts")
-            await db.execute("DELETE FROM chunks")
+            await db.execute("DELETE FROM vec_memory_chunks")
+            await db.execute("DELETE FROM memory_chunks_fts")
+            await db.execute("DELETE FROM memory_chunks")
             await db.commit()
 
             # ===== memory 层重建：根据 consolidation_state 之前的日期 =====
@@ -590,11 +590,10 @@ class VectorStore:
     # ----------------------------- 检索 -----------------------------
 
     @staticmethod
-    def _build_scope_sql(agent_name: str, kind_norm: str) -> tuple[str, tuple]:
-        """构建 memory-only 可见性过滤 SQL 片段。"""
-        _ = kind_norm
+    def _build_scope_sql(agent_name: str) -> tuple[str, tuple]:
+        """构建 memory-only owner 过滤 SQL 片段。"""
         return (
-            "SELECT id FROM chunks WHERE source = 'memory' AND owner_agent = ?",
+            "SELECT id FROM memory_chunks WHERE owner_agent = ?",
             (agent_name,),
         )
 
@@ -606,21 +605,21 @@ class VectorStore:
         scope_params: tuple,
         fetch_limit: int,
     ) -> list[tuple]:
-        """纯向量近邻检索，返回 (id, content, distance, date, last_recalled_at) 列表。"""
+        """纯向量近邻检索，返回 (id, content, distance, game_date, last_recalled_at) 列表。"""
         candidate_limit = max(fetch_limit * 10, 50)
         sql = f"""
         WITH scope AS (
           {scope_sql}
         ),
         vec_results AS (
-          SELECT rowid, distance FROM vec_chunks
+          SELECT rowid, distance FROM vec_memory_chunks
           WHERE embedding MATCH ?
           LIMIT ?
         )
-        SELECT c.id, c.content, v.distance, c.date, c.last_recalled_at
+        SELECT c.id, c.content, v.distance, c.game_date, c.last_recalled_at
         FROM vec_results v
         JOIN scope s ON s.id = v.rowid
-        JOIN chunks c ON c.id = v.rowid
+        JOIN memory_chunks c ON c.id = v.rowid
         ORDER BY v.distance
         LIMIT ?
         """
@@ -637,7 +636,7 @@ class VectorStore:
         scope_params: tuple,
         limit: int,
     ) -> list[tuple[int, str, float, str, str]]:
-        """BM25 全文检索，返回 (id, content, bm25_rank, date, last_recalled_at) 列表。
+        """BM25 全文检索，返回 (id, content, bm25_rank, game_date, last_recalled_at) 列表。
 
         FTS5 的 rank 值为负数（越小越相关），这里取绝对值转为正数分数。
         """
@@ -650,12 +649,12 @@ class VectorStore:
           {scope_sql}
         ),
         fts_hits AS (
-          SELECT rowid, rank FROM chunks_fts WHERE chunks_fts MATCH ?
+          SELECT rowid, rank FROM memory_chunks_fts WHERE memory_chunks_fts MATCH ?
         )
-        SELECT c.id, c.content, f.rank, c.date, c.last_recalled_at
+        SELECT c.id, c.content, f.rank, c.game_date, c.last_recalled_at
         FROM fts_hits f
         JOIN scope s ON s.id = f.rowid
-        JOIN chunks c ON c.id = f.rowid
+        JOIN memory_chunks c ON c.id = f.rowid
         ORDER BY f.rank
         LIMIT ?
         """
@@ -766,7 +765,7 @@ class VectorStore:
             if kind_norm != "memory":
                 routing_logger.info("[VectorStore] 非 memory 检索已停用: agent=%s, kind=%s", agent_name, kind_norm)
                 return []
-            scope_sql, scope_params = self._build_scope_sql(agent_name, kind_norm)
+            scope_sql, scope_params = self._build_scope_sql(agent_name)
             current_game_date = self._load_current_game_date()
 
             # 若启用 rerank，先多取候选，rerank 后再截取
@@ -815,7 +814,7 @@ class VectorStore:
                 try:
                     placeholders = ",".join("?" * len(recalled_ids))
                     conn.execute(
-                        f"UPDATE chunks SET last_recalled_at = ? WHERE id IN ({placeholders})",
+                        f"UPDATE memory_chunks SET last_recalled_at = ? WHERE id IN ({placeholders})",
                         (current_game_date, *recalled_ids),
                     )
                     conn.commit()
@@ -933,17 +932,17 @@ class VectorStore:
         """将命中结果的 recall 状态同步回 sidecar，供 rebuild()/load 恢复。"""
         placeholders = ",".join("?" * len(recalled_ids))
         rows = conn.execute(
-            f"SELECT round_id, owner_agent, date, content FROM chunks WHERE id IN ({placeholders})",
+            f"SELECT memory_key, owner_agent, game_date, content FROM memory_chunks WHERE id IN ({placeholders})",
             recalled_ids,
         ).fetchall()
         state_cache: dict[str, dict[str, dict[str, Any]]] = {}
-        for chunk_id, owner_agent, event_date, content in rows:
+        for memory_key, owner_agent, event_date, content in rows:
             if not owner_agent:
                 continue
             if owner_agent not in state_cache:
                 state_cache[owner_agent] = self._read_memory_recall_state(owner_agent)
             state = state_cache[owner_agent]
-            state[str(chunk_id)] = {
+            state[str(memory_key)] = {
                 "date": canonical_cn_date(str(event_date or "")) or "",
                 "content_hash": self._content_hash(str(content or "")),
                 "last_recalled_at": current_game_date,
@@ -966,39 +965,32 @@ class VectorStore:
     # ----------------------------- 删除 -----------------------------
 
     async def delete(self, agent_name: str) -> bool:
-        """删除指定 agent 的所有向量与文本 chunk。"""
+        """删除指定 agent 的所有记忆索引。"""
         try:
             await self.init_tables()
             db = await self._get_db()
-            # 查出待删除 rowid，同步清理 FTS
             del_cursor = await db.execute(
-                "SELECT id FROM chunks WHERE EXISTS (\n"
-                "  SELECT 1 FROM json_each(visible_to) WHERE json_each.value = ?\n"
-                ")",
+                "SELECT id FROM memory_chunks WHERE owner_agent = ?",
                 (agent_name,),
             )
             del_rows = await del_cursor.fetchall()
             for (del_id,) in del_rows:
-                await db.execute("DELETE FROM chunks_fts WHERE rowid = ?", (del_id,))
+                await db.execute("DELETE FROM memory_chunks_fts WHERE rowid = ?", (del_id,))
             await db.execute(
-                "DELETE FROM vec_chunks WHERE rowid IN (\n"
-                "  SELECT id FROM chunks WHERE EXISTS (\n"
-                "    SELECT 1 FROM json_each(visible_to) WHERE json_each.value = ?\n"
-                "  )\n"
+                "DELETE FROM vec_memory_chunks WHERE rowid IN ("
+                "SELECT id FROM memory_chunks WHERE owner_agent = ?"
                 ")",
                 (agent_name,),
             )
             await db.execute(
-                "DELETE FROM chunks WHERE EXISTS (\n"
-                "  SELECT 1 FROM json_each(visible_to) WHERE json_each.value = ?\n"
-                ")",
+                "DELETE FROM memory_chunks WHERE owner_agent = ?",
                 (agent_name,),
             )
             await db.commit()
-            routing_logger.info(f"[VectorStore] 已清空 {agent_name} 的向量与 chunks")
+            routing_logger.info("[VectorStore] 已清空 %s 的记忆索引", agent_name)
             return True
         except Exception as e:
-            routing_logger.error(f"[VectorStore] 删除 {agent_name} 失败: {e}")
+            routing_logger.error("[VectorStore] 删除 %s 失败: %s", agent_name, e)
             return False
 
     async def delete_all_agents(self, agent_names: list[str]) -> dict[str, bool]:
@@ -1014,11 +1006,11 @@ class VectorStore:
                 db = await self._get_db()
                 async with self._get_write_lock():
                     await db.execute("BEGIN")
-                    await db.execute("DELETE FROM vec_chunks")
-                    await db.execute("DELETE FROM chunks_fts")
-                    await db.execute("DELETE FROM chunks")
+                    await db.execute("DELETE FROM vec_memory_chunks")
+                    await db.execute("DELETE FROM memory_chunks_fts")
+                    await db.execute("DELETE FROM memory_chunks")
                     await db.commit()
-                routing_logger.info("[VectorStore] delete_all_agents 命中全角色，已全量清空向量库")
+                routing_logger.info("[VectorStore] delete_all_agents 命中全角色，已全量清空记忆索引")
                 return {name: True for name in unique_names}
             except Exception as e:
                 try:

@@ -307,10 +307,10 @@ class TestVectorStoreEdgeCases:
         assert result == {"lilith": True, "mitsuki": True, "narrator": True}
 
         db = await store._get_db()
-        chunk_count = (await (await db.execute("SELECT COUNT(*) FROM chunks")).fetchone())[0]
-        vec_count = (await (await db.execute("SELECT COUNT(*) FROM vec_chunks")).fetchone())[0]
-        assert chunk_count == 0, f"chunks 表应该为空，实际有{chunk_count}条"
-        assert vec_count == 0, f"vec_chunks 表应该为空，实际有{vec_count}条"
+        chunk_count = (await (await db.execute("SELECT COUNT(*) FROM memory_chunks")).fetchone())[0]
+        vec_count = (await (await db.execute("SELECT COUNT(*) FROM vec_memory_chunks")).fetchone())[0]
+        assert chunk_count == 0, f"memory_chunks 表应该为空，实际有{chunk_count}条"
+        assert vec_count == 0, f"vec_memory_chunks 表应该为空，实际有{vec_count}条"
 
 
 class TestVectorStoreMemoryIndexing:
@@ -409,7 +409,7 @@ class TestHybridSearch:
         import sqlite3 as _sqlite3
         conn = _sqlite3.connect(test_db_path)
         store._load_sqlite_vec_sync(conn)
-        scope_sql, scope_params = VectorStore._build_scope_sql("lilith", "memory")
+        scope_sql, scope_params = VectorStore._build_scope_sql("lilith")
         results = VectorStore._bm25_search(conn, "学园祭", scope_sql, scope_params, 5)
         conn.close()
 
@@ -436,12 +436,12 @@ class TestHybridSearch:
         store._load_sqlite_vec_sync(conn)
 
         # lilith 能搜到
-        scope_sql, scope_params = VectorStore._build_scope_sql("lilith", "memory")
+        scope_sql, scope_params = VectorStore._build_scope_sql("lilith")
         results_lilith = VectorStore._bm25_search(conn, "紫水晶", scope_sql, scope_params, 5)
         assert len(results_lilith) >= 1, "lilith 应能搜到自己的记忆"
 
         # mitsuki 搜不到
-        scope_sql2, scope_params2 = VectorStore._build_scope_sql("mitsuki", "memory")
+        scope_sql2, scope_params2 = VectorStore._build_scope_sql("mitsuki")
         results_mitsuki = VectorStore._bm25_search(conn, "紫水晶", scope_sql2, scope_params2, 5)
         assert len(results_mitsuki) == 0, "mitsuki 不应看到 lilith 的记忆"
 
@@ -538,7 +538,7 @@ class TestHybridSearch:
 
         conn = __import__("sqlite3").connect(test_db_path)
         try:
-            scope_sql, scope_params = store._build_scope_sql("lilith", "memory")
+            scope_sql, scope_params = store._build_scope_sql("lilith")
             rows = store._bm25_search(
                 conn,
                 "玩家新消息: （深吸了一口气）我们现在是在约会吗？\n**时间**：10月3日 星期二 18:27",
@@ -603,7 +603,7 @@ class TestHybridSearch:
 
         conn = __import__("sqlite3").connect(test_db_path)
         row = conn.execute(
-            "SELECT last_recalled_at FROM chunks WHERE round_id = ?",
+            "SELECT last_recalled_at FROM memory_chunks WHERE memory_key = ?",
             ("memory::lilith::4月3日::1",),
         ).fetchone()
         conn.close()
@@ -650,7 +650,7 @@ class TestHybridSearch:
 
         conn = __import__("sqlite3").connect(test_db_path)
         row = conn.execute(
-            "SELECT last_recalled_at FROM chunks WHERE round_id = ?",
+            "SELECT last_recalled_at FROM memory_chunks WHERE memory_key = ?",
             ("memory::lilith::4月3日::1",),
         ).fetchone()
         conn.close()
@@ -674,7 +674,7 @@ class TestHybridSearch:
         # 确认 FTS 有数据
         db = await store._get_db()
         fts_count_before = (await (await db.execute(
-            "SELECT COUNT(*) FROM chunks_fts"
+            "SELECT COUNT(*) FROM memory_chunks_fts"
         )).fetchone())[0]
         assert fts_count_before > 0, "删除前 FTS 应有数据"
 
@@ -682,6 +682,6 @@ class TestHybridSearch:
         await store.delete("lilith")
 
         fts_count_after = (await (await db.execute(
-            "SELECT COUNT(*) FROM chunks_fts"
+            "SELECT COUNT(*) FROM memory_chunks_fts"
         )).fetchone())[0]
         assert fts_count_after == 0, "删除后 FTS 应为空"

@@ -111,11 +111,9 @@ def test_format_conversation_history_no_narrator():
     assert result.count("\n\n") == 2, "应该有 3 条消息（2 个双换行分隔符）"
 
 
-def test_build_search_query_uses_newlines(monkeypatch):
+def test_build_search_query_uses_newlines():
     """测试记忆检索 query 使用换行拼接，避免 FTS5 保留符号。"""
-    monkeypatch.setattr("memory.retrieval.read_agent_file", lambda agent_name, filename: "")
+    result = build_search_query("lilith", "玩家原话", "**地点**：场景摘要")
 
-    result = build_search_query("lilith", "玩家原话", "场景摘要")
-
-    assert result == "玩家原话\n场景摘要"
+    assert result == "玩家原话\n地点：场景摘要"
     assert "|" not in result
