@@ -10,7 +10,6 @@ from engine.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
     HISTORY_LIMIT,
     PROJECT_ROOT,
-    VECTOR_SEARCH_LIMIT,
     character_path,
     get_agent_names,
 )
@@ -24,13 +23,12 @@ from memory.file_ops import (
     _read_title,
     add_pending_event,
     _update_section_file,
-    extract_status_field,
     get_allowed_fields,
     load_growth_for_prompt,
     mark_event_triggered,
     read_agent_file,
 )
-from memory.vector_store import vector_store
+from memory.retrieval import build_memory_prefix
 
 
 # ---------------------------------------------------------------------------
@@ -83,53 +81,6 @@ def _build_system_prompt(agent_name: str, soul_content: str) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# 记忆注入
-# ---------------------------------------------------------------------------
-
-def _build_search_query(agent_name: str, user_input: str, scene_summary: str = "") -> str:
-    """构建上下文感知的 RAG query。
-
-    旁白：玩家原话 + 叙事焦点 + 场景
-    角色：玩家原话 + 旁白场景摘要（含地点、在场、环境等具体信息）
-    """
-    parts = [user_input]
-    status = read_agent_file(agent_name, "status.md")
-
-    if agent_name == "narrator":
-        focus = extract_status_field(status, "叙事焦点")
-        scene = extract_status_field(status, "场景")
-        if focus:
-            parts.append(focus)
-        if scene:
-            parts.append(scene)
-    else:
-        if scene_summary:
-            parts.append(scene_summary)
-
-    return "\n".join(p for p in parts if p)
-
-
-def _search_memories(agent_name: str, query: str) -> str:
-    """语义搜索向量库，返回格式化记忆字符串。"""
-    limit = VECTOR_SEARCH_LIMIT
-    results = vector_store.search(agent_name, query, limit=limit, kind="memory")
-    memories = [r["content"].strip() for r in results if r["content"].strip()]
-    return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
-
-
-def _build_memory_prefix(agent_name: str, user_input: str, scene_summary: str = "") -> str:
-    """召回记忆组装记忆上下文前缀。
-
-    旁白依赖 status.md 中的待触发事件队列管理场景，无需向量检索。
-    """
-    if agent_name == "narrator":
-        return ""
-    query = _build_search_query(agent_name, user_input, scene_summary)
-    relevant = _search_memories(agent_name, query)
-    return f"<relevant_memories>\n{relevant}\n</relevant_memories>"
-
-
 def _build_dialogue_input(history: str, latest_user_input: str) -> str:
     """构建对话输入块：最近对话历史 + 玩家新消息。"""
     parts = []
@@ -148,9 +99,8 @@ def _build_runtime_context(
     """
     构建 user message，按稳定度排序动态上下文。
 
-    narrator 包含：status, 相关记忆
-    角色包含：growth, user_profile, status, 相关记忆, 当前时间（来自 narrator 的 status）
-    对话历史与本轮玩家输入通过显式参数传入，不再从拼接字符串中反解析。
+    narrator 包含：status, 历史对话，玩家新消息
+    角色包含：growth, user_profile, status, 相关记忆，历史对话，玩家新消息
     """
     context_parts: list[str] = []
 
@@ -293,7 +243,7 @@ async def run_agent(
     """运行指定角色的 Agent，返回清理后的响应文本。"""
     start = time.time()
 
-    memory_prefix = _build_memory_prefix(agent_name, latest_user_input, scene_summary)
+    memory_prefix = build_memory_prefix(agent_name, latest_user_input, scene_summary, history)
     full_input = _build_runtime_context(
         agent_name,
         latest_user_input,

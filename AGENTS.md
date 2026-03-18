@@ -43,7 +43,8 @@ agentgal-memos/
 ├── memory/
 │   ├── consolidator.py         # 记忆整理器
 │   ├── file_ops.py             # md 文件读写工具
-│   └── vector_store.py         # 向量索引与检索
+│   ├── retrieval.py            # 检索 query 构造与记忆上下文组装
+│   └── vector_store.py         # 向量索引、排序与检索执行
 ├── prompts/                    # narrator / character / consolidation prompts
 ├── scripts/                    # 维护脚本
 ├── tests/                      # pytest 测试
@@ -193,7 +194,9 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 - 向量库只索引 `memory.md` 中的长期记忆事件，owner scope 固定为当前角色
 - 默认检索路径是 memory-only；非 memory 检索已停用
+- `memory/retrieval.py` 负责把玩家原话、场景摘要和最近历史改写成 `vector_query` / `bm25_query`
 - 召回排序为：向量相关性与 BM25 相关性先融合，再叠加游戏内时间 recency
+- `logs/memory/memory.log` 会记录每轮检索 query 和 top 命中摘要，便于排查召回质量
 - `last_recalled_at` 会在命中后更新，并同步写回 `.memory_recall_state.json`
 - `rebuild()` 会结合 `.consolidation_state.json` 和 `.memory_recall_state.json` 恢复长期记忆索引与 recall 状态
 

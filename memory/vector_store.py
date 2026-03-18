@@ -740,6 +740,7 @@ class VectorStore:
         query: str,
         limit: int | None = None,
         kind: str = "memory",
+        bm25_query: str | None = None,
     ) -> list[dict[str, Any]]:
         """语义搜索：memory-only，按 relevance + 游戏时间 recency 排序。"""
         if not query or not query.strip():
@@ -778,7 +779,7 @@ class VectorStore:
             # 混合检索：75% vector relevance + 25% BM25 relevance
             if HYBRID_SEARCH_ENABLED:
                 bm25_rows = self._bm25_search(
-                    conn, query, scope_sql, scope_params, BM25_CANDIDATE_LIMIT,
+                    conn, bm25_query or query, scope_sql, scope_params, BM25_CANDIDATE_LIMIT,
                 )
                 if bm25_rows:
                     merged = self._hybrid_relevance_fusion(vec_rows, bm25_rows)
@@ -826,6 +827,19 @@ class VectorStore:
                 "[VectorStore] 搜索完成: agent=%s, limit=%s, 命中=%s, kind=%s, hybrid=%s",
                 agent_name, limit, len(results), kind_norm, HYBRID_SEARCH_ENABLED,
             )
+            if results:
+                summary = "; ".join(
+                    (
+                        f"id={r.get('id')} date={r.get('date', '')} "
+                        f"score={float(r.get('score', 0.0)):.3f} "
+                        f"rel={float(r.get('relevance', 0.0)):.3f} "
+                        f"rec={float(r.get('recency', 0.0)):.3f}"
+                    )
+                    for r in results[:limit]
+                )
+                routing_logger.info("[VectorStore] Top结果: agent=%s, %s", agent_name, summary)
+            else:
+                routing_logger.info("[VectorStore] Top结果: agent=%s, （无命中）", agent_name)
 
             return results
         except Exception as e:

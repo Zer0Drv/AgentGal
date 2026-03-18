@@ -122,7 +122,9 @@ Agent 回复由两部分组成：
 
 - 只有角色会做向量召回，`narrator` 依赖 `status.md` 中的场景状态和待触发事件推进剧情
 - 向量库只索引 `memory.md` 中的长期记忆事件，不再混入其他来源
+- `memory/retrieval.py` 会先按规则生成 `vector_query` 与 `bm25_query`，再分别送入向量检索与 BM25 检索
 - 检索默认走 hybrid search：向量相关性 + BM25 关键字相关性，再叠加游戏内时间 recency 排序
+- `logs/memory/memory.log` 会记录每轮的 query 与 top 命中摘要，便于调试召回效果
 - 每个角色会维护 `.memory_recall_state.json`，记录记忆最近一次被想起的游戏日期，供重建和存档恢复
 
 ## 关键目录说明

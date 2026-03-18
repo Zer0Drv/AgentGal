@@ -3,7 +3,8 @@
 测试 format_conversation_history 能否正确过滤和格式化消息
 """
 
-from engine.agent_manager import _build_search_query, format_conversation_history
+from engine.agent_manager import format_conversation_history
+from memory.retrieval import build_search_query
 
 
 def test_format_conversation_history_filters_old_narrator():
@@ -112,9 +113,9 @@ def test_format_conversation_history_no_narrator():
 
 def test_build_search_query_uses_newlines(monkeypatch):
     """测试记忆检索 query 使用换行拼接，避免 FTS5 保留符号。"""
-    monkeypatch.setattr("engine.agent_manager.read_agent_file", lambda agent_name, filename: "")
+    monkeypatch.setattr("memory.retrieval.read_agent_file", lambda agent_name, filename: "")
 
-    result = _build_search_query("lilith", "玩家原话", "场景摘要")
+    result = build_search_query("lilith", "玩家原话", "场景摘要")
 
     assert result == "玩家原话\n场景摘要"
     assert "|" not in result
