@@ -42,6 +42,7 @@ agentgal-memos/
 ├── log_config/                 # 路由、记忆、调用日志
 ├── memory/
 │   ├── consolidator.py         # 记忆整理器
+│   ├── consolidation_inputs.py # 整理 step1 输入构造与 raw 对话视角对齐
 │   ├── file_ops.py             # md 文件读写工具
 │   ├── retrieval.py            # 检索 query 构造与记忆上下文组装
 │   └── vector_store.py         # 向量索引、排序与检索执行
@@ -204,6 +205,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 `memory/consolidator.py` 负责后台整理：
 
+- 组装整理流程，并调用 `memory/consolidation_inputs.py` 准备 step1 输入
 - 归并 `memory.md`
 - 提炼 / 更新 `growth.md`（仅角色）
 - 去重压缩 `growth.md`（仅角色）

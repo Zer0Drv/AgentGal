@@ -112,6 +112,7 @@ Agent 回复由两部分组成：
 
 `memory/consolidator.py` 会定期整理：
 
+- 通过 `memory/consolidation_inputs.py` 组装 step1 输入，并把 raw 对话对齐到当前整理对象视角
 - `memory.md`
 - `growth.md`（仅角色）
 - `user.md`（仅角色）

@@ -25,7 +25,10 @@ from engine.config import (
     RAW_DIALOGUE_LIMIT,
     character_path,
 )
-from game.save_manager import load_conversation_history
+from memory.consolidation_inputs import (
+    build_step1_user_payload,
+    format_raw_dialogue_for_owner,
+)
 from memory.file_ops import (
     _get_fields_from_file,
     backup_file,
@@ -49,28 +52,6 @@ _PROMPT_STEP3_PATH = Path(__file__).parent.parent / "prompts" / "growth_dedupe.t
 _PLAYER_PROMPT_PATH = (
     Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 )
-
-
-def _load_raw_dialogue_for_agent(agent_name: str, limit: int) -> str:
-    """读取最近 limit 条原始消息，按 visible_to 过滤后格式化为纯文本供 step1 参考。"""
-    raw_messages = load_conversation_history(limit=limit)
-
-    if agent_name != "narrator":
-        visible = [m for m in raw_messages if agent_name in m.get("visible_to", [])]
-    else:
-        visible = raw_messages
-
-    if not visible:
-        return ""
-
-    lines = []
-    for msg in visible:
-        role = msg.get("role", "unknown")
-        content = msg.get("content", "").strip()
-        if content:
-            lines.append(f"{role}: {content}")
-
-    return "\n\n".join(lines)
 
 
 # 字段描述映射（用于 user.md 整理）
@@ -207,26 +188,6 @@ class MemoryConsolidator:
 
         return path, original, sections
 
-    def _build_consolidation_prompt_step1(
-        self, agent_name: str, sections: OrderedDict[str, str], dates: list[str],
-        raw_dialogue: str = "",
-    ) -> tuple[str, str]:
-        """构建第一步 prompt：归并整理（角色带 growth，narrator 不带）。
-
-        Returns:
-            (system, user): system 为纯指令，user 为结构化数据 + 待整理内容
-        """
-        parts = [f"## {date}\n{sections[date]}" for date in dates]
-        combined_text = "\n\n".join(parts)
-
-        system = load_text(_PROMPT_STEP1_PATH)
-        user = f"<memory_entries>\n{combined_text}\n</memory_entries>"
-
-        if raw_dialogue:
-            user += f"\n\n<raw_dialogue>\n{raw_dialogue}\n</raw_dialogue>"
-
-        return system, user
-
     def _build_consolidation_prompt_step2(
         self, agent_name: str, step1_result: str
     ) -> tuple[str, str]:
@@ -307,9 +268,8 @@ class MemoryConsolidator:
             max_tokens=CONSOLIDATION_MAX_TOKENS, timeout=120.0, max_retries=3,
         ) as client:
             # ===== 第一步：调用 LLM 进行归并整理 =====
-            system_step1, user_step1 = self._build_consolidation_prompt_step1(
-                agent_name, sections, dates, raw_dialogue=raw_dialogue
-            )
+            system_step1 = load_text(_PROMPT_STEP1_PATH)
+            user_step1 = build_step1_user_payload(agent_name, sections, dates, raw_dialogue)
             try:
                 resp1 = await client.chat(
                     [{"role": "system", "content": system_step1}, {"role": "user", "content": user_step1}],
@@ -436,7 +396,7 @@ class MemoryConsolidator:
                 return None
 
             # 3. guard 检查：近期无参与 / 文件增长不足
-            raw_dialogue = _load_raw_dialogue_for_agent(agent_name, RAW_DIALOGUE_LIMIT)
+            raw_dialogue = format_raw_dialogue_for_owner(agent_name, RAW_DIALOGUE_LIMIT)
             if reason := _should_skip(raw_dialogue, len(original_content), cdata.get("last_memory_size")):
                 result.skipped, result.skip_reason = True, reason
                 routing_logger.info(f"[整理器] {agent_name} 跳过: {reason}")
