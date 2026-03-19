@@ -63,6 +63,13 @@ def write_memory(tmp_path, agent_name: str, content: str):
     return path
 
 
+def get_chunks(tmp_path, agent_name: str, date: str) -> list[str]:
+    from memory.file_ops import split_by_date, normalize, split_into_events
+    path = tmp_path / agent_name / "memory.md"
+    sections = split_by_date(normalize(path.read_text(encoding="utf-8")))
+    return split_into_events(sections.get(date, ""))
+
+
 _MEMORY_CHUNK_COLS = ["id", "memory_key", "owner_agent", "game_date", "content", "content_hash", "last_recalled_at"]
 
 
@@ -139,7 +146,7 @@ class TestSaveLoadConsistency:
                 "- **时间**：4月3日 09:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
                 "- **内容**：这是第一轮对话的内容，包含重要信息。",
             )
-            await store.add_memory("lilith", "4月3日")
+            await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
 
             write_memory(
                 tmp_path,
@@ -148,14 +155,15 @@ class TestSaveLoadConsistency:
                 "- **时间**：4月3日 09:30\n- **地点**：走廊\n- **在场**：美月\n"
                 "- **内容**：这是第二轮对话的内容，mitsuki 的回应。",
             )
-            await store.add_memory("mitsuki", "4月3日")
+            await store.add("mitsuki", "4月3日", get_chunks(tmp_path, "mitsuki", "4月3日"))
 
             snapshot_before = _get_db_snapshot(test_db_path)
             assert len(snapshot_before["memory_chunks"]) == 2, "应该有 2 条记忆"
             assert len(snapshot_before["vec_memory_chunks"]) == 2, "应该有 2 条向量"
 
-            search_result = store.search("lilith", "第一轮对话", kind="memory")
-            assert len(search_result) >= 1, "save 前应该能搜索到数据"
+            from memory.retrieval import search_memories
+            search_result = search_memories("lilith", "第一轮对话")
+            assert search_result != "（无相关记忆）", "save 前应该能搜索到数据"
 
             # 模拟 save-load 循环：清空数据库
             db = await store._get_db()
@@ -168,8 +176,8 @@ class TestSaveLoadConsistency:
             assert len(snapshot_empty["vec_memory_chunks"]) == 0, "清空后应该没有向量"
 
             # 重新加载相同的数据（模拟 rebuild）
-            await store.add_memory("lilith", "4月3日")
-            await store.add_memory("mitsuki", "4月3日")
+            await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+            await store.add("mitsuki", "4月3日", get_chunks(tmp_path, "mitsuki", "4月3日"))
 
             snapshot_after = _get_db_snapshot(test_db_path)
 
@@ -181,8 +189,8 @@ class TestSaveLoadConsistency:
             is_consistent, message = _compare_snapshots(snapshot_before, snapshot_after)
             assert is_consistent, f"save-load 后数据库不一致: {message}"
 
-            search_result_after = store.search("lilith", "第一轮对话", kind="memory")
-            assert len(search_result_after) >= 1, "load 后应该能搜索到数据"
+            search_result_after = search_memories("lilith", "第一轮对话")
+            assert search_result_after != "（无相关记忆）", "load 后应该能搜索到数据"
         finally:
             if store._db is not None:
                 await store._db.close()

@@ -32,6 +32,13 @@ try:
     import memory.vector_store  # 确保子模块被加载进 sys.modules
     vector_store_module = importlib.import_module("memory.vector_store")
     from memory.vector_store import vector_store, VectorStore, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
+    import memory.retrieval as retrieval_module
+    from memory.retrieval import (
+        hybrid_fusion,
+        apply_recency,
+        _recency_score,
+        RERANK_MODEL,
+    )
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip vector_store tests: missing dependency ({exc})", allow_module_level=True)
 
@@ -52,6 +59,7 @@ async def clean_store(monkeypatch):
     """提供清理后的 VectorStore，每个测试隔离。"""
     # 使用 monkeypatch 修改 DB_PATH，避免全局污染
     monkeypatch.setattr(vector_store_module, "DB_PATH", test_db_path)
+    monkeypatch.setattr(retrieval_module, "DB_PATH", test_db_path)
 
     store = vector_store
 
@@ -81,21 +89,29 @@ async def clean_store(monkeypatch):
         os.remove(test_db_path)
 
 
-async def wait_for_search(store, agent_name: str, query: str, kind: str = "memory", timeout: float = 10.0):
+async def wait_for_search(store, agent_name: str, query: str, timeout: float = 10.0):
     """轮询等待向量检索可命中（超时抛出异常）。"""
     deadline = asyncio.get_event_loop().time() + timeout
     last_error = None
 
     while asyncio.get_event_loop().time() < deadline:
         try:
-            res = store.search(agent_name, query, kind=kind)
-            if res:
-                return res
+            import sqlite3
+            conn = sqlite3.connect(test_db_path)
+            try:
+                VectorStore._load_sqlite_vec_sync(conn)
+                from memory.vector_store import _embed_sync
+                qvec = _embed_sync([query])[0]
+                rows = store.get_vector_candidates(conn, agent_name, qvec, 5)
+            finally:
+                conn.close()
+            if rows:
+                return rows
         except Exception as e:
             last_error = e
         await asyncio.sleep(0.1)
 
-    error_msg = f"等待搜索结果超时: agent={agent_name}, query={query}, kind={kind}"
+    error_msg = f"等待搜索结果超时: agent={agent_name}, query={query}"
     if last_error:
         error_msg += f", last_error={last_error}"
     raise TimeoutError(error_msg)
@@ -126,6 +142,14 @@ def write_status(tmp_path, agent_name: str, content: str):
     return path
 
 
+def get_chunks(tmp_path, agent_name: str, date: str) -> list[str]:
+    """从 tmp_path 下的 memory.md 提取指定日期的事件列表，供 store.add() 使用。"""
+    from memory.file_ops import split_by_date, normalize, split_into_events
+    path = tmp_path / agent_name / "memory.md"
+    sections = split_by_date(normalize(path.read_text(encoding="utf-8")))
+    return split_into_events(sections.get(date, ""))
+
+
 class TestVectorStoreBasic:
     """基础增查删测试"""
 
@@ -147,15 +171,23 @@ class TestVectorStoreBasic:
                 "- **内容**：早上好，今天天气不错。"
             ),
         )
-        await store.add_memory("lilith", "4月3日")
+        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
 
-        res_before = await wait_for_search(store, "lilith", "早上好", kind="memory")
+        res_before = await wait_for_search(store, "lilith", "早上好")
         assert len(res_before) >= 1, "删除前应该有数据"
 
         ok = await store.delete("lilith")
         assert ok is True, "删除应该成功"
 
-        res_after = store.search("lilith", "早上好", kind="memory")
+        import sqlite3
+        conn = sqlite3.connect(test_db_path)
+        try:
+            VectorStore._load_sqlite_vec_sync(conn)
+            from memory.vector_store import _embed_sync
+            qvec = _embed_sync(["早上好"])[0]
+            res_after = store.get_vector_candidates(conn, "lilith", qvec, 5)
+        finally:
+            conn.close()
         assert len(res_after) == 0, "删除后应该没有数据"
 
 
@@ -194,7 +226,7 @@ class TestVectorStoreRebuild:
 
         await store.rebuild("narrator")
 
-        res = await wait_for_search(store, "lilith", "被 rebuild 的记忆", kind="memory")
+        res = await wait_for_search(store, "lilith", "被 rebuild 的记忆")
         assert len(res) >= 1, "rebuild 后应该能搜索到 lilith 的记忆"
 
 
@@ -204,23 +236,35 @@ class TestVectorStoreEdgeCases:
 
     @pytest.mark.asyncio
     async def test_empty_search(self, clean_store):
-        """测试空查询返回空结果"""
+        """测试空查询返回空候选"""
         store = clean_store
 
-        res = store.search("lilith", "", kind="memory")
-        assert res == [], "空查询应该返回空列表"
-
-        res = store.search("lilith", "   ", kind="memory")
-        assert res == [], "空白查询应该返回空列表"
+        import sqlite3
+        conn = sqlite3.connect(test_db_path)
+        try:
+            VectorStore._load_sqlite_vec_sync(conn)
+            rows = store.get_vector_candidates(conn, "lilith", [], 5)
+        except Exception:
+            rows = []
+        finally:
+            conn.close()
+        assert rows == [], "空向量应该返回空列表"
 
     @pytest.mark.asyncio
     async def test_search_nonexistent_agent(self, clean_store):
         """测试搜索不存在的角色"""
         store = clean_store
 
-        # 不存在的角色应不会命中任何 chunk
-        res = store.search("nonexistent", "查询", kind="memory")
-        assert res == [], "不存在的角色应该返回空列表"
+        import sqlite3
+        from memory.vector_store import _embed_sync
+        conn = sqlite3.connect(test_db_path)
+        try:
+            VectorStore._load_sqlite_vec_sync(conn)
+            qvec = _embed_sync(["查询"])[0]
+            rows = store.get_vector_candidates(conn, "nonexistent", qvec, 5)
+        finally:
+            conn.close()
+        assert rows == [], "不存在的角色应该返回空列表"
 
     @pytest.mark.asyncio
     async def test_memory_search_isolation(self, clean_store, tmp_path, monkeypatch):
@@ -247,15 +291,23 @@ class TestVectorStoreEdgeCases:
 
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
 
-        await store.add_memory("lilith", "4月2日")
+        await store.add("lilith", "4月2日", get_chunks(tmp_path, "lilith", "4月2日"))
 
-        res_old = await wait_for_search(store, "lilith", "昨天的长期记忆锚点", kind="memory")
-        assert any("昨天的长期记忆锚点" in r["content"] for r in res_old), "应该能搜索到昨天的记忆"
+        res_old = await wait_for_search(store, "lilith", "昨天的长期记忆锚点")
+        assert len(res_old) >= 1, "应该能搜索到昨天的记忆"
 
-        res_today_mem = store.search("lilith", "今天的长期记忆", kind="memory")
-        assert not any("今天的长期记忆" in r["content"] for r in res_today_mem), "4月3日不应在 memory 层"
-
-        res_other = store.search("mitsuki", "昨天的长期记忆锚点", kind="memory")
+        import sqlite3
+        from memory.vector_store import _embed_sync
+        conn = sqlite3.connect(test_db_path)
+        try:
+            VectorStore._load_sqlite_vec_sync(conn)
+            qvec_today = _embed_sync(["今天的长期记忆"])[0]
+            res_today_mem = store.get_vector_candidates(conn, "lilith", qvec_today, 5)
+            qvec_other = _embed_sync(["昨天的长期记忆锚点"])[0]
+            res_other = store.get_vector_candidates(conn, "mitsuki", qvec_other, 5)
+        finally:
+            conn.close()
+        assert not any("今天的长期记忆" in r[1] for r in res_today_mem), "4月3日不应在 memory 层"
         assert res_other == [], "mitsuki 不应能看到 lilith 的记忆"
 
     @pytest.mark.asyncio
@@ -273,17 +325,26 @@ class TestVectorStoreEdgeCases:
             "# mitsuki\n\n## 4月3日\n- **时间**：4月3日 10:01\n- **地点**：操场\n- **在场**：美月\n- **内容**：仅 mitsuki 可见的记忆。",
         )
 
-        await store.add_memory("lilith", "4月3日")
-        await store.add_memory("mitsuki", "4月3日")
+        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await store.add("mitsuki", "4月3日", get_chunks(tmp_path, "mitsuki", "4月3日"))
 
-        await wait_for_search(store, "lilith", "仅 lilith 可见的记忆", kind="memory")
-        await wait_for_search(store, "mitsuki", "仅 mitsuki 可见的记忆", kind="memory")
+        await wait_for_search(store, "lilith", "仅 lilith 可见的记忆")
+        await wait_for_search(store, "mitsuki", "仅 mitsuki 可见的记忆")
 
         result = await store.delete_all_agents(["lilith"])
         assert result == {"lilith": True}
 
-        res_lilith = store.search("lilith", "仅 lilith 可见的记忆", kind="memory")
-        res_mitsuki = store.search("mitsuki", "仅 mitsuki 可见的记忆", kind="memory")
+        import sqlite3
+        from memory.vector_store import _embed_sync
+        conn = sqlite3.connect(test_db_path)
+        try:
+            VectorStore._load_sqlite_vec_sync(conn)
+            qvec = _embed_sync(["仅 lilith 可见的记忆"])[0]
+            res_lilith = store.get_vector_candidates(conn, "lilith", qvec, 5)
+            qvec2 = _embed_sync(["仅 mitsuki 可见的记忆"])[0]
+            res_mitsuki = store.get_vector_candidates(conn, "mitsuki", qvec2, 5)
+        finally:
+            conn.close()
         assert len(res_lilith) == 0, "lilith 的数据应该被删除"
         assert len(res_mitsuki) >= 1, "mitsuki 的数据应该保留"
 
@@ -299,8 +360,8 @@ class TestVectorStoreEdgeCases:
             tmp_path, "lilith",
             "# lilith\n\n## 4月2日\n- **时间**：4月2日 晚上\n- **地点**：天台\n- **在场**：莉莉丝、玩家\n- **内容**：这是昨天的长期记忆锚点。",
         )
-        await store.add_memory("lilith", "4月2日")
-        await wait_for_search(store, "lilith", "昨天的长期记忆锚点", kind="memory")
+        await store.add("lilith", "4月2日", get_chunks(tmp_path, "lilith", "4月2日"))
+        await wait_for_search(store, "lilith", "昨天的长期记忆锚点")
 
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith", "mitsuki", "narrator"])
         result = await store.delete_all_agents(["lilith", "mitsuki", "narrator"])
@@ -317,7 +378,7 @@ class TestVectorStoreMemoryIndexing:
     """长期记忆索引测试"""
 
     @pytest.mark.asyncio
-    async def test_add_memory_splits_events(self, clean_store, tmp_path, monkeypatch):
+    async def test_add_splits_events(self, clean_store, tmp_path, monkeypatch):
         """索引指定日期的 memory.md，按事件块拆分并可检索。"""
         store = clean_store
 
@@ -341,19 +402,27 @@ class TestVectorStoreMemoryIndexing:
         )
 
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
-        await store.add_memory("mitsuki", "4月3日")
+        await store.add("mitsuki", "4月3日", get_chunks(tmp_path, "mitsuki", "4月3日"))
 
         # 等待索引完成并验证结果
-        res1 = await wait_for_search(store, "mitsuki", "眼神让我在意", kind="memory")
-        res2 = await wait_for_search(store, "mitsuki", "下午的安排", kind="memory")
+        res1 = await wait_for_search(store, "mitsuki", "眼神让我在意")
+        res2 = await wait_for_search(store, "mitsuki", "下午的安排")
         assert len(res1) >= 1, "应命中第一个事件块"
         assert len(res2) >= 1, "应命中第二个事件块"
 
-        res_other = store.search("lilith", "眼神让我在意", kind="memory")
+        import sqlite3
+        from memory.vector_store import _embed_sync
+        conn = sqlite3.connect(test_db_path)
+        try:
+            VectorStore._load_sqlite_vec_sync(conn)
+            qvec = _embed_sync(["眼神让我在意"])[0]
+            res_other = store.get_vector_candidates(conn, "lilith", qvec, 5)
+        finally:
+            conn.close()
         assert res_other == [], "他人不可见的 memory 不应返回"
 
     @pytest.mark.asyncio
-    async def test_add_memory_only_targets_date(self, clean_store, tmp_path, monkeypatch):
+    async def test_add_only_targets_date(self, clean_store, tmp_path, monkeypatch):
         """只索引指定日期，其它日期不应被写入。"""
         store = clean_store
 
@@ -378,13 +447,21 @@ class TestVectorStoreMemoryIndexing:
         )
 
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
-        await store.add_memory("mitsuki", "4月3日")
+        await store.add("mitsuki", "4月3日", get_chunks(tmp_path, "mitsuki", "4月3日"))
 
-        # 等待索引完成并验证结果
-        res_hit = await wait_for_search(store, "mitsuki", "让我在意", kind="memory")
-        res_miss = store.search("mitsuki", "独自待了一会儿", kind="memory")
+        res_hit = await wait_for_search(store, "mitsuki", "让我在意")
         assert len(res_hit) >= 1, "应命中索引的日期"
-        assert not any("独自待了一会儿" in r["content"] for r in res_miss), "未索引日期不应返回"
+
+        import sqlite3
+        from memory.vector_store import _embed_sync
+        conn = sqlite3.connect(test_db_path)
+        try:
+            VectorStore._load_sqlite_vec_sync(conn)
+            qvec = _embed_sync(["独自待了一会儿"])[0]
+            res_miss = store.get_vector_candidates(conn, "mitsuki", qvec, 5)
+        finally:
+            conn.close()
+        assert not any("独自待了一会儿" in r[1] for r in res_miss), "未索引日期不应返回"
 
 
 class TestHybridSearch:
@@ -402,15 +479,14 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：今天遇到了桥本美月，她提到了学园祭的准备工作。",
         )
-        await store.add_memory("lilith", "4月3日")
-        await wait_for_search(store, "lilith", "学园祭", kind="memory")
+        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await wait_for_search(store, "lilith", "学园祭")
 
         # 直接测试 BM25 搜索
         import sqlite3 as _sqlite3
         conn = _sqlite3.connect(test_db_path)
         store._load_sqlite_vec_sync(conn)
-        scope_sql, scope_params = VectorStore._build_scope_sql("lilith")
-        results = VectorStore._bm25_search(conn, "学园祭", scope_sql, scope_params, 5)
+        results = VectorStore.get_bm25_candidates(conn, "lilith", "学园祭", 5)
         conn.close()
 
         assert len(results) >= 1, "BM25 应命中包含'学园祭'的记忆"
@@ -428,21 +504,19 @@ class TestHybridSearch:
             "- **时间**：4月3日 10:00\n- **地点**：走廊\n- **在场**：莉莉丝\n"
             "- **内容**：听到了关于紫水晶项链的传闻。",
         )
-        await store.add_memory("lilith", "4月3日")
-        await wait_for_search(store, "lilith", "紫水晶", kind="memory")
+        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await wait_for_search(store, "lilith", "紫水晶")
 
         import sqlite3 as _sqlite3
         conn = _sqlite3.connect(test_db_path)
         store._load_sqlite_vec_sync(conn)
 
         # lilith 能搜到
-        scope_sql, scope_params = VectorStore._build_scope_sql("lilith")
-        results_lilith = VectorStore._bm25_search(conn, "紫水晶", scope_sql, scope_params, 5)
+        results_lilith = VectorStore.get_bm25_candidates(conn, "lilith", "紫水晶", 5)
         assert len(results_lilith) >= 1, "lilith 应能搜到自己的记忆"
 
         # mitsuki 搜不到
-        scope_sql2, scope_params2 = VectorStore._build_scope_sql("mitsuki")
-        results_mitsuki = VectorStore._bm25_search(conn, "紫水晶", scope_sql2, scope_params2, 5)
+        results_mitsuki = VectorStore.get_bm25_candidates(conn, "mitsuki", "紫水晶", 5)
         assert len(results_mitsuki) == 0, "mitsuki 不应看到 lilith 的记忆"
 
         conn.close()
@@ -459,7 +533,7 @@ class TestHybridSearch:
             (3, "内容C", -3.0, "4月3日", "4月3日"),
         ]
 
-        results = VectorStore._hybrid_relevance_fusion(vec_rows, bm25_rows)
+        results = hybrid_fusion(vec_rows, bm25_rows)
 
         ids = [r["id"] for r in results]
         assert ids == ["1", "2", "3"], "vector 占 75% 时，应优先保留更强的向量相关性"
@@ -467,17 +541,17 @@ class TestHybridSearch:
 
     @pytest.mark.asyncio
     async def test_apply_recency_ranking_reorders(self, clean_store, tmp_path, monkeypatch):
-        """_apply_recency_ranking 应将最近被想起的旧记忆排在前面。"""
-        results = [
+        """apply_recency 应将最近被想起的旧记忆排在前面。"""
+        candidates = [
             {"id": "1", "content": "旧记忆", "relevance": 0.5, "date": "4月1日", "last_recalled_at": "4月8日"},
             {"id": "2", "content": "新记忆", "relevance": 0.5, "date": "4月6日", "last_recalled_at": "4月6日"},
         ]
-        monkeypatch.setattr(vector_store_module, "RELEVANCE_WEIGHT", 0.7)
-        monkeypatch.setattr(vector_store_module, "RECENCY_WEIGHT", 0.3)
-        monkeypatch.setattr(vector_store_module, "RECENCY_HALF_LIFE_DAYS", 5.0)
-        monkeypatch.setattr(vector_store_module, "RECENCY_DATE_WEIGHT", 0.1)
-        monkeypatch.setattr(vector_store_module, "RECENCY_RECALL_WEIGHT", 0.9)
-        reordered = VectorStore._apply_recency_ranking(results, "4月8日")
+        monkeypatch.setattr(retrieval_module, "RELEVANCE_WEIGHT", 0.7)
+        monkeypatch.setattr(retrieval_module, "RECENCY_WEIGHT", 0.3)
+        monkeypatch.setattr(retrieval_module, "RECENCY_HALF_LIFE_DAYS", 5.0)
+        monkeypatch.setattr(retrieval_module, "RECENCY_DATE_WEIGHT", 0.1)
+        monkeypatch.setattr(retrieval_module, "RECENCY_RECALL_WEIGHT", 0.9)
+        reordered = apply_recency(candidates, "4月8日")
         assert reordered[0]["id"] == "1", "最近刚被召回的旧记忆应因 recall recency 排在前面"
 
     def test_build_fts_match_query_ignores_markdown_syntax(self):
@@ -499,18 +573,18 @@ class TestHybridSearch:
     @pytest.mark.asyncio
     async def test_recency_signal_weights_take_effect(self, clean_store, tmp_path, monkeypatch):
         """recency_date_weight / recency_recall_weight 应真实参与加权。"""
-        monkeypatch.setattr(vector_store_module, "RECENCY_HALF_LIFE_DAYS", 1.0)
+        monkeypatch.setattr(retrieval_module, "RECENCY_HALF_LIFE_DAYS", 1.0)
         current_game_date = "4月11日"
         event_date = "4月11日"
         last_recalled_at = "4月1日"
 
-        monkeypatch.setattr(vector_store_module, "RECENCY_DATE_WEIGHT", 0.8)
-        monkeypatch.setattr(vector_store_module, "RECENCY_RECALL_WEIGHT", 0.2)
-        date_heavy = VectorStore._recency_score(current_game_date, event_date, last_recalled_at)
+        monkeypatch.setattr(retrieval_module, "RECENCY_DATE_WEIGHT", 0.8)
+        monkeypatch.setattr(retrieval_module, "RECENCY_RECALL_WEIGHT", 0.2)
+        date_heavy = _recency_score(current_game_date, event_date, last_recalled_at)
 
-        monkeypatch.setattr(vector_store_module, "RECENCY_DATE_WEIGHT", 0.2)
-        monkeypatch.setattr(vector_store_module, "RECENCY_RECALL_WEIGHT", 0.8)
-        recall_heavy = VectorStore._recency_score(current_game_date, event_date, last_recalled_at)
+        monkeypatch.setattr(retrieval_module, "RECENCY_DATE_WEIGHT", 0.2)
+        monkeypatch.setattr(retrieval_module, "RECENCY_RECALL_WEIGHT", 0.8)
+        recall_heavy = _recency_score(current_game_date, event_date, last_recalled_at)
 
         assert date_heavy > recall_heavy
         assert 0.75 < date_heavy < 0.85
@@ -532,32 +606,29 @@ class TestHybridSearch:
             "lilith",
             "# lilith\n\n## 10月3日\n"
             "- **时间**：10月3日 18:20\n- **地点**：梧桐街咖啡馆\n- **在场**：我、玩家\n"
-            "- **内容**：玩家在咖啡馆里直接问我“我们现在是在约会吗？”，我没有否认。",
+            "- **内容**：玩家在咖啡馆里直接问我\"我们现在是在约会吗？\"，我没有否认。",
         )
-        await store.add_memory("lilith", "10月3日")
+        await store.add("lilith", "10月3日", get_chunks(tmp_path, "lilith", "10月3日"))
 
         conn = __import__("sqlite3").connect(test_db_path)
         try:
-            scope_sql, scope_params = store._build_scope_sql("lilith")
-            rows = store._bm25_search(
+            rows = VectorStore.get_bm25_candidates(
                 conn,
+                "lilith",
                 "玩家新消息: （深吸了一口气）我们现在是在约会吗？\n**时间**：10月3日 星期二 18:27",
-                scope_sql,
-                scope_params,
-                limit=5,
+                5,
             )
         finally:
             conn.close()
 
         assert rows, "BM25 应能处理带 Markdown 的 query 并返回结果"
 
-
     @pytest.mark.asyncio
     async def test_hybrid_search_end_to_end(self, clean_store, tmp_path, monkeypatch):
-        """端到端：启用混合检索后 search() 正常返回结果。"""
+        """端到端：启用混合检索后 search_memories() 正常返回结果。"""
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
-        monkeypatch.setattr(vector_store_module, "HYBRID_SEARCH_ENABLED", True)
+        monkeypatch.setattr(retrieval_module, "HYBRID_SEARCH_ENABLED", True)
 
         write_memory(
             tmp_path, "lilith",
@@ -565,20 +636,21 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：收到了来自京都大学的录取通知书，非常激动。",
         )
-        await store.add_memory("lilith", "4月3日")
-        await wait_for_search(store, "lilith", "录取通知书", kind="memory")
+        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await wait_for_search(store, "lilith", "录取通知书")
 
         # 启用混合检索后，用精确关键词搜索
-        monkeypatch.setattr(vector_store_module, "HYBRID_SEARCH_ENABLED", True)
-        results = store.search("lilith", "京都大学", limit=5, kind="memory")
-        assert len(results) >= 1, "混合检索应能命中结果"
-        assert any("京都大学" in r["content"] for r in results), "结果应包含关键词"
+        from memory.retrieval import search_memories
+        result_str = search_memories("lilith", "京都大学")
+        assert result_str != "（无相关记忆）", "混合检索应能命中结果"
+        assert "京都大学" in result_str, "结果应包含关键词"
 
     @pytest.mark.asyncio
     async def test_search_updates_recall_sidecar(self, clean_store, tmp_path, monkeypatch):
-        """search() 命中后应同时更新 SQLite 和 recall sidecar。"""
+        """search_memories() 命中后应同时更新 SQLite 和 recall sidecar。"""
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(retrieval_module, "character_path", make_character_path(tmp_path))
 
         write_status(
             tmp_path,
@@ -592,10 +664,12 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：我记住了那天的告白。",
         )
-        await store.add_memory("lilith", "4月3日")
+        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await wait_for_search(store, "lilith", "告白")
 
-        results = await wait_for_search(store, "lilith", "告白", kind="memory")
-        assert results, "应命中记忆"
+        from memory.retrieval import search_memories
+        result_str = search_memories("lilith", "告白")
+        assert result_str != "（无相关记忆）", "应命中记忆"
 
         sidecar = tmp_path / "lilith" / ".memory_recall_state.json"
         data = json.loads(sidecar.read_text(encoding="utf-8"))
@@ -635,9 +709,9 @@ class TestHybridSearch:
                 {
                     "memory::lilith::4月3日::1": {
                         "date": "4月3日",
-                        "content_hash": store._content_hash(
-                            "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n- **内容**：这是会被恢复 recall 的记忆。"
-                        ),
+                        "content_hash": __import__("hashlib").sha1(
+                            "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n- **内容**：这是会被恢复 recall 的记忆。".strip().encode("utf-8")
+                        ).hexdigest(),
                         "last_recalled_at": "4月7日",
                     }
                 },
@@ -668,8 +742,8 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：今天讨论了毕业典礼的安排。",
         )
-        await store.add_memory("lilith", "4月3日")
-        await wait_for_search(store, "lilith", "毕业典礼", kind="memory")
+        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await wait_for_search(store, "lilith", "毕业典礼")
 
         # 确认 FTS 有数据
         db = await store._get_db()

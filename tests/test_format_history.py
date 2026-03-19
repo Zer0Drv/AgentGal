@@ -4,7 +4,7 @@
 """
 
 from engine.agent_manager import format_conversation_history
-from memory.retrieval import build_search_query
+from memory.retrieval import _build_retrieval_scene_summary
 
 
 def test_format_conversation_history_filters_old_narrator():
@@ -111,9 +111,9 @@ def test_format_conversation_history_no_narrator():
     assert result.count("\n\n") == 2, "应该有 3 条消息（2 个双换行分隔符）"
 
 
-def test_build_search_query_uses_newlines():
-    """测试记忆检索 query 使用换行拼接，避免 FTS5 保留符号。"""
-    result = build_search_query("lilith", "玩家原话", "**地点**：场景摘要")
+def test_scene_summary_strips_markdown_and_uses_newlines():
+    """测试场景摘要解析使用换行拼接，避免 FTS5 保留符号。"""
+    result = _build_retrieval_scene_summary("**地点**：场景摘要")
 
-    assert result == "玩家原话\n地点：场景摘要"
+    assert result == "地点：场景摘要"
     assert "|" not in result
