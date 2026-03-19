@@ -554,7 +554,7 @@ class VectorStore:
             await db.commit()
 
             # ===== memory 层重建：根据 consolidation_state 之前的日期 =====
-            for agent in get_agent_names():
+            for agent in get_agent_names(include_narrator=False):
                 cutoff = self._read_consolidation_state(agent).get("last_consolidated_date")
                 if not cutoff or not parse_cn_date(cutoff):
                     routing_logger.info(

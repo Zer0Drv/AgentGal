@@ -63,50 +63,6 @@ def test_format_raw_dialogue_for_character_owner(monkeypatch):
     assert "## 顾以宁" not in formatted
 
 
-def test_format_raw_dialogue_for_narrator_owner(monkeypatch):
-    """narrator 整理时不应把角色对话改成第一人称，并保留多条旁白。"""
-
-    def mock_history(limit: int):
-        assert limit == 5
-        return [
-            {
-                "role": "narrator",
-                "content": "**时间**：10月6日 星期五 11:42\n**地点**：舒芙蕾店",
-                "visible_to": ["chenxiao", "narrator"],
-            },
-            {
-                "role": "player",
-                "content": "那你帮我点就好了",
-                "visible_to": ["chenxiao", "narrator"],
-            },
-            {
-                "role": "chenxiao",
-                "content": "## 陈晓\n……那我点了哦。",
-                "visible_to": ["chenxiao", "narrator"],
-            },
-            {
-                "role": "intern_a",
-                "content": "稍后我补会议纪要。",
-                "visible_to": ["narrator"],
-            },
-            {
-                "role": "narrator",
-                "content": "**时间**：10月6日 星期五 11:45\n**地点**：舒芙蕾店靠窗座位",
-                "visible_to": ["chenxiao", "narrator"],
-            },
-        ]
-
-    monkeypatch.setattr("memory.consolidation_inputs.load_conversation_history", mock_history)
-
-    formatted = format_raw_dialogue_for_owner("narrator", 5)
-
-    assert formatted.count("旁白：") == 2
-    assert "玩家：那你帮我点就好了" in formatted
-    assert "陈晓：……那我点了哦。" in formatted
-    assert "intern_a：稍后我补会议纪要。" in formatted
-    assert "我：" not in formatted
-
-
 def test_build_step1_user_payload_includes_owner_before_memory(monkeypatch):
     """step1 payload 应先注入记忆主体，再附带 memory 与 raw 对话。"""
 
@@ -133,18 +89,3 @@ def test_build_step1_user_payload_includes_owner_before_memory(monkeypatch):
     assert "- 我 = 陈晓" in payload
     assert "- 他 = 玩家" in payload
     assert "旁白：**时间**：10月6日 星期五 11:42" in payload
-
-
-def test_build_memory_owner_block_for_narrator(monkeypatch):
-    """narrator 的 owner block 应保持客观视角约束。"""
-
-    monkeypatch.setattr(
-        "memory.consolidation_inputs.read_agent_file",
-        lambda agent_name, filename: "<role>旁白</role>" if filename == "soul.md" else "",
-    )
-
-    block = build_memory_owner_block("narrator")
-
-    assert "当前整理对象：旁白（agent_name=narrator）" in block
-    assert "玩家 = 玩家" in block
-    assert "使用客观叙述整理场景记忆" in block

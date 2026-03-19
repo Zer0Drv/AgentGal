@@ -4,7 +4,7 @@
 
 ## 项目特点
 
-- **独立记忆**：每个角色维护自己的 `memory.md / status.md / user.md`
+- **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 只维护 `status.md` 和单一 raw 历史
 - **真实信息差**：消息通过 `visible_to` 控制可见性，不在场的角色不会自动知情
 - **旁白驱动路由**：`narrator` 决定谁参与当前回合，并推进场景与时间
 - **结构化更新**：Agent 通过 `<update_notes>` 输出记忆/状态更新，由系统统一写回
@@ -98,7 +98,7 @@ Agent 回复由两部分组成：
 
 系统会解析并写回：
 
-- `<memory>` → `memory.md`
+- 角色的 `<memory>` → `memory.md`
 - `<status>` → `status.md`
 - `<player>` → `user.md`
 - `<triggered>` / `<add_event>` → `status.md` 中的事件区块
@@ -110,14 +110,14 @@ Agent 回复由两部分组成：
 
 ### 4. 记忆整理
 
-`memory/consolidator.py` 会定期整理：
+`memory/consolidator.py` 会定期整理角色记忆：
 
-- 通过 `memory/consolidation_inputs.py` 组装 step1 输入，并把 raw 对话对齐到当前整理对象视角
+- 通过 `memory/consolidation_inputs.py` 组装 step1 输入，并把 raw 对话对齐到当前角色视角
 - `memory.md`
 - `growth.md`（仅角色）
 - `user.md`（仅角色）
 
-并同步更新向量索引。整理频率由 `config.toml` 中的 `[memory].consolidation_interval` 控制。
+`narrator` 不维护 `memory.md`，也不参与整理。整理频率由 `config.toml` 中的 `[memory].consolidation_interval` 控制。
 
 ### 5. 长期记忆检索
 
@@ -157,12 +157,12 @@ Agent 回复由两部分组成：
 ### 角色文件职责
 
 - `soul.md`：角色定义，只读
-- `memory.md`：长期记忆
+- `memory.md`：角色长期记忆（仅角色有）
 - `status.md`：当前状态 / 打算 / 待触发事件
-- `user.md`：角色对玩家的认知
-- `growth.md`：整理器维护的人格沉淀（仅角色有，`narrator` 无）
-- `.consolidation_state.json`：整理进度 sidecar
-- `.memory_recall_state.json`：记忆召回状态 sidecar
+- `user.md`：角色对玩家的认知（仅角色有）
+- `growth.md`：整理器维护的人格沉淀（仅角色有）
+- `.consolidation_state.json`：角色整理进度 sidecar
+- `.memory_recall_state.json`：角色记忆召回状态 sidecar
 
 ## 配置速览
 
@@ -218,7 +218,7 @@ Agent 回复由两部分组成：
 
 ## 存档机制
 
-- `/save` 会将当前角色数据、记忆、历史、整理 sidecar、recall sidecar 等打包为 zip 存入 `saves/`
+- `/save` 会将当前角色数据、角色记忆、narrator raw 历史、角色整理 sidecar、角色 recall sidecar 等打包为 zip 存入 `saves/`
 - `/load <序号>` 会恢复角色目录，并按需要重建向量索引
 - `/reset` 会清空当前运行数据，并从 `data/templates/{story_id}` 重建
 

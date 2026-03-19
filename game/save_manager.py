@@ -168,11 +168,6 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
         os.makedirs(raw_dir, exist_ok=True)
         print(f"  已创建: {raw_dir}", flush=True)
 
-        narrator_growth_path = character_path("narrator", "growth.md")
-        if os.path.exists(narrator_growth_path):
-            os.remove(narrator_growth_path)
-            print(f"  已删除: {narrator_growth_path}", flush=True)
-
         # 4. 写入 story_id 和 save_id 标记文件
         story_id_path = os.path.join(characters_dir, ".story_id")
         with open(story_id_path, "w", encoding="utf-8") as f:
@@ -303,11 +298,6 @@ async def import_save_archive(save_filename: str) -> bool:
                 zf.extract(member, characters_dir)
                 print(f"[读档] 已恢复: {member}", flush=True)
 
-        narrator_growth_path = character_path("narrator", "growth.md")
-        if os.path.exists(narrator_growth_path):
-            os.remove(narrator_growth_path)
-            print(f"[读档] 已删除旧 narrator growth: {narrator_growth_path}", flush=True)
-
         # 4. 若旧存档没有 .save_id，生成一个新的（下次 /save 会创建新文件）
         save_id_path = os.path.join(characters_dir, ".save_id")
         if not os.path.exists(save_id_path):
@@ -316,7 +306,7 @@ async def import_save_archive(save_filename: str) -> bool:
                 f.write(new_save_id)
             print(f"[读档] 旧存档无 save_id，已生成新 id: {new_save_id}", flush=True)
 
-        # 5. 重建向量库（从 jsonl 历史重新索引）
+        # 5. 重建向量库（从角色 memory.md 重新索引）
         print("[读档] 重建向量库...", flush=True)
         await vector_store.rebuild("narrator")
         print(f"[读档] 读档完成: {save_filename}", flush=True)
@@ -346,10 +336,10 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     files = []
     base = character_path(agent_name)
 
-    # 核心记忆文件（narrator 无 user.md / growth.md）
-    core_files = ["soul.md", "memory.md", "status.md"]
+    # 核心文件（narrator 只保留 soul/status/raw）
+    core_files = ["soul.md", "status.md"]
     if agent_name != "narrator":
-        core_files.extend(["user.md", "growth.md"])
+        core_files.extend(["memory.md", "user.md", "growth.md"])
 
     for filename in core_files:
         filepath = f"{base}/{filename}"
@@ -363,10 +353,11 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
             files.append(filepath)
 
     # 整理状态文件
-    for hidden_file in [".consolidation_state.json", ".memory_recall_state.json"]:
-        hidden_path = f"{base}/{hidden_file}"
-        if os.path.exists(hidden_path):
-            files.append(hidden_path)
+    if agent_name != "narrator":
+        for hidden_file in [".consolidation_state.json", ".memory_recall_state.json"]:
+            hidden_path = f"{base}/{hidden_file}"
+            if os.path.exists(hidden_path):
+                files.append(hidden_path)
 
     # narrator 的 raw/ 对话历史（只有 narrator 有）
     if agent_name == "narrator":

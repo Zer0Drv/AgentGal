@@ -53,22 +53,6 @@ def build_memory_owner_block(agent_name: str) -> str:
     """构造 step1 的记忆主体约束块。"""
     display_name = _get_owner_display_name(agent_name)
 
-    if agent_name == "narrator":
-        return (
-            "<memory_owner>\n"
-            f"当前整理对象：{display_name}（agent_name={agent_name}）\n"
-            f"最终输出：{display_name} 的场景记忆\n"
-            "称呼约定：\n"
-            "- 玩家 = 玩家\n"
-            "- 角色 = 实名\n"
-            "- 旁白 = narrator 的场景描述\n"
-            "写作要求：\n"
-            "- 使用客观叙述整理场景记忆\n"
-            "- 用 raw_dialogue 校正事实与顺序\n"
-            "- 始终保持 narrator 这一记忆主体\n"
-            "</memory_owner>"
-        )
-
     return (
         "<memory_owner>\n"
         f"当前整理对象：{display_name}（agent_name={agent_name}）\n"
@@ -113,8 +97,7 @@ def _format_message_for_owner(agent_name: str, msg: dict) -> str:
 def format_raw_dialogue_for_owner(agent_name: str, limit: int) -> str:
     """读取最近原始消息，过滤并转换成适合当前整理对象阅读的视角文本。"""
     raw_messages = load_conversation_history(limit=limit)
-    if agent_name != "narrator":
-        raw_messages = [m for m in raw_messages if agent_name in m.get("visible_to", [])]
+    raw_messages = [m for m in raw_messages if agent_name in m.get("visible_to", [])]
 
     formatted = [
         line

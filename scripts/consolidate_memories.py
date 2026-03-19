@@ -9,7 +9,7 @@
 
 Usage:
     uv run python scripts/consolidate_memories.py
-    uv run python scripts/consolidate_memories.py --agents lilith narrator
+    uv run python scripts/consolidate_memories.py --agents lilith mitsuki
 """
 
 from __future__ import annotations
@@ -87,6 +87,8 @@ def get_all_agents() -> list[str]:
     agents: list[str] = []
     for item in agents_dir.iterdir():
         if not item.is_dir():
+            continue
+        if item.name == "narrator":
             continue
         memory_file = item / "memory.md"
         if memory_file.exists():

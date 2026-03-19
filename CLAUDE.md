@@ -4,7 +4,7 @@
 
 ## 核心设计
 
-- **独立记忆**：每个角色维护自己的 `memory.md / status.md / user.md`（旁白无 `user.md`）
+- **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 只维护 `status.md` 与 raw 历史
 - **信息差**：消息按 `visible_to` 控制可见范围，未参与场景的角色不会看到该轮内容
 - **旁白先行**：`narrator` 先做路由与场景推进，再并行调用目标角色
 - **结构化更新**：Agent 不直接调用“记忆工具”写文件，而是输出 `<update_notes>`，由系统解析并写回
@@ -59,10 +59,10 @@ agentgal-memos/
 ### 角色文件
 
 - `soul.md`：手写角色定义，只读
-- `memory.md`：长期记忆，记录事件与情绪变化
+- `memory.md`：角色长期记忆，记录事件与情绪变化（仅角色有）
 - `status.md`：当前状态；角色包含“打算”，旁白包含“待触发事件”
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
-- `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有，`narrator` 无）
+- `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有）
 
 ### 历史文件
 
@@ -73,8 +73,8 @@ agentgal-memos/
 ### 其他运行时文件
 
 - `data/characters/last_choices.json`：最新一组玩家选项，续档时恢复展示，重置时清除
-- `data/characters/*/.consolidation_state.json`：记忆整理进度 sidecar
-- `data/characters/*/.memory_recall_state.json`：长期记忆 recall sidecar
+- `data/characters/*/.consolidation_state.json`：角色记忆整理进度 sidecar
+- `data/characters/*/.memory_recall_state.json`：角色长期记忆 recall sidecar
 
 ## 消息路由
 
@@ -104,7 +104,7 @@ agentgal-memos/
   ↓
 解析每个 Agent 的 <update_notes>
   ↓
-写回 memory.md / status.md / user.md
+写回角色 memory.md / status.md / user.md
   ↓
 广播回应并展示给玩家
   ↓
@@ -129,7 +129,7 @@ agentgal-memos/
 
 ### 写回规则
 
-- `<memory>` → 追加/更新 `memory.md`
+- 角色 `<memory>` → 追加/更新 `memory.md`
 - `<status>` → 覆盖更新 `status.md` 对应字段
 - `<player>` → 更新 `user.md` 对应字段
 - `<triggered>` → 从 `status.md` 中移除已执行条目
@@ -203,7 +203,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ## 记忆整理
 
-`memory/consolidator.py` 负责后台整理：
+`memory/consolidator.py` 负责角色后台整理：
 
 - 组装整理流程，并调用 `memory/consolidation_inputs.py` 准备 step1 输入
 - 归并 `memory.md`
@@ -211,6 +211,8 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 - 去重压缩 `growth.md`（仅角色）
 - 顺带精炼 `user.md`（仅角色）
 - 按进度同步向量索引
+
+`narrator` 不维护 `memory.md`，也不参与整理。
 
 默认按 `config.toml` 中的 `[memory].consolidation_interval` 控制触发频率。
 
@@ -238,10 +240,10 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 存档会包含：
 
-- 角色 markdown 文件
+- 角色 markdown 文件（`narrator` 不含 `memory.md`）
 - narrator 的 raw 历史
-- `.consolidation_state.json`
-- `.memory_recall_state.json`
+- 角色 `.consolidation_state.json`
+- 角色 `.memory_recall_state.json`
 - `last_choices.json`
 
 当前内置故事模板：

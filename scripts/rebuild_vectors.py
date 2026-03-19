@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""向量库重建脚本 - 重建所有角色的向量数据库
+"""向量库重建脚本 - 重建所有角色的长期记忆向量数据库
 
 Usage:
     uv run python scripts/rebuild_vectors.py
@@ -23,7 +23,7 @@ from memory.vector_store import vector_store
 
 
 def get_all_agents() -> list[str]:
-    """获取 data/characters 目录下所有角色名称"""
+    """获取 data/characters 目录下所有拥有 memory.md 的角色名称。"""
     agents_dir = project_root / "data" / "characters"
     if not agents_dir.exists():
         routing_logger.error(f"data/characters 目录不存在: {agents_dir}")

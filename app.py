@@ -321,7 +321,7 @@ async def on_message(message: cl.Message):
         f"[调试] 当前轮次: {message_counter}, CONSOLIDATION_INTERVAL: {CONSOLIDATION_INTERVAL}, 是否触发: {message_counter % CONSOLIDATION_INTERVAL == 0}"
     )
     if message_counter % CONSOLIDATION_INTERVAL == 0:
-        all_agents = get_agent_names()
+        all_agents = get_agent_names(include_narrator=False)
         print(f"[调试] 触发记忆整理，目标角色: {all_agents}")
         asyncio.create_task(memory_consolidator.consolidate_all(all_agents))
 

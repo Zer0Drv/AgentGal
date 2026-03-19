@@ -149,7 +149,6 @@ class _ConsolidationResult:
     errors: list[str] = field(default_factory=list)
 
 
-
 class MemoryConsolidator:
     def __init__(self):
         self._locks: dict[str, asyncio.Lock] = {}
@@ -372,6 +371,10 @@ class MemoryConsolidator:
     ) -> "_ConsolidationResult | None":
         """整理单个 agent 的记忆，返回结果摘要（供 consolidate_all 汇总日志）"""
         result = _ConsolidationResult(agent_name=agent_name)
+        if agent_name == "narrator":
+            result.skipped, result.skip_reason = True, "旁白不维护 memory.md，也不参与整理"
+            return result
+
         lock = self._get_lock(agent_name)
         if lock.locked():
             result.skipped, result.skip_reason = True, "已有整理任务在运行"
@@ -604,6 +607,10 @@ class MemoryConsolidator:
 
     async def consolidate_all(self, agent_names: list[str]):
         t0 = time.monotonic()
+        agent_names = [name for name in agent_names if name != "narrator"]
+        if not agent_names:
+            routing_logger.info("[整理器] 无需整理：当前列表中没有可整理角色")
+            return
 
         # 收集各 agent 的摘要信息用于开始日志
         summaries: list[str] = []
