@@ -585,7 +585,6 @@ def read_consolidation_data(agent_name: str) -> dict:
 
     常用字段：
     - ``last_consolidated_date``: 上次整合到的日期，如 ``"2月10日"``
-    - ``last_memory_size``: 上次整合时 memory.md 的大小（字节）
     """
     p = get_consolidation_state_path(agent_name)
     if not p.exists():

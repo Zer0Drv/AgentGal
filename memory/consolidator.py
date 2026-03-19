@@ -19,7 +19,6 @@ from log_config.memory import memory_logger as routing_logger
 from log_config.consolidation_calls import log_consolidation_call
 from engine.config import (
     CONSOLIDATION_MAX_TOKENS,
-    CONSOLIDATION_SIZE_THRESHOLD,
     CONSOLIDATION_TEMPERATURE,
     GROWTH_DEDUP_THRESHOLD,
     RAW_DIALOGUE_LIMIT,
@@ -118,19 +117,6 @@ def _resolve_dates(
         f"[整理器] {agent_name} 无进度记录，从头开始整理全部 {len(all_dates)} 个日期"
     )
     return all_dates, all_dates[-1] if all_dates else None
-
-
-def _should_skip(
-    raw_dialogue: str,
-    current_size: int,
-    last_size: int | None,
-) -> str | None:
-    """如果应跳过整理，返回跳过原因；否则返回 None。无 IO、无副作用。"""
-    if not raw_dialogue:
-        return f"最近 {RAW_DIALOGUE_LIMIT} 条消息中无参与"
-    if last_size is not None and (current_size - last_size) < CONSOLIDATION_SIZE_THRESHOLD:
-        return f"文件增长不足 {CONSOLIDATION_SIZE_THRESHOLD} 字 ({last_size}→{current_size})"
-    return None
 
 
 @dataclass
@@ -400,9 +386,9 @@ class MemoryConsolidator:
 
             # 3. guard 检查：近期无参与 / 文件增长不足
             raw_dialogue = format_raw_dialogue_for_owner(agent_name, RAW_DIALOGUE_LIMIT)
-            if reason := _should_skip(raw_dialogue, len(original_content), cdata.get("last_memory_size")):
-                result.skipped, result.skip_reason = True, reason
-                routing_logger.info(f"[整理器] {agent_name} 跳过: {reason}")
+            if not raw_dialogue:
+                result.skipped, result.skip_reason = True, f"最近 {RAW_DIALOGUE_LIMIT} 条消息中无参与"
+                routing_logger.info(f"[整理器] {agent_name} 跳过: {result.skip_reason}")
                 return result
 
             # 4. 备份 → LLM pipeline → 写回
@@ -430,8 +416,6 @@ class MemoryConsolidator:
                 if last_consolidated and next_date != last_consolidated:
                     routing_logger.info(f"[整理器] {agent_name} 进度推进: {last_consolidated} → {next_date}")
                 write_consolidation_data(agent_name, last_consolidated_date=next_date)
-            if not result.errors:
-                write_consolidation_data(agent_name, last_memory_size=result.final_len)
 
             # 6. Player profile 整理（与 memory 整理正交）
             user_before, user_after = await self._consolidate_player_profile(agent_name)
