@@ -6,15 +6,14 @@ normalize → split_by_date（合并同日期段落）→ 根据进度跳过已�
 """
 
 import asyncio
-import os
 import re
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from llm.llm_parser import OpenAICompatibleClient
+from llm.providers import get_consolidation_llm_config
 
 from log_config.memory import memory_logger as routing_logger
 from log_config.consolidation_calls import log_consolidation_call
@@ -44,27 +43,13 @@ from memory.file_ops import (
 )
 from memory.vector_store import vector_store
 
-# 从统一配置读取，兼容旧版 DEEPSEEK_API_KEY
-_API_KEY = os.getenv("CONSOLIDATION_LLM_API_KEY") or os.getenv("LLM_API_KEY")
-_API_URL = (
-    os.getenv("CONSOLIDATION_LLM_API_URL")
-    or os.getenv("LLM_API_URL")
-    or "https://api.deepseek.com/v1"
-)
-_MODEL_ID = (
-    os.getenv("CONSOLIDATION_LLM_MODEL_ID")
-    or os.getenv("LLM_MODEL_ID")
-    or "deepseek-chat"
-)
-_TEMPERATURE = CONSOLIDATION_TEMPERATURE
-_MAX_TOKENS: int | None = CONSOLIDATION_MAX_TOKENS
-
 _PROMPT_STEP1_PATH = Path(__file__).parent.parent / "prompts" / "memory_scene_merge.txt"
 _PROMPT_STEP2_PATH = Path(__file__).parent.parent / "prompts" / "growth_extract.txt"
 _PROMPT_STEP3_PATH = Path(__file__).parent.parent / "prompts" / "growth_dedupe.txt"
 _PLAYER_PROMPT_PATH = (
     Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 )
+
 
 def _load_raw_dialogue_for_agent(agent_name: str, limit: int) -> str:
     """读取最近 limit 条原始消息，按 visible_to 过滤后格式化为纯文本供 step1 参考。"""
@@ -114,6 +99,59 @@ def build_fields_definition(agent_name: str) -> str:
     return "\n".join(lines)
 
 
+def _resolve_dates(
+    agent_name: str,
+    all_dates: list[str],
+    last_consolidated: str | None,
+) -> tuple[list[str], str | None] | None:
+    """纯函数：根据进度指针确定本次需要整合的日期范围。
+
+    Returns:
+        (dates_to_consolidate, next_date) 或 None（无法解析进度）
+    """
+    if last_consolidated:
+        if last_consolidated not in all_dates:
+            routing_logger.warning(
+                f"[整理器] {agent_name} 进度日期 '{last_consolidated}' 在文件中不存在"
+            )
+            return all_dates, all_dates[-1] if all_dates else None
+
+        current_idx = all_dates.index(last_consolidated)
+        if current_idx == len(all_dates) - 1:
+            # 没有新日期，继续整理当前日期
+            routing_logger.info(
+                f"[整理器] {agent_name} 整理日期: {last_consolidated}"
+            )
+            return [last_consolidated], last_consolidated
+
+        # 有新日期出现：最后一次整理当前日期，同时整理所有新日期
+        new_dates = all_dates[current_idx + 1:]
+        routing_logger.info(
+            f"[整理器] {agent_name} 检测到新日期，最后一次整理 {last_consolidated}，"
+            f"同时整理新日期: {', '.join(new_dates)}"
+        )
+        return all_dates[current_idx:], all_dates[-1]
+
+    # 无进度记录，整理全部
+    routing_logger.info(
+        f"[整理器] {agent_name} 无进度记录，从头开始整理全部 {len(all_dates)} 个日期"
+    )
+    return all_dates, all_dates[-1] if all_dates else None
+
+
+def _should_skip(
+    raw_dialogue: str,
+    current_size: int,
+    last_size: int | None,
+) -> str | None:
+    """如果应跳过整理，返回跳过原因；否则返回 None。无 IO、无副作用。"""
+    if not raw_dialogue:
+        return f"最近 {RAW_DIALOGUE_LIMIT} 条消息中无参与"
+    if last_size is not None and (current_size - last_size) < CONSOLIDATION_SIZE_THRESHOLD:
+        return f"文件增长不足 {CONSOLIDATION_SIZE_THRESHOLD} 字 ({last_size}→{current_size})"
+    return None
+
+
 @dataclass
 class _ConsolidationResult:
     """单个 agent 整理结果，用于汇总日志"""
@@ -125,16 +163,15 @@ class _ConsolidationResult:
     final_len: int = 0
     user_md_before: int = 0
     user_md_after: int = 0
-    growth_log: str = ""
     skipped: bool = False
     skip_reason: str = ""
     errors: list[str] = field(default_factory=list)
 
+
+
 class MemoryConsolidator:
     def __init__(self):
         self._locks: dict[str, asyncio.Lock] = {}
-        # 统一走项目 OpenAI 兼容客户端，避免重复实现 HTTP 细节
-        self._client: Optional[OpenAICompatibleClient] = None
 
     @staticmethod
     def _supports_growth(agent_name: str) -> bool:
@@ -146,46 +183,6 @@ class MemoryConsolidator:
         if name not in self._locks:
             self._locks[name] = asyncio.Lock()
         return self._locks[name]
-
-    async def _call_llm(self, system: str, user: str) -> dict:
-        """调用 LLM 进行记忆整理（使用统一客户端满足 DRY/KISS）。
-
-        Args:
-            system: 系统 prompt（指令、角色定义等）
-            user: 用户消息（待处理的输入内容）
-
-        Returns:
-            dict: {"content": str, "usage": dict}
-        """
-        if not _API_KEY:
-            raise ValueError(
-                "LLM API key not configured. Please set LLM_API_KEY or CONSOLIDATION_LLM_API_KEY"
-            )
-
-        # 懒加载客户端；OpenAICompatibleClient 负责 /chat/completions 与重试逻辑
-        if self._client is None:
-            self._client = OpenAICompatibleClient(
-                api_url=_API_URL,
-                api_key=_API_KEY,
-                model=_MODEL_ID,
-                temperature=_TEMPERATURE,
-                max_tokens=_MAX_TOKENS,
-                timeout=120.0,
-                max_retries=3,
-            )
-            await self._client.initialize()
-
-        resp = await self._client.chat(
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            enable_thinking=False,  # 整理稳定性优先
-        )
-        return {
-            "content": (resp.get("content") or "").strip(),
-            "usage": resp.get("usage") or {},
-        }
 
     def _load_and_normalize(
         self, agent_name: str
@@ -209,44 +206,6 @@ class MemoryConsolidator:
             return None
 
         return path, original, sections
-
-    def _resolve_dates(
-        self, agent_name: str, all_dates: list[str], last_consolidated: str | None
-    ) -> tuple[list[str], str | None] | None:
-        """
-        根据进度确定需要整合的日期范围。
-
-        Returns:
-            (dates_to_consolidate, next_date) 或 None（无法解析进度）
-        """
-        if last_consolidated:
-            if last_consolidated not in all_dates:
-                routing_logger.warning(
-                    f"[整理器] {agent_name} 进度日期 '{last_consolidated}' 在文件中不存在"
-                )
-                return all_dates, all_dates[-1] if all_dates else None
-
-            current_idx = all_dates.index(last_consolidated)
-            if current_idx == len(all_dates) - 1:
-                # 没有新日期，继续整理当前日期
-                routing_logger.info(
-                    f"[整理器] {agent_name} 整理日期: {last_consolidated}"
-                )
-                return [last_consolidated], last_consolidated
-
-            # 有新日期出现：最后一次整理当前日期，同时整理所有新日期
-            new_dates = all_dates[current_idx + 1 :]
-            routing_logger.info(
-                f"[整理器] {agent_name} 检测到新日期，最后一次整理 {last_consolidated}，"
-                f"同时整理新日期: {', '.join(new_dates)}"
-            )
-            return all_dates[current_idx:], all_dates[-1]
-
-        # 无进度记录，整理全部
-        routing_logger.info(
-            f"[整理器] {agent_name} 无进度记录，从头开始整理全部 {len(all_dates)} 个日期"
-        )
-        return all_dates, all_dates[-1] if all_dates else None
 
     def _build_consolidation_prompt_step1(
         self, agent_name: str, sections: OrderedDict[str, str], dates: list[str],
@@ -333,118 +292,129 @@ class MemoryConsolidator:
             f"[整理器] {agent_name} 第三步合并完成，条目数: {len(entries)}"
         )
 
-    async def _apply_memory_result(
+    async def _run_memory_pipeline(
         self,
         agent_name: str,
         sections: OrderedDict[str, str],
         dates: list[str],
-        result: "_ConsolidationResult",
         raw_dialogue: str = "",
-    ):
-        """整理记忆；角色额外执行 growth 提炼与去重，narrator 只整理 memory。"""
-        # ===== 第一步：调用 LLM 进行归并整理 =====
-        system_step1, user_step1 = self._build_consolidation_prompt_step1(
-            agent_name, sections, dates, raw_dialogue=raw_dialogue
-        )
-        try:
-            llm_response_step1 = await self._call_llm(system_step1, user_step1)
-            step1_result = (llm_response_step1.get("content") or "").strip()
-            log_consolidation_call(
-                agent_name, "step1_merge",
-                f"[system]\n{system_step1}\n\n[user]\n{user_step1}",
-                step1_result,
-                llm_response_step1.get("usage"),
+    ) -> list[str]:
+        """执行三步 LLM 整理 pipeline，就地更新 sections，返回错误列表。"""
+        errors: list[str] = []
+
+        async with OpenAICompatibleClient(
+            **get_consolidation_llm_config(temperature=CONSOLIDATION_TEMPERATURE),
+            max_tokens=CONSOLIDATION_MAX_TOKENS, timeout=120.0, max_retries=3,
+        ) as client:
+            # ===== 第一步：调用 LLM 进行归并整理 =====
+            system_step1, user_step1 = self._build_consolidation_prompt_step1(
+                agent_name, sections, dates, raw_dialogue=raw_dialogue
             )
-        except Exception as e:
-            result.errors.append(f"第一步调用失败: {e}")
-            routing_logger.error(f"[整理器] {agent_name} 第一步调用失败: {e}")
-            return
-
-        if len(step1_result) < 50:
-            result.errors.append("第一步返回过短，跳过整理")
-            return
-
-        # 解析第一步结果并更新 sections
-        step1_sections = self._parse_step1_memories(step1_result)
-        if step1_sections:
-            for date in dates:
-                if date in step1_sections:
-                    missing = self._check_event_fields(step1_sections[date])
-                    if missing:
-                        routing_logger.warning(
-                            f"[整理器] {agent_name} {date} 整理结果缺少字段 {missing}，保留原始内容"
-                        )
-                        result.errors.append(f"{date} 字段不完整({','.join(missing)})，已跳过")
-                    else:
-                        sections[date] = step1_sections[date]
-                else:
-                    result.errors.append(f"{date} 未在第一步返回中找到")
-        else:
-            result.errors.append("未能解析第一步:归并整理")
-            return
-
-        if not self._supports_growth(agent_name):
-            routing_logger.info(f"[整理器] {agent_name} 跳过 growth.md 流程")
-            return
-
-        # ===== 第二步：调用 LLM 进行成长事件判断 =====
-        system_step2, user_step2 = self._build_consolidation_prompt_step2(agent_name, step1_result)
-        try:
-            llm_response_step2 = await self._call_llm(system_step2, user_step2)
-            step2_result = (llm_response_step2.get("content") or "").strip()
-            log_consolidation_call(
-                agent_name, "step2_growth",
-                f"[system]\n{system_step2}\n\n[user]\n{user_step2}",
-                step2_result,
-                llm_response_step2.get("usage"),
-            )
-        except Exception as e:
-            result.errors.append(f"第二步调用失败: {e}")
-            routing_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
-            return
-
-        # 解析第二步结果并更新 growth.md
-        step2_updates = self._parse_step2_growth(step2_result)
-        if step2_updates:
-            growth_log = self._apply_growth_updates(agent_name, step2_updates)
-            routing_logger.info(f"[整理器] {agent_name} growth.md: {growth_log}")
-        else:
-            routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
-
-        # ===== 第三步：超过阈值时再去重合并 growth.md =====
-        current_count = len(read_growth_entries(agent_name))
-        if current_count > GROWTH_DEDUP_THRESHOLD:
-            routing_logger.info(
-                f"[整理器] {agent_name} 触发第三步去重合并（当前 {current_count} 条，阈值 {GROWTH_DEDUP_THRESHOLD}）"
-            )
-            system_step3, user_step3 = self._build_consolidation_prompt_step3(agent_name)
             try:
-                llm_response_step3 = await self._call_llm(system_step3, user_step3)
-                step3_result = (llm_response_step3.get("content") or "").strip()
-                log_consolidation_call(
-                    agent_name, "step3_dedup",
-                    f"[system]\n{system_step3}\n\n[user]\n{user_step3}",
-                    step3_result,
-                    llm_response_step3.get("usage"),
+                resp1 = await client.chat(
+                    [{"role": "system", "content": system_step1}, {"role": "user", "content": user_step1}],
+                    enable_thinking=False,
                 )
-                self._apply_step3_growth(agent_name, step3_result)
+                step1_result = (resp1.get("content") or "").strip()
+                log_consolidation_call(
+                    agent_name, "step1_merge",
+                    f"[system]\n{system_step1}\n\n[user]\n{user_step1}",
+                    step1_result, resp1.get("usage"),
+                )
             except Exception as e:
-                result.errors.append(f"第三步调用失败: {e}")
-                routing_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
-        else:
-            routing_logger.info(
-                f"[整理器] {agent_name} 跳过第三步去重合并（当前 {current_count} 条，未超过阈值 {GROWTH_DEDUP_THRESHOLD}）"
-            )
+                errors.append(f"第一步调用失败: {e}")
+                routing_logger.error(f"[整理器] {agent_name} 第一步调用失败: {e}")
+                return errors
+
+            if len(step1_result) < 50:
+                errors.append("第一步返回过短，跳过整理")
+                return errors
+
+            # 解析第一步结果，仅对通过字段校验的日期就地更新 sections
+            step1_sections = self._parse_step1_memories(step1_result)
+            if step1_sections:
+                for date in dates:
+                    if date in step1_sections:
+                        missing = self._check_event_fields(step1_sections[date])
+                        if missing:
+                            routing_logger.warning(
+                                f"[整理器] {agent_name} {date} 整理结果缺少字段 {missing}，保留原始内容"
+                            )
+                            errors.append(f"{date} 字段不完整({','.join(missing)})，已跳过")
+                        else:
+                            sections[date] = step1_sections[date]
+                    else:
+                        errors.append(f"{date} 未在第一步返回中找到")
+            else:
+                errors.append("未能解析第一步:归并整理")
+                return errors
+
+            if not self._supports_growth(agent_name):
+                routing_logger.info(f"[整理器] {agent_name} 跳过 growth.md 流程")
+                return errors
+
+            # ===== 第二步：调用 LLM 进行成长事件判断 =====
+            system_step2, user_step2 = self._build_consolidation_prompt_step2(agent_name, step1_result)
+            try:
+                resp2 = await client.chat(
+                    [{"role": "system", "content": system_step2}, {"role": "user", "content": user_step2}],
+                    enable_thinking=False,
+                )
+                step2_result = (resp2.get("content") or "").strip()
+                log_consolidation_call(
+                    agent_name, "step2_growth",
+                    f"[system]\n{system_step2}\n\n[user]\n{user_step2}",
+                    step2_result, resp2.get("usage"),
+                )
+            except Exception as e:
+                errors.append(f"第二步调用失败: {e}")
+                routing_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
+                return errors
+
+            # 解析第二步结果并更新 growth.md
+            step2_updates = self._parse_step2_growth(step2_result)
+            if step2_updates:
+                routing_logger.info(f"[整理器] {agent_name} growth.md: {self._apply_growth_updates(agent_name, step2_updates)}")
+            else:
+                routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
+
+            # ===== 第三步：超过阈值时再去重合并 growth.md =====
+            current_count = len(read_growth_entries(agent_name))
+            if current_count > GROWTH_DEDUP_THRESHOLD:
+                routing_logger.info(
+                    f"[整理器] {agent_name} 触发第三步去重合并（当前 {current_count} 条，阈值 {GROWTH_DEDUP_THRESHOLD}）"
+                )
+                system_step3, user_step3 = self._build_consolidation_prompt_step3(agent_name)
+                try:
+                    resp3 = await client.chat(
+                        [{"role": "system", "content": system_step3}, {"role": "user", "content": user_step3}],
+                        enable_thinking=False,
+                    )
+                    step3_result = (resp3.get("content") or "").strip()
+                    log_consolidation_call(
+                        agent_name, "step3_dedup",
+                        f"[system]\n{system_step3}\n\n[user]\n{user_step3}",
+                        step3_result, resp3.get("usage"),
+                    )
+                    self._apply_step3_growth(agent_name, step3_result)
+                except Exception as e:
+                    errors.append(f"第三步调用失败: {e}")
+                    routing_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
+            else:
+                routing_logger.info(
+                    f"[整理器] {agent_name} 跳过第三步去重合并（当前 {current_count} 条，未超过阈值 {GROWTH_DEDUP_THRESHOLD}）"
+                )
+
+        return errors
 
     async def consolidate_agent(
         self, agent_name: str
-    ) -> Optional["_ConsolidationResult"]:
+    ) -> "_ConsolidationResult | None":
         """整理单个 agent 的记忆，返回结果摘要（供 consolidate_all 汇总日志）"""
         result = _ConsolidationResult(agent_name=agent_name)
         lock = self._get_lock(agent_name)
         if lock.locked():
-            result.skipped = True
-            result.skip_reason = "已有整理任务在运行"
+            result.skipped, result.skip_reason = True, "已有整理任务在运行"
             return result
 
         async with lock:
@@ -456,78 +426,53 @@ class MemoryConsolidator:
 
             # 2. 确定需要整合的日期
             all_dates = list(sections.keys())
-            last_consolidated = read_consolidation_data(agent_name).get("last_consolidated_date")
-            resolved = self._resolve_dates(agent_name, all_dates, last_consolidated)
+            cdata = read_consolidation_data(agent_name)
+            last_consolidated = cdata.get("last_consolidated_date")
+            resolved = _resolve_dates(agent_name, all_dates, last_consolidated)
             if resolved is None:
                 return None
-            dates_to_consolidate, next_date = resolved
-
-            if not dates_to_consolidate:
+            dates, next_date = resolved
+            if not dates:
                 return None
 
-            result.days = len(dates_to_consolidate)
-            result.date_range = f"{dates_to_consolidate[0]}~{dates_to_consolidate[-1]}"
-            result.original_len = len(original_content)
-
-            # 2.5. 检查近期是否有该角色参与；同时预加载 raw_dialogue 供后续 step1 使用
+            # 3. guard 检查：近期无参与 / 文件增长不足
             raw_dialogue = _load_raw_dialogue_for_agent(agent_name, RAW_DIALOGUE_LIMIT)
-            if not raw_dialogue:
-                result.skipped = True
-                result.skip_reason = f"最近 {RAW_DIALOGUE_LIMIT} 条消息中无参与"
-                routing_logger.info(f"[整理器] {agent_name} 跳过: {result.skip_reason}")
+            if reason := _should_skip(raw_dialogue, len(original_content), cdata.get("last_memory_size")):
+                result.skipped, result.skip_reason = True, reason
+                routing_logger.info(f"[整理器] {agent_name} 跳过: {reason}")
                 return result
 
-            # 2.6. 检查文件大小变化，仅当增长超过阈值时才触发整理
-            last_size = read_consolidation_data(agent_name).get("last_memory_size")
-            current_size = len(original_content)
-            if last_size is not None and (current_size - last_size) < CONSOLIDATION_SIZE_THRESHOLD:
-                result.skipped = True
-                result.skip_reason = f"文件增长不足 {CONSOLIDATION_SIZE_THRESHOLD} 字 ({last_size}→{current_size})"
-                routing_logger.info(f"[整理器] {agent_name} 跳过: {result.skip_reason}")
-                return result
-
-            # 3. 备份
+            # 4. 备份 → LLM pipeline → 写回
+            result.days, result.date_range = len(dates), f"{dates[0]}~{dates[-1]}"
+            result.original_len = len(original_content)
             backup_file(path, agent_name, "Memory")
 
-            # 4. 两步调用 LLM（第一步整理，第二步判断成长）
             try:
-                await self._apply_memory_result(
-                    agent_name, sections, dates_to_consolidate, result,
-                    raw_dialogue=raw_dialogue,
+                result.errors.extend(
+                    await self._run_memory_pipeline(agent_name, sections, dates, raw_dialogue)
                 )
             except Exception as e:
                 result.errors.append(f"整合失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
 
-            # 5. 写回文件（检测并发冲突）
-            result.final_len = safe_write_memory(
-                path, sections, agent_name, original_content
-            )
+            result.final_len = safe_write_memory(path, sections, agent_name, original_content)
             if result.final_len < 0:
                 result.errors.append("并发冲突：检测到中间变更，已放弃写回")
                 return result
 
-            # 6. 同步到向量存储（在进度变更前索引当前指针日期）
-            # 仅当 last_consolidated 有值时进行索引
+            # 5. 向量同步 + 进度更新
             if last_consolidated:
                 await vector_store.add_memory(agent_name, last_consolidated)
-
-            # 7. 更新进度（仅当成功时）
             if next_date and not result.errors:
                 if last_consolidated and next_date != last_consolidated:
-                    routing_logger.info(
-                        f"[整理器] {agent_name} 进度推进: {last_consolidated} → {next_date}"
-                    )
+                    routing_logger.info(f"[整理器] {agent_name} 进度推进: {last_consolidated} → {next_date}")
                 write_consolidation_data(agent_name, last_consolidated_date=next_date)
-
-            # 7.5. 保存当前文件大小（用于下次检测增长）
             if not result.errors:
                 write_consolidation_data(agent_name, last_memory_size=result.final_len)
 
-            # 8. 顺带整理 user.md
+            # 6. Player profile 整理（与 memory 整理正交）
             user_before, user_after = await self._consolidate_player_profile(agent_name)
-            result.user_md_before = user_before
-            result.user_md_after = user_after
+            result.user_md_before, result.user_md_after = user_before, user_after
 
             return result
 
@@ -656,8 +601,15 @@ class MemoryConsolidator:
 
             fields_def = build_fields_definition(agent_name)
             system = load_text(_PLAYER_PROMPT_PATH).format(fields_definition=fields_def)
-            llm_response = await self._call_llm(system, content)
-            consolidated = (llm_response.get("content") or "").strip()
+            async with OpenAICompatibleClient(
+                **get_consolidation_llm_config(temperature=CONSOLIDATION_TEMPERATURE),
+                timeout=120.0, max_retries=3,
+            ) as client:
+                resp = await client.chat(
+                    [{"role": "system", "content": system}, {"role": "user", "content": content}],
+                    enable_thinking=False,
+                )
+            consolidated = (resp.get("content") or "").strip()
 
             if len(consolidated.strip()) < 20:
                 routing_logger.warning(
@@ -672,7 +624,7 @@ class MemoryConsolidator:
                 re.MULTILINE,
             )
             if diary_match:
-                consolidated = consolidated[diary_match.end() :].lstrip("\n")
+                consolidated = consolidated[diary_match.end():].lstrip("\n")
 
             user_path.write_text(consolidated.strip() + "\n", encoding="utf-8")
             return len(content), len(consolidated)
@@ -742,10 +694,6 @@ class MemoryConsolidator:
 
         elapsed = time.monotonic() - t0
         routing_logger.info(f"[整理器] 全部完成 (耗时 {elapsed:.1f}s)")
-
-    async def close(self):
-        if self._client:
-            await self._client.close()
 
 
 memory_consolidator = MemoryConsolidator()

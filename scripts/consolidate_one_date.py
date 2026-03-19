@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
+from engine.config import CONSOLIDATION_MAX_TOKENS, CONSOLIDATION_TEMPERATURE
+from llm.llm_parser import OpenAICompatibleClient
+from llm.providers import get_consolidation_llm_config
 from memory.consolidator import MemoryConsolidator
 from memory.file_ops import normalize, split_by_date
 
@@ -28,14 +31,20 @@ async def main(agent: str, date: str) -> None:
     old_text = sections[date]
     print(f"原始: {len(old_text)} 字")
 
-    # 第一步：调用 LLM 进行归并整理
     consolidator = MemoryConsolidator()
     print("第一步：调用 LLM 进行归并整理...")
 
     system_step1, user_step1 = consolidator._build_consolidation_prompt_step1(
         agent, sections, [date]
     )
-    result_step1 = await consolidator._call_llm(system_step1, user_step1)
+    async with OpenAICompatibleClient(
+        **get_consolidation_llm_config(temperature=CONSOLIDATION_TEMPERATURE),
+        max_tokens=CONSOLIDATION_MAX_TOKENS, timeout=120.0,
+    ) as client:
+        result_step1 = await client.chat(
+            [{"role": "system", "content": system_step1}, {"role": "user", "content": user_step1}],
+            enable_thinking=False,
+        )
     step1_result = (result_step1.get("content") or "").strip()
 
     # 从第一步结果中提取整理后的内容
@@ -68,7 +77,6 @@ async def main(agent: str, date: str) -> None:
     else:
         print("已取消")
 
-    await consolidator.close()
 
 
 if __name__ == "__main__":

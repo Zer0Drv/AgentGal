@@ -107,10 +107,11 @@ def get_choices_llm_config() -> dict:
     return get_llm_config(provider=provider, model_id=model_id, api_key=api_key, api_url=api_url)
 
 
-def get_consolidation_llm_config() -> dict:
+def get_consolidation_llm_config(temperature: float | None = None) -> dict:
     """返回记忆整理器使用的 LLM 配置。
 
     优先使用 CONSOLIDATION_* 系列环境变量，未设置则复用主 LLM 配置。
+    temperature 不为 None 时覆盖默认值。
     """
     provider = os.getenv("CONSOLIDATION_LLM_PROVIDER")
     model_id = os.getenv("CONSOLIDATION_LLM_MODEL_ID")
@@ -119,15 +120,19 @@ def get_consolidation_llm_config() -> dict:
 
     # 没有任何独立配置，直接复用主 LLM
     if not any([provider, model_id, api_key, api_url]):
-        return get_llm_config()
+        config = get_llm_config()
+    else:
+        # 部分配置时，缺失项使用主 LLM 的默认值
+        provider = provider or os.getenv("LLM_PROVIDER", "deepseek")
+        model_id = model_id or os.getenv("LLM_MODEL_ID", "deepseek-chat")
+        api_key = api_key or os.getenv("LLM_API_KEY")
+        api_url = api_url or os.getenv("LLM_API_URL")
 
-    # 部分配置时，缺失项使用主 LLM 的默认值
-    provider = provider or os.getenv("LLM_PROVIDER", "deepseek")
-    model_id = model_id or os.getenv("LLM_MODEL_ID", "deepseek-chat")
-    api_key = api_key or os.getenv("LLM_API_KEY")
-    api_url = api_url or os.getenv("LLM_API_URL")
+        if not api_key:
+            raise ValueError("CONSOLIDATION_LLM_API_KEY or LLM_API_KEY must be set")
 
-    if not api_key:
-        raise ValueError("CONSOLIDATION_LLM_API_KEY or LLM_API_KEY must be set")
+        config = get_llm_config(provider=provider, model_id=model_id, api_key=api_key, api_url=api_url)
 
-    return get_llm_config(provider=provider, model_id=model_id, api_key=api_key, api_url=api_url)
+    if temperature is not None:
+        config["temperature"] = temperature
+    return config

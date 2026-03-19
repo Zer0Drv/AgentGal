@@ -336,13 +336,7 @@ async def on_choice_action(action: cl.Action):
         await msg.send()
         await on_message(msg)
 
-
-@cl.on_chat_end
-async def on_chat_end():
-    """聊天结束时的清理"""
-    await memory_consolidator.close()
-
-
+        
 if __name__ == "__main__":
     # 本地运行调试
     from datetime import datetime

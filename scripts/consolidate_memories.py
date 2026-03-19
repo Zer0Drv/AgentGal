@@ -154,18 +154,6 @@ async def _cancel_remaining_tasks(*, timeout_seconds: int) -> None:
         await asyncio.gather(*still_pending, return_exceptions=True)
 
 
-async def _close_resources() -> None:
-    """尽量关干净：即便 Ctrl-C 触发取消，也不要让 close 半途而废。"""
-
-    async def _close_one(label: str, coro) -> None:
-        try:
-            await asyncio.shield(coro)
-            print(f"[记忆整理] 已关闭: {label}", flush=True)
-        except Exception as e:
-            print(f"[记忆整理] 关闭 {label} 失败: {e}", flush=True)
-
-    await _close_one("memory_consolidator", memory_consolidator.close())
-
 
 async def main() -> int:
     args = _parse_args()
@@ -250,7 +238,6 @@ async def main() -> int:
 
         # 再做一次兜底：取消剩余任务，防止 asyncio.run 在退出阶段卡住
         await _cancel_remaining_tasks(timeout_seconds=args.shutdown_timeout)
-        await _close_resources()
 
 
 if __name__ == "__main__":
