@@ -12,6 +12,8 @@ consolidation_interval = 5
 temperature = 0.7
 # 整理 LLM 最大 token 数：0 表示不限制
 max_tokens = 0
+# memory.md 长度至少增长多少字才触发整理；设为 1 表示只跳过完全没增长的情况
+size_threshold = 1
 # growth.md 去重合并阈值：超过该条数才触发压缩，避免每轮重写
 growth_dedup_threshold = 8
 

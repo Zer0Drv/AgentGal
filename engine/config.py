@@ -21,6 +21,7 @@ with open(PROJECT_ROOT / "config.toml", "rb") as _f:
 CONSOLIDATION_INTERVAL: int = _cfg["memory"]["consolidation_interval"]
 CONSOLIDATION_TEMPERATURE: float = _cfg["consolidation"]["temperature"]
 CONSOLIDATION_MAX_TOKENS: int | None = _cfg["consolidation"]["max_tokens"] or None
+CONSOLIDATION_SIZE_THRESHOLD: int = _cfg["consolidation"].get("size_threshold", 1)
 GROWTH_DEDUP_THRESHOLD: int = _cfg["consolidation"]["growth_dedup_threshold"]
 
 # 向量检索

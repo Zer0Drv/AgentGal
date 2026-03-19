@@ -19,8 +19,8 @@ from llm.llm_parser import OpenAICompatibleClient
 from log_config.memory import memory_logger as routing_logger
 from log_config.consolidation_calls import log_consolidation_call
 from engine.config import (
-    CONSOLIDATION_INTERVAL,
     CONSOLIDATION_MAX_TOKENS,
+    CONSOLIDATION_SIZE_THRESHOLD,
     CONSOLIDATION_TEMPERATURE,
     GROWTH_DEDUP_THRESHOLD,
     character_path,
@@ -63,10 +63,6 @@ _PROMPT_STEP3_PATH = Path(__file__).parent.parent / "prompts" / "growth_dedupe.t
 _PLAYER_PROMPT_PATH = (
     Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 )
-
-# 文件大小变化阈值（字节）：当文件比上次长了 100 字以上，才触发整理
-_CONSOLIDATION_SIZE_THRESHOLD = 100
-
 
 # 字段描述映射（用于 user.md 整理）
 _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
@@ -444,9 +440,9 @@ class MemoryConsolidator:
             # 2.5. 检查文件大小变化，仅当增长超过阈值时才触发整理
             last_size = read_consolidation_data(agent_name).get("last_memory_size")
             current_size = len(original_content)
-            if last_size is not None and (current_size - last_size) < _CONSOLIDATION_SIZE_THRESHOLD:
+            if last_size is not None and (current_size - last_size) < CONSOLIDATION_SIZE_THRESHOLD:
                 result.skipped = True
-                result.skip_reason = f"文件增长不足 {_CONSOLIDATION_SIZE_THRESHOLD} 字 ({last_size}→{current_size})"
+                result.skip_reason = f"文件增长不足 {CONSOLIDATION_SIZE_THRESHOLD} 字 ({last_size}→{current_size})"
                 routing_logger.info(f"[整理器] {agent_name} 跳过: {result.skip_reason}")
                 return result
 
