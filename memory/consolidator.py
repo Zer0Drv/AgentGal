@@ -23,8 +23,10 @@ from engine.config import (
     CONSOLIDATION_SIZE_THRESHOLD,
     CONSOLIDATION_TEMPERATURE,
     GROWTH_DEDUP_THRESHOLD,
+    RAW_DIALOGUE_LIMIT,
     character_path,
 )
+from game.save_manager import load_conversation_history
 from memory.file_ops import (
     _get_fields_from_file,
     backup_file,
@@ -63,6 +65,28 @@ _PROMPT_STEP3_PATH = Path(__file__).parent.parent / "prompts" / "growth_dedupe.t
 _PLAYER_PROMPT_PATH = (
     Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 )
+
+def _load_raw_dialogue_for_agent(agent_name: str, limit: int) -> str:
+    """读取最近 limit 条原始消息，按 visible_to 过滤后格式化为纯文本供 step1 参考。"""
+    raw_messages = load_conversation_history(limit=limit)
+
+    if agent_name != "narrator":
+        visible = [m for m in raw_messages if agent_name in m.get("visible_to", [])]
+    else:
+        visible = raw_messages
+
+    if not visible:
+        return ""
+
+    lines = []
+    for msg in visible:
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "").strip()
+        if content:
+            lines.append(f"{role}: {content}")
+
+    return "\n\n".join(lines)
+
 
 # 字段描述映射（用于 user.md 整理）
 _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
@@ -225,7 +249,8 @@ class MemoryConsolidator:
         return all_dates, all_dates[-1] if all_dates else None
 
     def _build_consolidation_prompt_step1(
-        self, agent_name: str, sections: OrderedDict[str, str], dates: list[str]
+        self, agent_name: str, sections: OrderedDict[str, str], dates: list[str],
+        raw_dialogue: str = "",
     ) -> tuple[str, str]:
         """构建第一步 prompt：归并整理（角色带 growth，narrator 不带）。
 
@@ -236,7 +261,11 @@ class MemoryConsolidator:
         combined_text = "\n\n".join(parts)
 
         system = load_text(_PROMPT_STEP1_PATH)
-        user = f"<input>\n{combined_text}\n</input>"
+        user = f"<memory_entries>\n{combined_text}\n</memory_entries>"
+
+        if raw_dialogue:
+            user += f"\n\n<raw_dialogue>\n{raw_dialogue}\n</raw_dialogue>"
+
         return system, user
 
     def _build_consolidation_prompt_step2(
@@ -310,10 +339,13 @@ class MemoryConsolidator:
         sections: OrderedDict[str, str],
         dates: list[str],
         result: "_ConsolidationResult",
+        raw_dialogue: str = "",
     ):
         """整理记忆；角色额外执行 growth 提炼与去重，narrator 只整理 memory。"""
         # ===== 第一步：调用 LLM 进行归并整理 =====
-        system_step1, user_step1 = self._build_consolidation_prompt_step1(agent_name, sections, dates)
+        system_step1, user_step1 = self._build_consolidation_prompt_step1(
+            agent_name, sections, dates, raw_dialogue=raw_dialogue
+        )
         try:
             llm_response_step1 = await self._call_llm(system_step1, user_step1)
             step1_result = (llm_response_step1.get("content") or "").strip()
@@ -437,7 +469,15 @@ class MemoryConsolidator:
             result.date_range = f"{dates_to_consolidate[0]}~{dates_to_consolidate[-1]}"
             result.original_len = len(original_content)
 
-            # 2.5. 检查文件大小变化，仅当增长超过阈值时才触发整理
+            # 2.5. 检查近期是否有该角色参与；同时预加载 raw_dialogue 供后续 step1 使用
+            raw_dialogue = _load_raw_dialogue_for_agent(agent_name, RAW_DIALOGUE_LIMIT)
+            if not raw_dialogue:
+                result.skipped = True
+                result.skip_reason = f"最近 {RAW_DIALOGUE_LIMIT} 条消息中无参与"
+                routing_logger.info(f"[整理器] {agent_name} 跳过: {result.skip_reason}")
+                return result
+
+            # 2.6. 检查文件大小变化，仅当增长超过阈值时才触发整理
             last_size = read_consolidation_data(agent_name).get("last_memory_size")
             current_size = len(original_content)
             if last_size is not None and (current_size - last_size) < CONSOLIDATION_SIZE_THRESHOLD:
@@ -452,7 +492,8 @@ class MemoryConsolidator:
             # 4. 两步调用 LLM（第一步整理，第二步判断成长）
             try:
                 await self._apply_memory_result(
-                    agent_name, sections, dates_to_consolidate, result
+                    agent_name, sections, dates_to_consolidate, result,
+                    raw_dialogue=raw_dialogue,
                 )
             except Exception as e:
                 result.errors.append(f"整合失败: {e}")

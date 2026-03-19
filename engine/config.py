@@ -23,6 +23,7 @@ CONSOLIDATION_TEMPERATURE: float = _cfg["consolidation"]["temperature"]
 CONSOLIDATION_MAX_TOKENS: int | None = _cfg["consolidation"]["max_tokens"] or None
 CONSOLIDATION_SIZE_THRESHOLD: int = _cfg["consolidation"].get("size_threshold", 1)
 GROWTH_DEDUP_THRESHOLD: int = _cfg["consolidation"]["growth_dedup_threshold"]
+RAW_DIALOGUE_LIMIT: int = _cfg["consolidation"].get("raw_dialogue_limit", 20)
 
 # 向量检索
 VECTOR_SEARCH_LIMIT: int = _cfg["vector"]["search_limit"]
