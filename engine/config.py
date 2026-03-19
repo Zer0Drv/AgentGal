@@ -26,7 +26,8 @@ RAW_DIALOGUE_LIMIT: int = _cfg["consolidation"].get("raw_dialogue_limit", 20)
 
 # 向量检索
 VECTOR_SEARCH_LIMIT: int = _cfg["vector"]["search_limit"]
-RERANK_CANDIDATE_MULTIPLIER: int = _cfg["vector"]["rerank_candidate_multiplier"]
+VECTOR_CANDIDATE_LIMIT: int = _cfg["vector"]["vector_candidate_limit"]
+RERANK_TOP_N: int = _cfg["vector"]["rerank_top_n"]
 RELEVANCE_WEIGHT: float = _cfg["vector"]["relevance_weight"]
 RECENCY_WEIGHT: float = _cfg["vector"]["recency_weight"]
 RECENCY_HALF_LIFE_DAYS: float = _cfg["vector"]["recency_half_life_days"]

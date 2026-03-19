@@ -40,6 +40,7 @@ from memory.file_ops import (
     safe_write_memory,
     split_by_date,
     split_events_raw,
+    split_into_events,
     write_consolidation_data,
     write_growth_entries,
 )
@@ -411,7 +412,10 @@ class MemoryConsolidator:
 
             # 5. 向量同步 + 进度更新
             if last_consolidated:
-                await vector_store.add_memory(agent_name, last_consolidated)
+                await vector_store.add(
+                    agent_name, last_consolidated,
+                    split_into_events(sections.get(last_consolidated, "")),
+                )
             if next_date and not result.errors:
                 if last_consolidated and next_date != last_consolidated:
                     routing_logger.info(f"[整理器] {agent_name} 进度推进: {last_consolidated} → {next_date}")

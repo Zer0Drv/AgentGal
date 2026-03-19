@@ -20,8 +20,10 @@ raw_dialogue_limit = 20
 [vector]
 # 向量检索返回条数
 search_limit = 3
-# ANN 初筛候选数 = search_limit × 倍数
-rerank_candidate_multiplier = 3
+# 向量检索固定候选数
+vector_candidate_limit = 15
+# rerank 后保留条数，再做 recency
+rerank_top_n = 10
 # relevance 权重
 relevance_weight = 0.5
 # recency 权重
@@ -34,7 +36,7 @@ recency_recall_weight = 0.3
 # 混合检索：BM25 关键字检索 + 加权融合
 hybrid_search_enabled = true
 # BM25 初筛候选数
-bm25_candidate_limit = 20
+bm25_candidate_limit = 15
 # hybrid relevance 内部权重：vector vs BM25
 vector_relevance_weight = 0.75
 bm25_relevance_weight = 0.25
