@@ -243,7 +243,7 @@ async def run_agent(
     """运行指定角色的 Agent，返回清理后的响应文本。"""
     start = time.time()
 
-    memory_prefix = build_memory_prefix(agent_name, latest_user_input, scene_summary, history)
+    memory_prefix = build_memory_prefix(agent_name, latest_user_input, scene_summary)
     full_input = _build_runtime_context(
         agent_name,
         latest_user_input,

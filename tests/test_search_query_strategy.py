@@ -8,7 +8,6 @@ def test_character_search_queries_keep_raw_input_and_scene():
         "guyining",
         "（深吸了一口气，认真）顾总，我怕我误会，所以直接问了，我们现在是在约会吗？",
         "**时间**：10月3日 星期二 18:27\n**地点**：梧桐街咖啡馆内\n**在场**：\n- 玩家：顾以宁对面的座位\n- 顾以宁：靠窗座位\n窗外梧桐叶在晚风里轻晃。",
-        "这段历史现在不参与 query 改写",
     )
 
     assert vector_query == (

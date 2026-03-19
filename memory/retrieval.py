@@ -72,11 +72,8 @@ def build_search_queries(
     agent_name: str,
     latest_user_input: str,
     scene_summary: str = "",
-    history: str = "",
 ) -> tuple[str, str]:
     """为 vector / BM25 构造查询。"""
-    del history
-
     vector_query = build_search_query(agent_name, latest_user_input, scene_summary)
     bm25_query = vector_query
     return vector_query, bm25_query
@@ -99,13 +96,12 @@ def build_memory_prefix(
     agent_name: str,
     user_input: str,
     scene_summary: str = "",
-    history: str = "",
 ) -> str:
     """组装 `<relevant_memories>` 块。"""
     if agent_name == "narrator":
         return ""
 
-    vector_query, bm25_query = build_search_queries(agent_name, user_input, scene_summary, history)
+    vector_query, bm25_query = build_search_queries(agent_name, user_input, scene_summary)
     memory_logger.info(
         "[Retrieval] agent=%s\nuser_input=%s\nvector_query=%s\nbm25_query=%s",
         agent_name,
