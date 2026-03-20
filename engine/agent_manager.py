@@ -8,7 +8,8 @@ from pathlib import Path
 
 from engine.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
-    HISTORY_LIMIT,
+    HISTORY_HIGH,
+    HISTORY_LOW,
     PROJECT_ROOT,
     character_path,
     get_agent_names,
@@ -24,10 +25,12 @@ from memory.file_ops import (
     add_pending_event,
     _update_section_file,
     get_allowed_fields,
-    load_growth_for_prompt,
     mark_event_triggered,
     read_agent_file,
+    read_sidecar_json,
+    write_sidecar_json,
 )
+from game.save_manager import load_conversation_history
 from memory.retrieval import build_memory_prefix
 
 
@@ -48,15 +51,10 @@ def _get_display_name(agent_name: str, soul_content: str) -> str:
     return agent_name
 
 
-def _load_prompt_template(agent_name: str) -> str:
-    """加载 system prompt 模板文件。"""
-    filename = "narrator_prompt.txt" if agent_name == "narrator" else "character_prompt.txt"
-    return (PROJECT_ROOT / "prompts" / filename).read_text(encoding="utf-8")
-
-
 def _build_system_prompt(agent_name: str, soul_content: str) -> str:
     """构建 system prompt（仅包含稳定的身份与规则部分）。"""
-    prompt_template = _load_prompt_template(agent_name)
+    prompt_name = "narrator_prompt.txt" if agent_name == "narrator" else "character_prompt.txt"
+    prompt_template = (PROJECT_ROOT / "prompts" / prompt_name).read_text(encoding="utf-8")
     # 「打算」由 <triggered>/<add_event> 专用标签管理，不暴露给 <status> 覆盖
     _status_excluded = {"打算"} if agent_name != "narrator" else set()
     status_fields = "、".join(f for f in get_allowed_fields(agent_name, "status") if f not in _status_excluded)
@@ -81,45 +79,123 @@ def _build_system_prompt(agent_name: str, soul_content: str) -> str:
     )
 
 
-def _build_dialogue_input(history: str, latest_user_input: str) -> str:
-    """构建对话输入块：最近对话历史 + 玩家新消息。"""
-    parts = []
-    if history:
-        parts.append(f"最近对话历史:\n\n{history}")
-    parts.append(f"玩家新消息: {latest_user_input}")
-    return "\n\n---\n\n".join(parts)
+def _apply_high_low_watermark(
+    visible_indices: list[int],
+    start_raw_index: int,
+    high: int,
+    low: int,
+) -> tuple[int, list[int]]:
+    """应用真正的高低水位缓冲。
+
+    行为：
+    - 超过 high 时，一次性砍到 low
+    - 未再次超过 high 前，保持原窗口起点不动，只在尾部 append
+    """
+    if not visible_indices:
+        return 0, []
+
+    kept_indices = [idx for idx in visible_indices if idx >= start_raw_index]
+    if not kept_indices:
+        start_raw_index = visible_indices[0]
+        kept_indices = visible_indices
+
+    if len(kept_indices) > high:
+        kept_indices = kept_indices[-low:]
+        start_raw_index = kept_indices[0]
+
+    return start_raw_index, kept_indices
 
 
-def _build_runtime_context(
+def _get_windowed_visible_messages(agent_name: str, raw_messages: list[dict]) -> list[dict]:
+    """按 agent 维度应用真正的高低水位窗口，并持久化窗口起点。"""
+    if not raw_messages:
+        return []
+
+    if agent_name != "narrator":
+        visible_indices = [
+            idx for idx, msg in enumerate(raw_messages) if agent_name in msg.get("visible_to", [])
+        ]
+    else:
+        visible_indices = list(range(len(raw_messages)))
+
+    if not visible_indices:
+        return []
+
+    _hw = read_sidecar_json(agent_name, ".history_window_state.json")
+    start_raw_index = min(max(0, int(_hw.get("start_raw_index", 0))), len(raw_messages) - 1)
+    next_start_raw_index, kept_indices = _apply_high_low_watermark(
+        visible_indices,
+        start_raw_index,
+        HISTORY_HIGH,
+        HISTORY_LOW,
+    )
+    write_sidecar_json(agent_name, ".history_window_state.json", {"start_raw_index": max(0, next_start_raw_index)})
+    return [raw_messages[idx] for idx in kept_indices]
+
+
+def _build_history_transcript(
+    agent_name: str,
+    raw_messages: list[dict],
+) -> str:
+    """将 JSONL 原始消息转为单段历史文本。
+
+    规则：
+    - visible_to 过滤（narrator 看全部，角色只看自己可见的）
+    - 真正的高低水位窗口：超过 HISTORY_HIGH 时砍到 HISTORY_LOW，之后只追加直到再次超限
+    - 保留原始消息边界，不拆成多条 user/assistant message
+    - 统一格式化为带说话者前缀的单段文本，利于放进一条大 user message
+    """
+    visible = _get_windowed_visible_messages(agent_name, raw_messages)
+
+    if not visible:
+        return ""
+
+    lines: list[str] = []
+    for msg in visible:
+        role = msg.get("role", "unknown")
+        content = re.sub(r"\n+", "\n", msg.get("content", "").strip())
+        if not content:
+            continue
+        speaker = "玩家" if role == "player" else role
+        lines.append(f"{speaker}: {content}")
+
+    return "\n\n".join(lines)
+
+
+def _build_user_message(
     agent_name: str,
     latest_user_input: str,
     memory_prefix: str,
-    history: str = "",
+    raw_messages: list[dict] | None = None,
 ) -> str:
+    """构建单条大 user message，按稳定度排序上下文。
+
+    parts 顺序：
+    - `<growth>`
+    - 最近对话历史
+    - `<user_profile>`
+    - `<status>`
+    - `memory_prefix`（`<relevant_memories>`）
+    - 本轮玩家输入
+
+    narrator 不包含 `growth`、`user_profile` 和长期记忆召回块。
     """
-    构建 user message，按稳定度排序动态上下文。
+    parts: list[str] = []
+    user_content = ""
 
-    narrator 包含：status, 历史对话，玩家新消息
-    角色包含：growth, user_profile, status, 相关记忆，历史对话，玩家新消息
-    """
-    context_parts: list[str] = []
+    growth_content: str = (read_agent_file(agent_name, "growth.md")) if agent_name != "narrator" else ""
+    user_content: str = read_agent_file(agent_name, "user.md") if agent_name != "narrator" else ""
+    history: str = _build_history_transcript(agent_name, raw_messages or [])
+    status_content: str = read_agent_file(agent_name, "status.md")
 
-    if agent_name != "narrator":
-        growth_content = load_growth_for_prompt(agent_name)
-        if growth_content and growth_content.strip():
-            context_parts.append(f"<growth>\n{growth_content}\n</growth>")
+    parts.append(f"<growth>\n{growth_content.strip()}\n</growth>" if growth_content else "")
+    parts.append(f"最近对话历史:\n\n{history}" if history else "")
+    parts.append(f"<user_profile>\n{user_content.strip()}\n</user_profile>" if user_content else '')
+    parts.append(f"<status>\n{status_content}\n</status>" if status_content else '')  
+    parts.append(memory_prefix if memory_prefix else '')
+    parts.append(f"玩家新消息: {latest_user_input}")
 
-        user_content = read_agent_file(agent_name, "user.md")
-        context_parts.append(f"<user_profile>\n{user_content if user_content else '（尚无玩家认知）'}\n</user_profile>")
-
-    status_content = read_agent_file(agent_name, "status.md")
-    context_parts.append(f"<status>\n{status_content if status_content else '（尚无状态记录）'}\n</status>")
-
-    if memory_prefix:
-        context_parts.append(memory_prefix)
-
-    context_parts.append(_build_dialogue_input(history, latest_user_input))
-    return "\n\n---\n\n".join(context_parts)
+    return "\n\n---\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +224,10 @@ def _update_memory(agent_name: str, memory_content: str) -> str:
             entries.append("\n".join(current).strip())
         return entries
 
-    existing = Path(memory_path).read_text(encoding="utf-8") if os.path.exists(memory_path) else ""
+    try:
+        existing = Path(memory_path).read_text(encoding="utf-8")
+    except OSError:
+        existing = ""
     existing_set = set(_parse_entries(existing))
     unique = [e for e in _parse_entries(clean) if e and e not in existing_set]
 
@@ -238,17 +317,17 @@ async def run_agent(
     agent_name: str,
     latest_user_input: str,
     scene_summary: str = "",
-    history: str = "",
+    raw_messages: list[dict] | None = None,
 ) -> str:
     """运行指定角色的 Agent，返回清理后的响应文本。"""
     start = time.time()
 
     memory_prefix = build_memory_prefix(agent_name, latest_user_input, scene_summary)
-    full_input = _build_runtime_context(
+    full_input = _build_user_message(
         agent_name,
         latest_user_input,
         memory_prefix,
-        history=history,
+        raw_messages=raw_messages,
     )
 
     soul_content = read_agent_file(agent_name, "soul.md")
@@ -278,60 +357,6 @@ async def run_agent(
 
 
 # ---------------------------------------------------------------------------
-# 对话历史构建
-# ---------------------------------------------------------------------------
-
-
-
-def format_conversation_history(messages: list, agent_name: str, limit: int = 10) -> str:
-    """格式化对话历史为文本字符串
-
-    保留最新的一条 narrator 发言（设置场景）和角色与玩家的对话历史。
-
-    调用方应传入足够多的原始消息（建议 limit * 5），以保证过滤后仍有足够的有效消息。
-
-    Args:
-        messages: 原始消息列表（来自 load_conversation_history，应传入足够多的消息）
-        agent_name: 角色名，用于按 visible_to 过滤
-        limit: 返回最近多少条有效消息（不包括被过滤的旧narrator）
-
-    Returns:
-        格式化的对话历史文本，如果无消息返回空字符串
-    """
-    if not messages:
-        return ""
-
-    # 按 visible_to 过滤：narrator 看全部，其他角色只看自己可见的
-    if agent_name != "narrator":
-        recent = [msg for msg in messages if agent_name in msg.get("visible_to", [])]
-    else:
-        recent = messages
-
-    # 只保留最新一条 narrator 发言，腾出空间给更多角色/玩家互动
-    narrator_messages = [msg for msg in recent if msg.get("role") == "narrator"]
-    other_messages = [msg for msg in recent if msg.get("role") != "narrator"]
-    final_messages = other_messages
-    if narrator_messages:
-        final_messages.append(narrator_messages[-1])
-    final_messages.sort(key=lambda m: recent.index(m))
-
-    # 取最近 limit 条有效消息
-    final_messages = final_messages[-limit:]
-
-    # 格式化为文本
-    formatted = []
-    for msg in final_messages:
-        role = msg.get("role", "unknown")
-        content = re.sub(r"\n+", "\n", msg.get("content", "").strip())
-        if role == "player":
-            formatted.append(f"玩家: {content}")
-        else:
-            formatted.append(f"{role}: {content}")
-
-    return "\n\n".join(formatted)
-
-
-# ---------------------------------------------------------------------------
 # 多 Agent 编排
 # ---------------------------------------------------------------------------
 
@@ -355,26 +380,19 @@ async def generate_choices(scene_description: str, agent_responses: list[tuple[s
     Returns:
         选项文本列表（2-3 个），失败返回空列表
     """
-    from game.save_manager import load_conversation_history
-
-    parts = []
-
-    # 加载最近对话历史，复用现有格式化逻辑（narrator 视角跳过 visible_to 过滤，且只保留最新一条旁白）
-    raw_messages = load_conversation_history(limit=30)
-    history = format_conversation_history(raw_messages, "narrator", limit=6)
+    choices_prompt = (PROJECT_ROOT / "prompts" / "choices_prompt.txt").read_text(encoding="utf-8")
+    raw_messages = load_conversation_history(limit=None)
+    parts: list[str] = []
+    history = _build_history_transcript("narrator", raw_messages)
     if history:
         parts.append(f"【近期对话】\n{history}")
-
     if scene_description:
         parts.append(f"【场景】\n{scene_description}")
     for name, response in agent_responses:
         parts.append(f"【{name}】\n{response}")
-
-    user_content = "\n\n".join(parts)
-    choices_prompt = (PROJECT_ROOT / "prompts" / "choices_prompt.txt").read_text(encoding="utf-8")
     messages = [
         {"role": "system", "content": choices_prompt},
-        {"role": "user", "content": user_content},
+        {"role": "user", "content": "\n\n".join(parts)},
     ]
 
     config = get_choices_llm_config()
@@ -400,29 +418,15 @@ async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool
     Returns:
         (targets, scene_description, is_valid): 目标角色列表、场景描述、是否有效
     """
-    from game.save_manager import load_conversation_history
+    raw_messages = load_conversation_history(limit=None)
 
-    raw_messages = load_conversation_history(limit=HISTORY_LIMIT * 5)
-    narrator_history = format_conversation_history(raw_messages, "narrator", limit=HISTORY_LIMIT)
-
-    narrator_response = await run_agent(
-        "narrator",
-        user_input,
-        history=narrator_history,
-    )
-    narrator_content = clean_response(narrator_response)
-
+    narrator_content = await run_agent("narrator", user_input, raw_messages=raw_messages)
     targets, scene_description = parse_narrator_response(narrator_content)
 
     # TARGETS 缺失时重试一次
     if not targets:
         routing_logger.warning("narrator 响应缺少 TARGETS，重试中...")
-        narrator_response = await run_agent(
-            "narrator",
-            user_input,
-            history=narrator_history,
-        )
-        narrator_content = clean_response(narrator_response)
+        narrator_content = await run_agent("narrator", user_input, raw_messages=raw_messages)
         targets, scene_description = parse_narrator_response(narrator_content)
         if not targets:
             routing_logger.warning("narrator 重试后仍缺少 TARGETS")
@@ -453,15 +457,13 @@ async def run_agent_in_scene(
         处理后的响应文本，失败返回 None
     """
     from engine.message_router import message_router
-    from game.save_manager import load_conversation_history
 
-    raw_messages = load_conversation_history(limit=HISTORY_LIMIT * 5)
-    history = format_conversation_history(raw_messages, agent_name, limit=HISTORY_LIMIT)
+    raw_messages = load_conversation_history(limit=None)
     response = await run_agent(
         agent_name,
         user_input,
         scene_summary=scene_summary,
-        history=history,
+        raw_messages=raw_messages,
     )
     response = process_character_response(response)
     is_valid = is_valid_response(response, agent_name)

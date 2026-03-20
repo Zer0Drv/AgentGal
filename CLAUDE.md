@@ -73,6 +73,7 @@ agentgal-memos/
 ### 其他运行时文件
 
 - `data/characters/last_choices.json`：最新一组玩家选项，续档时恢复展示，重置时清除
+- `data/characters/*/.history_window_state.json`：各 Agent 的对话历史高低水位窗口 sidecar
 - `data/characters/*/.consolidation_state.json`：角色记忆整理进度 sidecar
 - `data/characters/*/.memory_recall_state.json`：角色长期记忆 recall sidecar
 
@@ -156,13 +157,13 @@ agentgal-memos/
 2. `prompts/character_prompt.txt`
 3. 允许写回的字段白名单
 
-`user` 消息按以下顺序拼装：
+`user` 消息按以下顺序拼装为**单条大消息**：
 
 1. `growth.md`
-2. `user.md`
-3. `status.md`
-4. `<relevant_memories>`（仅角色；来自 `memory.md` 的长期记忆召回）
-5. 最近可见对话历史
+2. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断）
+3. `user.md`
+4. `status.md`
+5. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
 6. 本轮玩家输入
 
 ### narrator Agent
@@ -172,10 +173,10 @@ agentgal-memos/
 1. `soul.md`
 2. `prompts/narrator_prompt.txt`
 
-`user` 消息包含：
+`user` 消息按以下顺序拼装为**单条大消息**：
 
-1. `status.md`
-2. 最近对话历史
+1. 最近对话历史
+2. `status.md`
 3. 本轮玩家输入
 
 `narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点和待触发事件管理剧情推进。
@@ -228,7 +229,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 ### `config.toml`
 
 - 放运行时策略参数，例如 Agent temperature、超时、整理频率、向量检索权重
-- 当前 `HISTORY_LIMIT` 固定为 20，写在 `engine/config.py`，不是环境变量
+- `[history]` 中的 `history_high` / `history_low` 控制多轮消息高低水位截断
 
 ## 存档与重置
 
@@ -243,6 +244,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 - 角色 markdown 文件（`narrator` 不含 `memory.md`）
 - narrator 的 raw 历史
+- 各 Agent `.history_window_state.json`
 - 角色 `.consolidation_state.json`
 - 角色 `.memory_recall_state.json`
 - `last_choices.json`

@@ -121,8 +121,28 @@ def test_load_conversation_history_limit(temp_raw_dir):
     assert result[2]["content"] == "消息 9"
 
 
+def test_load_conversation_history_all_when_limit_none(temp_raw_dir):
+    """limit=None 时返回全部历史"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    jsonl_file = temp_raw_dir / f"{today}.jsonl"
+
+    messages = [
+        {"role": "player", "content": f"消息 {i}", "visible_to": ["narrator"]}
+        for i in range(4)
+    ]
+
+    with open(jsonl_file, "w", encoding="utf-8") as f:
+        for msg in messages:
+            f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+
+    result = load_conversation_history(limit=None)
+
+    assert len(result) == 4
+    assert result[0]["content"] == "消息 0"
+    assert result[-1]["content"] == "消息 3"
+
+
 def test_load_conversation_history_empty(temp_raw_dir):
     """测试空目录返回空列表"""
     result = load_conversation_history(limit=10)
     assert result == [], "空目录应该返回空列表"
-

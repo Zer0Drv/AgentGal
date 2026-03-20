@@ -46,8 +46,9 @@ AGENT_TEMPERATURE: float = _cfg["agent"]["temperature"]
 MAX_ACTIONS: int = _cfg["text"]["max_actions"]
 MAX_ELLIPSIS: int = _cfg["text"]["max_ellipsis"]
 
-# 历史轮数（设计决策，不暴露给用户修改）
-HISTORY_LIMIT = 20
+# 多轮消息高低水位截断
+HISTORY_HIGH: int = _cfg["history"]["history_high"]
+HISTORY_LOW: int = _cfg["history"]["history_low"]
 
 
 def character_path(character_name: str, *subpaths: str) -> str:

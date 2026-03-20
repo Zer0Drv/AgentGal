@@ -161,6 +161,7 @@ Agent 回复由两部分组成：
 - `status.md`：当前状态 / 打算 / 待触发事件
 - `user.md`：角色对玩家的认知（仅角色有）
 - `growth.md`：整理器维护的人格沉淀（仅角色有）
+- `.history_window_state.json`：对话历史高低水位窗口 sidecar
 - `.consolidation_state.json`：角色整理进度 sidecar
 - `.memory_recall_state.json`：角色记忆召回状态 sidecar
 
@@ -214,11 +215,11 @@ Agent 回复由两部分组成：
 | `[agent].temperature` | 角色与 narrator 对话温度 |
 | `[text].max_actions` / `[text].max_ellipsis` | 回复后处理约束 |
 
-> 当前对话历史条数限制为代码常量 `HISTORY_LIMIT = 20`，不通过环境变量开放。
+> 对话历史使用高低水位截断，由 `config.toml` 中的 `[history].history_high` / `[history].history_low` 控制；超过 high 时会批量截到 low，并通过 `.history_window_state.json` 维持窗口。
 
 ## 存档机制
 
-- `/save` 会将当前角色数据、角色记忆、narrator raw 历史、角色整理 sidecar、角色 recall sidecar 等打包为 zip 存入 `saves/`
+- `/save` 会将当前角色数据、角色记忆、narrator raw 历史、历史窗口 sidecar、角色整理 sidecar、角色 recall sidecar 等打包为 zip 存入 `saves/`
 - `/load <序号>` 会恢复角色目录，并按需要重建向量索引
 - `/reset` 会清空当前运行数据，并从 `data/templates/{story_id}` 重建
 

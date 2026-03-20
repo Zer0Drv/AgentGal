@@ -52,13 +52,13 @@ def load_story_file(story_id: str, filename: str) -> str:
     return ""
 
 
-def load_conversation_history(limit: int = 10) -> list:
+def load_conversation_history(limit: int | None = 10) -> list:
     """从 narrator 的 raw/ 目录加载最近的对话历史（跨所有日期的 jsonl 文件）
 
     narrator 拥有上帝视角，包含所有消息。返回原始消息列表（未过滤、未格式化）。
 
     Args:
-        limit: 返回最近多少条消息
+        limit: 返回最近多少条消息；传 None 时返回全部
 
     Returns:
         最近 limit 条消息的列表，每条是 dict（包含 role, content, visible_to 等字段）
@@ -82,6 +82,9 @@ def load_conversation_history(limit: int = 10) -> list:
                         all_messages.append(json.loads(line.strip()))
                     except json.JSONDecodeError:
                         continue
+
+    if limit is None:
+        return all_messages
 
     # 返回最后 limit 条
     return all_messages[-limit:]
@@ -352,12 +355,15 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
         if os.path.exists(filepath):
             files.append(filepath)
 
-    # 整理状态文件
+    # sidecar 状态文件
+    hidden_files = [".history_window_state.json"]
     if agent_name != "narrator":
-        for hidden_file in [".consolidation_state.json", ".memory_recall_state.json"]:
-            hidden_path = f"{base}/{hidden_file}"
-            if os.path.exists(hidden_path):
-                files.append(hidden_path)
+        hidden_files.extend([".consolidation_state.json", ".memory_recall_state.json"])
+
+    for hidden_file in hidden_files:
+        hidden_path = f"{base}/{hidden_file}"
+        if os.path.exists(hidden_path):
+            files.append(hidden_path)
 
     # narrator 的 raw/ 对话历史（只有 narrator 有）
     if agent_name == "narrator":
