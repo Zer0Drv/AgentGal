@@ -78,7 +78,7 @@ def _tokenize_for_fts(text: str) -> str:
 _FTS_TOKEN_RE = re.compile(r"[A-Za-z0-9]+|[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
 
 
-def _build_fts_match_query(text: str, max_terms: int = 24) -> str:
+def _build_fts_match_query(text: str, max_terms: int = 32) -> str:
     """将自由文本转换为稳定的 FTS5 MATCH 查询。
 
     - 去掉 Markdown/FTS 特殊语法，避免 `*`、`:` 等触发解析错误
