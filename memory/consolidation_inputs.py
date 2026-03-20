@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import re
-from collections import OrderedDict
-
 from game.save_manager import load_conversation_history
 from memory.file_ops import read_agent_file
 
@@ -109,14 +107,10 @@ def format_raw_dialogue_for_owner(agent_name: str, limit: int) -> str:
 
 def build_step1_user_payload(
     agent_name: str,
-    sections: OrderedDict[str, str],
-    dates: list[str],
+    memory_entries: str,
     raw_dialogue: str = "",
 ) -> str:
     """构造 step1 的 user payload。"""
-    parts = [f"## {date}\n{sections[date]}" for date in dates]
-    memory_entries = "\n\n".join(parts)
-
     payload_parts = [
         build_memory_owner_block(agent_name),
         f"<memory_entries>\n{memory_entries}\n</memory_entries>",

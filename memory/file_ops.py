@@ -119,9 +119,12 @@ def normalize(content: str) -> str:
     lines = content.split("\n")
     out = []
     for line in lines:
-        m = re.match(r"^(?:#{1,2}\s*|\*\*)?(\d{1,2}月\d{1,2}日)(?:\*\*)?(?:\s.*)?$", line.strip())
+        stripped = line.strip()
+        m = re.match(r"^(?:#{1,2}\s*|\*\*)?(\d{1,2}月\d{1,2}日)(?:\*\*)?(?:\s.*)?$", stripped)
         if m:
             out.append(f"## {m.group(1)}")
+        elif re.match(r"^\*\*(时间|地点|在场|内容)\*\*：", stripped):
+            out.append(f"- {stripped}")
         else:
             out.append(line)
     # 4. 压缩连续空行
@@ -174,7 +177,7 @@ def split_events_raw(content: str) -> list[tuple[str | None, str]]:
     Returns:
         [(日期, 事件内容), ...]，日期从时间字段的日期部分提取
     """
-    time_pattern = re.compile(r"^-\s+\*\*时间\*\*：(\d{1,2}月\d{1,2}日)")
+    time_pattern = re.compile(r"^(?:-\s*)?\*\*时间\*\*：(\d{1,2}月\d{1,2}日)")
     events: list[tuple[str | None, str]] = []
     current_date: str | None = None
     current_lines: list[str] = []
@@ -645,7 +648,7 @@ def safe_write_memory(
     sections: dict[str, str],
     agent_name: str,
     original_content: str,
-) -> int:
+) -> tuple[int, int]:
     """安全写回 memory.md，带最小并发保护。
 
     策略：
@@ -660,7 +663,7 @@ def safe_write_memory(
         original_content: 原始内容（用于检测并发变更）
 
     Returns:
-        写入后的文件长度，-1 表示检测到并发冲突放弃写回
+        (写入后的文件长度, 已整理快照长度)，(-1, -1) 表示检测到并发冲突放弃写回
     """
     from log_config.routing import routing_logger
 
@@ -678,7 +681,7 @@ def safe_write_memory(
         routing_logger.warning(
             f"[整理器] {agent_name} 检测到并发中间变更，已放弃写回以避免覆盖（建议稍后重试）"
         )
-        return -1
+        return -1, -1
 
     parts = [f"# {agent_name} 的长期记忆", ""]
     for date, body in sections.items():
@@ -686,10 +689,11 @@ def safe_write_memory(
         parts.append(body.strip())
         parts.append("")
     result = "\n".join(parts).strip() + "\n"
+    consolidated_len = len(result)
 
     # 追加并发期间新写入的内容
     if appended:
         result += appended
 
     path.write_text(result, encoding="utf-8")
-    return len(result)
+    return len(result), consolidated_len

@@ -1,11 +1,11 @@
-"""后台记忆整理器 - 每个日期都过 LLM 整合 + 增量进度
+"""后台记忆整理器。
 
-normalize → split_by_date（合并同日期段落）→ 根据进度跳过已整合日期
-
-进度机制：记录上次整合到哪个日期，下次从该日期开始，避免过度压缩旧记忆。
+memory.md 会先按日期标准化，再按事件块展开。
+整理时只重写尾部窗口：从最后一个已整理块开始，到当前文件末尾结束。
 """
 
 import asyncio
+import hashlib
 import re
 import time
 from collections import OrderedDict
@@ -39,7 +39,6 @@ from memory.file_ops import (
     read_agent_file,
     safe_write_memory,
     split_by_date,
-    split_events_raw,
     split_into_events,
     write_consolidation_data,
     write_growth_entries,
@@ -80,46 +79,6 @@ def build_fields_definition(agent_name: str) -> str:
     return "\n".join(lines)
 
 
-def _resolve_dates(
-    agent_name: str,
-    all_dates: list[str],
-    last_consolidated: str | None,
-) -> tuple[list[str], str | None] | None:
-    """纯函数：根据进度指针确定本次需要整合的日期范围。
-
-    Returns:
-        (dates_to_consolidate, next_date) 或 None（无法解析进度）
-    """
-    if last_consolidated:
-        if last_consolidated not in all_dates:
-            routing_logger.warning(
-                f"[整理器] {agent_name} 进度日期 '{last_consolidated}' 在文件中不存在"
-            )
-            return all_dates, all_dates[-1] if all_dates else None
-
-        current_idx = all_dates.index(last_consolidated)
-        if current_idx == len(all_dates) - 1:
-            # 没有新日期，继续整理当前日期
-            routing_logger.info(
-                f"[整理器] {agent_name} 整理日期: {last_consolidated}"
-            )
-            return [last_consolidated], last_consolidated
-
-        # 有新日期出现：最后一次整理当前日期，同时整理所有新日期
-        new_dates = all_dates[current_idx + 1:]
-        routing_logger.info(
-            f"[整理器] {agent_name} 检测到新日期，最后一次整理 {last_consolidated}，"
-            f"同时整理新日期: {', '.join(new_dates)}"
-        )
-        return all_dates[current_idx:], all_dates[-1]
-
-    # 无进度记录，整理全部
-    routing_logger.info(
-        f"[整理器] {agent_name} 无进度记录，从头开始整理全部 {len(all_dates)} 个日期"
-    )
-    return all_dates, all_dates[-1] if all_dates else None
-
-
 @dataclass
 class _ConsolidationResult:
     """单个 agent 整理结果，用于汇总日志"""
@@ -134,6 +93,13 @@ class _ConsolidationResult:
     skipped: bool = False
     skip_reason: str = ""
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _MemoryBlock:
+    date: str
+    content: str
+    marker: str
 
 
 class MemoryConsolidator:
@@ -204,6 +170,144 @@ class MemoryConsolidator:
         user = f"<existing_growth>\n{growth_content}\n</existing_growth>"
         return system, user
 
+    def _build_block_marker(self, date: str, content: str) -> str:
+        """为单个记忆块生成稳定标识。"""
+        normalized_lines = [line.rstrip() for line in content.strip().splitlines()]
+        normalized = "\n".join(normalized_lines).strip()
+        return hashlib.sha1(f"{date}\n{normalized}".encode("utf-8")).hexdigest()
+
+    def _flatten_memory_sections(
+        self,
+        sections: OrderedDict[str, str],
+    ) -> list[_MemoryBlock]:
+        """把按日期组织的内容转换成有序记忆块列表。"""
+        blocks: list[_MemoryBlock] = []
+        for date, body in sections.items():
+            for content in split_into_events(body):
+                stripped = content.strip()
+                if not stripped:
+                    continue
+                blocks.append(
+                    _MemoryBlock(
+                        date=date,
+                        content=stripped,
+                        marker=self._build_block_marker(date, stripped),
+                    )
+                )
+        return blocks
+
+    def _group_memory_blocks(
+        self,
+        blocks: list[_MemoryBlock],
+    ) -> OrderedDict[str, str]:
+        """把记忆块列表重新组装成按日期组织的内容。"""
+        sections: OrderedDict[str, str] = OrderedDict()
+        for block in blocks:
+            sections[block.date] = (
+                sections.get(block.date, "")
+                + ("\n\n" if block.date in sections else "")
+                + block.content.strip()
+            )
+        return sections
+
+    def _render_memory_sections(self, sections: OrderedDict[str, str]) -> str:
+        """把按日期组织的内容渲染成 markdown。"""
+        parts: list[str] = []
+        for date, body in sections.items():
+            parts.append(f"## {date}")
+            parts.append(body.strip())
+            parts.append("")
+        return "\n".join(parts).strip()
+
+    def _resolve_anchor_marker(
+        self,
+        agent_name: str,
+        blocks: list[_MemoryBlock],
+        original_content: str,
+        cdata: dict,
+    ) -> tuple[str | None, bool]:
+        """根据状态恢复尾部窗口的起点块标识。"""
+        stored_marker = cdata.get("last_consolidated_block_id")
+        if stored_marker:
+            if any(block.marker == stored_marker for block in blocks):
+                return stored_marker, False
+            routing_logger.warning(
+                "[整理器] %s 已整理块标识失效，尝试用 last_memory_size 恢复边界",
+                agent_name,
+            )
+
+        last_memory_size = cdata.get("last_memory_size")
+        if isinstance(last_memory_size, int) and 0 < last_memory_size <= len(original_content):
+            snapshot_content = normalize(original_content[:last_memory_size])
+            snapshot_sections = split_by_date(snapshot_content)
+            snapshot_blocks = self._flatten_memory_sections(snapshot_sections)
+            if snapshot_blocks:
+                snapshot_marker = snapshot_blocks[-1].marker
+                if any(block.marker == snapshot_marker for block in blocks):
+                    if stored_marker and stored_marker != snapshot_marker:
+                        routing_logger.info(
+                            "[整理器] %s 用 last_memory_size 恢复已整理块边界: %s -> %s",
+                            agent_name,
+                            stored_marker[:10],
+                            snapshot_marker[:10],
+                        )
+                    return snapshot_marker, False
+                return None, True
+
+        if cdata:
+            routing_logger.warning("[整理器] %s 缺少可用的块边界状态", agent_name)
+            return None, True
+
+        return None, False
+
+    def _resolve_tail_start(
+        self,
+        agent_name: str,
+        blocks: list[_MemoryBlock],
+        original_content: str,
+        cdata: dict,
+    ) -> tuple[int | None, str | None]:
+        """根据当前状态计算尾部整理窗口起点。"""
+        if not blocks:
+            return None, "memory 中没有可整理的块"
+
+        anchor_marker, boundary_invalid = self._resolve_anchor_marker(
+            agent_name, blocks, original_content, cdata
+        )
+        stored_marker = cdata.get("last_consolidated_block_id")
+        migrated_anchor = bool(
+            stored_marker
+            and anchor_marker
+            and stored_marker != anchor_marker
+            and not any(block.marker == stored_marker for block in blocks)
+        )
+        last_memory_size = cdata.get("last_memory_size")
+        has_growth = not isinstance(last_memory_size, int) or len(original_content) > last_memory_size
+
+        start_index = 0
+        if anchor_marker:
+            start_index = next(
+                i for i, block in enumerate(blocks) if block.marker == anchor_marker
+            )
+            if (
+                not migrated_anchor
+                and isinstance(last_memory_size, int)
+                and len(original_content) <= last_memory_size
+            ):
+                return None, "memory 未增长，跳过本轮整理"
+            return start_index, None
+
+        if boundary_invalid:
+            if not has_growth:
+                return None, "memory 未增长，跳过本轮整理"
+            start_index = max(len(blocks) - 2, 0)
+            routing_logger.warning(
+                "[整理器] %s 已整理块边界失效，回退到最近 %s 块",
+                agent_name,
+                len(blocks) - start_index,
+            )
+        return start_index, None
+
     def _apply_step3_growth(self, agent_name: str, llm_result: str) -> None:
         """解析第三步输出并整体覆写 growth.md。"""
         match = re.search(r"<merged_growth>(.*?)</merged_growth>", llm_result, re.DOTALL)
@@ -242,12 +346,13 @@ class MemoryConsolidator:
     async def _run_memory_pipeline(
         self,
         agent_name: str,
-        sections: OrderedDict[str, str],
-        dates: list[str],
+        memory_entries: str,
+        window_dates: list[str],
         raw_dialogue: str = "",
-    ) -> list[str]:
-        """执行三步 LLM 整理 pipeline，就地更新 sections，返回错误列表。"""
+    ) -> tuple[list[_MemoryBlock] | None, list[str]]:
+        """执行三步 LLM 整理 pipeline，返回新的尾部块与错误列表。"""
         errors: list[str] = []
+        rewritten_blocks: list[_MemoryBlock] | None = None
 
         async with OpenAICompatibleClient(
             **get_consolidation_llm_config(temperature=CONSOLIDATION_TEMPERATURE),
@@ -255,7 +360,7 @@ class MemoryConsolidator:
         ) as client:
             # ===== 第一步：调用 LLM 进行归并整理 =====
             system_step1 = load_text(_PROMPT_STEP1_PATH)
-            user_step1 = build_step1_user_payload(agent_name, sections, dates, raw_dialogue)
+            user_step1 = build_step1_user_payload(agent_name, memory_entries, raw_dialogue)
             try:
                 resp1 = await client.chat(
                     [{"role": "system", "content": system_step1}, {"role": "user", "content": user_step1}],
@@ -270,37 +375,44 @@ class MemoryConsolidator:
             except Exception as e:
                 errors.append(f"第一步调用失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 第一步调用失败: {e}")
-                return errors
+                return None, errors
 
             if len(step1_result) < 50:
                 errors.append("第一步返回过短，跳过整理")
-                return errors
+                return None, errors
 
-            # 解析第一步结果，仅对通过字段校验的日期就地更新 sections
-            step1_sections = self._parse_step1_memories(step1_result)
-            if step1_sections:
-                for date in dates:
-                    if date in step1_sections:
-                        missing = self._check_event_fields(step1_sections[date])
-                        if missing:
-                            routing_logger.warning(
-                                f"[整理器] {agent_name} {date} 整理结果缺少字段 {missing}，保留原始内容"
-                            )
-                            errors.append(f"{date} 字段不完整({','.join(missing)})，已跳过")
-                        else:
-                            sections[date] = step1_sections[date]
-                    else:
-                        errors.append(f"{date} 未在第一步返回中找到")
-            else:
+            step1_sections = self._parse_step1_memories(step1_result, window_dates)
+            date_error = self._validate_step1_dates(window_dates, step1_sections)
+            if date_error:
+                errors.append(date_error)
+                return None, errors
+
+            rewritten_blocks = self._flatten_memory_sections(step1_sections)
+            if not rewritten_blocks:
                 errors.append("未能解析第一步:归并整理")
-                return errors
+                return None, errors
+
+            for block in rewritten_blocks:
+                missing = self._check_event_fields(block.content)
+                if missing:
+                    routing_logger.warning(
+                        "[整理器] %s 整理结果存在字段缺失 %s，保留原始窗口",
+                        agent_name,
+                        missing,
+                    )
+                    errors.append(f"{block.date} 字段不完整({','.join(missing)})，已跳过")
+                    return None, errors
+
+            step1_markdown = self._render_memory_sections(
+                self._group_memory_blocks(rewritten_blocks)
+            )
 
             if not self._supports_growth(agent_name):
                 routing_logger.info(f"[整理器] {agent_name} 跳过 growth.md 流程")
-                return errors
+                return rewritten_blocks, errors
 
             # ===== 第二步：调用 LLM 进行成长事件判断 =====
-            system_step2, user_step2 = self._build_consolidation_prompt_step2(agent_name, step1_result)
+            system_step2, user_step2 = self._build_consolidation_prompt_step2(agent_name, step1_markdown)
             try:
                 resp2 = await client.chat(
                     [{"role": "system", "content": system_step2}, {"role": "user", "content": user_step2}],
@@ -315,7 +427,7 @@ class MemoryConsolidator:
             except Exception as e:
                 errors.append(f"第二步调用失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
-                return errors
+                return rewritten_blocks, errors
 
             # 解析第二步结果并更新 growth.md
             step2_updates = self._parse_step2_growth(step2_result)
@@ -351,7 +463,7 @@ class MemoryConsolidator:
                     f"[整理器] {agent_name} 跳过第三步去重合并（当前 {current_count} 条，未超过阈值 {GROWTH_DEDUP_THRESHOLD}）"
                 )
 
-        return errors
+        return rewritten_blocks, errors
 
     async def consolidate_agent(
         self, agent_name: str
@@ -373,17 +485,22 @@ class MemoryConsolidator:
             if loaded is None:
                 return None
             path, original_content, sections = loaded
-
-            # 2. 确定需要整合的日期
-            all_dates = list(sections.keys())
+            blocks = self._flatten_memory_sections(sections)
             cdata = read_consolidation_data(agent_name)
-            last_consolidated = cdata.get("last_consolidated_date")
-            resolved = _resolve_dates(agent_name, all_dates, last_consolidated)
-            if resolved is None:
-                return None
-            dates, next_date = resolved
-            if not dates:
-                return None
+            start_index, window_skip_reason = self._resolve_tail_start(
+                agent_name, blocks, original_content, cdata
+            )
+            if start_index is None:
+                if window_skip_reason:
+                    result.skipped, result.skip_reason = True, window_skip_reason
+                    routing_logger.info(f"[整理器] {agent_name} 跳过: {window_skip_reason}")
+                return result if result.skipped else None
+
+            stable_blocks = blocks[:start_index]
+            window_blocks = blocks[start_index:]
+            window_dates = list(OrderedDict.fromkeys(block.date for block in window_blocks))
+            window_sections = self._group_memory_blocks(window_blocks)
+            window_memory_entries = self._render_memory_sections(window_sections)
 
             # 3. guard 检查：近期无参与 / 文件增长不足
             raw_dialogue = format_raw_dialogue_for_owner(agent_name, RAW_DIALOGUE_LIMIT)
@@ -393,33 +510,50 @@ class MemoryConsolidator:
                 return result
 
             # 4. 备份 → LLM pipeline → 写回
-            result.days, result.date_range = len(dates), f"{dates[0]}~{dates[-1]}"
+            result.days = len(window_dates)
+            result.date_range = f"{window_dates[0]}~{window_dates[-1]}"
             result.original_len = len(original_content)
             backup_file(path, agent_name, "Memory")
 
+            merged_blocks = stable_blocks + window_blocks
             try:
-                result.errors.extend(
-                    await self._run_memory_pipeline(agent_name, sections, dates, raw_dialogue)
+                rewritten_blocks, pipeline_errors = await self._run_memory_pipeline(
+                    agent_name,
+                    window_memory_entries,
+                    window_dates,
+                    raw_dialogue,
                 )
+                result.errors.extend(pipeline_errors)
+                if rewritten_blocks is not None:
+                    merged_blocks = stable_blocks + rewritten_blocks
             except Exception as e:
                 result.errors.append(f"整合失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
 
-            result.final_len = safe_write_memory(path, sections, agent_name, original_content)
+            merged_sections = self._group_memory_blocks(merged_blocks)
+            result.final_len, consolidated_len = safe_write_memory(
+                path, merged_sections, agent_name, original_content
+            )
             if result.final_len < 0:
                 result.errors.append("并发冲突：检测到中间变更，已放弃写回")
                 return result
 
             # 5. 向量同步 + 进度更新
-            if last_consolidated:
+            for date in window_dates:
                 await vector_store.add(
-                    agent_name, last_consolidated,
-                    split_into_events(sections.get(last_consolidated, "")),
+                    agent_name,
+                    date,
+                    split_into_events(merged_sections.get(date, "")),
                 )
-            if next_date and not result.errors:
-                if last_consolidated and next_date != last_consolidated:
-                    routing_logger.info(f"[整理器] {agent_name} 进度推进: {last_consolidated} → {next_date}")
-                write_consolidation_data(agent_name, last_consolidated_date=next_date)
+
+            if not result.errors:
+                last_block = merged_blocks[-1]
+                write_consolidation_data(
+                    agent_name,
+                    last_consolidated_date=last_block.date,
+                    last_consolidated_block_id=last_block.marker,
+                    last_memory_size=consolidated_len,
+                )
 
             # 6. Player profile 整理（与 memory 整理正交）
             user_before, user_after = await self._consolidate_player_profile(agent_name)
@@ -446,15 +580,46 @@ class MemoryConsolidator:
                 missing.append(field)
         return missing
 
-    def _parse_step1_memories(self, llm_result: str) -> OrderedDict[str, str]:
+    def _validate_step1_dates(
+        self,
+        expected_dates: list[str],
+        step1_sections: OrderedDict[str, str],
+    ) -> str | None:
+        """校验 step1 是否完整返回了当前窗口覆盖的日期。"""
+        actual_dates = list(step1_sections.keys())
+        if actual_dates == expected_dates:
+            return None
+
+        expected = ", ".join(expected_dates) or "（空）"
+        actual = ", ".join(actual_dates) or "（空）"
+        routing_logger.warning(
+            "[整理器] step1 返回日期与窗口不一致: expected=%s, actual=%s",
+            expected,
+            actual,
+        )
+        return f"第一步返回日期与窗口不一致(expected={expected}; actual={actual})"
+
+    def _parse_step1_memories(
+        self,
+        llm_result: str,
+        expected_dates: list[str] | None = None,
+    ) -> OrderedDict[str, str]:
         """
         从第一步 LLM 输出中提取归并整理后的日记内容。
 
-        格式（扁平列表，日期在时间字段中）：
+        兼容两类输出：
+        1. 扁平列表：日期写在时间字段中
         - **时间**：4月3日 上午
         - **地点**：教室
         - **在场**：莉莉丝、李小明
         - **内容**：事件描述...
+
+        2. 带日期标题：时间字段只写时段/时间
+        ## 4月3日
+        **时间**：上午
+        **地点**：教室
+        **在场**：莉莉丝、李小明
+        **内容**：事件描述...
 
         Returns:
             OrderedDict[日期, 该日期的内容]
@@ -463,11 +628,68 @@ class MemoryConsolidator:
         cleaned = re.sub(r"<analysis>.*?</analysis>", "", llm_result, flags=re.DOTALL)
         cleaned = cleaned.strip()
 
+        heading_pattern = re.compile(r"^\s*##\s*(\d{1,2}月\d{1,2}日)(?:\s.*)?$")
+        time_pattern = re.compile(r"^\s*(?:-\s*)?\*\*时间\*\*：\s*(.*)$")
+        field_pattern = re.compile(r"^\s*(?:-\s*)?\*\*(地点|在场|内容)\*\*：\s*(.*)$")
+        explicit_date_pattern = re.compile(r"(\d{1,2}月\d{1,2}日)")
+        fallback_date = expected_dates[0] if expected_dates and len(expected_dates) == 1 else None
+
         sections: OrderedDict[str, str] = OrderedDict()
-        for date, event_text in split_events_raw(cleaned):
-            if not date:
+        current_heading_date: str | None = None
+        current_date: str | None = None
+        current_lines: list[str] = []
+
+        def flush_event() -> None:
+            nonlocal current_date, current_lines
+            if not current_date or not current_lines:
+                current_date = None
+                current_lines = []
+                return
+            event_text = "\n".join(current_lines).strip()
+            if event_text:
+                sections[current_date] = (
+                    sections.get(current_date, "")
+                    + ("\n\n" if current_date in sections else "")
+                    + event_text
+                )
+            current_date = None
+            current_lines = []
+
+        for line in cleaned.splitlines():
+            heading_match = heading_pattern.match(line)
+            if heading_match:
+                current_heading_date = heading_match.group(1)
                 continue
-            sections[date] = (sections.get(date, "") + ("\n\n" if date in sections else "") + event_text)
+
+            time_match = time_pattern.match(line)
+            if time_match:
+                flush_event()
+                time_value = time_match.group(1).strip()
+                explicit_date_match = explicit_date_pattern.search(time_value)
+                current_date = (
+                    explicit_date_match.group(1)
+                    if explicit_date_match
+                    else current_heading_date or fallback_date
+                )
+                if explicit_date_match:
+                    normalized_time = f"- **时间**：{time_value}"
+                elif current_date:
+                    normalized_time = f"- **时间**：{current_date} {time_value}".rstrip()
+                else:
+                    normalized_time = f"- **时间**：{time_value}"
+                current_lines = [normalized_time]
+                continue
+
+            if current_lines:
+                field_match = field_pattern.match(line)
+                if field_match:
+                    field_name = field_match.group(1)
+                    field_value = field_match.group(2).strip()
+                    current_lines.append(f"- **{field_name}**：{field_value}".rstrip())
+                else:
+                    current_lines.append(line)
+
+        flush_event()
         return sections
 
     def _parse_step2_growth(self, llm_result: str) -> list[dict]:

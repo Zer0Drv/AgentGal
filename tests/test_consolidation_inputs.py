@@ -2,7 +2,6 @@
 
 import os
 import sys
-from collections import OrderedDict
 from pathlib import Path
 
 # 设置项目根目录
@@ -71,15 +70,9 @@ def test_build_step1_user_payload_includes_owner_before_memory(monkeypatch):
         lambda agent_name, filename: "<role>陈晓</role>" if filename == "soul.md" else "",
     )
 
-    sections = OrderedDict(
-        {
-            "10月6日": "- **时间**：10月6日 上午\n- **地点**：公司\n- **在场**：我、他\n- **内容**：测试内容。"
-        }
-    )
     payload = build_step1_user_payload(
         "chenxiao",
-        sections,
-        ["10月6日"],
+        "## 10月6日\n- **时间**：10月6日 上午\n- **地点**：公司\n- **在场**：我、他\n- **内容**：测试内容。",
         raw_dialogue="旁白：**时间**：10月6日 星期五 11:42",
     )
 
