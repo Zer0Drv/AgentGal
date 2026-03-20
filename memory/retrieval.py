@@ -385,18 +385,3 @@ def search_memories(agent_name: str, query: str) -> str:
 
     memories = [r["content"].strip() for r in ranked if r["content"].strip()]
     return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
-
-
-def build_memory_prefix(
-    agent_name: str,
-    user_input: str,
-    scene_summary: str = "",
-) -> str:
-    """组装 `<relevant_memories>` 块。"""
-    if agent_name == "narrator":
-        return ""
-
-    scene = _build_retrieval_scene_summary(scene_summary)
-    query = "\n".join(part.strip() for part in [user_input, scene] if part and part.strip())
-    relevant = search_memories(agent_name, query)
-    return f"<relevant_memories>\n{relevant}\n</relevant_memories>"

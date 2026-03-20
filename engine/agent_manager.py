@@ -31,7 +31,7 @@ from memory.file_ops import (
     write_sidecar_json,
 )
 from game.save_manager import load_conversation_history
-from memory.retrieval import build_memory_prefix
+from memory.retrieval import search_memories
 
 
 # ---------------------------------------------------------------------------
@@ -340,7 +340,8 @@ async def run_agent(
     """运行指定角色的 Agent，返回清理后的响应文本。"""
     start = time.time()
 
-    memory_prefix = build_memory_prefix(agent_name, latest_user_input, scene_summary)
+    relevant = search_memories(agent_name, latest_user_input)
+    memory_prefix = f"<relevant_memories>\n{relevant}\n</relevant_memories>" if relevant else ""
     full_input = _build_user_message(
         agent_name,
         latest_user_input,
