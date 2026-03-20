@@ -31,17 +31,16 @@ from memory.consolidation_inputs import (
 from memory.file_ops import (
     _get_fields_from_file,
     backup_file,
-    load_growth_for_prompt,
     load_text,
     normalize,
-    read_consolidation_data,
     read_growth_entries,
     read_agent_file,
+    read_sidecar_json,
     safe_write_memory,
     split_by_date,
     split_into_events,
-    write_consolidation_data,
     write_growth_entries,
+    write_sidecar_json,
 )
 from memory.vector_store import vector_store
 
@@ -149,7 +148,7 @@ class MemoryConsolidator:
             (system, user): system 为纯指令，user 为结构化数据 + 第一步整理结果
         """
         soul_content = read_agent_file(agent_name, "soul.md")
-        growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
+        growth_content = read_agent_file(agent_name, "growth.md") or "（尚无）"
 
         system = load_text(_PROMPT_STEP2_PATH)
         user = (
@@ -165,7 +164,7 @@ class MemoryConsolidator:
         Returns:
             (system, user): system 为纯指令，user 为待合并的 growth 数据
         """
-        growth_content = load_growth_for_prompt(agent_name, default="（尚无）")
+        growth_content = read_agent_file(agent_name, "growth.md") or "（尚无）"
         system = load_text(_PROMPT_STEP3_PATH)
         user = f"<existing_growth>\n{growth_content}\n</existing_growth>"
         return system, user
@@ -486,7 +485,7 @@ class MemoryConsolidator:
                 return None
             path, original_content, sections = loaded
             blocks = self._flatten_memory_sections(sections)
-            cdata = read_consolidation_data(agent_name)
+            cdata = read_sidecar_json(agent_name, ".consolidation_state.json")
             start_index, window_skip_reason = self._resolve_tail_start(
                 agent_name, blocks, original_content, cdata
             )
@@ -548,12 +547,12 @@ class MemoryConsolidator:
 
             if not result.errors:
                 last_block = merged_blocks[-1]
-                write_consolidation_data(
-                    agent_name,
+                cdata.update(
                     last_consolidated_date=last_block.date,
                     last_consolidated_block_id=last_block.marker,
                     last_memory_size=consolidated_len,
                 )
+                write_sidecar_json(agent_name, ".consolidation_state.json", cdata)
 
             # 6. Player profile 整理（与 memory 整理正交）
             user_before, user_after = await self._consolidate_player_profile(agent_name)

@@ -9,9 +9,8 @@ import os
 import re
 import shutil
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from engine.config import character_path
 
@@ -493,24 +492,6 @@ def write_growth_entries(agent_name: str, entries: dict[str, str]) -> None:
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def load_growth_for_prompt(agent_name: str, default: str = "（尚无人格沉淀）") -> str:
-    """加载 growth.md 用于 prompt 注入。
-
-    返回完整内容（去掉所有空行），如果只有标题或为空则返回默认值。
-    """
-    path = Path(character_path(agent_name, "growth.md"))
-    if not path.exists():
-        return default
-
-    content = path.read_text(encoding="utf-8").strip()
-    if not content or content == _GROWTH_TITLE:
-        return default
-
-    # 去掉所有空行
-    lines = [line for line in content.split("\n") if line.strip()]
-    return "\n".join(lines)
-
-
 # ===== 通用文件读取 =====
 
 
@@ -578,66 +559,23 @@ def backup_file(src: Path, agent_name: str, prefix: str, max_backups: int = 10) 
 # ===== JSON 状态文件 =====
 
 
-def get_consolidation_state_path(agent_name: str) -> Path:
-    """获取整合进度文件路径。"""
-    return Path(character_path(agent_name, ".consolidation_state.json"))
-
-
-def read_consolidation_data(agent_name: str) -> dict:
-    """读取整合状态 JSON，解析失败返回空字典。
-
-    常用字段：
-    - ``last_consolidated_date``: 上次整合到的日期，如 ``"2月10日"``
-    """
-    p = get_consolidation_state_path(agent_name)
-    if not p.exists():
-        return {}
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
-
-
-def write_consolidation_data(agent_name: str, **fields) -> None:
-    """更新整合状态 JSON 中的指定字段（read-modify-write）。"""
-    p = get_consolidation_state_path(agent_name)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    data = read_consolidation_data(agent_name)
-    data.update(fields)
-    p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-
-
-def get_memory_recall_state_path(agent_name: str) -> Path:
-    """获取记忆 recall 状态文件路径。"""
-    return Path(character_path(agent_name, ".memory_recall_state.json"))
-
-
-def read_memory_recall_state(agent_name: str) -> dict[str, dict[str, Any]]:
-    """读取 recall 状态 JSON，解析失败返回空字典。"""
-    path = get_memory_recall_state_path(agent_name)
+def read_sidecar_json(agent_name: str, filename: str) -> dict:
+    """读取角色目录下的 JSON sidecar 文件，解析失败返回空字典。"""
+    path = Path(character_path(agent_name, filename))
     if not path.exists():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
-    if not isinstance(data, dict):
-        return {}
-    return {
-        str(key): value
-        for key, value in data.items()
-        if isinstance(value, dict)
-    }
 
 
-def write_memory_recall_state(agent_name: str, state: dict[str, dict[str, Any]]) -> None:
-    """写回 recall 状态 JSON。"""
-    path = get_memory_recall_state_path(agent_name)
+def write_sidecar_json(agent_name: str, filename: str, data: dict) -> None:
+    """将 data 写入角色目录下的 JSON sidecar 文件。"""
+    path = Path(character_path(agent_name, filename))
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
 
 
 # ===== 安全写回（带并发保护） =====
