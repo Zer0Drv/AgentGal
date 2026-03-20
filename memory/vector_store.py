@@ -577,7 +577,7 @@ class VectorStore:
         query_vec: list[float],
         limit: int,
     ) -> list[tuple]:
-        """向量近邻检索，返回 (id, content, distance, game_date, last_recalled_at) 列表。"""
+        """向量近邻检索，返回 (id, content, distance, game_date, last_recalled_at, importance) 列表。"""
         candidate_limit = max(limit * 10, 50)
         sql = """
         WITH scope AS (
@@ -588,7 +588,7 @@ class VectorStore:
           WHERE embedding MATCH ?
           LIMIT ?
         )
-        SELECT c.id, c.content, v.distance, c.game_date, c.last_recalled_at
+        SELECT c.id, c.content, v.distance, c.game_date, c.last_recalled_at, c.importance
         FROM vec_results v
         JOIN scope s ON s.id = v.rowid
         JOIN memory_chunks c ON c.id = v.rowid
@@ -607,7 +607,7 @@ class VectorStore:
         query_text: str,
         limit: int,
     ) -> list[tuple]:
-        """BM25 全文检索，返回 (id, content, bm25_rank, game_date, last_recalled_at) 列表。
+        """BM25 全文检索，返回 (id, content, bm25_rank, game_date, last_recalled_at, importance) 列表。
 
         FTS5 的 rank 值为负数（越小越相关），这里保留原始值供调用方处理。
         """
@@ -624,7 +624,7 @@ class VectorStore:
           FROM memory_chunks_fts
           WHERE memory_chunks_fts MATCH ?
         )
-        SELECT c.id, c.content, f.rank, c.game_date, c.last_recalled_at
+        SELECT c.id, c.content, f.rank, c.game_date, c.last_recalled_at, c.importance
         FROM fts_hits f
         JOIN scope s ON s.id = f.rowid
         JOIN memory_chunks c ON c.id = f.rowid

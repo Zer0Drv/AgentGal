@@ -37,6 +37,7 @@ try:
         hybrid_fusion,
         apply_recency,
         _recency_score,
+        _importance_score,
         RERANK_MODEL,
     )
 except ModuleNotFoundError as exc:
@@ -592,12 +593,12 @@ class TestHybridSearch:
     async def test_hybrid_relevance_fusion_merges_results(self, clean_store, tmp_path, monkeypatch):
         """75% vector + 25% BM25 能合并两路 relevance。"""
         vec_rows = [
-            (1, "内容A", 0.2, "4月3日", "4月3日"),
-            (2, "内容B", 1.0, "4月3日", "4月3日"),
+            (1, "内容A", 0.2, "4月3日", "4月3日", 3),
+            (2, "内容B", 1.0, "4月3日", "4月3日", 3),
         ]
         bm25_rows = [
-            (2, "内容B", -5.0, "4月3日", "4月3日"),
-            (3, "内容C", -3.0, "4月3日", "4月3日"),
+            (2, "内容B", -5.0, "4月3日", "4月3日", 3),
+            (3, "内容C", -3.0, "4月3日", "4月3日", 3),
         ]
 
         results = hybrid_fusion(vec_rows, bm25_rows)
@@ -610,16 +611,67 @@ class TestHybridSearch:
     async def test_apply_recency_ranking_reorders(self, clean_store, tmp_path, monkeypatch):
         """apply_recency 应将最近被想起的旧记忆排在前面。"""
         candidates = [
-            {"id": "1", "content": "旧记忆", "relevance": 0.5, "date": "4月1日", "last_recalled_at": "4月8日"},
-            {"id": "2", "content": "新记忆", "relevance": 0.5, "date": "4月6日", "last_recalled_at": "4月6日"},
+            {
+                "id": "1",
+                "content": "旧记忆",
+                "relevance": 0.5,
+                "date": "4月1日",
+                "last_recalled_at": "4月8日",
+                "importance": 3,
+            },
+            {
+                "id": "2",
+                "content": "新记忆",
+                "relevance": 0.5,
+                "date": "4月6日",
+                "last_recalled_at": "4月6日",
+                "importance": 3,
+            },
         ]
         monkeypatch.setattr(retrieval_module, "RELEVANCE_WEIGHT", 0.7)
         monkeypatch.setattr(retrieval_module, "RECENCY_WEIGHT", 0.3)
+        monkeypatch.setattr(retrieval_module, "IMPORTANCE_WEIGHT", 0.0)
         monkeypatch.setattr(retrieval_module, "RECENCY_HALF_LIFE_DAYS", 5.0)
         monkeypatch.setattr(retrieval_module, "RECENCY_DATE_WEIGHT", 0.1)
         monkeypatch.setattr(retrieval_module, "RECENCY_RECALL_WEIGHT", 0.9)
         reordered = apply_recency(candidates, "4月8日")
         assert reordered[0]["id"] == "1", "最近刚被召回的旧记忆应因 recall recency 排在前面"
+
+    def test_importance_score_normalizes_memory_md_scale(self):
+        """memory.md 的 1-5 重要度应稳定归一化到 0-1。"""
+        assert _importance_score(1) == 0.0
+        assert _importance_score(3) == 0.5
+        assert _importance_score(5) == 1.0
+
+    @pytest.mark.asyncio
+    async def test_apply_recency_ranking_uses_importance(self, clean_store, tmp_path, monkeypatch):
+        """在 relevance/recency 相同的情况下，更高重要度应排前。"""
+        candidates = [
+            {
+                "id": "1",
+                "content": "普通记忆",
+                "relevance": 0.6,
+                "date": "4月8日",
+                "last_recalled_at": "4月8日",
+                "importance": 2,
+            },
+            {
+                "id": "2",
+                "content": "关键记忆",
+                "relevance": 0.6,
+                "date": "4月8日",
+                "last_recalled_at": "4月8日",
+                "importance": 5,
+            },
+        ]
+        monkeypatch.setattr(retrieval_module, "RELEVANCE_WEIGHT", 0.5)
+        monkeypatch.setattr(retrieval_module, "RECENCY_WEIGHT", 0.2)
+        monkeypatch.setattr(retrieval_module, "IMPORTANCE_WEIGHT", 0.3)
+
+        reordered = apply_recency(candidates, "4月8日")
+
+        assert reordered[0]["id"] == "2"
+        assert reordered[0]["importance_score"] > reordered[1]["importance_score"]
 
     def test_build_fts_match_query_ignores_markdown_syntax(self):
         """FTS 查询应剔除 Markdown / FTS 特殊字符，避免 MATCH 语法报错。"""
