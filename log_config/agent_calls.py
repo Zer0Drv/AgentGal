@@ -88,9 +88,8 @@ def log_agent_call(
         "metrics": {
             "input_tokens": prompt_tokens,
             "output_tokens": usage.get("completion_tokens"),
-            "total_tokens": usage.get("total_tokens"),
-            "prompt_cache_hit_tokens": cache_hit_tokens,
-            "prompt_cache_hit_ratio": cache_hit_ratio,
+            "cache_hit_tokens": cache_hit_tokens,
+            "cache_hit_ratio": cache_hit_ratio,
         },
         "request": messages,
         "response": content,
