@@ -33,7 +33,9 @@ except ImportError:
 try:
     import importlib
     import memory.vector_store
+    import memory.retrieval
     vector_store_module = importlib.import_module("memory.vector_store")
+    retrieval_module = importlib.import_module("memory.retrieval")
     from memory.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
     from game.save_manager import export_save_archive, import_save_archive
 except ModuleNotFoundError as exc:
@@ -139,6 +141,7 @@ class TestSaveLoadConsistency:
         """验证 save-load 循环后向量索引一致性"""
         test_db_path = str(tmp_path / "test_vectors.sqlite")
         monkeypatch.setattr(vector_store_module, "DB_PATH", test_db_path)
+        monkeypatch.setattr(retrieval_module, "DB_PATH", test_db_path)
 
         store = vector_store
         if store._db is not None:
