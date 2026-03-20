@@ -398,11 +398,5 @@ def build_memory_prefix(
 
     scene = _build_retrieval_scene_summary(scene_summary)
     query = "\n".join(part.strip() for part in [user_input, scene] if part and part.strip())
-    memory_logger.info(
-        "[Retrieval] agent=%s\nuser_input=%s\nquery=%s",
-        agent_name,
-        user_input.strip() or "（空）",
-        query or "（空）",
-    )
     relevant = search_memories(agent_name, query)
     return f"<relevant_memories>\n{relevant}\n</relevant_memories>"
