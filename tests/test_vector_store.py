@@ -567,8 +567,14 @@ class TestHybridSearch:
         assert fts_query
         assert "*" not in fts_query
         assert ":" not in fts_query
-        assert '"顾"' in fts_query
+        assert '"约会"' in fts_query
         assert " OR " in fts_query
+
+    def test_tokenize_for_fts_preserves_multi_char_cn_words(self):
+        """jieba 预分词应尽量保留中文多字词。"""
+        tokens = vector_store_module._tokenize_for_fts("我们在小巷里停下脚步").split()
+
+        assert "小巷" in tokens
 
     @pytest.mark.asyncio
     async def test_recency_signal_weights_take_effect(self, clean_store, tmp_path, monkeypatch):

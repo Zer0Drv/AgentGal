@@ -11,6 +11,7 @@ import json
 import asyncio
 import sqlite3
 import hashlib
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -47,52 +48,55 @@ EMBED_API_URL = os.getenv("EMBEDDING_API_URL") or os.getenv("LLM_API_URL", "")
 EMBED_DIM = int(os.getenv("EMBEDDING_DIM", "1536"))
 
 
-# CJK Unicode 范围（用于 FTS5 预分词）
-_CJK_RANGES = (
-    (0x4E00, 0x9FFF),    # CJK Unified Ideographs
-    (0x3400, 0x4DBF),    # CJK Unified Ideographs Extension A
-    (0xF900, 0xFAFF),    # CJK Compatibility Ideographs
-)
+# FTS 只保留中英文和数字，其他标点交给 jieba 切分后丢弃
+_FTS_ALLOWED_TOKEN_RE = re.compile(r"[0-9a-z\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]+")
 
 
-def _is_cjk(ch: str) -> bool:
-    cp = ord(ch)
-    return any(lo <= cp <= hi for lo, hi in _CJK_RANGES)
+def _get_jieba():
+    try:
+        import jieba
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("未安装 jieba，无法执行中文 FTS 分词；请先同步项目依赖") from exc
+
+    try:
+        jieba.setLogLevel(logging.ERROR)
+    except Exception:
+        pass
+    return jieba
+
+
+def _segment_fts_terms(text: str) -> list[str]:
+    """使用 jieba 预分词，输出可直接写入/查询 FTS5 的 token 列表。"""
+    if not text or not text.strip():
+        return []
+
+    jieba = _get_jieba()
+    terms: list[str] = []
+    for raw_token in jieba.cut(text, cut_all=False):
+        token = raw_token.strip().lower()
+        if not token:
+            continue
+        cleaned = "".join(_FTS_ALLOWED_TOKEN_RE.findall(token))
+        if cleaned:
+            terms.append(cleaned)
+    return terms
 
 
 def _tokenize_for_fts(text: str) -> str:
-    """在 CJK 字符间插入空格，使 unicode61 tokenizer 逐字拆分。
-
-    非 CJK 文本（英文、数字）保持原样，按空格/标点自然分词。
-    """
-    result: list[str] = []
-    for ch in text:
-        if _is_cjk(ch):
-            result.append(f" {ch} ")
-        else:
-            result.append(ch)
-    # 压缩连续空格
-    return " ".join("".join(result).split())
-
-
-_FTS_TOKEN_RE = re.compile(r"[A-Za-z0-9]+|[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
+    """用 jieba 预分词后按空格拼接，交给 unicode61 按 token 建索引。"""
+    return " ".join(_segment_fts_terms(text))
 
 
 def _build_fts_match_query(text: str, max_terms: int = 32) -> str:
     """将自由文本转换为稳定的 FTS5 MATCH 查询。
 
     - 去掉 Markdown/FTS 特殊语法，避免 `*`、`:` 等触发解析错误
-    - 中文按单字、英文按连续字母数字分词
+    - 中文使用 jieba 分词，英文/数字按连续字母数字保留
     - 使用 OR 扩大召回面，由 BM25 自行排序
     """
-    tokenized = _tokenize_for_fts(text.strip())
-    if not tokenized:
-        return ""
-
     terms: list[str] = []
     seen: set[str] = set()
-    for raw_token in _FTS_TOKEN_RE.findall(tokenized):
-        token = raw_token.lower()
+    for token in _segment_fts_terms(text.strip()):
         if token in seen:
             continue
         seen.add(token)
