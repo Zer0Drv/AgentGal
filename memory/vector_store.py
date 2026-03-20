@@ -32,6 +32,8 @@ from memory.file_ops import (
     canonical_cn_date,
     parse_cn_date,
     is_date_before,
+    parse_event_importance,
+    parse_event_keywords,
 )
 
 
@@ -151,9 +153,10 @@ class VectorStore:
 
     表结构：
     - memory_chunks(id INTEGER PK, memory_key TEXT UNIQUE, owner_agent TEXT, game_date TEXT,
-                     content TEXT, content_hash TEXT, last_recalled_at TEXT)
+                     content TEXT, keywords TEXT, importance INTEGER,
+                     content_hash TEXT, last_recalled_at TEXT)
     - vec_memory_chunks USING vec0(embedding F32[EMBED_DIM])  -- rowid 对应 memory_chunks.id
-    - memory_chunks_fts USING fts5(content)
+    - memory_chunks_fts USING fts5(content, keywords)
     """
 
     def __init__(self):
@@ -249,19 +252,19 @@ class VectorStore:
         self,
         agent_name: str,
         date: str,
-        payloads: list[tuple[str, str, str, str, str]],
+        payloads: list[tuple[str, str, str, str, int, str, str]],
         previous_state: dict[str, dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
         """用当前日期的最新事件集合重写 recall sidecar。
 
-        payloads: [(memory_key, game_date, content, content_hash, recalled_at), ...]
+        payloads: [(memory_key, game_date, content, keywords, importance, content_hash, recalled_at), ...]
         """
         next_state = {
             key: value
             for key, value in previous_state.items()
             if self._memory_key_date(key) != date
         }
-        for memory_key, event_date, _text, content_hash, recalled_at in payloads:
+        for memory_key, event_date, _text, _keywords, _importance, content_hash, recalled_at in payloads:
             next_state[memory_key] = {
                 "date": event_date,
                 "content_hash": content_hash,
@@ -340,11 +343,14 @@ class VectorStore:
                 owner_agent TEXT NOT NULL,
                 game_date TEXT NOT NULL,
                 content TEXT NOT NULL,
+                keywords TEXT NOT NULL DEFAULT '',
+                importance INTEGER NOT NULL DEFAULT 3,
                 content_hash TEXT NOT NULL,
                 last_recalled_at TEXT
             )
             """
         )
+        await self._ensure_memory_chunk_columns(db)
         await db.execute(
             f"""
             CREATE VIRTUAL TABLE IF NOT EXISTS vec_memory_chunks USING vec0(
@@ -352,15 +358,57 @@ class VectorStore:
             )
             """
         )
-        await db.execute(
-            """
-            CREATE VIRTUAL TABLE IF NOT EXISTS memory_chunks_fts USING fts5(
-                content,
-                tokenize='unicode61'
-            )
-            """
-        )
+        await self._ensure_memory_chunks_fts(db)
         await db.commit()
+
+    async def _ensure_memory_chunk_columns(self, db: aiosqlite.Connection) -> None:
+        rows = await (await db.execute("PRAGMA table_info(memory_chunks)")).fetchall()
+        columns = {str(row[1]) for row in rows}
+        if "keywords" not in columns:
+            await db.execute("ALTER TABLE memory_chunks ADD COLUMN keywords TEXT NOT NULL DEFAULT ''")
+        if "importance" not in columns:
+            await db.execute("ALTER TABLE memory_chunks ADD COLUMN importance INTEGER NOT NULL DEFAULT 3")
+
+    async def _ensure_memory_chunks_fts(self, db: aiosqlite.Connection) -> None:
+        row = await (await db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='memory_chunks_fts'"
+        )).fetchone()
+        fts_sql = str(row[0] or "") if row else ""
+        if not fts_sql:
+            await db.execute(
+                """
+                CREATE VIRTUAL TABLE memory_chunks_fts USING fts5(
+                    content, keywords,
+                    tokenize='unicode61'
+                )
+                """
+            )
+            await self._rebuild_fts_index(db)
+            return
+
+        normalized = " ".join(fts_sql.lower().split())
+        if "keywords" not in normalized:
+            await db.execute("DROP TABLE IF EXISTS memory_chunks_fts")
+            await db.execute(
+                """
+                CREATE VIRTUAL TABLE memory_chunks_fts USING fts5(
+                    content, keywords,
+                    tokenize='unicode61'
+                )
+                """
+            )
+            await self._rebuild_fts_index(db)
+
+    async def _rebuild_fts_index(self, db: aiosqlite.Connection) -> None:
+        await db.execute("DELETE FROM memory_chunks_fts")
+        rows = await (await db.execute(
+            "SELECT id, content, keywords FROM memory_chunks ORDER BY id"
+        )).fetchall()
+        for rowid, content, keywords in rows:
+            await db.execute(
+                "INSERT INTO memory_chunks_fts(rowid, content, keywords) VALUES (?, ?, ?)",
+                (rowid, _tokenize_for_fts(str(content or "")), _tokenize_for_fts(str(keywords or ""))),
+            )
 
     async def _delete_chunks(
         self, db: aiosqlite.Connection, agent_name: str, date: str | None = None
@@ -383,17 +431,17 @@ class VectorStore:
         self,
         db: aiosqlite.Connection,
         agent_name: str,
-        payloads: list[tuple[str, str, str, str, str]],
+        payloads: list[tuple[str, str, str, str, int, str, str]],
     ) -> None:
-        """embed + 写入三张表，不做删除。payloads: (memory_key, game_date, text, content_hash, recalled_at)"""
+        """embed + 写入三张表，不做删除。"""
         if not payloads:
             return
         embeddings = await _embed_async([item[2] for item in payloads])
-        for i, (memory_key, event_date, text, c_hash, recalled_at) in enumerate(payloads):
+        for i, (memory_key, event_date, text, keywords, importance, c_hash, recalled_at) in enumerate(payloads):
             cur = await db.execute(
-                "INSERT INTO memory_chunks(memory_key, owner_agent, game_date, content, content_hash, last_recalled_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (memory_key, agent_name, event_date, text, c_hash, recalled_at),
+                "INSERT INTO memory_chunks(memory_key, owner_agent, game_date, content, keywords, importance, content_hash, last_recalled_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (memory_key, agent_name, event_date, text, keywords, importance, c_hash, recalled_at),
             )
             rowid = int(cur.lastrowid or 0)
             if rowid:
@@ -402,8 +450,8 @@ class VectorStore:
                     (rowid, self._to_vec_blob(embeddings[i])),
                 )
                 await db.execute(
-                    "INSERT INTO memory_chunks_fts(rowid, content) VALUES (?, ?)",
-                    (rowid, _tokenize_for_fts(text)),
+                    "INSERT INTO memory_chunks_fts(rowid, content, keywords) VALUES (?, ?, ?)",
+                    (rowid, _tokenize_for_fts(text), _tokenize_for_fts(keywords)),
                 )
 
     async def add(self, agent_name: str, date: str, chunks: list[str]) -> None:
@@ -425,14 +473,22 @@ class VectorStore:
             return
 
         previous_state = self._read_memory_recall_state(agent_name)
-        payloads: list[tuple[str, str, str, str, str]] = []
+        payloads: list[tuple[str, str, str, str, int, str, str]] = []
         for idx, text in enumerate(texts, start=1):
             memory_key = f"memory::{agent_name}::{normalized_date}::{idx}"
             content_hash = hashlib.sha1(text.encode("utf-8")).hexdigest()
             recalled_at = self._resolve_memory_recall_date(
                 previous_state, memory_key, normalized_date, content_hash
             )
-            payloads.append((memory_key, normalized_date, text, content_hash, recalled_at))
+            payloads.append((
+                memory_key,
+                normalized_date,
+                text,
+                parse_event_keywords(text),
+                parse_event_importance(text, default=3),
+                content_hash,
+                recalled_at,
+            ))
 
         routing_logger.info(
             "[VectorStore] 开始长期记忆索引: agent=%s, date=%s, 待写入事件=%s",
@@ -482,7 +538,12 @@ class VectorStore:
             await db.commit()
 
             # ===== memory 层重建：根据 consolidation_state 之前的日期 =====
-            for agent in get_agent_names(include_narrator=False):
+            try:
+                agents = get_agent_names(include_narrator=False)
+            except TypeError:
+                agents = [name for name in get_agent_names() if name != "narrator"]
+
+            for agent in agents:
                 cutoff = self._read_consolidation_state(agent).get("last_consolidated_date")
                 if not cutoff or not parse_cn_date(cutoff):
                     routing_logger.info(
@@ -559,7 +620,9 @@ class VectorStore:
           SELECT id FROM memory_chunks WHERE owner_agent = ?
         ),
         fts_hits AS (
-          SELECT rowid, rank FROM memory_chunks_fts WHERE memory_chunks_fts MATCH ?
+          SELECT rowid, bm25(memory_chunks_fts, 1.0, 3.0) AS rank
+          FROM memory_chunks_fts
+          WHERE memory_chunks_fts MATCH ?
         )
         SELECT c.id, c.content, f.rank, c.game_date, c.last_recalled_at
         FROM fts_hits f

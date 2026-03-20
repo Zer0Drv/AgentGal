@@ -70,7 +70,17 @@ def get_chunks(tmp_path, agent_name: str, date: str) -> list[str]:
     return split_into_events(sections.get(date, ""))
 
 
-_MEMORY_CHUNK_COLS = ["id", "memory_key", "owner_agent", "game_date", "content", "content_hash", "last_recalled_at"]
+_MEMORY_CHUNK_COLS = [
+    "id",
+    "memory_key",
+    "owner_agent",
+    "game_date",
+    "content",
+    "keywords",
+    "importance",
+    "content_hash",
+    "last_recalled_at",
+]
 
 
 def _get_db_snapshot(db_path: str) -> dict:
@@ -89,7 +99,7 @@ def _get_db_snapshot(db_path: str) -> dict:
             pass
 
         rows = conn.execute(
-            "SELECT id, memory_key, owner_agent, game_date, content, content_hash, last_recalled_at "
+            "SELECT id, memory_key, owner_agent, game_date, content, keywords, importance, content_hash, last_recalled_at "
             "FROM memory_chunks ORDER BY id"
         ).fetchall()
 
@@ -157,13 +167,13 @@ class TestSaveLoadConsistency:
             )
             await store.add("mitsuki", "4月3日", get_chunks(tmp_path, "mitsuki", "4月3日"))
 
-            snapshot_before = _get_db_snapshot(test_db_path)
-            assert len(snapshot_before["memory_chunks"]) == 2, "应该有 2 条记忆"
-            assert len(snapshot_before["vec_memory_chunks"]) == 2, "应该有 2 条向量"
-
             from memory.retrieval import search_memories
             search_result = search_memories("lilith", "第一轮对话")
             assert search_result != "（无相关记忆）", "save 前应该能搜索到数据"
+
+            snapshot_before = _get_db_snapshot(test_db_path)
+            assert len(snapshot_before["memory_chunks"]) == 2, "应该有 2 条记忆"
+            assert len(snapshot_before["vec_memory_chunks"]) == 2, "应该有 2 条向量"
 
             # 模拟 save-load 循环：清空数据库
             db = await store._get_db()

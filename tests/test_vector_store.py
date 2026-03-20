@@ -150,6 +150,13 @@ def get_chunks(tmp_path, agent_name: str, date: str) -> list[str]:
     return split_into_events(sections.get(date, ""))
 
 
+def _chunk_row(conn, memory_key: str):
+    return conn.execute(
+        "SELECT content, keywords, importance FROM memory_chunks WHERE memory_key = ?",
+        (memory_key,),
+    ).fetchone()
+
+
 class TestVectorStoreBasic:
     """基础增查删测试"""
 
@@ -463,6 +470,40 @@ class TestVectorStoreMemoryIndexing:
             conn.close()
         assert not any("独自待了一会儿" in r[1] for r in res_miss), "未索引日期不应返回"
 
+    @pytest.mark.asyncio
+    async def test_add_persists_chunk_keywords_and_importance(self, clean_store, tmp_path, monkeypatch):
+        """新版 memory.md 中的关键词和重要度应写入 memory_chunks。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+
+        write_memory(
+            tmp_path,
+            "lilith",
+            """
+# lilith 的长期记忆
+
+## 10月5日
+- **时间**：10月5日 晚上
+- **地点**：小巷
+- **在场**：我、他
+- **关键词**：小巷 初次亲密 主动靠近 紧张 心跳
+- **重要度**：5
+- **内容**：我们在小巷里停下，他第一次主动靠近，试探着吻了我。
+""".strip(),
+        )
+
+        await store.add("lilith", "10月5日", get_chunks(tmp_path, "lilith", "10月5日"))
+
+        conn = __import__("sqlite3").connect(test_db_path)
+        try:
+            row = _chunk_row(conn, "memory::lilith::10月5日::1")
+        finally:
+            conn.close()
+
+        assert row is not None
+        assert row[1] == "小巷 初次亲密 主动靠近 紧张 心跳"
+        assert row[2] == 5
+
 
 class TestHybridSearch:
     """BM25 + vector 混合 relevance 测试"""
@@ -493,6 +534,31 @@ class TestHybridSearch:
         assert "学园祭" in results[0][1], "第一条结果应包含关键词"
 
     @pytest.mark.asyncio
+    async def test_bm25_search_hits_keywords_column(self, clean_store, tmp_path, monkeypatch):
+        """BM25 应能通过 keywords 列命中内容里未直接出现的查询词。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+
+        write_memory(
+            tmp_path,
+            "lilith",
+            "# lilith\n\n## 10月5日\n"
+            "- **时间**：10月5日 晚上\n- **地点**：小巷\n- **在场**：我、他\n"
+            "- **关键词**：小巷 初次亲密 主动靠近 紧张 心跳\n- **重要度**：5\n"
+            "- **内容**：我们在巷子里停下，他第一次主动靠近，试探着吻了我。",
+        )
+        await store.add("lilith", "10月5日", get_chunks(tmp_path, "lilith", "10月5日"))
+
+        conn = __import__("sqlite3").connect(test_db_path)
+        try:
+            results = VectorStore.get_bm25_candidates(conn, "lilith", "初次亲密", 5)
+        finally:
+            conn.close()
+
+        assert results, "BM25 应能命中 keywords 列"
+        assert "主动靠近" in results[0][1]
+
+    @pytest.mark.asyncio
     async def test_bm25_respects_scope(self, clean_store, tmp_path, monkeypatch):
         """BM25 检索遵循角色可见性隔离。"""
         store = clean_store
@@ -502,6 +568,7 @@ class TestHybridSearch:
             tmp_path, "lilith",
             "# lilith\n\n## 4月3日\n"
             "- **时间**：4月3日 10:00\n- **地点**：走廊\n- **在场**：莉莉丝\n"
+            "- **关键词**：紫水晶 传闻\n- **重要度**：3\n"
             "- **内容**：听到了关于紫水晶项链的传闻。",
         )
         await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
