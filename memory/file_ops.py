@@ -16,6 +16,7 @@ from engine.config import character_path
 
 _EMPTY_PLACEHOLDER = "（暂无）"
 _GROWTH_TITLE = "# 心路历程"
+_EVENT_FIELD_PATTERN = r"^\s*(?:-\s*)?\*\*{field}\*\*：\s*(.*)$"
 
 
 def extract_status_field(status_text: str, field_name: str) -> str:
@@ -44,6 +45,32 @@ def extract_game_date(text: str) -> str | None:
     if m:
         return m.group(1)
     return None
+
+
+def extract_event_field(event_text: str, field_name: str) -> str:
+    """从单个记忆事件块中提取指定字段的值。"""
+    pattern = re.compile(
+        _EVENT_FIELD_PATTERN.format(field=re.escape(field_name)),
+        re.MULTILINE,
+    )
+    match = pattern.search(event_text or "")
+    return match.group(1).strip() if match else ""
+
+
+def parse_event_keywords(event_text: str) -> str:
+    """解析单个事件块中的关键词字段。"""
+    return extract_event_field(event_text, "关键词")
+
+
+def parse_event_importance(event_text: str, default: int = 3) -> int:
+    """解析单个事件块中的重要度字段；缺失或非法时回退默认值。"""
+    raw = extract_event_field(event_text, "重要度")
+    if not raw:
+        return default
+    match = re.search(r"\d+", raw)
+    if not match:
+        return default
+    return max(1, min(5, int(match.group(0))))
 
 
 def parse_cn_date(date_text: str) -> tuple[int, int] | None:
@@ -122,7 +149,7 @@ def normalize(content: str) -> str:
         m = re.match(r"^(?:#{1,2}\s*|\*\*)?(\d{1,2}月\d{1,2}日)(?:\*\*)?(?:\s.*)?$", stripped)
         if m:
             out.append(f"## {m.group(1)}")
-        elif re.match(r"^\*\*(时间|地点|在场|内容)\*\*：", stripped):
+        elif re.match(r"^\*\*(时间|地点|在场|关键词|重要度|内容)\*\*：", stripped):
             out.append(f"- {stripped}")
         else:
             out.append(line)

@@ -33,7 +33,9 @@ except ImportError:
 try:
     import importlib
     import memory.vector_store
+    import memory.retrieval
     vector_store_module = importlib.import_module("memory.vector_store")
+    retrieval_module = importlib.import_module("memory.retrieval")
     from memory.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
     from game.save_manager import export_save_archive, import_save_archive
 except ModuleNotFoundError as exc:
@@ -70,7 +72,17 @@ def get_chunks(tmp_path, agent_name: str, date: str) -> list[str]:
     return split_into_events(sections.get(date, ""))
 
 
-_MEMORY_CHUNK_COLS = ["id", "memory_key", "owner_agent", "game_date", "content", "content_hash", "last_recalled_at"]
+_MEMORY_CHUNK_COLS = [
+    "id",
+    "memory_key",
+    "owner_agent",
+    "game_date",
+    "content",
+    "keywords",
+    "importance",
+    "content_hash",
+    "last_recalled_at",
+]
 
 
 def _get_db_snapshot(db_path: str) -> dict:
@@ -89,7 +101,7 @@ def _get_db_snapshot(db_path: str) -> dict:
             pass
 
         rows = conn.execute(
-            "SELECT id, memory_key, owner_agent, game_date, content, content_hash, last_recalled_at "
+            "SELECT id, memory_key, owner_agent, game_date, content, keywords, importance, content_hash, last_recalled_at "
             "FROM memory_chunks ORDER BY id"
         ).fetchall()
 
@@ -129,6 +141,7 @@ class TestSaveLoadConsistency:
         """验证 save-load 循环后向量索引一致性"""
         test_db_path = str(tmp_path / "test_vectors.sqlite")
         monkeypatch.setattr(vector_store_module, "DB_PATH", test_db_path)
+        monkeypatch.setattr(retrieval_module, "DB_PATH", test_db_path)
 
         store = vector_store
         if store._db is not None:
@@ -157,13 +170,13 @@ class TestSaveLoadConsistency:
             )
             await store.add("mitsuki", "4月3日", get_chunks(tmp_path, "mitsuki", "4月3日"))
 
-            snapshot_before = _get_db_snapshot(test_db_path)
-            assert len(snapshot_before["memory_chunks"]) == 2, "应该有 2 条记忆"
-            assert len(snapshot_before["vec_memory_chunks"]) == 2, "应该有 2 条向量"
-
             from memory.retrieval import search_memories
             search_result = search_memories("lilith", "第一轮对话")
             assert search_result != "（无相关记忆）", "save 前应该能搜索到数据"
+
+            snapshot_before = _get_db_snapshot(test_db_path)
+            assert len(snapshot_before["memory_chunks"]) == 2, "应该有 2 条记忆"
+            assert len(snapshot_before["vec_memory_chunks"]) == 2, "应该有 2 条向量"
 
             # 模拟 save-load 循环：清空数据库
             db = await store._get_db()

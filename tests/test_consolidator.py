@@ -49,8 +49,7 @@ def _event(date: str, slot: str, content: str) -> str:
     )
 
 
-def test_resolve_tail_start_uses_block_marker():
-    consolidator = MemoryConsolidator()
+def test_resolve_tail_start_uses_block_fingerprint():
     sections = OrderedDict(
         {
             "10月6日": "\n\n".join(
@@ -63,12 +62,12 @@ def test_resolve_tail_start_uses_block_marker():
         }
     )
 
-    blocks = consolidator._flatten_memory_sections(sections)
-    start_index, skip_reason = consolidator._resolve_tail_start(
+    blocks = consolidator_module._flatten_sections(sections)
+    start_index, skip_reason = consolidator_module._resolve_window_start(
         "chenxiao",
         blocks,
         _render_memory_file("chenxiao", sections),
-        {"last_consolidated_block_id": blocks[1].marker},
+        {"last_consolidated_block_id": blocks[1]["fingerprint"]},
     )
 
     assert skip_reason is None
@@ -76,7 +75,6 @@ def test_resolve_tail_start_uses_block_marker():
 
 
 def test_resolve_tail_start_migrates_from_last_memory_size():
-    consolidator = MemoryConsolidator()
     previous_sections = OrderedDict(
         {
             "10月6日": "\n\n".join(
@@ -99,10 +97,10 @@ def test_resolve_tail_start_migrates_from_last_memory_size():
         }
     )
 
-    current_blocks = consolidator._flatten_memory_sections(current_sections)
-    start_index, skip_reason = consolidator._resolve_tail_start(
+    blocks = consolidator_module._flatten_sections(current_sections)
+    start_index, skip_reason = consolidator_module._resolve_window_start(
         "chenxiao",
-        current_blocks,
+        blocks,
         _render_memory_file("chenxiao", current_sections),
         {"last_memory_size": len(_render_memory_file("chenxiao", previous_sections))},
     )
@@ -112,7 +110,6 @@ def test_resolve_tail_start_migrates_from_last_memory_size():
 
 
 def test_resolve_tail_start_reprocesses_when_marker_misses_but_size_recovers():
-    consolidator = MemoryConsolidator()
     sections = OrderedDict(
         {
             "10月6日": "\n\n".join(
@@ -124,9 +121,8 @@ def test_resolve_tail_start_reprocesses_when_marker_misses_but_size_recovers():
         }
     )
     original_content = _render_memory_file("chenxiao", sections)
-    blocks = consolidator._flatten_memory_sections(sections)
-
-    start_index, skip_reason = consolidator._resolve_tail_start(
+    blocks = consolidator_module._flatten_sections(sections)
+    start_index, skip_reason = consolidator_module._resolve_window_start(
         "chenxiao",
         blocks,
         original_content,
@@ -141,14 +137,12 @@ def test_resolve_tail_start_reprocesses_when_marker_misses_but_size_recovers():
 
 
 def test_resolve_tail_start_skips_when_boundary_invalid_and_memory_not_grown():
-    consolidator = MemoryConsolidator()
     sections = OrderedDict(
         {"10月6日": _event("10月6日", "上午", "早上见面。")}
     )
     original_content = _render_memory_file("chenxiao", sections)
-    blocks = consolidator._flatten_memory_sections(sections)
-
-    start_index, skip_reason = consolidator._resolve_tail_start(
+    blocks = consolidator_module._flatten_sections(sections)
+    start_index, skip_reason = consolidator_module._resolve_window_start(
         "chenxiao",
         blocks,
         original_content,
@@ -163,9 +157,7 @@ def test_resolve_tail_start_skips_when_boundary_invalid_and_memory_not_grown():
 
 
 def test_validate_step1_dates_rejects_missing_window_date():
-    consolidator = MemoryConsolidator()
-
-    error = consolidator._validate_step1_dates(
+    error = consolidator_module._validate_step1_result(
         ["10月6日", "10月7日"],
         OrderedDict({"10月7日": _event("10月7日", "下午", "只返回了一天。")}),
     )
@@ -183,6 +175,8 @@ def test_normalize_adds_missing_event_bullets():
                 "- **时间**：10月6日 晚上",
                 "**地点**：卧室",
                 "**在场**：我、他",
+                "**关键词**：卧室 深夜 对视",
+                "**重要度**：4",
                 "**内容**：测试内容。",
             ]
         )
@@ -190,13 +184,13 @@ def test_normalize_adds_missing_event_bullets():
 
     assert "- **地点**：卧室" in normalized
     assert "- **在场**：我、他" in normalized
+    assert "- **关键词**：卧室 深夜 对视" in normalized
+    assert "- **重要度**：4" in normalized
     assert "- **内容**：测试内容。" in normalized
 
 
 def test_parse_step1_memories_accepts_non_bulleted_time_field():
-    consolidator = MemoryConsolidator()
-
-    sections = consolidator._parse_step1_memories(
+    sections = consolidator_module._parse_step1_memories(
         "\n".join(
             [
                 "**时间**：10月6日 19:20",
@@ -216,9 +210,7 @@ def test_parse_step1_memories_accepts_non_bulleted_time_field():
 
 
 def test_parse_step1_memories_infers_single_window_date():
-    consolidator = MemoryConsolidator()
-
-    sections = consolidator._parse_step1_memories(
+    sections = consolidator_module._parse_step1_memories(
         "\n".join(
             [
                 "**时间**：19:20",
@@ -232,6 +224,63 @@ def test_parse_step1_memories_infers_single_window_date():
 
     assert list(sections.keys()) == ["10月6日"]
     assert sections["10月6日"].startswith("- **时间**：10月6日 19:20")
+
+
+def test_build_consolidation_prompt_step1_5_contains_batched_chunks():
+    consolidator = MemoryConsolidator()
+    step1_markdown = "\n".join(
+        [
+            "## 10月6日",
+            _event("10月6日", "19:20", "第一次靠近。"),
+            "",
+            _event("10月6日", "22:10", "分别前对视了很久。"),
+        ]
+    )
+
+    system, user = consolidator._build_consolidation_prompt_step1_5(step1_markdown)
+
+    assert "chunk" in system.lower()
+    assert "<consolidated_memory>" in user
+    assert "第一次靠近。" in user
+    assert "分别前对视了很久。" in user
+
+
+def test_parse_step1_5_metadata_and_apply_to_chunks():
+    blocks = consolidator_module._flatten_sections(
+        OrderedDict(
+            {
+                "10月6日": "\n\n".join(
+                    [
+                        _event("10月6日", "19:20", "第一次靠近。"),
+                        _event("10月6日", "22:10", "分别前对视了很久。"),
+                    ]
+                )
+            }
+        )
+    )
+
+    llm_result = """
+<chunk_meta>
+时间：10月6日 19:20
+keywords：公司 初次靠近 心动 紧张
+importance：4
+</chunk_meta>
+
+<chunk_meta>
+时间：10月6日 22:10
+keywords：公司 对视 告别 不舍
+    importance：3
+</chunk_meta>
+""".strip()
+
+    metadata_items = consolidator_module._parse_step1_5_metadata(llm_result)
+    merged = consolidator_module._merge_chunk_metadata(blocks, metadata_items)
+
+    assert len(metadata_items) == 2
+    assert "- **关键词**：公司 初次靠近 心动 紧张" in merged[0]["content"]
+    assert "- **重要度**：4" in merged[0]["content"]
+    assert "- **关键词**：公司 对视 告别 不舍" in merged[1]["content"]
+    assert "- **重要度**：3" in merged[1]["content"]
 
 
 @pytest.mark.asyncio
@@ -276,8 +325,8 @@ async def test_consolidate_agent_only_replaces_tail_window(tmp_path, monkeypatch
         }
     )
 
-    original_blocks = consolidator._flatten_memory_sections(original_sections)
-    rewritten_blocks = consolidator._flatten_memory_sections(rewritten_sections)
+    original_blocks = consolidator_module._flatten_sections(original_sections)
+    rewritten_blocks = consolidator_module._flatten_sections(rewritten_sections)
 
     agent_dir = tmp_path / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
@@ -287,7 +336,7 @@ async def test_consolidate_agent_only_replaces_tail_window(tmp_path, monkeypatch
     )
     (agent_dir / ".consolidation_state.json").write_text(
         json.dumps(
-            {"last_consolidated_block_id": original_blocks[1].marker},
+            {"last_consolidated_block_id": original_blocks[1]["fingerprint"]},
             ensure_ascii=False,
         ),
         encoding="utf-8",
@@ -360,7 +409,7 @@ async def test_consolidate_agent_writes_snapshot_size_in_state(tmp_path, monkeyp
             )
         }
     )
-    blocks = consolidator._flatten_memory_sections(sections)
+    blocks = consolidator_module._flatten_sections(sections)
 
     agent_dir = tmp_path / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
@@ -370,7 +419,7 @@ async def test_consolidate_agent_writes_snapshot_size_in_state(tmp_path, monkeyp
     )
     (agent_dir / ".consolidation_state.json").write_text(
         json.dumps(
-            {"last_consolidated_block_id": blocks[0].marker},
+            {"last_consolidated_block_id": blocks[0]["fingerprint"]},
             ensure_ascii=False,
         ),
         encoding="utf-8",

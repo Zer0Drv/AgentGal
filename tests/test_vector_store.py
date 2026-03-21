@@ -37,6 +37,7 @@ try:
         hybrid_fusion,
         apply_recency,
         _recency_score,
+        _importance_score,
         RERANK_MODEL,
     )
 except ModuleNotFoundError as exc:
@@ -148,6 +149,13 @@ def get_chunks(tmp_path, agent_name: str, date: str) -> list[str]:
     path = tmp_path / agent_name / "memory.md"
     sections = split_by_date(normalize(path.read_text(encoding="utf-8")))
     return split_into_events(sections.get(date, ""))
+
+
+def _chunk_row(conn, memory_key: str):
+    return conn.execute(
+        "SELECT content, keywords, importance FROM memory_chunks WHERE memory_key = ?",
+        (memory_key,),
+    ).fetchone()
 
 
 class TestVectorStoreBasic:
@@ -463,6 +471,40 @@ class TestVectorStoreMemoryIndexing:
             conn.close()
         assert not any("独自待了一会儿" in r[1] for r in res_miss), "未索引日期不应返回"
 
+    @pytest.mark.asyncio
+    async def test_add_persists_chunk_keywords_and_importance(self, clean_store, tmp_path, monkeypatch):
+        """新版 memory.md 中的关键词和重要度应写入 memory_chunks。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+
+        write_memory(
+            tmp_path,
+            "lilith",
+            """
+# lilith 的长期记忆
+
+## 10月5日
+- **时间**：10月5日 晚上
+- **地点**：小巷
+- **在场**：我、他
+- **关键词**：小巷 初次亲密 主动靠近 紧张 心跳
+- **重要度**：5
+- **内容**：我们在小巷里停下，他第一次主动靠近，试探着吻了我。
+""".strip(),
+        )
+
+        await store.add("lilith", "10月5日", get_chunks(tmp_path, "lilith", "10月5日"))
+
+        conn = __import__("sqlite3").connect(test_db_path)
+        try:
+            row = _chunk_row(conn, "memory::lilith::10月5日::1")
+        finally:
+            conn.close()
+
+        assert row is not None
+        assert row[1] == "小巷 初次亲密 主动靠近 紧张 心跳"
+        assert row[2] == 5
+
 
 class TestHybridSearch:
     """BM25 + vector 混合 relevance 测试"""
@@ -493,6 +535,31 @@ class TestHybridSearch:
         assert "学园祭" in results[0][1], "第一条结果应包含关键词"
 
     @pytest.mark.asyncio
+    async def test_bm25_search_hits_keywords_column(self, clean_store, tmp_path, monkeypatch):
+        """BM25 应能通过 keywords 列命中内容里未直接出现的查询词。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+
+        write_memory(
+            tmp_path,
+            "lilith",
+            "# lilith\n\n## 10月5日\n"
+            "- **时间**：10月5日 晚上\n- **地点**：小巷\n- **在场**：我、他\n"
+            "- **关键词**：小巷 初次亲密 主动靠近 紧张 心跳\n- **重要度**：5\n"
+            "- **内容**：我们在巷子里停下，他第一次主动靠近，试探着吻了我。",
+        )
+        await store.add("lilith", "10月5日", get_chunks(tmp_path, "lilith", "10月5日"))
+
+        conn = __import__("sqlite3").connect(test_db_path)
+        try:
+            results = VectorStore.get_bm25_candidates(conn, "lilith", "初次亲密", 5)
+        finally:
+            conn.close()
+
+        assert results, "BM25 应能命中 keywords 列"
+        assert "主动靠近" in results[0][1]
+
+    @pytest.mark.asyncio
     async def test_bm25_respects_scope(self, clean_store, tmp_path, monkeypatch):
         """BM25 检索遵循角色可见性隔离。"""
         store = clean_store
@@ -502,6 +569,7 @@ class TestHybridSearch:
             tmp_path, "lilith",
             "# lilith\n\n## 4月3日\n"
             "- **时间**：4月3日 10:00\n- **地点**：走廊\n- **在场**：莉莉丝\n"
+            "- **关键词**：紫水晶 传闻\n- **重要度**：3\n"
             "- **内容**：听到了关于紫水晶项链的传闻。",
         )
         await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
@@ -525,12 +593,12 @@ class TestHybridSearch:
     async def test_hybrid_relevance_fusion_merges_results(self, clean_store, tmp_path, monkeypatch):
         """75% vector + 25% BM25 能合并两路 relevance。"""
         vec_rows = [
-            (1, "内容A", 0.2, "4月3日", "4月3日"),
-            (2, "内容B", 1.0, "4月3日", "4月3日"),
+            (1, "内容A", 0.2, "4月3日", "4月3日", 3),
+            (2, "内容B", 1.0, "4月3日", "4月3日", 3),
         ]
         bm25_rows = [
-            (2, "内容B", -5.0, "4月3日", "4月3日"),
-            (3, "内容C", -3.0, "4月3日", "4月3日"),
+            (2, "内容B", -5.0, "4月3日", "4月3日", 3),
+            (3, "内容C", -3.0, "4月3日", "4月3日", 3),
         ]
 
         results = hybrid_fusion(vec_rows, bm25_rows)
@@ -543,16 +611,67 @@ class TestHybridSearch:
     async def test_apply_recency_ranking_reorders(self, clean_store, tmp_path, monkeypatch):
         """apply_recency 应将最近被想起的旧记忆排在前面。"""
         candidates = [
-            {"id": "1", "content": "旧记忆", "relevance": 0.5, "date": "4月1日", "last_recalled_at": "4月8日"},
-            {"id": "2", "content": "新记忆", "relevance": 0.5, "date": "4月6日", "last_recalled_at": "4月6日"},
+            {
+                "id": "1",
+                "content": "旧记忆",
+                "relevance": 0.5,
+                "date": "4月1日",
+                "last_recalled_at": "4月8日",
+                "importance": 3,
+            },
+            {
+                "id": "2",
+                "content": "新记忆",
+                "relevance": 0.5,
+                "date": "4月6日",
+                "last_recalled_at": "4月6日",
+                "importance": 3,
+            },
         ]
         monkeypatch.setattr(retrieval_module, "RELEVANCE_WEIGHT", 0.7)
         monkeypatch.setattr(retrieval_module, "RECENCY_WEIGHT", 0.3)
+        monkeypatch.setattr(retrieval_module, "IMPORTANCE_WEIGHT", 0.0)
         monkeypatch.setattr(retrieval_module, "RECENCY_HALF_LIFE_DAYS", 5.0)
         monkeypatch.setattr(retrieval_module, "RECENCY_DATE_WEIGHT", 0.1)
         monkeypatch.setattr(retrieval_module, "RECENCY_RECALL_WEIGHT", 0.9)
         reordered = apply_recency(candidates, "4月8日")
         assert reordered[0]["id"] == "1", "最近刚被召回的旧记忆应因 recall recency 排在前面"
+
+    def test_importance_score_normalizes_memory_md_scale(self):
+        """memory.md 的 1-5 重要度应稳定归一化到 0-1。"""
+        assert _importance_score(1) == 0.0
+        assert _importance_score(3) == 0.5
+        assert _importance_score(5) == 1.0
+
+    @pytest.mark.asyncio
+    async def test_apply_recency_ranking_uses_importance(self, clean_store, tmp_path, monkeypatch):
+        """在 relevance/recency 相同的情况下，更高重要度应排前。"""
+        candidates = [
+            {
+                "id": "1",
+                "content": "普通记忆",
+                "relevance": 0.6,
+                "date": "4月8日",
+                "last_recalled_at": "4月8日",
+                "importance": 2,
+            },
+            {
+                "id": "2",
+                "content": "关键记忆",
+                "relevance": 0.6,
+                "date": "4月8日",
+                "last_recalled_at": "4月8日",
+                "importance": 5,
+            },
+        ]
+        monkeypatch.setattr(retrieval_module, "RELEVANCE_WEIGHT", 0.5)
+        monkeypatch.setattr(retrieval_module, "RECENCY_WEIGHT", 0.2)
+        monkeypatch.setattr(retrieval_module, "IMPORTANCE_WEIGHT", 0.3)
+
+        reordered = apply_recency(candidates, "4月8日")
+
+        assert reordered[0]["id"] == "2"
+        assert reordered[0]["importance_score"] > reordered[1]["importance_score"]
 
     def test_build_fts_match_query_ignores_markdown_syntax(self):
         """FTS 查询应剔除 Markdown / FTS 特殊字符，避免 MATCH 语法报错。"""
@@ -567,8 +686,14 @@ class TestHybridSearch:
         assert fts_query
         assert "*" not in fts_query
         assert ":" not in fts_query
-        assert '"顾"' in fts_query
+        assert '"约会"' in fts_query
         assert " OR " in fts_query
+
+    def test_tokenize_for_fts_preserves_multi_char_cn_words(self):
+        """jieba 预分词应尽量保留中文多字词。"""
+        tokens = vector_store_module._tokenize_for_fts("我们在小巷里停下脚步").split()
+
+        assert "小巷" in tokens
 
     @pytest.mark.asyncio
     async def test_recency_signal_weights_take_effect(self, clean_store, tmp_path, monkeypatch):

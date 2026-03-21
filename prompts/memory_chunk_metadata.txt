@@ -1,0 +1,58 @@
+<task>
+请为 <consolidated_memory> 里的每一条记忆 chunk 生成检索 metadata。
+</task>
+
+<goal>
+- 输出每条 chunk 的关键词和重要度
+- 关键词用于检索，不是摘要
+- 重要度用于排序，衡量这条记忆在关系推进中的分量
+</goal>
+
+<rules>
+- 一次处理全部 chunk，不要遗漏，不要新增 chunk
+- 每条 chunk 必须原样抄写它的“时间”字段作为对齐锚点
+- keywords 最多 5 个词，用空格分隔，不要加逗号
+- keywords 优先覆盖：地点 1 词 + 事件类型 1-2 词 + 情绪/状态 1-2 词
+- importance 只能是 1 到 5 的整数
+- 若是关系里程碑、重大转折、明确突破，给 4-5
+- 若是普通但有意义的互动，给 3
+- 若只是低信息量日常，给 1-2
+</rules>
+
+<few_shot>
+输入 chunk：
+- **时间**：10月5日 晚上
+- **地点**：小巷
+- **在场**：我、他
+- **内容**：我们在小巷里停下，他第一次主动靠近，试探着吻了我。我表面克制，心跳却一直没慢下来。
+
+输出：
+<chunk_meta>
+时间：10月5日 晚上
+keywords：小巷 初次亲密 主动靠近 紧张 心跳
+importance：5
+</chunk_meta>
+
+输入 chunk：
+- **时间**：10月6日 中午
+- **地点**：食堂
+- **在场**：我、他
+- **内容**：一起吃了午饭，聊了下午的安排，没有新的情绪突破。
+
+输出：
+<chunk_meta>
+时间：10月6日 中午
+keywords：食堂 吃饭 日常互动 平静 安排
+importance：2
+</chunk_meta>
+</few_shot>
+
+<output>
+按原顺序输出所有 chunk 的 metadata，每条都用下面格式：
+
+<chunk_meta>
+时间：...
+keywords：...
+importance：...
+</chunk_meta>
+</output>

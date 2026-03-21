@@ -18,6 +18,7 @@ import httpx
 from engine.config import (
     BM25_CANDIDATE_LIMIT,
     HYBRID_SEARCH_ENABLED,
+    IMPORTANCE_WEIGHT,
     RELEVANCE_WEIGHT,
     RECENCY_WEIGHT,
     RECENCY_HALF_LIFE_DAYS,
@@ -127,6 +128,16 @@ def _recency_score(
     return sum(score * weight for score, weight in weighted_signals) / total_weight
 
 
+def _importance_score(raw_importance: Any) -> float:
+    """将 memory.md 的 1-5 重要度归一化到 [0, 1]。"""
+    try:
+        importance = int(raw_importance)
+    except (TypeError, ValueError):
+        return 0.5
+    bounded = min(max(importance, 1), 5)
+    return (bounded - 1) / 4.0
+
+
 def _load_current_game_date() -> str | None:
     """从 narrator/status.md 读取当前游戏日。"""
     try:
@@ -153,6 +164,7 @@ def hybrid_fusion(
             "bm25_raw": None,
             "date": str(row[3] or ""),
             "last_recalled_at": str(row[4] or ""),
+            "importance": int(row[5] or 3),
         }
 
     for row in bm25_rows:
@@ -166,6 +178,7 @@ def hybrid_fusion(
                 "bm25_raw": None,
                 "date": str(row[3] or ""),
                 "last_recalled_at": str(row[4] or ""),
+                "importance": int(row[5] or 3),
             },
         )
         entry["content"] = row[1]
@@ -174,6 +187,7 @@ def hybrid_fusion(
             entry["date"] = str(row[3] or "")
         if not entry["last_recalled_at"]:
             entry["last_recalled_at"] = str(row[4] or "")
+        entry["importance"] = int(row[5] or entry.get("importance", 3))
 
     bm25_values = [float(entry["bm25_raw"]) for entry in docs.values() if entry["bm25_raw"] is not None]
     bm25_min = min(bm25_values) if bm25_values else 0.0
@@ -200,6 +214,7 @@ def hybrid_fusion(
                 "relevance": relevance,
                 "date": entry["date"],
                 "last_recalled_at": entry["last_recalled_at"],
+                "importance": int(entry.get("importance", 3) or 3),
             }
         )
 
@@ -249,10 +264,11 @@ def apply_recency(
     candidates: list[dict[str, Any]],
     current_game_date: str | None,
 ) -> list[dict[str, Any]]:
-    """叠加 recency 信号，计算最终 score 并排序。"""
-    total_weight = RELEVANCE_WEIGHT + RECENCY_WEIGHT
+    """叠加 recency / importance 信号，计算最终 score 并排序。"""
+    total_weight = RELEVANCE_WEIGHT + RECENCY_WEIGHT + IMPORTANCE_WEIGHT
     relevance_weight = RELEVANCE_WEIGHT / total_weight if total_weight > 0 else 0.7
     recency_weight = RECENCY_WEIGHT / total_weight if total_weight > 0 else 0.3
+    importance_weight = IMPORTANCE_WEIGHT / total_weight if total_weight > 0 else 0.0
 
     ranked: list[dict[str, Any]] = []
     for c in candidates:
@@ -262,7 +278,13 @@ def apply_recency(
             str(c.get("last_recalled_at", "")),
         )
         relevance = float(c.get("relevance", 0.0))
-        score = relevance_weight * relevance + recency_weight * recency
+        importance = int(c.get("importance", 3) or 3)
+        importance_score = _importance_score(importance)
+        score = (
+            relevance_weight * relevance
+            + recency_weight * recency
+            + importance_weight * importance_score
+        )
         ranked.append(
             {
                 "id": str(c["id"]),
@@ -270,6 +292,8 @@ def apply_recency(
                 "score": score,
                 "relevance": relevance,
                 "recency": recency,
+                "importance": importance,
+                "importance_score": importance_score,
                 "date": str(c.get("date", "")),
                 "last_recalled_at": str(c.get("last_recalled_at", "")),
             }
@@ -287,6 +311,7 @@ def _vec_rows_to_candidates(rows: list[tuple]) -> list[dict[str, Any]]:
             "relevance": max(0.0, 1.0 - min(float(row[2]), 2.0) / 2.0),
             "date": str(row[3] or ""),
             "last_recalled_at": str(row[4] or ""),
+            "importance": int(row[5] or 3),
         }
         for row in rows
     ]
@@ -300,7 +325,7 @@ def search_memories(agent_name: str, query: str) -> str:
     2. hybrid: 若启用则叠加 BM25 候选，按 75/25 权重融合 relevance；
                否则直接用 vector distance 转换 relevance
     3. rerank（可选）: 用 rerank API 分替换 relevance，min-max 归一化到 [0,1]
-    4. recency: 叠加游戏内时间衰减，计算最终 score 并截取 VECTOR_SEARCH_LIMIT 条
+    4. score: 叠加游戏内时间衰减与 memory.md 重要度，计算最终 score 并截取 VECTOR_SEARCH_LIMIT 条
     5. 更新命中条目的 last_recalled_at（DB + sidecar）
     """
     if not query or not query.strip():
@@ -368,7 +393,8 @@ def search_memories(agent_name: str, query: str) -> str:
                     f"id={r.get('id')} date={r.get('date', '')} "
                     f"score={float(r.get('score', 0.0)):.3f} "
                     f"rel={float(r.get('relevance', 0.0)):.3f} "
-                    f"rec={float(r.get('recency', 0.0)):.3f}"
+                    f"rec={float(r.get('recency', 0.0)):.3f} "
+                    f"imp={int(r.get('importance', 3))}"
                 )
                 for r in ranked
             )
