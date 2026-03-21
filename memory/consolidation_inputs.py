@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import re
-from game.save_manager import load_conversation_history
-from memory.file_ops import read_agent_file
+from engine.history import load_conversation_history
+from engine.agent_files import read_agent_file
 
 _ROLE_NAME_RE = re.compile(r"<role>\s*([^\n<]+)")
 _TITLE_RE = re.compile(r"^#\s+(.+)$", re.MULTILINE)

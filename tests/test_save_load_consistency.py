@@ -37,7 +37,7 @@ try:
     vector_store_module = importlib.import_module("memory.vector_store")
     retrieval_module = importlib.import_module("memory.retrieval")
     from memory.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
-    from game.save_manager import export_save_archive, import_save_archive
+    from engine.save_manager import export_save_archive, import_save_archive
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip save_load tests: missing dependency ({exc})", allow_module_level=True)
 
@@ -66,7 +66,7 @@ def write_memory(tmp_path, agent_name: str, content: str):
 
 
 def get_chunks(tmp_path, agent_name: str, date: str) -> list[str]:
-    from memory.file_ops import split_by_date, normalize, split_into_events
+    from memory.parser import split_by_date, normalize, split_into_events
     path = tmp_path / agent_name / "memory.md"
     sections = split_by_date(normalize(path.read_text(encoding="utf-8")))
     return split_into_events(sections.get(date, ""))
