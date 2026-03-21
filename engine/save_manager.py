@@ -10,19 +10,11 @@ import zipfile
 from datetime import datetime
 
 from engine.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
-from memory.file_ops import extract_status_field, read_agent_file
+from engine.agent_files import read_agent_file
+from engine.history import load_conversation_history
+from memory.parser import extract_status_field
 
 TEMPLATES_DIR = PROJECT_ROOT / "data" / "templates"
-
-
-# =============================================================================
-# 路径工具
-# =============================================================================
-
-
-def narrator_raw_dir() -> str:
-    """获取 narrator 的 raw 目录路径（只有 narrator 拥有对话历史）"""
-    return character_path("narrator", "raw")
 
 
 # =============================================================================
@@ -52,44 +44,6 @@ def load_story_file(story_id: str, filename: str) -> str:
     return ""
 
 
-def load_conversation_history(limit: int | None = 10) -> list:
-    """从 narrator 的 raw/ 目录加载最近的对话历史（跨所有日期的 jsonl 文件）
-
-    narrator 拥有上帝视角，包含所有消息。返回原始消息列表（未过滤、未格式化）。
-
-    Args:
-        limit: 返回最近多少条消息；传 None 时返回全部
-
-    Returns:
-        最近 limit 条消息的列表，每条是 dict（包含 role, content, visible_to 等字段）
-    """
-    raw_dir = character_path("narrator", "raw")
-    if not os.path.exists(raw_dir):
-        return []
-
-    # 按日期排序所有 jsonl 文件
-    jsonl_files = sorted(glob.glob(f"{raw_dir}/*.jsonl"))
-    if not jsonl_files:
-        return []
-
-    # 从所有文件中收集消息
-    all_messages = []
-    for filepath in jsonl_files:
-        with open(filepath, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    try:
-                        all_messages.append(json.loads(line.strip()))
-                    except json.JSONDecodeError:
-                        continue
-
-    if limit is None:
-        return all_messages
-
-    # 返回最后 limit 条
-    return all_messages[-limit:]
-
-
 # =============================================================================
 # 存档检查 / 重置
 # =============================================================================
@@ -97,10 +51,9 @@ def load_conversation_history(limit: int | None = 10) -> list:
 
 def has_existing_save() -> bool:
     """检查是否有已存在的存档（narrator 有 jsonl 文件）"""
-    raw_dir = narrator_raw_dir()
+    raw_dir = character_path("narrator", "raw")
     if os.path.exists(raw_dir):
-        jsonl_files = glob.glob(f"{raw_dir}/*.jsonl")
-        if jsonl_files:
+        if glob.glob(f"{raw_dir}/*.jsonl"):
             return True
     return False
 
@@ -155,7 +108,7 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
             except Exception as e:
                 print(f"  删除失败 {characters_dir}: {e}", flush=True)
 
-        # 2. 从对应故事模板完整复制
+        # 3. 从对应故事模板完整复制
         story_template_dir = str(TEMPLATES_DIR / story_id)
         if os.path.exists(story_template_dir):
             try:
@@ -166,12 +119,12 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
         else:
             print(f"  [警告] 故事模板目录不存在: {story_template_dir}", flush=True)
 
-        # 3. 只为 narrator 创建 raw 目录（对话历史集中存储）
-        raw_dir = narrator_raw_dir()
+        # 4. 只为 narrator 创建 raw 目录（对话历史集中存储）
+        raw_dir = character_path("narrator", "raw")
         os.makedirs(raw_dir, exist_ok=True)
         print(f"  已创建: {raw_dir}", flush=True)
 
-        # 4. 写入 story_id 和 save_id 标记文件
+        # 5. 写入 story_id 和 save_id 标记文件
         story_id_path = os.path.join(characters_dir, ".story_id")
         with open(story_id_path, "w", encoding="utf-8") as f:
             f.write(story_id)
@@ -183,7 +136,7 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
             f.write(save_id)
         print(f"  已写入: {save_id_path} ({save_id})", flush=True)
 
-        # 5. 重置日志
+        # 6. 重置日志
         print("[日志]", flush=True)
         reset_logs()
 
@@ -215,7 +168,6 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
     with open(raw_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
 
-    # 返回两个独立的开场白（玩法介绍、故事开始）
     return intro_text, opening_text
 
 
@@ -252,7 +204,6 @@ def list_save_archives() -> list[dict]:
         saves.append(entry)
 
     saves.sort(key=lambda s: s.get("_sort_key", ""), reverse=True)
-    # 清理内部排序字段
     for s in saves:
         s.pop("_sort_key", None)
     return saves
@@ -267,7 +218,6 @@ async def import_save_archive(save_filename: str) -> bool:
     Returns:
         成功返回 True，失败返回 False
     """
-    # 安全检查：防止路径遍历
     if not save_filename.endswith(".zip") or os.sep in save_filename or "/" in save_filename:
         print(f"[读档] 非法文件名: {save_filename}", flush=True)
         return False
@@ -278,7 +228,6 @@ async def import_save_archive(save_filename: str) -> bool:
         return False
 
     try:
-        # 1. 清空向量记忆
         from memory.vector_store import vector_store
 
         all_agents = get_agent_names()
@@ -286,13 +235,11 @@ async def import_save_archive(save_filename: str) -> bool:
             print("[读档] 清理向量记忆...", flush=True)
             await vector_store.delete_all_agents(all_agents)
 
-        # 2. 删除当前 characters 目录
         characters_dir = str(CHARACTERS_DIR)
         if os.path.exists(characters_dir):
             shutil.rmtree(characters_dir)
             print(f"[读档] 已删除: {characters_dir}", flush=True)
 
-        # 3. 解压存档到 characters 目录（跳过 metadata.json）
         os.makedirs(characters_dir, exist_ok=True)
         with zipfile.ZipFile(str(save_path), "r") as zf:
             for member in zf.namelist():
@@ -301,7 +248,6 @@ async def import_save_archive(save_filename: str) -> bool:
                 zf.extract(member, characters_dir)
                 print(f"[读档] 已恢复: {member}", flush=True)
 
-        # 4. 若旧存档没有 .save_id，生成一个新的（下次 /save 会创建新文件）
         save_id_path = os.path.join(characters_dir, ".save_id")
         if not os.path.exists(save_id_path):
             new_save_id = uuid.uuid4().hex[:8]
@@ -309,7 +255,6 @@ async def import_save_archive(save_filename: str) -> bool:
                 f.write(new_save_id)
             print(f"[读档] 旧存档无 save_id，已生成新 id: {new_save_id}", flush=True)
 
-        # 5. 重建向量库（从角色 memory.md 重新索引）
         print("[读档] 重建向量库...", flush=True)
         await vector_store.rebuild("narrator")
         print(f"[读档] 读档完成: {save_filename}", flush=True)
@@ -328,18 +273,10 @@ async def import_save_archive(save_filename: str) -> bool:
 
 
 def _get_agent_save_files(agent_name: str) -> list[str]:
-    """获取指定角色需要存档的所有文件路径
-
-    Args:
-        agent_name: 角色名称
-
-    Returns:
-        文件路径列表（相对于 data/characters/ 目录）
-    """
+    """获取指定角色需要存档的所有文件路径"""
     files = []
     base = character_path(agent_name)
 
-    # 核心文件（narrator 只保留 soul/status/raw）
     core_files = ["soul.md", "status.md"]
     if agent_name != "narrator":
         core_files.extend(["memory.md", "user.md", "growth.md"])
@@ -349,13 +286,11 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
         if os.path.exists(filepath):
             files.append(filepath)
 
-    # 可选的状态文件
     for filename in ["states.md", "events.md", "tasks.md"]:
         filepath = f"{base}/{filename}"
         if os.path.exists(filepath):
             files.append(filepath)
 
-    # sidecar 状态文件
     hidden_files = [".history_window_state.json"]
     if agent_name != "narrator":
         hidden_files.extend([".consolidation_state.json", ".memory_recall_state.json"])
@@ -365,9 +300,8 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
         if os.path.exists(hidden_path):
             files.append(hidden_path)
 
-    # narrator 的 raw/ 对话历史（只有 narrator 有）
     if agent_name == "narrator":
-        raw_dir = narrator_raw_dir()
+        raw_dir = character_path("narrator", "raw")
         if os.path.exists(raw_dir):
             for jsonl_file in glob.glob(f"{raw_dir}/*.jsonl"):
                 files.append(jsonl_file)
@@ -381,7 +315,7 @@ def _read_save_id() -> str:
     try:
         return save_id_path.read_text(encoding="utf-8").strip()
     except Exception:
-        return uuid.uuid4().hex[:8]  # 降级：生成临时 id，不至于崩溃
+        return uuid.uuid4().hex[:8]
 
 
 def _read_story_theme() -> str:
@@ -415,12 +349,10 @@ async def export_save_archive() -> str | None:
     save_id = _read_save_id()
     theme = _read_story_theme()
     focus = _read_narrator_focus()
-    # 格式：<主题>_<save_id>.zip，同一局游戏始终覆盖同一文件
     filename = f"{theme}_{save_id}.zip" if theme else f"{save_id}.zip"
 
     save_dir = PROJECT_ROOT / "saves"
     os.makedirs(save_dir, exist_ok=True)
-
     save_path = str(save_dir / filename)
 
     all_agents = get_agent_names()
@@ -430,7 +362,6 @@ async def export_save_archive() -> str | None:
 
     try:
         with zipfile.ZipFile(save_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            # 添加元数据（含 save_id / focus / theme，供 list 展示用）
             metadata = {
                 "export_time": datetime.now().isoformat(),
                 "save_id": save_id,
@@ -443,19 +374,16 @@ async def export_save_archive() -> str | None:
                 "metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2)
             )
 
-            # 添加 .story_id 和 .save_id 标记文件（读档后运行时可直接读取）
             for marker in [".story_id", ".save_id"]:
                 marker_path = CHARACTERS_DIR / marker
                 if marker_path.exists():
                     zf.write(str(marker_path), marker)
                     print(f"[存档] 已添加: {marker}")
 
-            # 添加每个角色的文件
             for agent_name in all_agents:
                 agent_files = _get_agent_save_files(agent_name)
                 for filepath in agent_files:
                     if os.path.exists(filepath):
-                        # 在 zip 中保持相对路径结构
                         arcname = os.path.relpath(filepath, start=str(CHARACTERS_DIR))
                         zf.write(filepath, arcname)
                         print(f"[存档] 已添加: {filepath}")

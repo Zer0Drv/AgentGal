@@ -25,22 +25,24 @@ from memory.consolidation_inputs import (
     build_step1_user_payload,
     format_raw_dialogue_for_owner,
 )
-from memory.file_ops import (
+from engine.agent_files import (
     _get_fields_from_file,
     backup_file,
-    extract_event_field,
     load_text,
-    normalize,
-    parse_event_importance,
-    parse_event_keywords,
     read_growth_entries,
     read_agent_file,
     read_sidecar_json,
+    write_growth_entries,
+    write_sidecar_json,
+)
+from memory.parser import (
+    extract_event_field,
+    normalize,
+    parse_event_importance,
+    parse_event_keywords,
     safe_write_memory,
     split_by_date,
     split_into_events,
-    write_growth_entries,
-    write_sidecar_json,
 )
 from memory.vector_store import vector_store
 

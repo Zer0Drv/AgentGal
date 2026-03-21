@@ -17,7 +17,7 @@ os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
 from engine.config import character_path
-from game.save_manager import load_conversation_history
+from engine.history import load_conversation_history
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def temp_raw_dir(tmp_path, monkeypatch):
             return str(raw_dir / subpaths[1] if len(subpaths) > 1 else raw_dir)
         return original_character_path(agent_name, *subpaths)
     
-    monkeypatch.setattr("game.save_manager.character_path", mock_character_path)
+    monkeypatch.setattr("engine.history.character_path", mock_character_path)
     return raw_dir
 
 

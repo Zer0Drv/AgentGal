@@ -20,7 +20,7 @@ from llm.llm_parser import OpenAICompatibleClient
 from llm.providers import get_choices_llm_config, get_llm_config, get_narrator_llm_config
 from log_config.agent_calls import log_agent_call
 from log_config.routing import routing_logger
-from memory.file_ops import (
+from engine.agent_files import (
     _read_title,
     add_pending_event,
     _update_section_file,
@@ -30,7 +30,7 @@ from memory.file_ops import (
     read_sidecar_json,
     write_sidecar_json,
 )
-from game.save_manager import load_conversation_history
+from engine.history import load_conversation_history
 from memory.retrieval import search_memories
 
 
@@ -321,6 +321,8 @@ async def _apply_response_updates(agent_name: str, parsed) -> None:
 
     if parsed.add_event:
         for event_desc in parsed.add_event:
+            if event_desc.strip() == "无":
+                continue
             _safe_update("add_event", lambda d=event_desc: add_pending_event(agent_name, d, event_section))
 
     if results:

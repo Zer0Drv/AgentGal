@@ -14,8 +14,9 @@ os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
 try:
+    import engine.agent_files as agent_files_module
     import memory.consolidator as consolidator_module
-    import memory.file_ops as file_ops_module
+    import memory.parser as file_ops_module
     from memory.consolidator import MemoryConsolidator
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip consolidator tests: missing dependency ({exc})", allow_module_level=True)
@@ -290,7 +291,7 @@ async def test_consolidate_agent_only_replaces_tail_window(tmp_path, monkeypatch
     path_helper = _make_character_path(tmp_path)
 
     monkeypatch.setattr(consolidator_module, "character_path", path_helper)
-    monkeypatch.setattr(file_ops_module, "character_path", path_helper)
+    monkeypatch.setattr(agent_files_module, "character_path", path_helper)
     monkeypatch.setattr(
         consolidator_module,
         "format_raw_dialogue_for_owner",
@@ -386,7 +387,7 @@ async def test_consolidate_agent_writes_snapshot_size_in_state(tmp_path, monkeyp
     path_helper = _make_character_path(tmp_path)
 
     monkeypatch.setattr(consolidator_module, "character_path", path_helper)
-    monkeypatch.setattr(file_ops_module, "character_path", path_helper)
+    monkeypatch.setattr(agent_files_module, "character_path", path_helper)
     monkeypatch.setattr(
         consolidator_module,
         "format_raw_dialogue_for_owner",

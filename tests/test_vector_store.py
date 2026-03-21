@@ -145,7 +145,7 @@ def write_status(tmp_path, agent_name: str, content: str):
 
 def get_chunks(tmp_path, agent_name: str, date: str) -> list[str]:
     """从 tmp_path 下的 memory.md 提取指定日期的事件列表，供 store.add() 使用。"""
-    from memory.file_ops import split_by_date, normalize, split_into_events
+    from memory.parser import split_by_date, normalize, split_into_events
     path = tmp_path / agent_name / "memory.md"
     sections = split_by_date(normalize(path.read_text(encoding="utf-8")))
     return split_into_events(sections.get(date, ""))

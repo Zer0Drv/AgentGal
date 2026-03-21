@@ -15,12 +15,12 @@ from engine.agent_manager import (
 from engine.config import CHARACTERS_DIR, CONSOLIDATION_INTERVAL, get_agent_names
 from engine.message_router import message_router
 
-from game.save_manager import (
+from engine.history import load_conversation_history
+from engine.save_manager import (
     export_save_archive,
     has_existing_save,
     import_save_archive,
     list_save_archives,
-    load_conversation_history,
     load_story_file,
     reset_game,
 )

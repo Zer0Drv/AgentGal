@@ -25,7 +25,7 @@ from engine.config import (
     PROJECT_ROOT,
     get_agent_names,
 )
-from memory.file_ops import (
+from memory.parser import (
     normalize,
     split_by_date,
     split_into_events,

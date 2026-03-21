@@ -16,7 +16,7 @@ from engine.config import CONSOLIDATION_MAX_TOKENS, CONSOLIDATION_TEMPERATURE
 from llm.llm_parser import OpenAICompatibleClient
 from llm.providers import get_consolidation_llm_config
 from memory.consolidator import MemoryConsolidator
-from memory.file_ops import normalize, split_by_date
+from memory.parser import normalize, split_by_date
 
 
 async def main(agent: str, date: str) -> None:
