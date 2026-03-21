@@ -29,13 +29,14 @@ agentgal-memos/
 │   ├── templates/              # 故事模板（school / modern）
 │   └── vectors.sqlite          # 向量库
 ├── engine/
+│   ├── agent_files.py          # 角色目录文件操作（读写 soul/memory/status/user/growth/sidecar）
 │   ├── agent_manager.py        # Agent prompt 构建、LLM 调用、结果写回
 │   ├── config.py               # 路径与运行配置
+│   ├── history.py              # 对话历史读写（narrator raw JSONL 加载）
 │   ├── message_router.py       # 对话写入 / 可见性过滤
 │   ├── response_parser.py      # 解析 <update_notes>
+│   ├── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 │   └── text_utils.py           # 文本清理
-├── game/
-│   └── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 ├── llm/
 │   ├── llm_parser.py           # OpenAI 兼容客户端
 │   └── providers.py            # Provider 配置与 URL 解析
@@ -43,7 +44,7 @@ agentgal-memos/
 ├── memory/
 │   ├── consolidator.py         # 记忆整理器
 │   ├── consolidation_inputs.py # 整理 step1 输入构造与 raw 对话视角对齐
-│   ├── file_ops.py             # md 文件读写工具
+│   ├── parser.py               # memory.md 格式解析、事件切分、游戏日期工具
 │   ├── retrieval.py            # 完整检索 pipeline（融合、rerank、recency、召回状态更新）
 │   └── vector_store.py         # 向量索引存储层（write/delete/rebuild + 原始候选检索）
 ├── prompts/                    # narrator / character / consolidation prompts
