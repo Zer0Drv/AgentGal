@@ -245,9 +245,9 @@ def _parse_step1_5_metadata(llm_result: str) -> list[dict[str, Any]]:
     metadata_items: list[dict[str, Any]] = []
     for match in re.finditer(r"<chunk_meta>(.*?)</chunk_meta>", llm_result, re.DOTALL):
         body = match.group(1).strip()
-        time_match = re.search(r"^\s*时间：\s*(.+)$", body, re.MULTILINE)
-        keywords_match = re.search(r"^\s*keywords：\s*(.+)$", body, re.MULTILINE | re.IGNORECASE)
-        importance_match = re.search(r"^\s*importance：\s*(.+)$", body, re.MULTILINE | re.IGNORECASE)
+        time_match = re.search(r"^\s*时间[：:]\s*(.+)$", body, re.MULTILINE)
+        keywords_match = re.search(r"^\s*keywords[：:]\s*(.+)$", body, re.MULTILINE | re.IGNORECASE)
+        importance_match = re.search(r"^\s*importance[：:]\s*(.+)$", body, re.MULTILINE | re.IGNORECASE)
         if not time_match or not keywords_match or not importance_match:
             continue
         metadata_items.append(
