@@ -14,7 +14,8 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from memory.consolidator import MemoryConsolidator, _cleanup_old_backups, build_fields_definition
+from memory.consolidator import MemoryConsolidator, build_fields_definition
+from engine.agent_files import cleanup_old_backups
 
 
 async def main(agent: str) -> None:
@@ -50,7 +51,7 @@ async def main(agent: str) -> None:
         ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         shutil.copy2(p, bak_dir / f"user_{ts}_pre.md")
         # 只保留最近 10 个备份
-        _cleanup_old_backups(bak_dir, "user_*_pre.md", max_count=10)
+        cleanup_old_backups(bak_dir, "user_*_pre.md", max_count=10)
         p.write_text(extracted + "\n", encoding="utf-8")
         print("✅ 已备份并写入")
     else:

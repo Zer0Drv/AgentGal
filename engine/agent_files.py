@@ -13,18 +13,6 @@ from log_config.routing import routing_logger
 _EMPTY_PLACEHOLDER = "（暂无）"
 _GROWTH_TITLE = "# 心路历程"
 
-# 每个角色 status.md 允许的字段白名单（对应 ## 标题），文件不存在时的回退默认值
-STATUS_FIELDS: dict[str, list[str]] = {
-    "lilith": ["身份", "心境", "我和他", "在意的事", "打算"],
-    "mitsuki": ["心境", "我和他", "在意的事", "打算"],
-    "narrator": ["关系现状", "当前时间", "场景", "叙事焦点", "待触发事件"],
-}
-
-# 每个角色 user.md 允许的字段白名单，文件不存在时的回退默认值
-USER_FIELDS: dict[str, list[str]] = {
-    "lilith": ["基本信息", "观察到的特质", "互动模式"],
-    "mitsuki": ["基本信息", "观察到的特质", "互动模式"],
-}
 
 
 # ===== 通用文件读取 =====
@@ -67,7 +55,7 @@ def write_sidecar_json(agent_name: str, filename: str, data: dict) -> None:
 # ===== 字段白名单 =====
 
 
-def _get_fields_from_file(file_path: str) -> list[str] | None:
+def get_fields_from_file(file_path: str) -> list[str] | None:
     """从文件中提取 ## 标题列表，文件不存在返回 None。"""
     if not os.path.exists(file_path):
         return None
@@ -77,21 +65,21 @@ def _get_fields_from_file(file_path: str) -> list[str] | None:
 
 
 def get_allowed_fields(agent_name: str, file_type: str) -> list[str]:
-    """获取允许字段列表（文件驱动，失败回退到默认值）。
+    """获取允许字段列表（文件驱动）。
 
     Args:
         agent_name: 角色名
         file_type: "status" | "user"
 
     Returns:
-        文件中所有 ## 标题列表，文件不存在则返回默认字段
+        文件中所有 ## 标题列表，文件不存在则返回 [] 并记录警告
     """
     file_path = character_path(agent_name, f"{file_type}.md")
-    fields = _get_fields_from_file(file_path)
-    if fields is not None:
-        return fields
-    defaults = STATUS_FIELDS if file_type == "status" else USER_FIELDS
-    return defaults.get(agent_name, [])
+    fields = get_fields_from_file(file_path)
+    if fields is None:
+        routing_logger.warning(f"[{agent_name}] {file_type}.md 不存在，无法获取字段白名单")
+        return []
+    return fields
 
 
 # ===== Section 文件读写 =====
@@ -333,58 +321,6 @@ def write_growth_entries(agent_name: str, entries: dict[str, str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
 
-
-# ===== 记忆文件安全写回（带并发保护） =====
-
-
-def safe_write_memory(
-    path: Path,
-    sections: dict[str, str],
-    agent_name: str,
-    original_content: str,
-) -> tuple[int, int]:
-    """安全写回 memory.md，带最小并发保护。
-
-    策略：
-    - 若 current 以 original 开头，视为尾部追加，保留该追加；
-    - 若 current == original，正常覆盖；
-    - 否则判定为中间变更，放弃写回并返回 (-1, -1)。
-
-    Args:
-        path: 文件路径
-        sections: 按日期组织的记忆内容 {日期: 内容}
-        agent_name: 角色名（用于日志）
-        original_content: 原始内容（用于检测并发变更）
-
-    Returns:
-        (写入后的文件长度, 已整理快照长度)，(-1, -1) 表示检测到并发冲突放弃写回
-    """
-    from memory.parser import render_sections
-
-    current_content = path.read_text(encoding="utf-8")
-
-    if current_content.startswith(original_content):
-        appended = current_content[len(original_content):]
-        if appended:
-            routing_logger.info(
-                f"[整理器] {agent_name} 检测到并发尾部追加 ({len(appended)} 字符)，将保留"
-            )
-    elif current_content == original_content:
-        appended = ""
-    else:
-        routing_logger.warning(
-            f"[整理器] {agent_name} 检测到并发中间变更，已放弃写回以避免覆盖（建议稍后重试）"
-        )
-        return -1, -1
-
-    result = f"# {agent_name} 的长期记忆\n\n{render_sections(sections)}\n"
-    consolidated_len = len(result)
-
-    if appended:
-        result += appended
-
-    path.write_text(result, encoding="utf-8")
-    return len(result), consolidated_len
 
 
 # ===== 备份 =====

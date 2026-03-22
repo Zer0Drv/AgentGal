@@ -26,13 +26,12 @@ from memory.consolidation_inputs import (
     format_raw_dialogue_for_owner,
 )
 from engine.agent_files import (
-    _get_fields_from_file,
+    get_fields_from_file,
     backup_file,
     load_text,
     read_growth_entries,
     read_agent_file,
     read_sidecar_json,
-    safe_write_memory,
     write_growth_entries,
     write_sidecar_json,
 )
@@ -55,6 +54,48 @@ _PLAYER_PROMPT_PATH = (
     Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 )
 _REQUIRED_EVENT_FIELDS = ["**时间**", "**地点**", "**在场**", "**内容**"]
+
+
+def safe_write_memory(
+    path: Path,
+    sections: dict[str, str],
+    agent_name: str,
+    original_content: str,
+) -> tuple[int, int]:
+    """安全写回 memory.md，带最小并发保护。
+
+    策略：
+    - 若 current 以 original 开头，视为尾部追加，保留该追加；
+    - 若 current == original，正常覆盖；
+    - 否则判定为中间变更，放弃写回并返回 (-1, -1)。
+
+    Returns:
+        (写入后的文件长度, 已整理快照长度)，(-1, -1) 表示检测到并发冲突放弃写回
+    """
+    current_content = path.read_text(encoding="utf-8")
+
+    if current_content.startswith(original_content):
+        appended = current_content[len(original_content):]
+        if appended:
+            routing_logger.info(
+                f"[整理器] {agent_name} 检测到并发尾部追加 ({len(appended)} 字符)，将保留"
+            )
+    elif current_content == original_content:
+        appended = ""
+    else:
+        routing_logger.warning(
+            f"[整理器] {agent_name} 检测到并发中间变更，已放弃写回以避免覆盖（建议稍后重试）"
+        )
+        return -1, -1
+
+    result = f"# {agent_name} 的长期记忆\n\n{render_sections(sections)}\n"
+    consolidated_len = len(result)
+
+    if appended:
+        result += appended
+
+    path.write_text(result, encoding="utf-8")
+    return len(result), consolidated_len
 
 _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
     "基本信息": "优先保留已确认的客观信息：姓名、年龄、性别/称呼、身份",
@@ -88,7 +129,7 @@ class _ConsolidationResult:
 
 def build_fields_definition(agent_name: str) -> str:
     file_path = character_path(agent_name, "user.md")
-    fields = _get_fields_from_file(file_path) or ["基本信息", "对方是什么人", "我们怎么相处"]
+    fields = get_fields_from_file(file_path) or ["基本信息", "对方是什么人", "我们怎么相处"]
     return "\n".join(f"- 「{field}」：{_USER_FIELD_DESCRIPTIONS.get(field, '')}" for field in fields)
 
 
