@@ -18,6 +18,7 @@ try:
     import memory.consolidator as consolidator_module
     import memory.parser as file_ops_module
     from memory.consolidator import MemoryConsolidator
+    from memory.parser import parse_llm_memory_sections
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip consolidator tests: missing dependency ({exc})", allow_module_level=True)
 
@@ -191,7 +192,7 @@ def test_normalize_adds_missing_event_bullets():
 
 
 def test_parse_step1_memories_accepts_non_bulleted_time_field():
-    sections = consolidator_module._parse_step1_memories(
+    sections = parse_llm_memory_sections(
         "\n".join(
             [
                 "**时间**：10月6日 19:20",
@@ -211,7 +212,7 @@ def test_parse_step1_memories_accepts_non_bulleted_time_field():
 
 
 def test_parse_step1_memories_infers_single_window_date():
-    sections = consolidator_module._parse_step1_memories(
+    sections = parse_llm_memory_sections(
         "\n".join(
             [
                 "**时间**：19:20",

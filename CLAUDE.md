@@ -44,7 +44,7 @@ agentgal-memos/
 ├── memory/
 │   ├── consolidator.py         # 记忆整理器
 │   ├── consolidation_inputs.py # 整理 step1 输入构造与 raw 对话视角对齐
-│   ├── parser.py               # memory.md 格式解析、事件切分、游戏日期工具
+│   ├── parser.py               # memory.md 格式解析与序列化、事件切分、LLM 输出解析、游戏日期工具
 │   ├── retrieval.py            # 完整检索 pipeline（融合、rerank、recency、召回状态更新）
 │   └── vector_store.py         # 向量索引存储层（write/delete/rebuild + 原始候选检索）
 ├── prompts/                    # narrator / character / consolidation prompts

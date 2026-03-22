@@ -215,6 +215,89 @@ def is_date_before(date_text: str, cutoff_date: str) -> bool:
     return left < right
 
 
+# ===== sections 序列化 =====
+
+
+def render_sections(sections: OrderedDict[str, str]) -> str:
+    """将按日期组织的 sections 序列化为 memory.md Markdown 格式。逆操作为 split_by_date。"""
+    parts: list[str] = []
+    for date, body in sections.items():
+        parts.append(f"## {date}")
+        parts.append(body.strip())
+        parts.append("")
+    return "\n".join(parts).strip()
+
+
+# ===== LLM 输出解析 =====
+
+
+def parse_llm_memory_sections(
+    llm_result: str, expected_dates: list[str] | None = None
+) -> OrderedDict[str, str]:
+    """解析整理器 step1 的 LLM 输出，容忍 LLM 生成的格式噪声（时间字段内含日期、无标题行等）。
+
+    与 split_by_date 的区别：split_by_date 处理干净的 memory.md 文本；
+    本函数处理 LLM 返回的同格式文本，会做额外的日期推断和 <analysis> 标签剥除。
+    """
+    cleaned = re.sub(r"<analysis>.*?</analysis>", "", llm_result, flags=re.DOTALL).strip()
+    heading_pattern = re.compile(r"^\s*##\s*(\d{1,2}月\d{1,2}日)(?:\s.*)?$")
+    time_pattern = re.compile(r"^\s*(?:-\s*)?\*\*时间\*\*：\s*(.*)$")
+    field_pattern = re.compile(r"^\s*(?:-\s*)?\*\*(地点|在场|内容)\*\*：\s*(.*)$")
+    explicit_date_pattern = re.compile(r"(\d{1,2}月\d{1,2}日)")
+    fallback_date = expected_dates[0] if expected_dates and len(expected_dates) == 1 else None
+
+    sections: OrderedDict[str, str] = OrderedDict()
+    current_heading_date: str | None = None
+    current_date: str | None = None
+    current_lines: list[str] = []
+
+    def flush_event() -> None:
+        nonlocal current_date, current_lines
+        if not current_date or not current_lines:
+            current_date = None
+            current_lines = []
+            return
+        event_text = "\n".join(current_lines).strip()
+        if event_text:
+            sections[current_date] = (
+                sections.get(current_date, "") + ("\n\n" if current_date in sections else "") + event_text
+            )
+        current_date = None
+        current_lines = []
+
+    for line in cleaned.splitlines():
+        heading_match = heading_pattern.match(line)
+        if heading_match:
+            current_heading_date = heading_match.group(1)
+            continue
+
+        time_match = time_pattern.match(line)
+        if time_match:
+            flush_event()
+            time_value = time_match.group(1).strip()
+            explicit_date_match = explicit_date_pattern.search(time_value)
+            current_date = (
+                explicit_date_match.group(1) if explicit_date_match else current_heading_date or fallback_date
+            )
+            if explicit_date_match:
+                current_lines = [f"- **时间**：{time_value}"]
+            elif current_date:
+                current_lines = [f"- **时间**：{current_date} {time_value}".rstrip()]
+            else:
+                current_lines = [f"- **时间**：{time_value}"]
+            continue
+
+        if current_lines:
+            field_match = field_pattern.match(line)
+            if field_match:
+                current_lines.append(f"- **{field_match.group(1)}**：{field_match.group(2).strip()}".rstrip())
+            else:
+                current_lines.append(line)
+
+    flush_event()
+    return sections
+
+
 # ===== 安全写回（带并发保护） =====
 
 
@@ -258,12 +341,7 @@ def safe_write_memory(
         )
         return -1, -1
 
-    parts = [f"# {agent_name} 的长期记忆", ""]
-    for date, body in sections.items():
-        parts.append(f"## {date}")
-        parts.append(body.strip())
-        parts.append("")
-    result = "\n".join(parts).strip() + "\n"
+    result = f"# {agent_name} 的长期记忆\n\n{render_sections(sections)}\n"
     consolidated_len = len(result)
 
     if appended:

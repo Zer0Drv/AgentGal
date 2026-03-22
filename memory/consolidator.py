@@ -40,6 +40,8 @@ from memory.parser import (
     normalize,
     parse_event_importance,
     parse_event_keywords,
+    parse_llm_memory_sections,
+    render_sections,
     safe_write_memory,
     split_by_date,
     split_into_events,
@@ -60,6 +62,15 @@ _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
     "对方是什么人": "最多 8 条：跨情境成立的性格、习惯、边界方式与行事风格（主语是\"对方\"），不要重复基本信息",
     "我们怎么相处": "最多 5 条：我和对方之间反复出现的双向互动规律（主语是\"我们/我和对方\"）",
 }
+
+
+@dataclass
+class _ConsolidationWindow:
+    stable_blocks: list[dict[str, str]]
+    window_blocks: list[dict[str, str]]
+    window_dates: list[str]
+    window_memory_entries: str
+    raw_dialogue: str
 
 
 @dataclass
@@ -113,15 +124,6 @@ def _group_blocks(blocks: list[dict[str, str]]) -> OrderedDict[str, str]:
         date = block["date"]
         sections[date] = sections.get(date, "") + ("\n\n" if date in sections else "") + block["content"].strip()
     return sections
-
-
-def _render_sections(sections: OrderedDict[str, str]) -> str:
-    parts: list[str] = []
-    for date, body in sections.items():
-        parts.append(f"## {date}")
-        parts.append(body.strip())
-        parts.append("")
-    return "\n".join(parts).strip()
 
 
 def _normalize_keywords(keywords: str) -> str:
@@ -186,61 +188,6 @@ def _validate_step1_result(expected_dates: list[str], sections: OrderedDict[str,
         return missing_map[0] + "，已跳过"
     return None
 
-
-def _parse_step1_memories(llm_result: str, expected_dates: list[str] | None = None) -> OrderedDict[str, str]:
-    cleaned = re.sub(r"<analysis>.*?</analysis>", "", llm_result, flags=re.DOTALL).strip()
-    heading_pattern = re.compile(r"^\s*##\s*(\d{1,2}月\d{1,2}日)(?:\s.*)?$")
-    time_pattern = re.compile(r"^\s*(?:-\s*)?\*\*时间\*\*：\s*(.*)$")
-    field_pattern = re.compile(r"^\s*(?:-\s*)?\*\*(地点|在场|内容)\*\*：\s*(.*)$")
-    explicit_date_pattern = re.compile(r"(\d{1,2}月\d{1,2}日)")
-    fallback_date = expected_dates[0] if expected_dates and len(expected_dates) == 1 else None
-
-    sections: OrderedDict[str, str] = OrderedDict()
-    current_heading_date: str | None = None
-    current_date: str | None = None
-    current_lines: list[str] = []
-
-    def flush_event() -> None:
-        nonlocal current_date, current_lines
-        if not current_date or not current_lines:
-            current_date = None
-            current_lines = []
-            return
-        event_text = "\n".join(current_lines).strip()
-        if event_text:
-            sections[current_date] = sections.get(current_date, "") + ("\n\n" if current_date in sections else "") + event_text
-        current_date = None
-        current_lines = []
-
-    for line in cleaned.splitlines():
-        heading_match = heading_pattern.match(line)
-        if heading_match:
-            current_heading_date = heading_match.group(1)
-            continue
-
-        time_match = time_pattern.match(line)
-        if time_match:
-            flush_event()
-            time_value = time_match.group(1).strip()
-            explicit_date_match = explicit_date_pattern.search(time_value)
-            current_date = explicit_date_match.group(1) if explicit_date_match else current_heading_date or fallback_date
-            if explicit_date_match:
-                current_lines = [f"- **时间**：{time_value}"]
-            elif current_date:
-                current_lines = [f"- **时间**：{current_date} {time_value}".rstrip()]
-            else:
-                current_lines = [f"- **时间**：{time_value}"]
-            continue
-
-        if current_lines:
-            field_match = field_pattern.match(line)
-            if field_match:
-                current_lines.append(f"- **{field_match.group(1)}**：{field_match.group(2).strip()}".rstrip())
-            else:
-                current_lines.append(line)
-
-    flush_event()
-    return sections
 
 
 def _parse_step1_5_metadata(llm_result: str) -> list[dict[str, Any]]:
@@ -375,6 +322,95 @@ class MemoryConsolidator:
             self._locks[name] = asyncio.Lock()
         return self._locks[name]
 
+    async def _call_step(
+        self,
+        client: OpenAICompatibleClient,
+        agent_name: str,
+        step_name: str,
+        system: str,
+        user: str,
+    ) -> str:
+        resp = await client.chat(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            enable_thinking=False,
+        )
+        content = (resp.get("content") or "").strip()
+        log_consolidation_call(
+            agent_name,
+            step_name,
+            f"[system]\n{system}\n\n[user]\n{user}",
+            content,
+            resp.get("usage"),
+        )
+        return content
+
+    async def _run_step1(
+        self,
+        client: OpenAICompatibleClient,
+        agent_name: str,
+        memory_entries: str,
+        raw_dialogue: str,
+        window_dates: list[str],
+    ) -> tuple[list[dict[str, str]], str]:
+        system = load_text(_PROMPT_STEP1_PATH)
+        user = build_step1_user_payload(agent_name, memory_entries, raw_dialogue)
+        result = await self._call_step(client, agent_name, "step1_merge", system, user)
+        if len(result) < 50:
+            raise ValueError("第一步返回过短，跳过整理")
+        sections = parse_llm_memory_sections(result, window_dates)
+        validation_error = _validate_step1_result(window_dates, sections)
+        if validation_error:
+            raise ValueError(validation_error)
+        blocks = _flatten_sections(sections)
+        return blocks, render_sections(_group_blocks(blocks))
+
+    async def _run_step1_5(
+        self,
+        client: OpenAICompatibleClient,
+        agent_name: str,
+        blocks: list[dict[str, str]],
+        step1_markdown: str,
+    ) -> list[dict[str, str]]:
+        system, user = self._build_consolidation_prompt_step1_5(step1_markdown)
+        try:
+            result = await self._call_step(client, agent_name, "step1_5_chunk_meta", system, user)
+            return _merge_chunk_metadata(blocks, _parse_step1_5_metadata(result))
+        except Exception as e:
+            routing_logger.error(f"[整理器] {agent_name} 第一步半调用失败: {e}")
+            return _apply_default_chunk_metadata(blocks)
+
+    async def _run_step2_growth(
+        self,
+        client: OpenAICompatibleClient,
+        agent_name: str,
+        step1_markdown: str,
+    ) -> None:
+        system, user = self._build_consolidation_prompt_step2(agent_name, step1_markdown)
+        result = await self._call_step(client, agent_name, "step2_growth", system, user)
+        updates = self._parse_step2_growth(result)
+        if updates:
+            routing_logger.info(f"[整理器] {agent_name} growth.md: {self._apply_growth_updates(agent_name, updates)}")
+        else:
+            routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
+
+    async def _run_step3_dedup(
+        self,
+        client: OpenAICompatibleClient,
+        agent_name: str,
+    ) -> None:
+        current_count = len(read_growth_entries(agent_name))
+        if current_count <= GROWTH_DEDUP_THRESHOLD:
+            routing_logger.info(
+                f"[整理器] {agent_name} 跳过第三步去重合并（当前 {current_count} 条，未超过阈值 {GROWTH_DEDUP_THRESHOLD}）"
+            )
+            return
+        routing_logger.info(
+            f"[整理器] {agent_name} 触发第三步去重合并（当前 {current_count} 条，阈值 {GROWTH_DEDUP_THRESHOLD}）"
+        )
+        system, user = self._build_consolidation_prompt_step3(agent_name)
+        result = await self._call_step(client, agent_name, "step3_dedup", system, user)
+        self._apply_step3_growth(agent_name, result)
+
     def _build_consolidation_prompt_step2(self, agent_name: str, step1_result: str) -> tuple[str, str]:
         soul_content = read_agent_file(agent_name, "soul.md")
         growth_content = read_agent_file(agent_name, "growth.md") or "（尚无）"
@@ -429,7 +465,6 @@ class MemoryConsolidator:
         raw_dialogue: str = "",
     ) -> tuple[list[dict[str, str]] | None, list[str]]:
         errors: list[str] = []
-        rewritten_blocks: list[dict[str, str]] | None = None
 
         async with OpenAICompatibleClient(
             **get_consolidation_llm_config(temperature=CONSOLIDATION_TEMPERATURE),
@@ -437,115 +472,59 @@ class MemoryConsolidator:
             timeout=120.0,
             max_retries=3,
         ) as client:
-            system_step1 = load_text(_PROMPT_STEP1_PATH)
-            user_step1 = build_step1_user_payload(agent_name, memory_entries, raw_dialogue)
             try:
-                resp1 = await client.chat(
-                    [{"role": "system", "content": system_step1}, {"role": "user", "content": user_step1}],
-                    enable_thinking=False,
-                )
-                step1_result = (resp1.get("content") or "").strip()
-                log_consolidation_call(
-                    agent_name,
-                    "step1_merge",
-                    f"[system]\n{system_step1}\n\n[user]\n{user_step1}",
-                    step1_result,
-                    resp1.get("usage"),
+                blocks, step1_markdown = await self._run_step1(
+                    client, agent_name, memory_entries, raw_dialogue, window_dates
                 )
             except Exception as e:
                 errors.append(f"第一步调用失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 第一步调用失败: {e}")
                 return None, errors
 
-            if len(step1_result) < 50:
-                return None, [*errors, "第一步返回过短，跳过整理"]
-
-            step1_sections = _parse_step1_memories(step1_result, window_dates)
-            validation_error = _validate_step1_result(window_dates, step1_sections)
-            if validation_error:
-                return None, [*errors, validation_error]
-
-            rewritten_blocks = _flatten_sections(step1_sections)
-            step1_markdown = _render_sections(_group_blocks(rewritten_blocks))
-
-            system_step1_5, user_step1_5 = self._build_consolidation_prompt_step1_5(step1_markdown)
-            try:
-                resp1_5 = await client.chat(
-                    [{"role": "system", "content": system_step1_5}, {"role": "user", "content": user_step1_5}],
-                    enable_thinking=False,
-                )
-                step1_5_result = (resp1_5.get("content") or "").strip()
-                log_consolidation_call(
-                    agent_name,
-                    "step1_5_chunk_meta",
-                    f"[system]\n{system_step1_5}\n\n[user]\n{user_step1_5}",
-                    step1_5_result,
-                    resp1_5.get("usage"),
-                )
-                rewritten_blocks = _merge_chunk_metadata(rewritten_blocks, _parse_step1_5_metadata(step1_5_result))
-            except Exception as e:
-                errors.append(f"第一点五步调用失败: {e}")
-                routing_logger.error(f"[整理器] {agent_name} 第一步半调用失败: {e}")
-                rewritten_blocks = _apply_default_chunk_metadata(rewritten_blocks)
+            blocks = await self._run_step1_5(client, agent_name, blocks, step1_markdown)
 
             if not self._supports_growth(agent_name):
                 routing_logger.info(f"[整理器] {agent_name} 跳过 growth.md 流程")
-                return rewritten_blocks, errors
+                return blocks, errors
 
-            system_step2, user_step2 = self._build_consolidation_prompt_step2(agent_name, step1_markdown)
             try:
-                resp2 = await client.chat(
-                    [{"role": "system", "content": system_step2}, {"role": "user", "content": user_step2}],
-                    enable_thinking=False,
-                )
-                step2_result = (resp2.get("content") or "").strip()
-                log_consolidation_call(
-                    agent_name,
-                    "step2_growth",
-                    f"[system]\n{system_step2}\n\n[user]\n{user_step2}",
-                    step2_result,
-                    resp2.get("usage"),
-                )
+                await self._run_step2_growth(client, agent_name, step1_markdown)
             except Exception as e:
                 errors.append(f"第二步调用失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
-                return rewritten_blocks, errors
+                return blocks, errors
 
-            step2_updates = self._parse_step2_growth(step2_result)
-            if step2_updates:
-                routing_logger.info(f"[整理器] {agent_name} growth.md: {self._apply_growth_updates(agent_name, step2_updates)}")
-            else:
-                routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
+            try:
+                await self._run_step3_dedup(client, agent_name)
+            except Exception as e:
+                errors.append(f"第三步调用失败: {e}")
+                routing_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
 
-            current_count = len(read_growth_entries(agent_name))
-            if current_count > GROWTH_DEDUP_THRESHOLD:
-                routing_logger.info(
-                    f"[整理器] {agent_name} 触发第三步去重合并（当前 {current_count} 条，阈值 {GROWTH_DEDUP_THRESHOLD}）"
-                )
-                system_step3, user_step3 = self._build_consolidation_prompt_step3(agent_name)
-                try:
-                    resp3 = await client.chat(
-                        [{"role": "system", "content": system_step3}, {"role": "user", "content": user_step3}],
-                        enable_thinking=False,
-                    )
-                    step3_result = (resp3.get("content") or "").strip()
-                    log_consolidation_call(
-                        agent_name,
-                        "step3_dedup",
-                        f"[system]\n{system_step3}\n\n[user]\n{user_step3}",
-                        step3_result,
-                        resp3.get("usage"),
-                    )
-                    self._apply_step3_growth(agent_name, step3_result)
-                except Exception as e:
-                    errors.append(f"第三步调用失败: {e}")
-                    routing_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
-            else:
-                routing_logger.info(
-                    f"[整理器] {agent_name} 跳过第三步去重合并（当前 {current_count} 条，未超过阈值 {GROWTH_DEDUP_THRESHOLD}）"
-                )
+        return blocks, errors
 
-        return rewritten_blocks, errors
+    def _prepare_consolidation_window(
+        self,
+        agent_name: str,
+        blocks: list[dict[str, str]],
+        original_content: str,
+        cdata: dict,
+    ) -> tuple[_ConsolidationWindow | None, str | None]:
+        start_index, skip_reason = _resolve_window_start(agent_name, blocks, original_content, cdata)
+        if start_index is None:
+            return None, skip_reason
+        stable_blocks = blocks[:start_index]
+        window_blocks = blocks[start_index:]
+        window_dates = list(OrderedDict.fromkeys(block["date"] for block in window_blocks))
+        raw_dialogue = format_raw_dialogue_for_owner(agent_name, RAW_DIALOGUE_LIMIT)
+        if not raw_dialogue:
+            return None, f"最近 {RAW_DIALOGUE_LIMIT} 条消息中无参与"
+        return _ConsolidationWindow(
+            stable_blocks=stable_blocks,
+            window_blocks=window_blocks,
+            window_dates=window_dates,
+            window_memory_entries=render_sections(_group_blocks(window_blocks)),
+            raw_dialogue=raw_dialogue,
+        ), None
 
     async def consolidate_agent(self, agent_name: str) -> _ConsolidationResult | None:
         result = _ConsolidationResult(agent_name=agent_name)
@@ -564,40 +543,29 @@ class MemoryConsolidator:
                 return None
             path, original_content, blocks = loaded
             cdata = read_sidecar_json(agent_name, ".consolidation_state.json")
-            start_index, skip_reason = _resolve_window_start(agent_name, blocks, original_content, cdata)
-            if start_index is None:
+            window, skip_reason = self._prepare_consolidation_window(agent_name, blocks, original_content, cdata)
+            if window is None:
                 if skip_reason:
                     result.skipped, result.skip_reason = True, skip_reason
                     routing_logger.info(f"[整理器] {agent_name} 跳过: {skip_reason}")
                 return result if result.skipped else None
 
-            stable_blocks = blocks[:start_index]
-            window_blocks = blocks[start_index:]
-            window_dates = list(OrderedDict.fromkeys(block["date"] for block in window_blocks))
-            window_memory_entries = _render_sections(_group_blocks(window_blocks))
-
-            raw_dialogue = format_raw_dialogue_for_owner(agent_name, RAW_DIALOGUE_LIMIT)
-            if not raw_dialogue:
-                result.skipped, result.skip_reason = True, f"最近 {RAW_DIALOGUE_LIMIT} 条消息中无参与"
-                routing_logger.info(f"[整理器] {agent_name} 跳过: {result.skip_reason}")
-                return result
-
-            result.days = len(window_dates)
-            result.date_range = f"{window_dates[0]}~{window_dates[-1]}"
+            result.days = len(window.window_dates)
+            result.date_range = f"{window.window_dates[0]}~{window.window_dates[-1]}"
             result.original_len = len(original_content)
             backup_file(path, agent_name, "Memory")
 
-            merged_blocks = stable_blocks + window_blocks
+            merged_blocks = window.stable_blocks + window.window_blocks
             try:
                 rewritten_blocks, pipeline_errors = await self._run_memory_pipeline(
                     agent_name,
-                    window_memory_entries,
-                    window_dates,
-                    raw_dialogue,
+                    window.window_memory_entries,
+                    window.window_dates,
+                    window.raw_dialogue,
                 )
                 result.errors.extend(pipeline_errors)
                 if rewritten_blocks is not None:
-                    merged_blocks = stable_blocks + rewritten_blocks
+                    merged_blocks = window.stable_blocks + rewritten_blocks
             except Exception as e:
                 result.errors.append(f"整合失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
@@ -608,7 +576,7 @@ class MemoryConsolidator:
                 result.errors.append("并发冲突：检测到中间变更，已放弃写回")
                 return result
 
-            for date in window_dates:
+            for date in window.window_dates:
                 await vector_store.add(agent_name, date, split_into_events(merged_sections.get(date, "")))
 
             if not result.errors:
@@ -693,15 +661,12 @@ class MemoryConsolidator:
                 consolidated = consolidated[diary_match.end():].lstrip("\n")
 
             user_path.write_text(consolidated.strip() + "\n", encoding="utf-8")
-            return len(content), len(consolidated)
+            before_len, after_len = len(content), len(consolidated)
+            routing_logger.info(f"[整理器] {agent_name} user.md 整理完成 (长度: {before_len} → {after_len})")
+            return before_len, after_len
         except Exception as e:
             routing_logger.error(f"[整理器] {agent_name} user.md 整理失败: {e}")
             return 0, 0
-
-    async def consolidate_player_profile(self, agent_name: str):
-        before, after = await self._consolidate_player_profile(agent_name)
-        if before > 0:
-            routing_logger.info(f"[整理器] {agent_name} user.md 整理完成 (长度: {before} → {after})")
 
     async def consolidate_all(self, agent_names: list[str]):
         t0 = time.monotonic()
