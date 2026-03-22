@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from engine.config import character_path
+from log_config.routing import routing_logger
 
 _EMPTY_PLACEHOLDER = "（暂无）"
 _GROWTH_TITLE = "# 心路历程"
@@ -358,7 +359,6 @@ def safe_write_memory(
     Returns:
         (写入后的文件长度, 已整理快照长度)，(-1, -1) 表示检测到并发冲突放弃写回
     """
-    from log_config.routing import routing_logger
     from memory.parser import render_sections
 
     current_content = path.read_text(encoding="utf-8")
@@ -421,3 +421,70 @@ def backup_file(src: Path, agent_name: str, prefix: str, max_backups: int = 10) 
 
     cleanup_old_backups(bak_dir, f"{prefix}_*_pre.md", max_count=max_backups)
     return bak_path
+
+
+# ===== Agent 响应写回（memory / status / user） =====
+
+
+def update_memory(agent_name: str, memory_content: str) -> str:
+    """追加 memory 内容到 memory.md（带去重）。"""
+    if not memory_content or not memory_content.strip():
+        return "内容为空，跳过"
+
+    memory_path = character_path(agent_name, "memory.md")
+    os.makedirs(os.path.dirname(memory_path), exist_ok=True)
+    clean = memory_content.replace("\\n", "\n").strip()
+
+    def _parse_entries(text: str) -> list[str]:
+        entries, current = [], []
+        for line in text.split("\n"):
+            if line.strip().startswith("##") or (line.strip().startswith("-") and "**" in line):
+                if current:
+                    entries.append("\n".join(current).strip())
+                current = [line]
+            elif line.strip() or current:
+                current.append(line)
+        if current:
+            entries.append("\n".join(current).strip())
+        return entries
+
+    try:
+        existing = Path(memory_path).read_text(encoding="utf-8")
+    except OSError:
+        existing = ""
+    existing_set = set(_parse_entries(existing))
+    unique = [e for e in _parse_entries(clean) if e and e not in existing_set]
+
+    if not unique:
+        return "所有 entry 已存在，跳过"
+
+    to_append = "\n\n".join(unique)
+    if existing.strip():
+        with open(memory_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n{to_append}")
+    else:
+        with open(memory_path, "w", encoding="utf-8") as f:
+            f.write(f"# {agent_name} 的长期记忆\n\n{to_append}")
+
+    return f"已追加 {len(unique)} 个新 entry"
+
+
+def update_status(agent_name: str, field: str, content: str) -> str:
+    """覆盖更新 status.md 的指定字段。"""
+    # 事件队列只能通过 add_pending_event/mark_event_triggered 操作，禁止整体覆盖
+    if agent_name != "narrator" and field == "打算":
+        routing_logger.warning(f"[{agent_name}] 禁止通过 <status> 覆盖「打算」字段，请使用 <triggered>/<add_event>")
+        return "禁止覆盖「打算」字段，请用 <triggered>/<add_event> 逐条管理"
+    if agent_name == "narrator" and field == "待触发事件":
+        routing_logger.warning("[narrator] 禁止通过 <status> 覆盖「待触发事件」字段，请使用 <triggered>/<add_event>")
+        return "禁止覆盖「待触发事件」字段，请用 <triggered>/<add_event> 逐条管理"
+    allowed = get_allowed_fields(agent_name, "status")
+    status_path = character_path(agent_name, "status.md")
+    return _update_section_file(status_path, field, content, allowed, _read_title(status_path, "# 我的状态"))
+
+
+def update_player(agent_name: str, field: str, content: str) -> str:
+    """追加更新 user.md 的指定字段。"""
+    allowed = get_allowed_fields(agent_name, "user")
+    user_path = character_path(agent_name, "user.md")
+    return _update_section_file(user_path, field, content, allowed, _read_title(user_path, "# 玩家档案"), append=True)

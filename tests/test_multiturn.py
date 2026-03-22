@@ -11,11 +11,8 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
-from engine.agent_manager import (
-    _apply_high_low_watermark,
-    _build_history_transcript,
-    _build_user_message,
-)
+from engine.history import _apply_high_low_watermark, build_history_transcript
+from engine.agent_manager import _build_user_message
 
 
 @pytest.fixture(autouse=True)
@@ -24,17 +21,17 @@ def fake_history_window_state():
     state: dict[str, int] = {}
 
     with patch(
-        "engine.agent_manager._load_history_window_start",
-        side_effect=lambda agent_name: state.get(agent_name, 0),
+        "engine.history.read_sidecar_json",
+        side_effect=lambda agent_name, _filename: {"start_raw_index": state.get(agent_name, 0)},
     ), patch(
-        "engine.agent_manager._save_history_window_start",
-        side_effect=lambda agent_name, start_raw_index: state.__setitem__(agent_name, start_raw_index),
+        "engine.history.write_sidecar_json",
+        side_effect=lambda agent_name, _filename, data: state.__setitem__(agent_name, data["start_raw_index"]),
     ):
         yield state
 
 
 # ---------------------------------------------------------------------------
-# _build_history_transcript
+# build_history_transcript
 # ---------------------------------------------------------------------------
 
 
@@ -48,7 +45,7 @@ class TestBuildHistoryTranscript:
             {"role": "mitsuki", "content": "mitsuki 回复", "visible_to": ["narrator", "lilith"]},
         ]
 
-        result = _build_history_transcript("lilith", msgs)
+        result = build_history_transcript("lilith", msgs)
 
         assert "玩家: 你好" in result
         assert "narrator: 场景描述" in result
@@ -61,7 +58,7 @@ class TestBuildHistoryTranscript:
             {"role": "lilith", "content": "lilith回复", "visible_to": ["narrator", "lilith"]},
         ]
 
-        result = _build_history_transcript("lilith", msgs)
+        result = build_history_transcript("lilith", msgs)
 
         assert "公开消息" in result
         assert "lilith: lilith回复" in result
@@ -73,7 +70,7 @@ class TestBuildHistoryTranscript:
             {"role": "mitsuki", "content": "mitsuki", "visible_to": ["narrator", "mitsuki"]},
         ]
 
-        result = _build_history_transcript("narrator", msgs)
+        result = build_history_transcript("narrator", msgs)
 
         assert "玩家: 公开" in result
         assert "mitsuki: mitsuki" in result
@@ -89,8 +86,8 @@ class TestBuildHistoryTranscript:
             {"role": "narrator", "content": "n2", "visible_to": ["narrator", "lilith"]},
         ]
 
-        result_n = _build_history_transcript("lilith", msgs_turn_n)
-        result_n1 = _build_history_transcript("lilith", msgs_turn_n1)
+        result_n = build_history_transcript("lilith", msgs_turn_n)
+        result_n1 = build_history_transcript("lilith", msgs_turn_n1)
 
         assert result_n1.startswith(result_n + "\n\n")
 
@@ -100,8 +97,8 @@ class TestBuildHistoryTranscript:
             for i in range(40)
         ]
 
-        with patch("engine.agent_manager.HISTORY_HIGH", 30), patch("engine.agent_manager.HISTORY_LOW", 15):
-            result = _build_history_transcript("lilith", msgs)
+        with patch("engine.history.HISTORY_HIGH", 30), patch("engine.history.HISTORY_LOW", 15):
+            result = build_history_transcript("lilith", msgs)
 
         assert "消息24" not in result
         assert "消息25" in result
@@ -120,10 +117,10 @@ class TestBuildHistoryTranscript:
             for i in range(47)
         ]
 
-        with patch("engine.agent_manager.HISTORY_HIGH", 30), patch("engine.agent_manager.HISTORY_LOW", 15):
-            result_31 = _build_history_transcript("lilith", msgs_31)
-            result_32 = _build_history_transcript("lilith", msgs_32)
-            result_47 = _build_history_transcript("lilith", msgs_47)
+        with patch("engine.history.HISTORY_HIGH", 30), patch("engine.history.HISTORY_LOW", 15):
+            result_31 = build_history_transcript("lilith", msgs_31)
+            result_32 = build_history_transcript("lilith", msgs_32)
+            result_47 = build_history_transcript("lilith", msgs_47)
 
         assert result_31.startswith("玩家: 消息16")
         assert result_32.startswith("玩家: 消息16")
@@ -131,29 +128,29 @@ class TestBuildHistoryTranscript:
         assert result_47.startswith("玩家: 消息32")
 
     def test_empty_history_returns_empty(self):
-        assert _build_history_transcript("lilith", []) == ""
+        assert build_history_transcript("lilith", []) == ""
 
     def test_all_filtered_returns_empty(self):
         msgs = [
             {"role": "player", "content": "消息", "visible_to": ["narrator", "mitsuki"]},
         ]
 
-        assert _build_history_transcript("lilith", msgs) == ""
+        assert build_history_transcript("lilith", msgs) == ""
 
 
 class TestHighLowWatermarkHelper:
     """纯逻辑：真正的高低水位缓冲"""
 
     def test_apply_high_low_watermark_batches_trimming(self):
-        start_raw_index, kept = _apply_high_low_watermark(list(range(31)), 0, 30, 15)
+        start_raw_index, kept = _apply_high_low_watermark("lilith", list(range(31)), 0, 30, 15)
         assert start_raw_index == 16
         assert kept == list(range(16, 31))
 
-        start_raw_index, kept = _apply_high_low_watermark(list(range(32)), start_raw_index, 30, 15)
+        start_raw_index, kept = _apply_high_low_watermark("lilith", list(range(32)), start_raw_index, 30, 15)
         assert start_raw_index == 16
         assert kept == list(range(16, 32))
 
-        start_raw_index, kept = _apply_high_low_watermark(list(range(47)), start_raw_index, 30, 15)
+        start_raw_index, kept = _apply_high_low_watermark("lilith", list(range(47)), start_raw_index, 30, 15)
         assert start_raw_index == 32
         assert kept == list(range(32, 47))
 
