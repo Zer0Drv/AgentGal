@@ -32,6 +32,7 @@ from engine.agent_files import (
     read_growth_entries,
     read_agent_file,
     read_sidecar_json,
+    safe_write_memory,
     write_growth_entries,
     write_sidecar_json,
 )
@@ -39,10 +40,8 @@ from memory.parser import (
     extract_event_field,
     normalize,
     parse_event_importance,
-    parse_event_keywords,
     parse_llm_memory_sections,
     render_sections,
-    safe_write_memory,
     split_by_date,
     split_into_events,
 )
@@ -159,7 +158,7 @@ def _apply_default_chunk_metadata(blocks: list[dict[str, str]]) -> list[dict[str
             block["date"],
             _apply_chunk_metadata(
                 block["content"],
-                parse_event_keywords(block["content"]),
+                extract_event_field(block["content"], "关键词"),
                 parse_event_importance(block["content"], default=3),
             ),
         )
@@ -217,7 +216,7 @@ def _merge_chunk_metadata(blocks: list[dict[str, str]], metadata_items: list[dic
                 block["date"],
                 _apply_chunk_metadata(
                     block["content"],
-                    str(item.get("keywords", "")).strip() if item else parse_event_keywords(block["content"]),
+                    str(item.get("keywords", "")).strip() if item else extract_event_field(block["content"], "关键词"),
                     int(item.get("importance", 3)) if item else parse_event_importance(block["content"], default=3),
                 ),
             )

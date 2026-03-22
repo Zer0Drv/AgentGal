@@ -32,8 +32,8 @@ from memory.parser import (
     canonical_cn_date,
     parse_cn_date,
     is_date_before,
+    extract_event_field,
     parse_event_importance,
-    parse_event_keywords,
 )
 
 
@@ -484,7 +484,7 @@ class VectorStore:
                 memory_key,
                 normalized_date,
                 text,
-                parse_event_keywords(text),
+                extract_event_field(text, "关键词"),
                 parse_event_importance(text, default=3),
                 content_hash,
                 recalled_at,

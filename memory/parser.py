@@ -147,11 +147,6 @@ def extract_event_field(event_text: str, field_name: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def parse_event_keywords(event_text: str) -> str:
-    """解析单个事件块中的关键词字段。"""
-    return extract_event_field(event_text, "关键词")
-
-
 def parse_event_importance(event_text: str, default: int = 3) -> int:
     """解析单个事件块中的重要度字段；缺失或非法时回退默认值。"""
     raw = extract_event_field(event_text, "重要度")
@@ -298,54 +293,3 @@ def parse_llm_memory_sections(
     return sections
 
 
-# ===== 安全写回（带并发保护） =====
-
-
-def safe_write_memory(
-    path: Path,
-    sections: dict[str, str],
-    agent_name: str,
-    original_content: str,
-) -> tuple[int, int]:
-    """安全写回 memory.md，带最小并发保护。
-
-    策略：
-    - 若 current 以 original 开头，视为尾部追加，保留该追加；
-    - 若 current == original，正常覆盖；
-    - 否则判定为中间变更，放弃写回并返回 (-1, -1)。
-
-    Args:
-        path: 文件路径
-        sections: 按日期组织的记忆内容 {日期: 内容}
-        agent_name: 角色名（用于日志）
-        original_content: 原始内容（用于检测并发变更）
-
-    Returns:
-        (写入后的文件长度, 已整理快照长度)，(-1, -1) 表示检测到并发冲突放弃写回
-    """
-    from log_config.routing import routing_logger
-
-    current_content = path.read_text(encoding="utf-8")
-
-    if current_content.startswith(original_content):
-        appended = current_content[len(original_content):]
-        if appended:
-            routing_logger.info(
-                f"[整理器] {agent_name} 检测到并发尾部追加 ({len(appended)} 字符)，将保留"
-            )
-    elif current_content == original_content:
-        appended = ""
-    else:
-        routing_logger.warning(
-            f"[整理器] {agent_name} 检测到并发中间变更，已放弃写回以避免覆盖（建议稍后重试）"
-        )
-        return -1, -1
-
-    result = f"# {agent_name} 的长期记忆\n\n{render_sections(sections)}\n"
-    consolidated_len = len(result)
-
-    if appended:
-        result += appended
-
-    path.write_text(result, encoding="utf-8")
-    return len(result), consolidated_len
