@@ -101,8 +101,8 @@ async def wait_for_search(store, agent_name: str, query: str, timeout: float = 1
             conn = sqlite3.connect(test_db_path)
             try:
                 VectorStore._load_sqlite_vec_sync(conn)
-                from memory.vector_store import _embed_sync
-                qvec = _embed_sync([query])[0]
+                from memory.vector_store import embed_sync
+                qvec = embed_sync([query])[0]
                 rows = store.get_vector_candidates(conn, agent_name, qvec, 5)
             finally:
                 conn.close()
@@ -191,8 +191,8 @@ class TestVectorStoreBasic:
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
-            from memory.vector_store import _embed_sync
-            qvec = _embed_sync(["早上好"])[0]
+            from memory.vector_store import embed_sync
+            qvec = embed_sync(["早上好"])[0]
             res_after = store.get_vector_candidates(conn, "lilith", qvec, 5)
         finally:
             conn.close()
@@ -264,11 +264,11 @@ class TestVectorStoreEdgeCases:
         store = clean_store
 
         import sqlite3
-        from memory.vector_store import _embed_sync
+        from memory.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
-            qvec = _embed_sync(["查询"])[0]
+            qvec = embed_sync(["查询"])[0]
             rows = store.get_vector_candidates(conn, "nonexistent", qvec, 5)
         finally:
             conn.close()
@@ -305,13 +305,13 @@ class TestVectorStoreEdgeCases:
         assert len(res_old) >= 1, "应该能搜索到昨天的记忆"
 
         import sqlite3
-        from memory.vector_store import _embed_sync
+        from memory.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
-            qvec_today = _embed_sync(["今天的长期记忆"])[0]
+            qvec_today = embed_sync(["今天的长期记忆"])[0]
             res_today_mem = store.get_vector_candidates(conn, "lilith", qvec_today, 5)
-            qvec_other = _embed_sync(["昨天的长期记忆锚点"])[0]
+            qvec_other = embed_sync(["昨天的长期记忆锚点"])[0]
             res_other = store.get_vector_candidates(conn, "mitsuki", qvec_other, 5)
         finally:
             conn.close()
@@ -343,13 +343,13 @@ class TestVectorStoreEdgeCases:
         assert result == {"lilith": True}
 
         import sqlite3
-        from memory.vector_store import _embed_sync
+        from memory.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
-            qvec = _embed_sync(["仅 lilith 可见的记忆"])[0]
+            qvec = embed_sync(["仅 lilith 可见的记忆"])[0]
             res_lilith = store.get_vector_candidates(conn, "lilith", qvec, 5)
-            qvec2 = _embed_sync(["仅 mitsuki 可见的记忆"])[0]
+            qvec2 = embed_sync(["仅 mitsuki 可见的记忆"])[0]
             res_mitsuki = store.get_vector_candidates(conn, "mitsuki", qvec2, 5)
         finally:
             conn.close()
@@ -419,11 +419,11 @@ class TestVectorStoreMemoryIndexing:
         assert len(res2) >= 1, "应命中第二个事件块"
 
         import sqlite3
-        from memory.vector_store import _embed_sync
+        from memory.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
-            qvec = _embed_sync(["眼神让我在意"])[0]
+            qvec = embed_sync(["眼神让我在意"])[0]
             res_other = store.get_vector_candidates(conn, "lilith", qvec, 5)
         finally:
             conn.close()
@@ -461,11 +461,11 @@ class TestVectorStoreMemoryIndexing:
         assert len(res_hit) >= 1, "应命中索引的日期"
 
         import sqlite3
-        from memory.vector_store import _embed_sync
+        from memory.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
-            qvec = _embed_sync(["独自待了一会儿"])[0]
+            qvec = embed_sync(["独自待了一会儿"])[0]
             res_miss = store.get_vector_candidates(conn, "mitsuki", qvec, 5)
         finally:
             conn.close()

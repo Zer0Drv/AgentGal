@@ -32,7 +32,7 @@ from engine.config import (
 )
 from log_config.memory import memory_logger
 from memory.parser import extract_status_field, canonical_cn_date, game_day_diff
-from memory.vector_store import vector_store, VectorStore, DB_PATH, _embed_sync
+from memory.vector_store import vector_store, VectorStore, DB_PATH, embed_sync
 
 
 # ----------------------------- Rerank 配置 -----------------------------
@@ -285,7 +285,7 @@ def search_memories(agent_name: str, query: str) -> str:
 
     # Step 1: 计算查询向量
     try:
-        qvec = _embed_sync([query])[0]
+        qvec = embed_sync([query])[0]
     except Exception as e:
         memory_logger.error("[Retrieval] 查询嵌入失败: agent=%s, error=%s", agent_name, e)
         return "（无相关记忆）"

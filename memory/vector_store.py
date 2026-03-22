@@ -135,7 +135,7 @@ async def _embed_async(texts: list[str]) -> list[list[float]]:
         return [d["embedding"] for d in resp.json()["data"]]
 
 
-def _embed_sync(texts: list[str]) -> list[list[float]]:
+def embed_sync(texts: list[str]) -> list[list[float]]:
     """同步计算嵌入（用于同步检索路径）。"""
     _validate_embed_config()
     resp = httpx.post(
