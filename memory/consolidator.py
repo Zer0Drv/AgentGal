@@ -167,18 +167,7 @@ def _apply_default_chunk_metadata(blocks: list[dict[str, str]]) -> list[dict[str
     ]
 
 
-def _validate_step1_result(expected_dates: list[str], sections: OrderedDict[str, str]) -> str | None:
-    actual_dates = list(sections.keys())
-    if actual_dates != expected_dates:
-        expected = ", ".join(expected_dates) or "（空）"
-        actual = ", ".join(actual_dates) or "（空）"
-        routing_logger.warning(
-            "[整理器] step1 返回日期与窗口不一致: expected=%s, actual=%s",
-            expected,
-            actual,
-        )
-        return f"第一步返回日期与窗口不一致(expected={expected}; actual={actual})"
-
+def _validate_step1_result(sections: OrderedDict[str, str]) -> str | None:
     missing_map = [
         f"{block['date']} 字段不完整({','.join(missing)})"
         for block in _flatten_sections(sections)
@@ -358,7 +347,7 @@ class MemoryConsolidator:
         if len(result) < 50:
             raise ValueError("第一步返回过短，跳过整理")
         sections = parse_llm_memory_sections(result, window_dates)
-        validation_error = _validate_step1_result(window_dates, sections)
+        validation_error = _validate_step1_result(sections)
         if validation_error:
             raise ValueError(validation_error)
         blocks = _flatten_sections(sections)
@@ -576,7 +565,9 @@ class MemoryConsolidator:
                 result.errors.append("并发冲突：检测到中间变更，已放弃写回")
                 return result
 
-            for date in window.window_dates:
+            actual_window_blocks = merged_blocks[len(window.stable_blocks):]
+            update_dates = set(window.window_dates) | {block["date"] for block in actual_window_blocks}
+            for date in update_dates:
                 await vector_store.add(agent_name, date, split_into_events(merged_sections.get(date, "")))
 
             if not result.errors:

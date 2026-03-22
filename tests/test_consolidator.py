@@ -158,16 +158,6 @@ def test_resolve_tail_start_skips_when_boundary_invalid_and_memory_not_grown():
     assert skip_reason == "memory 未增长，跳过本轮整理"
 
 
-def test_validate_step1_dates_rejects_missing_window_date():
-    error = consolidator_module._validate_step1_result(
-        ["10月6日", "10月7日"],
-        OrderedDict({"10月7日": _event("10月7日", "下午", "只返回了一天。")}),
-    )
-
-    assert error is not None
-    assert "10月6日" in error
-    assert "10月7日" in error
-
 
 def test_normalize_adds_missing_event_bullets():
     normalized = file_ops_module.normalize(
