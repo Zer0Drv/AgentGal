@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import math
 import os
-import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -44,56 +43,9 @@ RERANK_API_KEY = os.getenv("RERANK_API_KEY") or os.getenv("EMBEDDING_API_KEY") o
 RERANK_API_URL = os.getenv("RERANK_API_URL", "")
 
 
-# ----------------------------- 场景查询构造 -----------------------------
-
-def _build_retrieval_scene_summary(scene_summary: str) -> str:
-    """将 narrator 场景摘要裁剪成适合检索的轻量结构信息。"""
-    if not scene_summary or not scene_summary.strip():
-        return ""
-
-    time_line = ""
-    location_line = ""
-    present_lines: list[str] = []
-    in_present_section = False
-
-    for raw_line in scene_summary.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-
-        field_match = re.match(r"^\*{0,2}(时间|地点|在场)\*{0,2}：\s*(.*)$", line)
-        if field_match:
-            field, value = field_match.groups()
-            value = value.strip()
-            if field == "时间":
-                time_line = f"时间：{value}" if value else "时间："
-            elif field == "地点":
-                location_line = f"地点：{value}" if value else "地点："
-            elif field == "在场":
-                in_present_section = True
-            continue
-
-        if in_present_section and line.startswith("-"):
-            present = line[1:].strip()
-            if present and "不在场" not in present:
-                present_lines.append(present)
-            continue
-
-        if in_present_section:
-            in_present_section = False
-
-    parts: list[str] = []
-    if time_line:
-        parts.append(time_line)
-    if location_line:
-        parts.append(location_line)
-    if present_lines:
-        parts.append("在场：")
-        parts.extend(present_lines)
-    return "\n".join(parts)
-
-
 # ----------------------------- Pipeline 工具函数 -----------------------------
+
+_distance_to_relevance = lambda d: max(0.0, 1.0 - min(float(d), 2.0) / 2.0)
 
 def _decay_from_game_date(current_game_date: str, past_game_date: str, half_life_days: float) -> float:
     """基于游戏内日期做指数衰减；无法解析时返回中性值。"""
@@ -160,7 +112,7 @@ def hybrid_fusion(
         docs[doc_id] = {
             "id": str(doc_id),
             "content": row[1],
-            "vector_relevance": max(0.0, 1.0 - min(float(row[2]), 2.0) / 2.0),
+            "vector_relevance": _distance_to_relevance(row[2]),
             "bm25_raw": None,
             "date": str(row[3] or ""),
             "last_recalled_at": str(row[4] or ""),
@@ -308,7 +260,7 @@ def _vec_rows_to_candidates(rows: list[tuple]) -> list[dict[str, Any]]:
         {
             "id": str(row[0]),
             "content": row[1],
-            "relevance": max(0.0, 1.0 - min(float(row[2]), 2.0) / 2.0),
+            "relevance": _distance_to_relevance(row[2]),
             "date": str(row[3] or ""),
             "last_recalled_at": str(row[4] or ""),
             "importance": int(row[5] or 3),
