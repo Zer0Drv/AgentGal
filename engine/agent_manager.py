@@ -84,8 +84,8 @@ def _build_user_message(
 
     parts 顺序：
     - `<growth>`
-    - 最近对话历史
     - `<user_profile>`
+    - 最近对话历史
     - `<status>`
     - `memory_prefix`（`<relevant_memories>`）
     - 本轮玩家输入
@@ -101,8 +101,8 @@ def _build_user_message(
     status_content: str = read_agent_file(agent_name, "status.md")
 
     parts.append(f"<growth>\n{growth_content.strip()}\n</growth>" if growth_content else "")
-    parts.append(f"最近对话历史:\n\n{history}" if history else "")
     parts.append(f"<user_profile>\n{user_content.strip()}\n</user_profile>" if user_content else '')
+    parts.append(f"最近对话历史:\n\n{history}" if history else "")
     parts.append(f"<status>\n{status_content}\n</status>" if status_content else '')  
     parts.append(memory_prefix if memory_prefix else '')
     parts.append(f"玩家新消息: {latest_user_input}")
