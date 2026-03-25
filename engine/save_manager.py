@@ -11,7 +11,7 @@ from datetime import datetime
 
 from shared.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
 from storage.agent_files import read_agent_file
-from storage.history import load_conversation_history
+from storage.history import append_message, load_conversation_history
 from memory.parser import extract_status_field
 
 TEMPLATES_DIR = PROJECT_ROOT / "data" / "templates"
@@ -160,13 +160,7 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
         "content": opening_text,
         "visible_to": visible_agents + ["narrator"],
     }
-
-    raw_path = character_path(
-        "narrator", "raw", f"{datetime.now().strftime('%Y-%m-%d')}.jsonl"
-    )
-    os.makedirs(os.path.dirname(raw_path), exist_ok=True)
-    with open(raw_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(opening_message, ensure_ascii=False) + "\n")
+    await append_message(opening_message)
 
     return intro_text, opening_text
 
