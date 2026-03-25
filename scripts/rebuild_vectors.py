@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""向量库重建脚本 - 重建所有角色的长期记忆向量数据库
+"""向量库重建脚本 - 重建角色的长期记忆向量数据库
 
 Usage:
-    uv run python scripts/rebuild_vectors.py
+    uv run python scripts/rebuild_vectors.py             # 重建所有角色
+    uv run python scripts/rebuild_vectors.py chenxiao   # 重建指定角色
 """
 
 import asyncio
@@ -18,20 +19,19 @@ from dotenv import load_dotenv
 
 load_dotenv(project_root / ".env")
 
-from log_config.routing import routing_logger
 from memory.vector_store import vector_store
 
 
 def get_all_agents() -> list[str]:
-    """获取 data/characters 目录下所有拥有 memory.md 的角色名称。"""
+    """获取 data/characters 目录下所有拥有 memory.md 的角色名称（排除 narrator）。"""
     agents_dir = project_root / "data" / "characters"
     if not agents_dir.exists():
-        routing_logger.error(f"data/characters 目录不存在: {agents_dir}")
+        print(f"[错误] data/characters 目录不存在: {agents_dir}")
         return []
 
     agents = []
     for item in agents_dir.iterdir():
-        if item.is_dir():
+        if item.is_dir() and item.name != "narrator":
             memory_file = item / "memory.md"
             if memory_file.exists():
                 agents.append(item.name)
@@ -39,20 +39,26 @@ def get_all_agents() -> list[str]:
     return sorted(agents)
 
 
-async def rebuild_all_vectors():
-    """重建向量库（从各角色 memory.md 重建 memory 层索引）。"""
-    routing_logger.info("[向量重建] 开始重建向量库（从 memory.md 重建）")
-    await vector_store.rebuild("narrator")
-    routing_logger.info("[向量重建] 向量库重建完成")
+async def main() -> None:
+    if len(sys.argv) > 1:
+        agents = [sys.argv[1]]
+    else:
+        agents = get_all_agents()
 
+    if not agents:
+        print("[错误] 没有找到可重建的角色")
+        sys.exit(1)
 
-async def main():
-    """主函数：重建所有角色的向量库"""
-    try:
-        await rebuild_all_vectors()
-    except Exception as e:
-        routing_logger.error(f"[向量重建] 执行失败: {e}")
-        raise
+    print(f"[向量重建] 开始重建: {', '.join(agents)}")
+    for agent in agents:
+        print(f"  → {agent} ...", end=" ", flush=True)
+        try:
+            await vector_store.rebuild(agent)
+            print("完成")
+        except Exception as e:
+            print(f"失败: {e}")
+            raise
+    print("[向量重建] 全部完成")
 
 
 if __name__ == "__main__":
