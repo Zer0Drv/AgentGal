@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
-import httpx
 
 from log_config.memory import memory_logger as routing_logger
+from llm.embedding import embed_async, embed_sync, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
 from shared.config import (
     character_path,
     PROJECT_ROOT,
@@ -32,14 +32,6 @@ _CN_DATE_RE = re.compile(r"^\d{1,2}月\d{1,2}日$")
 # ----------------------------- 配置与常量 -----------------------------
 
 DB_PATH = str(PROJECT_ROOT / "data" / "vectors.sqlite")
-
-# 默认使用 OpenAI 兼容 Embeddings 接口；兼容 EMBEDDING_MODEL 与 EMBEDDING_MODEL_ID 两种变量名
-EMBED_MODEL = os.getenv("EMBEDDING_MODEL_ID") or os.getenv("EMBEDDING_MODEL") or "text-embedding-3-small"
-EMBED_API_KEY = os.getenv("EMBEDDING_API_KEY") or os.getenv("LLM_API_KEY", "")
-EMBED_API_URL = os.getenv("EMBEDDING_API_URL") or os.getenv("LLM_API_URL", "")
-
-# 维度：根据模型选择，text-embedding-3-small=1536；兼容 .env 的 EMBEDDING_DIM
-EMBED_DIM = int(os.getenv("EMBEDDING_DIM", "1536"))
 
 
 # FTS 只保留中英文和数字，其他标点交给 jieba 切分后丢弃
@@ -102,42 +94,6 @@ def _build_fts_match_query(text: str, max_terms: int = 32) -> str:
         return ""
 
     return " OR ".join(f'"{term}"' for term in terms)
-
-
-# ----------------------------- 嵌入函数 -----------------------------
-
-def _validate_embed_config():
-    if not EMBED_API_KEY:
-        raise ValueError("EMBEDDING_API_KEY 或 LLM_API_KEY 未配置，无法计算向量")
-    if not EMBED_API_URL:
-        raise ValueError("EMBEDDING_API_URL 或 LLM_API_URL 未配置，无法计算向量")
-
-
-async def _embed_async(texts: list[str]) -> list[list[float]]:
-    """异步计算嵌入"""
-    _validate_embed_config()
-
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            EMBED_API_URL,
-            headers={"Authorization": f"Bearer {EMBED_API_KEY}", "Content-Type": "application/json"},
-            json={"model": EMBED_MODEL, "input": texts},
-        )
-        resp.raise_for_status()
-        return [d["embedding"] for d in resp.json()["data"]]
-
-
-def embed_sync(texts: list[str]) -> list[list[float]]:
-    """同步计算嵌入（用于同步检索路径）。"""
-    _validate_embed_config()
-    resp = httpx.post(
-        EMBED_API_URL,
-        headers={"Authorization": f"Bearer {EMBED_API_KEY}", "Content-Type": "application/json"},
-        json={"model": EMBED_MODEL, "input": texts},
-        timeout=60,
-    )
-    resp.raise_for_status()
-    return [d["embedding"] for d in resp.json()["data"]]
 
 
 class VectorStore:
@@ -425,7 +381,7 @@ class VectorStore:
         """embed + 写入三张表，不做删除。"""
         if not payloads:
             return
-        embeddings = await _embed_async([item[2] for item in payloads])
+        embeddings = await embed_async([item[2] for item in payloads])
         for i, (memory_key, event_date, text, keywords, importance, c_hash, recalled_at) in enumerate(payloads):
             cur = await db.execute(
                 "INSERT INTO memory_chunks(memory_key, owner_agent, game_date, content, keywords, importance, content_hash, last_recalled_at) "

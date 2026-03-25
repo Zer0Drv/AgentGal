@@ -1,8 +1,9 @@
-"""对话历史原始读取 - 从 narrator raw JSONL 文件加载消息"""
+"""对话历史持久化 - 从 narrator raw JSONL 文件读写消息"""
 
 import glob
 import json
 import os
+from datetime import datetime
 
 from shared.config import character_path
 
@@ -40,3 +41,12 @@ def load_conversation_history(limit: int | None = 10) -> list:
         return all_messages
 
     return all_messages[-limit:]
+
+
+async def append_message(message: dict) -> None:
+    """将一条消息追加到 narrator 的 raw JSONL 文件（单一数据源）。"""
+    date = datetime.now().strftime("%Y-%m-%d")
+    raw_path = character_path("narrator", "raw", f"{date}.jsonl")
+    os.makedirs(os.path.dirname(raw_path), exist_ok=True)
+    with open(raw_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(message, ensure_ascii=False) + "\n")

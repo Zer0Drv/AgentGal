@@ -7,12 +7,9 @@
 from __future__ import annotations
 
 import math
-import os
 import sqlite3
 from pathlib import Path
 from typing import Any
-
-import httpx
 
 from shared.config import (
     BM25_CANDIDATE_LIMIT,
@@ -31,16 +28,10 @@ from shared.config import (
     character_path,
 )
 from log_config.memory import memory_logger
+from llm.embedding import embed_sync
+from llm.rerank import rerank, RERANK_MODEL
 from memory.parser import extract_status_field, canonical_cn_date, game_day_diff
-from storage.vector_store import vector_store, VectorStore, DB_PATH, embed_sync
-
-
-# ----------------------------- Rerank 配置 -----------------------------
-
-_rerank_enabled = os.getenv("RERANK_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
-RERANK_MODEL = os.getenv("RERANK_MODEL", "") if _rerank_enabled else ""
-RERANK_API_KEY = os.getenv("RERANK_API_KEY") or os.getenv("EMBEDDING_API_KEY") or os.getenv("LLM_API_KEY", "")
-RERANK_API_URL = os.getenv("RERANK_API_URL", "")
+from storage.vector_store import vector_store, VectorStore, DB_PATH
 
 
 # ----------------------------- Pipeline 工具函数 -----------------------------
@@ -171,45 +162,6 @@ def hybrid_fusion(
         )
 
     return sorted(results, key=lambda item: item["relevance"], reverse=True)
-
-
-def rerank(
-    query: str,
-    candidates: list[dict[str, Any]],
-    top_n: int,
-) -> list[dict[str, Any]]:
-    """调用 rerank API，用归一化后的 rerank 分替换 relevance。
-
-    归一化：min-max 到 [0, 1]，与 BM25 处理方式一致。
-    """
-    documents = [c["content"] for c in candidates]
-    resp = httpx.post(
-        RERANK_API_URL,
-        headers={"Authorization": f"Bearer {RERANK_API_KEY}", "Content-Type": "application/json"},
-        json={"model": RERANK_MODEL, "query": query, "documents": documents, "top_n": top_n},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    results = resp.json()["results"]
-
-    scores = [r["relevance_score"] for r in results]
-    min_s = min(scores)
-    max_s = max(scores)
-    normalized = [
-        (r["index"], (r["relevance_score"] - min_s) / (max_s - min_s + 1e-9))
-        for r in results
-    ]
-    # 按归一化分降序排列
-    normalized.sort(key=lambda x: x[1], reverse=True)
-
-    reranked: list[dict[str, Any]] = []
-    for idx, norm_score in normalized:
-        if idx >= len(candidates):
-            continue
-        entry = dict(candidates[idx])
-        entry["relevance"] = norm_score
-        reranked.append(entry)
-    return reranked
 
 
 def apply_recency(

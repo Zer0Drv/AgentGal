@@ -35,8 +35,11 @@ agentgal-memos/
 │   ├── response_parser.py      # 解析 <update_notes> XML 标签
 │   └── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 ├── llm/
+│   ├── base.py                 # BaseLLMClient 模板基类
 │   ├── llm_parser.py           # OpenAI 兼容客户端
-│   └── providers.py            # Provider 配置与 URL 解析
+│   ├── providers.py            # Provider 配置与 URL 解析
+│   ├── embedding.py            # Embeddings 客户端（embed_async / embed_sync）
+│   └── rerank.py               # Rerank API 客户端
 ├── log_config/                 # 路由、记忆、调用日志
 ├── memory/                     # 记忆规则与流程
 │   ├── consolidation_inputs.py # 整理 step1 输入构造与 raw 对话视角对齐
