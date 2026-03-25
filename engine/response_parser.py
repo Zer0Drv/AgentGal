@@ -1,11 +1,10 @@
-"""响应解析器 - 从 Agent 输出中提取 XML 格式的更新指令，以及 narrator 路由解析"""
+"""响应解析器 - 从 Agent 输出中提取 XML 格式的更新指令"""
 
 import json
 import re
 from dataclasses import dataclass
 from typing import Optional
 
-from engine.config import get_agent_names, character_path
 from log_config.routing import routing_logger
 
 
@@ -199,82 +198,3 @@ def _parse_json_field(
         return None
 
 
-# ---------------------------------------------------------------------------
-# Narrator 路由解析
-# ---------------------------------------------------------------------------
-
-
-def _get_display_name(agent_name: str) -> Optional[str]:
-    """从 soul.md 提取角色中文显示名。"""
-    import os
-
-    soul_path = character_path(agent_name, "soul.md")
-    if not os.path.exists(soul_path):
-        return None
-    try:
-        with open(soul_path, encoding="utf-8") as f:
-            soul_content = f.read()
-        role_match = re.search(r"<role>\s*([^\n<]+)", soul_content)
-        if role_match:
-            name_match = re.match(r"([\u4e00-\u9fff·]+)", role_match.group(1).strip())
-            if name_match:
-                return name_match.group(1)
-        title_match = re.search(r"^#\s+(.+)$", soul_content, re.MULTILINE)
-        if title_match:
-            return title_match.group(1).strip()
-    except Exception:
-        pass
-    return None
-
-
-def parse_narrator_response(content: str) -> tuple[list[str], str]:
-    """解析 narrator 响应，提取 TARGETS 和场景描述。
-
-    Args:
-        content: narrator 的响应文本
-
-    Returns:
-        (targets, scene_description): 目标角色列表和场景描述文本
-    """
-    valid_agents = get_agent_names(include_narrator=False)
-
-    targets_pattern = re.compile(
-        r"TARGETS\s*:?\s*\[?([^\]\n]*)\]?", re.IGNORECASE
-    )
-    all_matches = list(targets_pattern.finditer(content))
-
-    if not all_matches:
-        return [], content
-
-    targets_match = all_matches[-1]
-    targets_str = targets_match.group(1)
-    targets = [
-        t.strip().lower()
-        for t in targets_str.split(",")
-        if t.strip() and t.strip().lower() in valid_agents
-    ]
-
-    scene_description = content[targets_match.end():].strip()
-
-    # 防御：截断 narrator 输出中混入的角色台词
-    # 同时匹配英文 agent name 和中文显示名
-    for agent in valid_agents:
-        names_to_check = [agent]
-        display_name = _get_display_name(agent)
-        if display_name:
-            names_to_check.append(display_name)
-
-        for name in names_to_check:
-            for pattern in [
-                re.compile(rf"^{re.escape(name)}\s*[:：]", re.MULTILINE | re.IGNORECASE),
-                re.compile(rf"^##\s*{re.escape(name)}", re.MULTILINE | re.IGNORECASE),
-            ]:
-                m = pattern.search(scene_description)
-                if m:
-                    routing_logger.warning(
-                        f"[narrator] 场景描述中检测到角色台词 '{name}'，已截断"
-                    )
-                    scene_description = scene_description[: m.start()].strip()
-                    break
-
-    return targets, scene_description

@@ -13,7 +13,7 @@ os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
 try:
-    import engine.agent_files as agent_files_module
+    import storage.agent_files as agent_files_module
     import memory.consolidator as consolidator_module
     import memory.parser as file_ops_module
     from memory.consolidator import MemoryConsolidator

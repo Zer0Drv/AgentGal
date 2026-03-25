@@ -1,5 +1,6 @@
 """memory.md 格式解析 - 文本规范化、事件切分、日期工具"""
 
+import hashlib
 import re
 from collections import OrderedDict
 from datetime import datetime
@@ -227,6 +228,41 @@ def is_date_before(date_text: str, cutoff_date: str) -> bool:
     if left is None or right is None:
         return False
     return left < right
+
+
+# ===== 记忆块操作 =====
+
+
+def block_fingerprint(date: str, content: str) -> str:
+    """计算记忆块的内容指纹（SHA1）。"""
+    normalized = "\n".join(line.rstrip() for line in content.strip().splitlines()).strip()
+    return hashlib.sha1(f"{date}\n{normalized}".encode("utf-8")).hexdigest()
+
+
+def make_block(date: str, content: str) -> dict[str, str]:
+    """将日期和内容封装为带指纹的记忆块 dict。"""
+    stripped = content.strip()
+    return {"date": date, "content": stripped, "fingerprint": block_fingerprint(date, stripped)}
+
+
+def flatten_sections(sections: OrderedDict[str, str]) -> list[dict[str, str]]:
+    """将 split_by_date 结果展平为记忆块列表。"""
+    blocks: list[dict[str, str]] = []
+    for date, body in sections.items():
+        for content in split_into_events(body):
+            stripped = content.strip()
+            if stripped:
+                blocks.append(make_block(date, stripped))
+    return blocks
+
+
+def group_blocks(blocks: list[dict[str, str]]) -> OrderedDict[str, str]:
+    """将记忆块列表重新聚合为 date → body 的有序字典。"""
+    sections: OrderedDict[str, str] = OrderedDict()
+    for block in blocks:
+        date = block["date"]
+        sections[date] = sections.get(date, "") + ("\n\n" if date in sections else "") + block["content"].strip()
+    return sections
 
 
 # ===== sections 序列化 =====

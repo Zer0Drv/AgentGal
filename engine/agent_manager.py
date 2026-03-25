@@ -4,18 +4,18 @@ import asyncio
 import re
 import time
 
-from engine.config import (
+from shared.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
     PROJECT_ROOT,
     get_agent_names,
 )
-from engine.response_parser import parse_agent_response, parse_narrator_response
-from engine.text_utils import clean_response, is_valid_response, process_character_response
+from engine.response_parser import parse_agent_response
+from shared.text_utils import clean_response, get_display_name, is_valid_response, process_character_response
 from llm.llm_parser import OpenAICompatibleClient
 from llm.providers import get_choices_llm_config, get_llm_config, get_narrator_llm_config
 from log_config.agent_calls import log_agent_call
 from log_config.routing import routing_logger
-from engine.agent_files import (
+from storage.agent_files import (
     add_pending_event,
     get_allowed_fields,
     mark_event_triggered,
@@ -32,19 +32,6 @@ from memory.retrieval import search_memories
 # Agent 构建
 # ---------------------------------------------------------------------------
 
-def _get_display_name(agent_name: str, soul_content: str) -> str:
-    """从 soul.md 内容提取中文显示名，回退到 agent_name。"""
-    role_match = re.search(r"<role>\s*([^\n<]+)", soul_content)
-    if role_match:
-        name_match = re.match(r"([\u4e00-\u9fff·]+)", role_match.group(1).strip())
-        if name_match:
-            return name_match.group(1)
-    title_match = re.search(r"^#\s+(.+)$", soul_content, re.MULTILINE)
-    if title_match:
-        return title_match.group(1).strip()
-    return agent_name
-
-
 def _build_system_prompt(agent_name: str, soul_content: str) -> str:
     """构建 system prompt（仅包含稳定的身份与规则部分）。"""
     prompt_name = "narrator_prompt.txt" if agent_name == "narrator" else "character_prompt.txt"
@@ -53,11 +40,11 @@ def _build_system_prompt(agent_name: str, soul_content: str) -> str:
     _status_excluded = {"打算"} if agent_name != "narrator" else set()
     status_fields = "、".join(f for f in get_allowed_fields(agent_name, "status") if f not in _status_excluded)
     player_fields = "、".join(get_allowed_fields(agent_name, "user")) if agent_name != "narrator" else ""
-    display_name = _get_display_name(agent_name, soul_content)
+    display_name = get_display_name(agent_name, soul_content)
 
     characters = get_agent_names(include_narrator=False)
     characters_scene_list = "\n".join(
-        f"- {_get_display_name(c, read_agent_file(c, 'soul.md'))}：[位置] 或 不在场"
+        f"- {get_display_name(c, read_agent_file(c, 'soul.md'))}：[位置] 或 不在场"
         for c in characters
     )
     valid_targets = ", ".join(characters)
@@ -93,7 +80,6 @@ def _build_user_message(
     narrator 不包含 `growth`、`user_profile` 和长期记忆召回块。
     """
     parts: list[str] = []
-    user_content = ""
 
     growth_content: str = (read_agent_file(agent_name, "growth.md")) if agent_name != "narrator" else ""
     user_content: str = read_agent_file(agent_name, "user.md") if agent_name != "narrator" else ""
@@ -253,6 +239,54 @@ async def generate_choices(scene_description: str, agent_responses: list[tuple[s
     except Exception as e:
         routing_logger.warning(f"选项生成失败: {e}")
         return []
+
+
+def parse_narrator_response(content: str) -> tuple[list[str], str]:
+    """解析 narrator 响应，提取 TARGETS 和场景描述。
+
+    Returns:
+        (targets, scene_description): 目标角色列表和场景描述文本
+    """
+    valid_agents = get_agent_names(include_narrator=False)
+
+    targets_pattern = re.compile(r"TARGETS\s*:?\s*\[?([^\]\n]*)\]?", re.IGNORECASE)
+    all_matches = list(targets_pattern.finditer(content))
+
+    if not all_matches:
+        return [], content
+
+    targets_match = all_matches[-1]
+    targets_str = targets_match.group(1)
+    targets = [
+        t.strip().lower()
+        for t in targets_str.split(",")
+        if t.strip() and t.strip().lower() in valid_agents
+    ]
+
+    scene_description = content[targets_match.end():].strip()
+
+    # 防御：截断 narrator 输出中混入的角色台词
+    for agent in valid_agents:
+        soul_content = read_agent_file(agent, "soul.md")
+        names_to_check = [agent]
+        display_name = get_display_name(agent, soul_content) if soul_content else None
+        if display_name and display_name != agent:
+            names_to_check.append(display_name)
+
+        for name in names_to_check:
+            for pattern in [
+                re.compile(rf"^{re.escape(name)}\s*[:：]", re.MULTILINE | re.IGNORECASE),
+                re.compile(rf"^##\s*{re.escape(name)}", re.MULTILINE | re.IGNORECASE),
+            ]:
+                m = pattern.search(scene_description)
+                if m:
+                    routing_logger.warning(
+                        f"[narrator] 场景描述中检测到角色台词 '{name}'，已截断"
+                    )
+                    scene_description = scene_description[: m.start()].strip()
+                    break
+
+    return targets, scene_description
 
 
 async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool]:

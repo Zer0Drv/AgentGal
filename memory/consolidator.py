@@ -1,7 +1,6 @@
 """后台记忆整理器。"""
 
 import asyncio
-import hashlib
 import re
 import time
 from collections import OrderedDict
@@ -14,7 +13,7 @@ from llm.providers import get_consolidation_llm_config
 
 from log_config.memory import memory_logger as routing_logger
 from log_config.consolidation_calls import log_consolidation_call
-from engine.config import (
+from shared.config import (
     CONSOLIDATION_MAX_TOKENS,
     CONSOLIDATION_TEMPERATURE,
     GROWTH_DEDUP_THRESHOLD,
@@ -25,7 +24,7 @@ from memory.consolidation_inputs import (
     build_step1_user_payload,
     format_raw_dialogue_for_owner,
 )
-from engine.agent_files import (
+from storage.agent_files import (
     get_fields_from_file,
     backup_file,
     load_text,
@@ -34,8 +33,12 @@ from engine.agent_files import (
     write_growth_entries,
 )
 from memory.parser import (
+    block_fingerprint,
     extract_event_field,
+    flatten_sections,
+    group_blocks,
     is_structured_memory_block,
+    make_block,
     normalize,
     parse_event_importance,
     parse_llm_memory_sections,
@@ -43,7 +46,7 @@ from memory.parser import (
     split_by_date,
     split_into_events,
 )
-from memory.vector_store import vector_store
+from storage.vector_store import vector_store
 
 _PROMPT_STEP1_PATH = Path(__file__).parent.parent / "prompts" / "memory_scene_merge.txt"
 _PROMPT_STEP1_5_PATH = Path(__file__).parent.parent / "prompts" / "memory_chunk_metadata.txt"
@@ -199,42 +202,6 @@ def _enforce_user_section_limits(content: str) -> str:
     return "\n".join(rebuilt).strip()
 
 
-def _block_fingerprint(date: str, content: str) -> str:
-    normalized_lines = [line.rstrip() for line in content.strip().splitlines()]
-    normalized = "\n".join(normalized_lines).strip()
-    return hashlib.sha1(f"{date}\n{normalized}".encode("utf-8")).hexdigest()
-
-
-def _make_block(date: str, content: str) -> dict[str, str]:
-    stripped = content.strip()
-    return {
-        "date": date,
-        "content": stripped,
-        "fingerprint": _block_fingerprint(date, stripped),
-    }
-
-
-def _is_structured_block(block: dict[str, str]) -> bool:
-    return is_structured_memory_block(block["content"])
-
-
-def _flatten_sections(sections: OrderedDict[str, str]) -> list[dict[str, str]]:
-    blocks: list[dict[str, str]] = []
-    for date, body in sections.items():
-        for content in split_into_events(body):
-            stripped = content.strip()
-            if stripped:
-                blocks.append(_make_block(date, stripped))
-    return blocks
-
-
-def _group_blocks(blocks: list[dict[str, str]]) -> OrderedDict[str, str]:
-    sections: OrderedDict[str, str] = OrderedDict()
-    for block in blocks:
-        date = block["date"]
-        sections[date] = sections.get(date, "") + ("\n\n" if date in sections else "") + block["content"].strip()
-    return sections
-
 
 def _normalize_keywords(keywords: str) -> str:
     return " ".join((keywords or "").split())
@@ -265,7 +232,7 @@ def _apply_chunk_metadata(event_text: str, keywords: str, importance: int) -> st
 
 def _apply_default_chunk_metadata(blocks: list[dict[str, str]]) -> list[dict[str, str]]:
     return [
-        _make_block(
+        make_block(
             block["date"],
             _apply_chunk_metadata(
                 block["content"],
@@ -284,7 +251,7 @@ def _validate_step1_result(
     invalid_block = next(
         (
             block
-            for block in _flatten_sections(sections)
+            for block in flatten_sections(sections)
             if not is_structured_memory_block(block["content"], required_fields=_STEP1_REQUIRED_FIELDS)
         ),
         None,
@@ -343,7 +310,7 @@ def _merge_chunk_metadata(blocks: list[dict[str, str]], metadata_items: list[dic
         time_key = extract_event_field(block["content"], "时间")
         item = pending.get(time_key, []).pop(0) if pending.get(time_key) else None
         merged.append(
-            _make_block(
+            make_block(
                 block["date"],
                 _apply_chunk_metadata(
                     block["content"],
@@ -365,7 +332,7 @@ def _load_memory_blocks(agent_name: str) -> tuple[Path, str, list[dict[str, str]
     sections = split_by_date(normalize(original_content))
     if not sections:
         return None
-    return path, original_content, _flatten_sections(sections)
+    return path, original_content, flatten_sections(sections)
 
 
 
@@ -422,8 +389,8 @@ class MemoryConsolidator:
         validation_error = _validate_step1_result(sections, expected_dates=window_dates)
         if validation_error:
             raise ValueError(validation_error)
-        blocks = _flatten_sections(sections)
-        return blocks, render_sections(_group_blocks(blocks))
+        blocks = flatten_sections(sections)
+        return blocks, render_sections(group_blocks(blocks))
 
     async def _run_step1_5(
         self,
@@ -572,7 +539,7 @@ class MemoryConsolidator:
             return None, "memory 中没有可整理的块"
 
         # 从前往后找第一个未整理块；若全文都已整理，则将最后一块纳入窗口重整理。
-        first_unstructured_index = next((i for i, block in enumerate(blocks) if not _is_structured_block(block)), None)
+        first_unstructured_index = next((i for i, block in enumerate(blocks) if not is_structured_memory_block(block["content"])), None)
         start_index = first_unstructured_index if first_unstructured_index is not None else len(blocks) - 1
 
         stable_blocks = blocks[:start_index]
@@ -585,7 +552,7 @@ class MemoryConsolidator:
             stable_blocks=stable_blocks,
             window_blocks=window_blocks,
             window_dates=window_dates,
-            window_memory_entries=render_sections(_group_blocks(window_blocks)),
+            window_memory_entries=render_sections(group_blocks(window_blocks)),
             raw_dialogue=raw_dialogue,
         ), None
 
@@ -632,7 +599,7 @@ class MemoryConsolidator:
                 result.errors.append(f"整合失败: {e}")
                 routing_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
 
-            merged_sections = _group_blocks(merged_blocks)
+            merged_sections = group_blocks(merged_blocks)
             result.final_len, consolidated_len = safe_write_memory(path, merged_sections, agent_name, original_content)
             if result.final_len < 0:
                 result.errors.append("并发冲突：检测到中间变更，已放弃写回")
@@ -641,7 +608,9 @@ class MemoryConsolidator:
             actual_window_blocks = merged_blocks[len(window.stable_blocks):]
             update_dates = set(window.window_dates) | {block["date"] for block in actual_window_blocks}
             for date in update_dates:
-                await vector_store.add(agent_name, date, split_into_events(merged_sections.get(date, "")))
+                events = split_into_events(merged_sections.get(date, ""))
+                chunks = [(t, extract_event_field(t, "关键词"), parse_event_importance(t, default=3)) for t in events]
+                await vector_store.add(agent_name, date, chunks)
 
             user_before, user_after = await self._consolidate_player_profile(agent_name)
             result.user_md_before, result.user_md_after = user_before, user_after

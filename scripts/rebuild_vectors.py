@@ -19,46 +19,17 @@ from dotenv import load_dotenv
 
 load_dotenv(project_root / ".env")
 
-from memory.vector_store import vector_store
-
-
-def get_all_agents() -> list[str]:
-    """获取 data/characters 目录下所有拥有 memory.md 的角色名称（排除 narrator）。"""
-    agents_dir = project_root / "data" / "characters"
-    if not agents_dir.exists():
-        print(f"[错误] data/characters 目录不存在: {agents_dir}")
-        return []
-
-    agents = []
-    for item in agents_dir.iterdir():
-        if item.is_dir() and item.name != "narrator":
-            memory_file = item / "memory.md"
-            if memory_file.exists():
-                agents.append(item.name)
-
-    return sorted(agents)
+from memory.indexer import rebuild_memory_index
 
 
 async def main() -> None:
-    if len(sys.argv) > 1:
-        agents = [sys.argv[1]]
+    agent_name = sys.argv[1] if len(sys.argv) > 1 else None
+    if agent_name:
+        print(f"[向量重建] 重建角色: {agent_name}")
     else:
-        agents = get_all_agents()
-
-    if not agents:
-        print("[错误] 没有找到可重建的角色")
-        sys.exit(1)
-
-    print(f"[向量重建] 开始重建: {', '.join(agents)}")
-    for agent in agents:
-        print(f"  → {agent} ...", end=" ", flush=True)
-        try:
-            await vector_store.rebuild(agent)
-            print("完成")
-        except Exception as e:
-            print(f"失败: {e}")
-            raise
-    print("[向量重建] 全部完成")
+        print("[向量重建] 重建所有角色")
+    await rebuild_memory_index(agent_name)
+    print("[向量重建] 完成")
 
 
 if __name__ == "__main__":

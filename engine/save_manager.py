@@ -9,9 +9,9 @@ import uuid
 import zipfile
 from datetime import datetime
 
-from engine.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
-from engine.agent_files import read_agent_file
-from engine.history import load_conversation_history
+from shared.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
+from storage.agent_files import read_agent_file
+from storage.history import load_conversation_history
 from memory.parser import extract_status_field
 
 TEMPLATES_DIR = PROJECT_ROOT / "data" / "templates"
@@ -92,7 +92,7 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
         print(f"{'=' * 40}\n", flush=True)
 
         # 1. 删除向量记忆
-        from memory.vector_store import vector_store
+        from storage.vector_store import vector_store
 
         all_agents = get_agent_names()
         if all_agents:
@@ -228,7 +228,7 @@ async def import_save_archive(save_filename: str) -> bool:
         return False
 
     try:
-        from memory.vector_store import vector_store
+        from storage.vector_store import vector_store
 
         all_agents = get_agent_names()
         if all_agents:
@@ -256,7 +256,8 @@ async def import_save_archive(save_filename: str) -> bool:
             print(f"[读档] 旧存档无 save_id，已生成新 id: {new_save_id}", flush=True)
 
         print("[读档] 重建向量库...", flush=True)
-        await vector_store.rebuild("narrator")
+        from memory.indexer import rebuild_memory_index
+        await rebuild_memory_index()
         print(f"[读档] 读档完成: {save_filename}", flush=True)
         return True
 

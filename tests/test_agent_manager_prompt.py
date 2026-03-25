@@ -10,14 +10,16 @@ os.chdir(project_root)
 
 
 def _load_build_system_prompt():
+    from shared.text_utils import get_display_name
+
     source_path = project_root / "engine" / "agent_manager.py"
     module_ast = ast.parse(source_path.read_text(encoding="utf-8"))
     selected_nodes = [
         node
         for node in module_ast.body
-        if isinstance(node, ast.FunctionDef) and node.name in {"_get_display_name", "_build_system_prompt"}
+        if isinstance(node, ast.FunctionDef) and node.name == "_build_system_prompt"
     ]
-    namespace: dict[str, object] = {"Path": Path, "re": re}
+    namespace: dict[str, object] = {"Path": Path, "re": re, "get_display_name": get_display_name}
     exec(
         compile(
             ast.fix_missing_locations(ast.Module(body=selected_nodes, type_ignores=[])),
