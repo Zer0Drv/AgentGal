@@ -123,41 +123,51 @@ class VectorStore:
             self._write_lock_loop = loop
         return self._write_lock
 
-    @staticmethod
-    def _memory_key_date(memory_key: str) -> str | None:
-        """从 memory_key 中提取所属日期。"""
-        parts = memory_key.split("::")
-        if len(parts) != 4:
-            return None
-        return parts[2]
-
-    def _resolve_memory_recall_date(
+    async def _query_db_recall_by_hash(
         self,
-        state: dict[str, dict[str, Any]],
-        memory_key: str,
-        event_date: str,
-        content_hash: str,
-    ) -> str:
-        """为重建后的事件选择最合适的 last_recalled_at。
+        agent_name: str,
+        date: str,
+    ) -> dict[str, str]:
+        """从 DB 查询 (agent, date) 现有记录的 {content_hash → last_recalled_at}。
 
-        日期已由调用方规范化（X月X日），直接做字符串比较。
+        用于 add() 重建前保留 recall 状态；DB 为空时返回空 dict。
         """
-        exact = state.get(memory_key, {})
-        recall = str(exact.get("last_recalled_at", "")).strip()
-        if recall:
-            return recall
+        try:
+            db = await self._get_db()
+            rows = await db.execute_fetchall(
+                "SELECT content_hash, last_recalled_at FROM memory_chunks "
+                "WHERE owner_agent = ? AND game_date = ?",
+                (agent_name, date),
+            )
+            return {
+                str(row[0]): str(row[1])
+                for row in rows
+                if row[0] and row[1]
+            }
+        except Exception:
+            return {}
 
+    def _sidecar_recall_by_hash(
+        self,
+        agent_name: str,
+        date: str,
+    ) -> dict[str, str]:
+        """从 sidecar 文件读取 {content_hash → last_recalled_at}。
+
+        仅用于 load 后 DB 为空时的降级 fallback。
+        """
+        state = self._read_memory_recall_state(agent_name)
+        result: dict[str, str] = {}
         for entry in state.values():
             if not isinstance(entry, dict):
                 continue
-            if str(entry.get("date", "")).strip() != event_date:
+            if str(entry.get("date", "")).strip() != date:
                 continue
-            if str(entry.get("content_hash", "")) == content_hash:
-                recall = str(entry.get("last_recalled_at", "")).strip()
-                if recall:
-                    return recall
-
-        return event_date
+            c_hash = str(entry.get("content_hash", "")).strip()
+            recalled = str(entry.get("last_recalled_at", "")).strip()
+            if c_hash and recalled:
+                result[c_hash] = recalled
+        return result
 
     def _read_json_object(self, path: Path) -> dict[str, Any]:
         """读取 sidecar JSON；解析失败返回空对象。"""
@@ -180,49 +190,29 @@ class VectorStore:
             if isinstance(value, dict)
         }
 
-    def _write_memory_recall_state(
-        self,
-        agent_name: str,
-        state: dict[str, dict[str, Any]],
-    ) -> None:
-        """写回 recall sidecar。"""
-        path = Path(self.character_path(agent_name, ".memory_recall_state.json"))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+    async def export_recall_state(self, agent_name: str) -> dict[str, dict[str, str]]:
+        """从 DB 导出 recall 状态，供存档时写入 sidecar。
 
-    def _rebuild_memory_recall_state(
-        self,
-        agent_name: str,
-        date: str,
-        payloads: list[tuple[str, str, str, str, int, str, str]],
-        previous_state: dict[str, dict[str, Any]],
-    ) -> dict[str, dict[str, Any]]:
-        """用当前日期的最新事件集合重写 recall sidecar。
-
-        payloads: [(memory_key, game_date, content, keywords, importance, content_hash, recalled_at), ...]
+        返回格式与 _read_memory_recall_state 兼容：
+        {memory_key: {"date": ..., "content_hash": ..., "last_recalled_at": ...}}
         """
-        next_state = {
-            key: value
-            for key, value in previous_state.items()
-            if self._memory_key_date(key) != date
-        }
-        for memory_key, event_date, _text, _keywords, _importance, content_hash, recalled_at in payloads:
-            next_state[memory_key] = {
-                "date": event_date,
-                "content_hash": content_hash,
-                "last_recalled_at": recalled_at,
+        await self.init_tables()
+        db = await self._get_db()
+        rows = await db.execute_fetchall(
+            "SELECT memory_key, game_date, content_hash, last_recalled_at "
+            "FROM memory_chunks WHERE owner_agent = ?",
+            (agent_name,),
+        )
+        state: dict[str, dict[str, str]] = {}
+        for memory_key, game_date, content_hash, last_recalled_at in rows:
+            if not memory_key:
+                continue
+            state[str(memory_key)] = {
+                "date": str(game_date or "").strip(),
+                "content_hash": str(content_hash or "").strip(),
+                "last_recalled_at": str(last_recalled_at or game_date or "").strip(),
             }
-        try:
-            self._write_memory_recall_state(agent_name, next_state)
-        except Exception as e:
-            routing_logger.warning(
-                "[VectorStore] 写入 recall sidecar 失败: agent=%s, date=%s, error=%s",
-                agent_name, date, e,
-            )
-        return next_state
+        return state
 
     # ----------------------------- DB 基础 -----------------------------
 
@@ -427,41 +417,38 @@ class VectorStore:
             )
             return
 
-        previous_state = self._read_memory_recall_state(agent_name)
-        payloads: list[tuple[str, str, str, str, int, str, str]] = []
-        for idx, (text, keywords, importance) in enumerate(items, start=1):
-            memory_key = f"memory::{agent_name}::{date}::{idx}"
-            content_hash = hashlib.sha1(text.encode("utf-8")).hexdigest()
-            recalled_at = self._resolve_memory_recall_date(
-                previous_state, memory_key, date, content_hash
-            )
-            payloads.append((
-                memory_key,
-                date,
-                text,
-                keywords,
-                importance,
-                content_hash,
-                recalled_at,
-            ))
-
-        routing_logger.info(
-            "[VectorStore] 开始长期记忆索引: agent=%s, date=%s, 待写入事件=%s",
-            agent_name, date, len(payloads)
-        )
+        # sidecar fallback 可以在锁外读（仅文件 I/O，load 后才命中）
+        sidecar_recall = self._sidecar_recall_by_hash(agent_name, date)
 
         db: aiosqlite.Connection | None = None
         try:
             async with self._get_write_lock():
                 await self.init_tables()
                 db = await self._get_db()
+
+                # 在事务内查 recall 状态，避免与并发写竞争
+                recall_by_hash = await self._query_db_recall_by_hash(agent_name, date)
+                if not recall_by_hash:
+                    recall_by_hash = sidecar_recall
+
+                payloads: list[tuple[str, str, str, str, int, str, str]] = []
+                for idx, (text, keywords, importance) in enumerate(items, start=1):
+                    memory_key = f"memory::{agent_name}::{date}::{idx}"
+                    content_hash = hashlib.sha1(text.encode("utf-8")).hexdigest()
+                    recalled_at = recall_by_hash.get(content_hash, date)
+                    payloads.append((
+                        memory_key, date, text, keywords, importance,
+                        content_hash, recalled_at,
+                    ))
+
+                routing_logger.info(
+                    "[VectorStore] 开始长期记忆索引: agent=%s, date=%s, 待写入事件=%s",
+                    agent_name, date, len(payloads),
+                )
                 await db.execute("BEGIN")
                 await self._delete_chunks(db, agent_name, date)
                 await self._insert_chunks(db, agent_name, payloads)
                 await db.commit()
-                self._rebuild_memory_recall_state(
-                    agent_name, date, payloads, previous_state
-                )
                 routing_logger.info(
                     "[VectorStore] 长期记忆索引完成: agent=%s, date=%s, 写入事件=%s",
                     agent_name, date, len(payloads)
@@ -552,37 +539,12 @@ class VectorStore:
         recalled_ids: list[str],
         current_game_date: str,
     ) -> None:
-        """更新 DB 中 last_recalled_at，并同步写回 sidecar。"""
+        """更新 DB 中 last_recalled_at。"""
         placeholders = ",".join("?" * len(recalled_ids))
         conn.execute(
             f"UPDATE memory_chunks SET last_recalled_at = ? WHERE id IN ({placeholders})",
             (current_game_date, *recalled_ids),
         )
-        # 同步 sidecar
-        rows = conn.execute(
-            f"SELECT memory_key, owner_agent, game_date, content FROM memory_chunks WHERE id IN ({placeholders})",
-            recalled_ids,
-        ).fetchall()
-        state_cache: dict[str, dict[str, dict[str, Any]]] = {}
-        for memory_key, owner_agent, event_date, content in rows:
-            if not owner_agent:
-                continue
-            if owner_agent not in state_cache:
-                state_cache[owner_agent] = self._read_memory_recall_state(owner_agent)
-            state = state_cache[owner_agent]
-            state[str(memory_key)] = {
-                "date": str(event_date or "").strip(),
-                "content_hash": hashlib.sha1(str(content or "").strip().encode("utf-8")).hexdigest(),
-                "last_recalled_at": current_game_date,
-            }
-        for agent_name, state in state_cache.items():
-            try:
-                self._write_memory_recall_state(agent_name, state)
-            except Exception as e:
-                routing_logger.warning(
-                    "[VectorStore] 写回 recall sidecar 失败: agent=%s, error=%s",
-                    agent_name, e,
-                )
 
     @staticmethod
     def _to_vec_blob(vec: list[float]) -> bytes:

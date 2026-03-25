@@ -821,8 +821,8 @@ class TestHybridSearch:
         assert "京都大学" in result_str, "结果应包含关键词"
 
     @pytest.mark.asyncio
-    async def test_search_updates_recall_sidecar(self, clean_store, tmp_path, monkeypatch):
-        """search_memories() 命中后应同时更新 SQLite 和 recall sidecar。"""
+    async def test_search_updates_recall_db(self, clean_store, tmp_path, monkeypatch):
+        """search_memories() 命中后应更新 SQLite 中的 last_recalled_at。"""
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
         monkeypatch.setattr(retrieval_module, "character_path", make_character_path(tmp_path))
@@ -846,10 +846,6 @@ class TestHybridSearch:
         result_str = search_memories("lilith", "告白")
         assert result_str != "（无相关记忆）", "应命中记忆"
 
-        sidecar = tmp_path / "lilith" / ".memory_recall_state.json"
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-        assert data["memory::lilith::4月3日::1"]["last_recalled_at"] == "4月8日"
-
         conn = __import__("sqlite3").connect(test_db_path)
         row = conn.execute(
             "SELECT last_recalled_at FROM memory_chunks WHERE memory_key = ?",
@@ -859,8 +855,8 @@ class TestHybridSearch:
         assert row[0] == "4月8日"
 
     @pytest.mark.asyncio
-    async def test_rebuild_restores_recall_sidecar(self, clean_store, tmp_path, monkeypatch):
-        """rebuild() 应从 recall sidecar 恢复 last_recalled_at。"""
+    async def test_rebuild_restores_recall_from_sidecar(self, clean_store, tmp_path, monkeypatch):
+        """rebuild() DB 为空时应从 sidecar 降级恢复 last_recalled_at。"""
         import importlib
 
         vs_mod = importlib.import_module("storage.vector_store")

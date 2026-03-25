@@ -356,6 +356,16 @@ async def export_save_archive() -> str | None:
         return None
 
     try:
+        # 存档前从 DB 导出 recall 状态写入 sidecar（运行期不维护 sidecar）
+        from storage.vector_store import vector_store
+        from storage.agent_files import write_sidecar_json
+        for agent_name in all_agents:
+            if agent_name == "narrator":
+                continue
+            recall_state = await vector_store.export_recall_state(agent_name)
+            if recall_state:
+                write_sidecar_json(agent_name, ".memory_recall_state.json", recall_state)
+
         with zipfile.ZipFile(save_path, "w", zipfile.ZIP_DEFLATED) as zf:
             metadata = {
                 "export_time": datetime.now().isoformat(),

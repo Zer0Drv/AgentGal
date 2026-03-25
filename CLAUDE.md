@@ -95,7 +95,7 @@ app.py           ← shared/ + engine/ + memory/
 - `data/characters/last_choices.json`：最新一组玩家选项，续档时恢复展示，重置时清除
 - `data/characters/*/.history_window_state.json`：各 Agent 的对话历史高低水位窗口 sidecar
 - `data/characters/*/.consolidation_state.json`：角色记忆整理进度 sidecar
-- `data/characters/*/.memory_recall_state.json`：角色长期记忆 recall sidecar
+- `data/characters/*/.memory_recall_state.json`：角色长期记忆 recall 快照（仅存档时从 DB 生成，运行期不维护）
 
 ## 消息路由
 
@@ -221,8 +221,8 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 - `memory/indexer.py` 负责从 `memory.md` 重建向量索引（解析、过滤、元数据提取在此层，storage 只做 I/O）
 - 召回排序为：向量相关性与 BM25 相关性先融合，rerank（可选）替换 relevance 信号，最后叠加游戏内时间 recency
 - `logs/memory/memory.log` 会记录每轮检索 query 和 top 命中摘要，便于排查召回质量
-- `last_recalled_at` 会在命中后更新，并同步写回 `.memory_recall_state.json`
-- `memory/indexer.rebuild_memory_index()` 会结合 `.consolidation_state.json` 和 `.memory_recall_state.json` 恢复长期记忆索引与 recall 状态
+- `last_recalled_at` 会在命中后更新到 DB；`.memory_recall_state.json` 仅在存档时从 DB 导出，读档重建时作为降级数据源
+- `memory/indexer.rebuild_memory_index()` 会结合 `.consolidation_state.json` 恢复长期记忆索引；recall 状态优先从 DB 读取，DB 为空时降级读 `.memory_recall_state.json`
 
 ## 记忆整理
 
