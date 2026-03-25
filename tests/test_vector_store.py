@@ -220,6 +220,8 @@ class TestVectorStoreRebuild:
                 "- **时间**：4月3日 08:00\n"
                 "- **地点**：教室\n"
                 "- **在场**：莉莉丝\n"
+                "- **关键词**：教室 重建 记忆\n"
+                "- **重要度**：3\n"
                 "- **内容**：这是可被 rebuild 的记忆内容。"
             ),
         )
@@ -236,6 +238,54 @@ class TestVectorStoreRebuild:
 
         res = await wait_for_search(store, "lilith", "被 rebuild 的记忆")
         assert len(res) >= 1, "rebuild 后应该能搜索到 lilith 的记忆"
+
+    @pytest.mark.asyncio
+    async def test_rebuild_skips_unstructured_blocks(self, clean_store, tmp_path, monkeypatch):
+        """rebuild() 只索引结构完整的整理块，raw 块应跳过。"""
+        import importlib
+
+        vs_mod = importlib.import_module("memory.vector_store")
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
+
+        write_memory(
+            tmp_path,
+            "lilith",
+            (
+                "# lilith 的长期记忆\n\n"
+                "## 4月3日\n"
+                "- **时间**：4月3日 08:00\n"
+                "- **地点**：教室\n"
+                "- **在场**：莉莉丝\n"
+                "- **关键词**：教室 稳定记忆\n"
+                "- **重要度**：3\n"
+                "- **内容**：这是结构完整的记忆。\n\n"
+                "- **17:29/教室/我和玩家**：这是还没整理的 raw 记忆。"
+            ),
+        )
+
+        await store.rebuild("narrator")
+
+        res_structured = await wait_for_search(store, "lilith", "结构完整的记忆")
+        assert len(res_structured) >= 1
+
+        import sqlite3
+        conn = sqlite3.connect(test_db_path)
+        try:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM memory_chunks WHERE owner_agent = ? AND game_date = ?",
+                ("lilith", "4月3日"),
+            ).fetchone()[0]
+            raw_rows = conn.execute(
+                "SELECT COUNT(*) FROM memory_chunks WHERE owner_agent = ? AND instr(content, '还没整理的 raw 记忆') > 0",
+                ("lilith",),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+
+        assert count == 1
+        assert raw_rows == 0
 
 
 
@@ -823,6 +873,7 @@ class TestHybridSearch:
             "lilith",
             "# lilith\n\n## 4月3日\n"
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
+            "- **关键词**：教室 recall 恢复\n- **重要度**：3\n"
             "- **内容**：这是会被恢复 recall 的记忆。",
         )
         (tmp_path / "lilith" / ".consolidation_state.json").write_text(
@@ -832,13 +883,13 @@ class TestHybridSearch:
         (tmp_path / "lilith" / ".memory_recall_state.json").write_text(
             json.dumps(
                 {
-                    "memory::lilith::4月3日::1": {
-                        "date": "4月3日",
-                        "content_hash": __import__("hashlib").sha1(
-                            "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n- **内容**：这是会被恢复 recall 的记忆。".strip().encode("utf-8")
-                        ).hexdigest(),
-                        "last_recalled_at": "4月7日",
-                    }
+                        "memory::lilith::4月3日::1": {
+                            "date": "4月3日",
+                            "content_hash": __import__("hashlib").sha1(
+                                "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n- **关键词**：教室 recall 恢复\n- **重要度**：3\n- **内容**：这是会被恢复 recall 的记忆。".strip().encode("utf-8")
+                            ).hexdigest(),
+                            "last_recalled_at": "4月7日",
+                        }
                 },
                 ensure_ascii=False,
             ),

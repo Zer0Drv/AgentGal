@@ -279,7 +279,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
 
     core_files = ["soul.md", "status.md"]
     if agent_name != "narrator":
-        core_files.extend(["memory.md", "user.md", "growth.md"])
+        core_files.extend(["memory.md", "user.md", "tmp_user.md", "growth.md"])
 
     for filename in core_files:
         filepath = f"{base}/{filename}"
@@ -293,7 +293,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
 
     hidden_files = [".history_window_state.json"]
     if agent_name != "narrator":
-        hidden_files.extend([".consolidation_state.json", ".memory_recall_state.json"])
+        hidden_files.append(".memory_recall_state.json")
 
     for hidden_file in hidden_files:
         hidden_path = f"{base}/{hidden_file}"

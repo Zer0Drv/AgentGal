@@ -29,6 +29,7 @@ from memory.parser import (
     normalize,
     split_by_date,
     split_into_events,
+    is_structured_memory_block,
     canonical_cn_date,
     parse_cn_date,
     is_date_before,
@@ -217,12 +218,6 @@ class VectorStore:
         except (json.JSONDecodeError, OSError):
             return {}
         return data if isinstance(data, dict) else {}
-
-    def _read_consolidation_state(self, agent_name: str) -> dict[str, Any]:
-        """读取 consolidation sidecar。"""
-        return self._read_json_object(
-            Path(self.character_path(agent_name, ".consolidation_state.json"))
-        )
 
     def _read_memory_recall_state(self, agent_name: str) -> dict[str, dict[str, Any]]:
         """读取 recall sidecar。"""
@@ -537,21 +532,13 @@ class VectorStore:
             await db.execute("DELETE FROM memory_chunks")
             await db.commit()
 
-            # ===== memory 层重建：根据 consolidation_state 之前的日期 =====
+            # ===== memory 层重建：只索引结构完整的整理块 =====
             try:
                 agents = get_agent_names(include_narrator=False)
             except TypeError:
                 agents = [name for name in get_agent_names() if name != "narrator"]
 
             for agent in agents:
-                cutoff = self._read_consolidation_state(agent).get("last_consolidated_date")
-                if not cutoff or not parse_cn_date(cutoff):
-                    routing_logger.info(
-                        "[VectorStore] 重建跳过 memory: agent=%s, cutoff无效=%s",
-                        agent, cutoff
-                    )
-                    continue
-
                 path = Path(self.character_path(agent, "memory.md"))
                 if not path.exists():
                     routing_logger.info(
@@ -560,9 +547,10 @@ class VectorStore:
                     continue
 
                 sections = split_by_date(normalize(path.read_text(encoding="utf-8")))
-                dates = [d for d in sections.keys() if is_date_before(d, cutoff)]
-                for date in dates:
-                    await self.add(agent, date, split_into_events(sections[date]))
+                for date, content in sections.items():
+                    consolidated = [e for e in split_into_events(content) if is_structured_memory_block(e)]
+                    if consolidated:
+                        await self.add(agent, date, consolidated)
         finally:
             if self._db is not None:
                 await self._db.close()

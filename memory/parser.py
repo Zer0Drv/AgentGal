@@ -5,7 +5,13 @@ from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 
-_EVENT_FIELD_PATTERN = r"^\s*(?:-\s*)?\*\*{field}\*\*：\s*(.*)$"
+_EVENT_FIELD_PATTERN = r"^\s*(?:-\s*)?(?:\*\*{field}\*\*|{field})：\s*(.*)$"
+_MEMORY_FIELD_ORDER = ("时间", "地点", "在场", "关键词", "重要度", "内容")
+_FIELD_LINE_PATTERN = re.compile(
+    r"^\s*(?:-\s*)?(?:\*\*(时间|地点|在场|关键词|重要度|内容)\*\*|(时间|地点|在场|关键词|重要度|内容))：\s*(.*)$"
+)
+_DATE_HEADING_PATTERN = re.compile(r"^\s*##\s*(\d{1,2}月\d{1,2}日)(?:\s.*)?$")
+_BOLD_HEADER_PATTERN = re.compile(r"^\s*(?:-\s*)?\*\*(.+?)\*\*：")
 
 
 # ===== 文本规范化 =====
@@ -22,7 +28,7 @@ def normalize(content: str) -> str:
         m = re.match(r"^(?:#{1,2}\s*|\*\*)?(\d{1,2}月\d{1,2}日)(?:\*\*)?(?:\s.*)?$", stripped)
         if m:
             out.append(f"## {m.group(1)}")
-        elif re.match(r"^\*\*(时间|地点|在场|关键词|重要度|内容)\*\*：", stripped):
+        elif re.match(r"^(?:\*\*(时间|地点|在场|关键词|重要度|内容)\*\*|(时间|地点|在场|关键词|重要度|内容))：", stripped):
             out.append(f"- {stripped}")
         else:
             out.append(line)
@@ -50,7 +56,7 @@ def split_by_date(content: str) -> OrderedDict[str, str]:
             if current_date:
                 body = "\n".join(current_lines).strip()
                 if current_date in sections:
-                    sections[current_date] += "\n" + body
+                    sections[current_date] += "\n\n" + body
                 else:
                     sections[current_date] = body
             current_date = m.group(1)
@@ -61,7 +67,7 @@ def split_by_date(content: str) -> OrderedDict[str, str]:
     if current_date:
         body = "\n".join(current_lines).strip()
         if current_date in sections:
-            sections[current_date] += "\n" + body
+            sections[current_date] += "\n\n" + body
         else:
             sections[current_date] = body
 
@@ -71,39 +77,52 @@ def split_by_date(content: str) -> OrderedDict[str, str]:
 # ===== 按事件切分 =====
 
 
-def split_events_raw(content: str) -> list[tuple[str | None, str]]:
-    """按 - **时间**：字段分割内容为事件列表。
+def split_event_blocks(content: str) -> list[str]:
+    """按空行将单日内容切分为块。"""
+    stripped = (content or "").strip()
+    if not stripped:
+        return []
+    return [block.strip() for block in re.split(r"\n\s*\n+", stripped) if block.strip()]
 
-    格式：- **时间**：4月3日 上午
 
-    Returns:
-        [(日期, 事件内容), ...]，日期从时间字段的日期部分提取
-    """
-    time_pattern = re.compile(r"^(?:-\s*)?\*\*时间\*\*：(\d{1,2}月\d{1,2}日)")
-    events: list[tuple[str | None, str]] = []
-    current_date: str | None = None
-    current_lines: list[str] = []
+def is_structured_memory_block(
+    block_text: str,
+    required_fields: tuple[str, ...] = _MEMORY_FIELD_ORDER,
+) -> bool:
+    """判断一个块是否是合法的结构化记忆事件。"""
+    lines = [line.rstrip() for line in (block_text or "").strip().splitlines() if line.strip()]
+    if not lines:
+        return False
 
-    for line in content.split("\n"):
-        m = time_pattern.match(line.strip())
-        if m:
-            if current_lines:
-                events.append((current_date, "\n".join(current_lines).strip()))
-            current_date = m.group(1)
-            current_lines = [line]
-        elif current_date is not None:
-            current_lines.append(line)
+    expected_index = 0
+    current_field: str | None = None
 
-    if current_lines:
-        events.append((current_date, "\n".join(current_lines).strip()))
+    for line in lines:
+        stripped = line.strip()
+        if _DATE_HEADING_PATTERN.match(stripped):
+            return False
 
-    return events
+        field_match = _FIELD_LINE_PATTERN.match(stripped)
+        if field_match:
+            field_name = field_match.group(1) or field_match.group(2)
+            if expected_index >= len(required_fields) or field_name != required_fields[expected_index]:
+                return False
+            expected_index += 1
+            current_field = field_name
+            continue
+
+        if _BOLD_HEADER_PATTERN.match(stripped):
+            return False
+
+        if current_field != required_fields[-1]:
+            return False
+
+    return expected_index == len(required_fields)
 
 
 def split_into_events(day_content: str) -> list[str]:
     """将单日内容按事件分割为列表，无法识别时整体作为一个事件返回。"""
-    events = [event_text for _, event_text in split_events_raw(day_content) if event_text]
-    return events if events else [day_content.strip()]
+    return split_event_blocks(day_content)
 
 
 # ===== 字段提取 =====
@@ -236,8 +255,8 @@ def parse_llm_memory_sections(
     """
     cleaned = re.sub(r"<analysis>.*?</analysis>", "", llm_result, flags=re.DOTALL).strip()
     heading_pattern = re.compile(r"^\s*##\s*(\d{1,2}月\d{1,2}日)(?:\s.*)?$")
-    time_pattern = re.compile(r"^\s*(?:-\s*)?\*\*时间\*\*：\s*(.*)$")
-    field_pattern = re.compile(r"^\s*(?:-\s*)?\*\*(地点|在场|内容)\*\*：\s*(.*)$")
+    time_pattern = re.compile(r"^\s*(?:-\s*)?(?:\*\*时间\*\*|时间)：\s*(.*)$")
+    field_pattern = re.compile(r"^\s*(?:-\s*)?(?:\*\*(地点|在场|内容)\*\*|(地点|在场|内容))：\s*(.*)$")
     explicit_date_pattern = re.compile(r"(\d{1,2}月\d{1,2}日)")
     fallback_date = expected_dates[0] if expected_dates and len(expected_dates) == 1 else None
 
@@ -285,11 +304,11 @@ def parse_llm_memory_sections(
         if current_lines:
             field_match = field_pattern.match(line)
             if field_match:
-                current_lines.append(f"- **{field_match.group(1)}**：{field_match.group(2).strip()}".rstrip())
+                field_name = field_match.group(1) or field_match.group(2)
+                field_value = field_match.group(3).strip()
+                current_lines.append(f"- **{field_name}**：{field_value}".rstrip())
             else:
                 current_lines.append(line)
 
     flush_event()
     return sections
-
-

@@ -31,12 +31,11 @@ from engine.agent_files import (
     load_text,
     read_growth_entries,
     read_agent_file,
-    read_sidecar_json,
     write_growth_entries,
-    write_sidecar_json,
 )
 from memory.parser import (
     extract_event_field,
+    is_structured_memory_block,
     normalize,
     parse_event_importance,
     parse_llm_memory_sections,
@@ -53,7 +52,7 @@ _PROMPT_STEP3_PATH = Path(__file__).parent.parent / "prompts" / "growth_dedupe.t
 _PLAYER_PROMPT_PATH = (
     Path(__file__).parent.parent / "prompts" / "player_profile_consolidation_prompt.txt"
 )
-_REQUIRED_EVENT_FIELDS = ["**时间**", "**地点**", "**在场**", "**内容**"]
+_STEP1_REQUIRED_FIELDS = ("时间", "地点", "在场", "内容")
 
 
 def safe_write_memory(
@@ -102,6 +101,10 @@ _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
     "对方是什么人": "最多 8 条：跨情境成立的性格、习惯、边界方式与行事风格（主语是\"对方\"），不要重复基本信息",
     "我们怎么相处": "最多 5 条：我和对方之间反复出现的双向互动规律（主语是\"我们/我和对方\"）",
 }
+_USER_SECTION_BULLET_LIMITS: dict[str, int] = {
+    "对方是什么人": 8,
+    "我们怎么相处": 5,
+}
 
 
 @dataclass
@@ -133,6 +136,69 @@ def build_fields_definition(agent_name: str) -> str:
     return "\n".join(f"- 「{field}」：{_USER_FIELD_DESCRIPTIONS.get(field, '')}" for field in fields)
 
 
+def _build_player_profile_draft_input(draft_profile: str) -> str:
+    return (
+        "<draft_profile>\n"
+        f"{draft_profile.strip()}\n"
+        "</draft_profile>"
+    )
+
+
+def _split_section_bullets(section_text: str) -> list[str]:
+    items: list[str] = []
+    current: list[str] = []
+    for line in section_text.splitlines():
+        if line.startswith("- "):
+            if current:
+                items.append("\n".join(current).strip())
+            current = [line]
+            continue
+        if current:
+            current.append(line)
+    if current:
+        items.append("\n".join(current).strip())
+    return [item for item in items if item.strip() and item.strip() != "-"]
+
+
+def _enforce_user_section_limits(content: str) -> str:
+    lines = content.splitlines()
+    rebuilt: list[str] = []
+    index = 0
+
+    while index < len(lines):
+        line = lines[index]
+        if not line.startswith("## "):
+            rebuilt.append(line)
+            index += 1
+            continue
+
+        section_title = line[3:].strip()
+        rebuilt.append(line)
+        index += 1
+
+        section_lines: list[str] = []
+        while index < len(lines) and not lines[index].startswith("## "):
+            section_lines.append(lines[index])
+            index += 1
+
+        limit = _USER_SECTION_BULLET_LIMITS.get(section_title)
+        if limit is None:
+            rebuilt.extend(section_lines)
+            continue
+
+        bullets = _split_section_bullets("\n".join(section_lines))
+        if len(bullets) <= limit:
+            rebuilt.extend(section_lines)
+            continue
+
+        rebuilt.append("")
+        for item in bullets[:limit]:
+            rebuilt.extend(item.splitlines())
+        rebuilt.append("")
+
+    return "\n".join(rebuilt).strip()
+
+
 def _block_fingerprint(date: str, content: str) -> str:
     normalized_lines = [line.rstrip() for line in content.strip().splitlines()]
     normalized = "\n".join(normalized_lines).strip()
@@ -146,6 +212,10 @@ def _make_block(date: str, content: str) -> dict[str, str]:
         "content": stripped,
         "fingerprint": _block_fingerprint(date, stripped),
     }
+
+
+def _is_structured_block(block: dict[str, str]) -> bool:
+    return is_structured_memory_block(block["content"])
 
 
 def _flatten_sections(sections: OrderedDict[str, str]) -> list[dict[str, str]]:
@@ -207,14 +277,34 @@ def _apply_default_chunk_metadata(blocks: list[dict[str, str]]) -> list[dict[str
     ]
 
 
-def _validate_step1_result(sections: OrderedDict[str, str]) -> str | None:
-    missing_map = [
-        f"{block['date']} 字段不完整({','.join(missing)})"
-        for block in _flatten_sections(sections)
-        if (missing := [field for field in _REQUIRED_EVENT_FIELDS if field not in block["content"]])
-    ]
-    if missing_map:
-        return missing_map[0] + "，已跳过"
+def _validate_step1_result(
+    sections: OrderedDict[str, str],
+    expected_dates: list[str] | None = None,
+) -> str | None:
+    invalid_block = next(
+        (
+            block
+            for block in _flatten_sections(sections)
+            if not is_structured_memory_block(block["content"], required_fields=_STEP1_REQUIRED_FIELDS)
+        ),
+        None,
+    )
+    if invalid_block:
+        return f"{invalid_block['date']} 输出块结构不完整，已跳过"
+
+    if expected_dates:
+        missing_dates = [date for date in expected_dates if date not in sections]
+        if missing_dates:
+            preview = "、".join(missing_dates[:5])
+            suffix = f" 等{len(missing_dates)}天" if len(missing_dates) > 5 else ""
+            return f"输出缺少日期：{preview}{suffix}"
+
+        unexpected_dates = [date for date in sections if date not in expected_dates]
+        if unexpected_dates:
+            preview = "、".join(unexpected_dates[:5])
+            suffix = f" 等{len(unexpected_dates)}天" if len(unexpected_dates) > 5 else ""
+            return f"输出包含窗口外日期：{preview}{suffix}"
+
     return None
 
 
@@ -278,64 +368,6 @@ def _load_memory_blocks(agent_name: str) -> tuple[Path, str, list[dict[str, str]
     return path, original_content, _flatten_sections(sections)
 
 
-def _resolve_window_start(agent_name: str, blocks: list[dict[str, str]], original_content: str, cdata: dict) -> tuple[int | None, str | None]:
-    if not blocks:
-        return None, "memory 中没有可整理的块"
-
-    stored_fingerprint = cdata.get("last_consolidated_block_id")
-    anchor_fingerprint: str | None = None
-    boundary_invalid = False
-    if stored_fingerprint:
-        if any(block["fingerprint"] == stored_fingerprint for block in blocks):
-            anchor_fingerprint = stored_fingerprint
-        else:
-            routing_logger.warning("[整理器] %s 已整理块标识失效，尝试用 last_memory_size 恢复边界", agent_name)
-
-    last_memory_size = cdata.get("last_memory_size")
-    if anchor_fingerprint is None and isinstance(last_memory_size, int) and 0 < last_memory_size <= len(original_content):
-        snapshot_content = normalize(original_content[:last_memory_size])
-        snapshot_sections = split_by_date(snapshot_content)
-        snapshot_blocks = _flatten_sections(snapshot_sections)
-        if snapshot_blocks:
-            recovered = snapshot_blocks[-1]["fingerprint"]
-            if any(block["fingerprint"] == recovered for block in blocks):
-                if stored_fingerprint and stored_fingerprint != recovered:
-                    routing_logger.info(
-                        "[整理器] %s 用 last_memory_size 恢复已整理块边界: %s -> %s",
-                        agent_name,
-                        stored_fingerprint[:10],
-                        recovered[:10],
-                    )
-                anchor_fingerprint = recovered
-            else:
-                boundary_invalid = True
-    elif anchor_fingerprint is None and cdata:
-        boundary_invalid = True
-
-    if anchor_fingerprint is not None:
-        start_index = next(i for i, block in enumerate(blocks) if block["fingerprint"] == anchor_fingerprint)
-        migrated_anchor = bool(
-            stored_fingerprint
-            and stored_fingerprint != anchor_fingerprint
-            and not any(block["fingerprint"] == stored_fingerprint for block in blocks)
-        )
-        if not migrated_anchor and isinstance(last_memory_size, int) and len(original_content) <= last_memory_size:
-            return None, "memory 未增长，跳过本轮整理"
-        return start_index, None
-
-    has_growth = not isinstance(last_memory_size, int) or len(original_content) > last_memory_size
-    if boundary_invalid:
-        if not has_growth:
-            return None, "memory 未增长，跳过本轮整理"
-        start_index = max(len(blocks) - 2, 0)
-        routing_logger.warning(
-            "[整理器] %s 已整理块边界失效，回退到最近 %s 块",
-            agent_name,
-            len(blocks) - start_index,
-        )
-        return start_index, None
-
-    return 0, None
 
 
 class MemoryConsolidator:
@@ -387,7 +419,7 @@ class MemoryConsolidator:
         if len(result) < 50:
             raise ValueError("第一步返回过短，跳过整理")
         sections = parse_llm_memory_sections(result, window_dates)
-        validation_error = _validate_step1_result(sections)
+        validation_error = _validate_step1_result(sections, expected_dates=window_dates)
         if validation_error:
             raise ValueError(validation_error)
         blocks = _flatten_sections(sections)
@@ -535,12 +567,14 @@ class MemoryConsolidator:
         self,
         agent_name: str,
         blocks: list[dict[str, str]],
-        original_content: str,
-        cdata: dict,
     ) -> tuple[_ConsolidationWindow | None, str | None]:
-        start_index, skip_reason = _resolve_window_start(agent_name, blocks, original_content, cdata)
-        if start_index is None:
-            return None, skip_reason
+        if not blocks:
+            return None, "memory 中没有可整理的块"
+
+        # 从前往后找第一个未整理块；若全文都已整理，则将最后一块纳入窗口重整理。
+        first_unstructured_index = next((i for i, block in enumerate(blocks) if not _is_structured_block(block)), None)
+        start_index = first_unstructured_index if first_unstructured_index is not None else len(blocks) - 1
+
         stable_blocks = blocks[:start_index]
         window_blocks = blocks[start_index:]
         window_dates = list(OrderedDict.fromkeys(block["date"] for block in window_blocks))
@@ -571,8 +605,7 @@ class MemoryConsolidator:
             if loaded is None:
                 return None
             path, original_content, blocks = loaded
-            cdata = read_sidecar_json(agent_name, ".consolidation_state.json")
-            window, skip_reason = self._prepare_consolidation_window(agent_name, blocks, original_content, cdata)
+            window, skip_reason = self._prepare_consolidation_window(agent_name, blocks)
             if window is None:
                 if skip_reason:
                     result.skipped, result.skip_reason = True, skip_reason
@@ -609,14 +642,6 @@ class MemoryConsolidator:
             update_dates = set(window.window_dates) | {block["date"] for block in actual_window_blocks}
             for date in update_dates:
                 await vector_store.add(agent_name, date, split_into_events(merged_sections.get(date, "")))
-
-            if not result.errors:
-                cdata.update(
-                    last_consolidated_date=merged_blocks[-1]["date"],
-                    last_consolidated_block_id=merged_blocks[-1]["fingerprint"],
-                    last_memory_size=consolidated_len,
-                )
-                write_sidecar_json(agent_name, ".consolidation_state.json", cdata)
 
             user_before, user_after = await self._consolidate_player_profile(agent_name)
             result.user_md_before, result.user_md_after = user_before, user_after
@@ -663,12 +688,19 @@ class MemoryConsolidator:
 
     async def _consolidate_player_profile(self, agent_name: str) -> tuple[int, int]:
         user_path = Path(character_path(agent_name, "user.md"))
+        tmp_path = Path(character_path(agent_name, "tmp_user.md"))
+
         if not user_path.exists():
             return 0, 0
 
-        content = user_path.read_text(encoding="utf-8")
-        if len(content.strip()) < 100:
+        user_content = user_path.read_text(encoding="utf-8")
+        tmp_content = tmp_path.read_text(encoding="utf-8").strip() if tmp_path.exists() else ""
+
+        # 没有工作草稿需要整理，跳过
+        if not tmp_content:
             return 0, 0
+
+        draft_input = _build_player_profile_draft_input(tmp_content)
 
         try:
             backup_file(user_path, agent_name, "user")
@@ -679,7 +711,7 @@ class MemoryConsolidator:
                 max_retries=3,
             ) as client:
                 resp = await client.chat(
-                    [{"role": "system", "content": system}, {"role": "user", "content": content}],
+                    [{"role": "system", "content": system}, {"role": "user", "content": draft_input}],
                     enable_thinking=False,
                 )
             consolidated = (resp.get("content") or "").strip()
@@ -690,9 +722,11 @@ class MemoryConsolidator:
             diary_match = re.search(r"^.*第二步.*档案.*$", consolidated, re.MULTILINE)
             if diary_match:
                 consolidated = consolidated[diary_match.end():].lstrip("\n")
+            consolidated = _enforce_user_section_limits(consolidated)
 
             user_path.write_text(consolidated.strip() + "\n", encoding="utf-8")
-            before_len, after_len = len(content), len(consolidated)
+            tmp_path.unlink(missing_ok=True)
+            before_len, after_len = len(user_content), len(consolidated)
             routing_logger.info(f"[整理器] {agent_name} user.md 整理完成 (长度: {before_len} → {after_len})")
             return before_len, after_len
         except Exception as e:
