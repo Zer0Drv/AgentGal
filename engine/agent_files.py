@@ -99,8 +99,10 @@ def _read_title(file_path: str, default_title: str = "# 标题") -> str:
 def _parse_section_file(
     file_path: str,
     allowed_sections: list[str],
+    *,
+    fill_missing_sections: bool = True,
 ) -> dict[str, str]:
-    """解析 section 式文件，返回 {字段名: 内容} 字典，自动补全白名单字段。"""
+    """解析 section 式文件，返回 {字段名: 内容} 字典。"""
     existing_content = ""
     if os.path.exists(file_path):
         with open(file_path, "r", encoding="utf-8") as f:
@@ -122,9 +124,10 @@ def _parse_section_file(
     if current_sec:
         sections[current_sec] = "\n".join(current_lines).strip()
 
-    for field in allowed_sections:
-        if field not in sections:
-            sections[field] = _EMPTY_PLACEHOLDER
+    if fill_missing_sections:
+        for field in allowed_sections:
+            if field not in sections:
+                sections[field] = _EMPTY_PLACEHOLDER
 
     return sections
 
@@ -151,11 +154,13 @@ def _prepare_section_update(
     file_path: str,
     content: str,
     allowed_sections: list[str],
+    *,
+    fill_missing_sections: bool = True,
 ) -> tuple[dict[str, str], str]:
     """section 更新前的统一预处理：规范化内容 + 读取现有 sections。"""
     normalized = content.replace("\\n", "\n")
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    sections = _parse_section_file(file_path, allowed_sections)
+    sections = _parse_section_file(file_path, allowed_sections, fill_missing_sections=fill_missing_sections)
     return sections, normalized
 
 
@@ -167,6 +172,7 @@ def _update_section_file(
     title_line: str,
     *,
     append: bool = False,
+    fill_missing_sections: bool = True,
 ) -> str:
     """更新 section 文件中的指定字段。
 
@@ -181,7 +187,12 @@ def _update_section_file(
     Returns:
         更新结果描述
     """
-    sections, normalized = _prepare_section_update(file_path, content, allowed_sections)
+    sections, normalized = _prepare_section_update(
+        file_path,
+        content,
+        allowed_sections,
+        fill_missing_sections=fill_missing_sections,
+    )
 
     if section not in allowed_sections:
         return f"字段 {section} 不在白名单中"
@@ -197,6 +208,24 @@ def _update_section_file(
 
     _write_section_file(file_path, sections, allowed_sections, title_line)
     return f"已{'追加到' if append else '更新'} {section}"
+
+
+def _bootstrap_section_file_from_source(
+    source_path: str,
+    target_path: str,
+    allowed_sections: list[str],
+    title_line: str,
+) -> None:
+    """若 target 不存在，则用 source 的当前内容初始化；source 不存在时写空骨架。"""
+    if os.path.exists(target_path):
+        return
+
+    if os.path.exists(source_path):
+        shutil.copy2(source_path, target_path)
+        return
+
+    sections = {field: _EMPTY_PLACEHOLDER for field in allowed_sections}
+    _write_section_file(target_path, sections, allowed_sections, title_line)
 
 
 # ===== 事件队列操作（status.md 中的打算 / 待触发事件） =====
@@ -420,7 +449,21 @@ def update_status(agent_name: str, field: str, content: str) -> str:
 
 
 def update_player(agent_name: str, field: str, content: str) -> str:
-    """追加更新 user.md 的指定字段。"""
+    """追加更新 tmp_user.md 的指定字段。
+
+    tmp_user.md 是 user.md 的工作草稿：首次写入时先复制正式档案，再叠加本轮增量。
+    """
     allowed = get_allowed_fields(agent_name, "user")
     user_path = character_path(agent_name, "user.md")
-    return _update_section_file(user_path, field, content, allowed, _read_title(user_path, "# 玩家档案"), append=True)
+    tmp_path = character_path(agent_name, "tmp_user.md")
+    title_line = _read_title(user_path, "# 玩家档案")
+    _bootstrap_section_file_from_source(user_path, tmp_path, allowed, title_line)
+    return _update_section_file(
+        tmp_path,
+        field,
+        content,
+        allowed,
+        title_line,
+        append=True,
+        fill_missing_sections=True,
+    )

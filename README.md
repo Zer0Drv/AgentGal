@@ -100,7 +100,7 @@ Agent 回复由两部分组成：
 
 - 角色的 `<memory>` → `memory.md`
 - `<status>` → `status.md`
-- `<player>` → `user.md`
+- `<player>` → 追加到 `tmp_user.md`；首次写入时先复制 `user.md` 作为工作草稿，整理后再回写 `user.md`
 - `<triggered>` / `<add_event>` → `status.md` 中的事件区块
 
 其中：
@@ -160,6 +160,7 @@ Agent 回复由两部分组成：
 - `memory.md`：角色长期记忆（仅角色有）
 - `status.md`：当前状态 / 打算 / 待触发事件
 - `user.md`：角色对玩家的认知（仅角色有）
+- `tmp_user.md`：`user.md` 的工作草稿；由 `<player>` 增量写入，整理后删除
 - `growth.md`：整理器维护的人格沉淀（仅角色有）
 - `.history_window_state.json`：对话历史高低水位窗口 sidecar
 - `.consolidation_state.json`：角色整理进度 sidecar

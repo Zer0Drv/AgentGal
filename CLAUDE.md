@@ -63,6 +63,7 @@ agentgal-memos/
 - `memory.md`：角色长期记忆，记录事件与情绪变化（仅角色有）
 - `status.md`：当前状态；角色包含“打算”，旁白包含“待触发事件”
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
+- `tmp_user.md`：`user.md` 的工作草稿；首次写入时复制正式档案，整理后删除
 - `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有）
 
 ### 历史文件
@@ -133,7 +134,7 @@ agentgal-memos/
 
 - 角色 `<memory>` → 追加/更新 `memory.md`
 - `<status>` → 覆盖更新 `status.md` 对应字段
-- `<player>` → 更新 `user.md` 对应字段
+- `<player>` → 追加到 `tmp_user.md` 对应字段；首次写入时先复制 `user.md` 为工作草稿，整理后再回写 `user.md`
 - `<triggered>` → 从 `status.md` 中移除已执行条目
 - `<add_event>` → 向 `status.md` 中插入新条目
 
@@ -162,7 +163,7 @@ agentgal-memos/
 
 1. `growth.md`
 2. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断）
-3. `user.md`
+3. `user.md`（`tmp_user.md` 仅作为工作草稿参与整理，不直接注入 prompt）
 4. `status.md`
 5. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
 6. 本轮玩家输入
