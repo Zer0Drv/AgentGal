@@ -20,22 +20,13 @@ import aiosqlite
 import httpx
 
 from log_config.memory import memory_logger as routing_logger
-from engine.config import (
+from shared.config import (
     character_path,
     PROJECT_ROOT,
     get_agent_names,
 )
-from memory.parser import (
-    normalize,
-    split_by_date,
-    split_into_events,
-    is_structured_memory_block,
-    canonical_cn_date,
-    parse_cn_date,
-    is_date_before,
-    extract_event_field,
-    parse_event_importance,
-)
+
+_CN_DATE_RE = re.compile(r"^\d{1,2}月\d{1,2}日$")
 
 
 # ----------------------------- 配置与常量 -----------------------------
@@ -191,19 +182,22 @@ class VectorStore:
         event_date: str,
         content_hash: str,
     ) -> str:
-        """为重建后的事件选择最合适的 last_recalled_at。"""
+        """为重建后的事件选择最合适的 last_recalled_at。
+
+        日期已由调用方规范化（X月X日），直接做字符串比较。
+        """
         exact = state.get(memory_key, {})
-        recall = canonical_cn_date(str(exact.get("last_recalled_at", "")))
+        recall = str(exact.get("last_recalled_at", "")).strip()
         if recall:
             return recall
 
         for entry in state.values():
             if not isinstance(entry, dict):
                 continue
-            if canonical_cn_date(str(entry.get("date", ""))) != event_date:
+            if str(entry.get("date", "")).strip() != event_date:
                 continue
             if str(entry.get("content_hash", "")) == content_hash:
-                recall = canonical_cn_date(str(entry.get("last_recalled_at", "")))
+                recall = str(entry.get("last_recalled_at", "")).strip()
                 if recall:
                     return recall
 
@@ -449,18 +443,28 @@ class VectorStore:
                     (rowid, _tokenize_for_fts(text), _tokenize_for_fts(keywords)),
                 )
 
-    async def add(self, agent_name: str, date: str, chunks: list[str]) -> None:
-        """将预分割的事件块 upsert 到向量库（先删同 agent+date 旧数据，再写入）。"""
-        normalized_date = canonical_cn_date(date)
-        if not normalized_date:
+    async def add(
+        self,
+        agent_name: str,
+        date: str,
+        chunks: list[tuple[str, str, int]],
+    ) -> None:
+        """将预处理的事件块 upsert 到向量库（先删同 agent+date 旧数据，再写入）。
+
+        Args:
+            agent_name: 角色名
+            date: 规范化游戏日期（X月X日），由调用方保证格式正确
+            chunks: [(text, keywords, importance), ...] 预提取的元数据
+        """
+        if not _CN_DATE_RE.match(date):
             routing_logger.warning(
                 "[VectorStore] 跳过长期记忆索引: agent=%s, date=%s, 日期格式无效",
                 agent_name, date,
             )
             return
 
-        texts = [t.strip() for t in chunks if t.strip()]
-        if not texts:
+        items = [(t.strip(), kw, imp) for t, kw, imp in chunks if t.strip()]
+        if not items:
             routing_logger.info(
                 "[VectorStore] 跳过长期记忆索引: agent=%s, date=%s, 无有效事件",
                 agent_name, date,
@@ -469,25 +473,25 @@ class VectorStore:
 
         previous_state = self._read_memory_recall_state(agent_name)
         payloads: list[tuple[str, str, str, str, int, str, str]] = []
-        for idx, text in enumerate(texts, start=1):
-            memory_key = f"memory::{agent_name}::{normalized_date}::{idx}"
+        for idx, (text, keywords, importance) in enumerate(items, start=1):
+            memory_key = f"memory::{agent_name}::{date}::{idx}"
             content_hash = hashlib.sha1(text.encode("utf-8")).hexdigest()
             recalled_at = self._resolve_memory_recall_date(
-                previous_state, memory_key, normalized_date, content_hash
+                previous_state, memory_key, date, content_hash
             )
             payloads.append((
                 memory_key,
-                normalized_date,
+                date,
                 text,
-                extract_event_field(text, "关键词"),
-                parse_event_importance(text, default=3),
+                keywords,
+                importance,
                 content_hash,
                 recalled_at,
             ))
 
         routing_logger.info(
             "[VectorStore] 开始长期记忆索引: agent=%s, date=%s, 待写入事件=%s",
-            agent_name, normalized_date, len(payloads)
+            agent_name, date, len(payloads)
         )
 
         db: aiosqlite.Connection | None = None
@@ -496,15 +500,15 @@ class VectorStore:
                 await self.init_tables()
                 db = await self._get_db()
                 await db.execute("BEGIN")
-                await self._delete_chunks(db, agent_name, normalized_date)
+                await self._delete_chunks(db, agent_name, date)
                 await self._insert_chunks(db, agent_name, payloads)
                 await db.commit()
                 self._rebuild_memory_recall_state(
-                    agent_name, normalized_date, payloads, previous_state
+                    agent_name, date, payloads, previous_state
                 )
                 routing_logger.info(
                     "[VectorStore] 长期记忆索引完成: agent=%s, date=%s, 写入事件=%s",
-                    agent_name, normalized_date, len(payloads)
+                    agent_name, date, len(payloads)
                 )
         except Exception as e:
             try:
@@ -514,47 +518,8 @@ class VectorStore:
                 pass
             routing_logger.error(
                 "[VectorStore] 索引长期记忆失败: agent=%s, date=%s, error=%s",
-                agent_name, normalized_date, e
+                agent_name, date, e
             )
-
-    # ----------------------------- 重建 -----------------------------
-
-    async def rebuild(self, agent_name: str):
-        """重建：从各 agent 的 memory.md 重建 memory 层向量索引。"""
-        _ = agent_name  # 保持外部调用签名兼容
-        try:
-            await self.init_tables()
-            db = await self._get_db()
-
-            # 清空
-            await db.execute("DELETE FROM vec_memory_chunks")
-            await db.execute("DELETE FROM memory_chunks_fts")
-            await db.execute("DELETE FROM memory_chunks")
-            await db.commit()
-
-            # ===== memory 层重建：只索引结构完整的整理块 =====
-            try:
-                agents = get_agent_names(include_narrator=False)
-            except TypeError:
-                agents = [name for name in get_agent_names() if name != "narrator"]
-
-            for agent in agents:
-                path = Path(self.character_path(agent, "memory.md"))
-                if not path.exists():
-                    routing_logger.info(
-                        "[VectorStore] 重建跳过 memory: agent=%s, 未找到memory文件", agent
-                    )
-                    continue
-
-                sections = split_by_date(normalize(path.read_text(encoding="utf-8")))
-                for date, content in sections.items():
-                    consolidated = [e for e in split_into_events(content) if is_structured_memory_block(e)]
-                    if consolidated:
-                        await self.add(agent, date, consolidated)
-        finally:
-            if self._db is not None:
-                await self._db.close()
-                self._db = None
 
     # ----------------------------- 原始检索 -----------------------------
 
@@ -650,7 +615,7 @@ class VectorStore:
                 state_cache[owner_agent] = self._read_memory_recall_state(owner_agent)
             state = state_cache[owner_agent]
             state[str(memory_key)] = {
-                "date": canonical_cn_date(str(event_date or "")) or "",
+                "date": str(event_date or "").strip(),
                 "content_hash": hashlib.sha1(str(content or "").strip().encode("utf-8")).hexdigest(),
                 "last_recalled_at": current_game_date,
             }

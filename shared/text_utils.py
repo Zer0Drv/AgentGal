@@ -2,7 +2,7 @@
 
 import re
 
-from engine.config import MAX_ACTIONS, MAX_ELLIPSIS
+from shared.config import MAX_ACTIONS, MAX_ELLIPSIS
 
 # =============================================================================
 # 常量
@@ -54,6 +54,19 @@ def clean_response(content: str) -> str:
         return content
     content = strip_thinking(content)
     return normalize_whitespace(content)
+
+
+def get_display_name(agent_name: str, soul_content: str) -> str:
+    """从 soul.md 内容提取中文显示名，回退到 agent_name。"""
+    role_match = re.search(r"<role>\s*([^\n<]+)", soul_content)
+    if role_match:
+        name_match = re.match(r"([\u4e00-\u9fff·]+)", role_match.group(1).strip())
+        if name_match:
+            return name_match.group(1)
+    title_match = re.search(r"^#\s+(.+)$", soul_content, re.MULTILINE)
+    if title_match:
+        return title_match.group(1).strip()
+    return agent_name
 
 
 def process_character_response(content: str) -> str:

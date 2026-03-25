@@ -22,37 +22,52 @@
 
 ```text
 agentgal-memos/
-├── app.py                      # Chainlit 入口
+├── app.py                      # Chainlit 入口（UI 适配层）
 ├── config.toml                 # 非密钥运行参数
 ├── data/
 │   ├── characters/             # 运行时角色数据
 │   ├── templates/              # 故事模板（school / modern）
 │   └── vectors.sqlite          # 向量库
-├── engine/
-│   ├── agent_files.py          # 角色目录文件操作（读写 soul/memory/status/user/growth/sidecar）
-│   ├── agent_manager.py        # Agent prompt 构建、LLM 调用、结果写回
-│   ├── config.py               # 路径与运行配置
-│   ├── history.py              # 对话历史读写（narrator raw JSONL 加载）
+├── engine/                     # 应用层编排
+│   ├── agent_manager.py        # Agent prompt 构建、LLM 调用、narrator 路由解析、结果写回
+│   ├── history.py              # 对话历史窗口截断（watermark）；re-export load_conversation_history
 │   ├── message_router.py       # 对话写入 / 可见性过滤
-│   ├── response_parser.py      # 解析 <update_notes>
-│   ├── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
-│   └── text_utils.py           # 文本清理
+│   ├── response_parser.py      # 解析 <update_notes> XML 标签
+│   └── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 ├── llm/
 │   ├── llm_parser.py           # OpenAI 兼容客户端
 │   └── providers.py            # Provider 配置与 URL 解析
 ├── log_config/                 # 路由、记忆、调用日志
-├── memory/
-│   ├── consolidator.py         # 记忆整理器
+├── memory/                     # 记忆规则与流程
 │   ├── consolidation_inputs.py # 整理 step1 输入构造与 raw 对话视角对齐
-│   ├── parser.py               # memory.md 格式解析与序列化、事件切分、LLM 输出解析、游戏日期工具
-│   ├── retrieval.py            # 完整检索 pipeline（融合、rerank、recency、召回状态更新）
-│   └── vector_store.py         # 向量索引存储层（write/delete/rebuild + 原始候选检索）
+│   ├── consolidator.py         # 记忆整理器（归并、提炼 growth、精炼 user.md）
+│   ├── indexer.py              # 向量索引重建入口（从 memory.md 解析后写入 storage）
+│   ├── parser.py               # memory.md 格式解析、事件切分、日期工具、记忆块操作
+│   └── retrieval.py            # 完整检索 pipeline（融合、rerank、recency、召回状态更新）
+├── shared/                     # 纯配置与无副作用工具函数
+│   ├── config.py               # 路径、运行参数、character_path、get_agent_names
+│   └── text_utils.py           # 文本清理、get_display_name
+├── storage/                    # 持久化基础设施（文件 / JSONL / sqlite-vec）
+│   ├── agent_files.py          # 角色目录文件操作（read/write soul/memory/status/user/growth/sidecar）
+│   ├── history.py              # narrator raw JSONL 对话历史读取
+│   └── vector_store.py         # sqlite-vec 向量存储（write/delete + 原始候选检索）
 ├── prompts/                    # narrator / character / consolidation prompts
 ├── scripts/                    # 维护脚本
 ├── tests/                      # pytest 测试
 ├── README.md
 ├── CLAUDE.md
 └── .env
+```
+
+### 分层依赖方向
+
+```
+shared/          ← 无内部依赖
+storage/         ← shared/
+llm/             ← shared/
+memory/          ← shared/ + storage/ + llm/
+engine/          ← shared/ + storage/ + memory/ + llm/
+app.py           ← shared/ + engine/ + memory/
 ```
 
 ## 运行时文件职责
@@ -199,11 +214,12 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 - 向量库只索引 `memory.md` 中的长期记忆事件，owner scope 固定为当前角色
 - 默认检索路径是 memory-only；非 memory 检索已停用
 - `memory/retrieval.py` 负责完整检索 pipeline：embedding → 向量/BM25 候选 → hybrid 融合 → (可选) rerank → recency 排序 → recall 状态更新
-- `memory/vector_store.py` 只做存储层：提供 `get_vector_candidates` / `get_bm25_candidates` 原始候选，pipeline 逻辑不在此处
+- `storage/vector_store.py` 只做存储层：提供 `get_vector_candidates` / `get_bm25_candidates` 原始候选，pipeline 逻辑不在此处
+- `memory/indexer.py` 负责从 `memory.md` 重建向量索引（解析、过滤、元数据提取在此层，storage 只做 I/O）
 - 召回排序为：向量相关性与 BM25 相关性先融合，rerank（可选）替换 relevance 信号，最后叠加游戏内时间 recency
 - `logs/memory/memory.log` 会记录每轮检索 query 和 top 命中摘要，便于排查召回质量
 - `last_recalled_at` 会在命中后更新，并同步写回 `.memory_recall_state.json`
-- `rebuild()` 会结合 `.consolidation_state.json` 和 `.memory_recall_state.json` 恢复长期记忆索引与 recall 状态
+- `memory/indexer.rebuild_memory_index()` 会结合 `.consolidation_state.json` 和 `.memory_recall_state.json` 恢复长期记忆索引与 recall 状态
 
 ## 记忆整理
 
@@ -235,7 +251,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ## 存档与重置
 
-由 `game/save_manager.py` 负责：
+由 `engine/save_manager.py` 负责：
 
 - `/save`：导出 zip 到 `saves/`
 - `/load list`：列出存档

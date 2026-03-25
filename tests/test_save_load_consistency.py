@@ -32,11 +32,11 @@ except ImportError:
 # 导入必要模块
 try:
     import importlib
-    import memory.vector_store
+    import storage.vector_store
     import memory.retrieval
-    vector_store_module = importlib.import_module("memory.vector_store")
+    vector_store_module = importlib.import_module("storage.vector_store")
     retrieval_module = importlib.import_module("memory.retrieval")
-    from memory.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
+    from storage.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
     from engine.save_manager import export_save_archive, import_save_archive
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip save_load tests: missing dependency ({exc})", allow_module_level=True)

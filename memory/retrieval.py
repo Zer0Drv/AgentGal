@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from engine.config import (
+from shared.config import (
     BM25_CANDIDATE_LIMIT,
     HYBRID_SEARCH_ENABLED,
     IMPORTANCE_WEIGHT,
@@ -32,7 +32,7 @@ from engine.config import (
 )
 from log_config.memory import memory_logger
 from memory.parser import extract_status_field, canonical_cn_date, game_day_diff
-from memory.vector_store import vector_store, VectorStore, DB_PATH, embed_sync
+from storage.vector_store import vector_store, VectorStore, DB_PATH, embed_sync
 
 
 # ----------------------------- Rerank 配置 -----------------------------

@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from engine.agent_files import cleanup_old_backups, load_text
-from engine.config import CONSOLIDATION_TEMPERATURE, character_path
+from storage.agent_files import cleanup_old_backups, load_text
+from shared.config import CONSOLIDATION_TEMPERATURE, character_path
 from llm.llm_parser import OpenAICompatibleClient
 from llm.providers import get_consolidation_llm_config
 from memory.consolidator import (

@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from engine.config import CONSOLIDATION_MAX_TOKENS, CONSOLIDATION_TEMPERATURE
+from shared.config import CONSOLIDATION_MAX_TOKENS, CONSOLIDATION_TEMPERATURE
 from llm.llm_parser import OpenAICompatibleClient
 from llm.providers import get_consolidation_llm_config
 from memory.consolidator import MemoryConsolidator

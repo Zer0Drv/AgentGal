@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 
 load_dotenv(project_root / ".env")
 
-from memory.vector_store import vector_store
+from storage.vector_store import vector_store
 
 
 async def cmd_list():

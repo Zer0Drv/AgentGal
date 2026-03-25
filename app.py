@@ -12,7 +12,7 @@ from engine.agent_manager import (
     generate_choices,
     run_agent_in_scene,
 )
-from engine.config import CHARACTERS_DIR, CONSOLIDATION_INTERVAL, get_agent_names
+from shared.config import CHARACTERS_DIR, CONSOLIDATION_INTERVAL, get_agent_names
 from engine.message_router import message_router
 
 from engine.history import load_conversation_history

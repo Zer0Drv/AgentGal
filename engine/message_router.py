@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 
-from engine.config import get_agent_names, character_path
+from shared.config import get_agent_names, character_path
 
 
 class MessageRouter:

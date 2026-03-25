@@ -29,9 +29,9 @@ except ImportError:
 # 现在导入 vector_store，此时环境变量已加载
 try:
     import importlib
-    import memory.vector_store  # 确保子模块被加载进 sys.modules
-    vector_store_module = importlib.import_module("memory.vector_store")
-    from memory.vector_store import vector_store, VectorStore, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
+    import storage.vector_store  # 确保子模块被加载进 sys.modules
+    vector_store_module = importlib.import_module("storage.vector_store")
+    from storage.vector_store import vector_store, VectorStore, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
     import memory.retrieval as retrieval_module
     from memory.retrieval import (
         hybrid_fusion,
@@ -101,7 +101,7 @@ async def wait_for_search(store, agent_name: str, query: str, timeout: float = 1
             conn = sqlite3.connect(test_db_path)
             try:
                 VectorStore._load_sqlite_vec_sync(conn)
-                from memory.vector_store import embed_sync
+                from storage.vector_store import embed_sync
                 qvec = embed_sync([query])[0]
                 rows = store.get_vector_candidates(conn, agent_name, qvec, 5)
             finally:
@@ -191,7 +191,7 @@ class TestVectorStoreBasic:
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
-            from memory.vector_store import embed_sync
+            from storage.vector_store import embed_sync
             qvec = embed_sync(["早上好"])[0]
             res_after = store.get_vector_candidates(conn, "lilith", qvec, 5)
         finally:
@@ -206,7 +206,7 @@ class TestVectorStoreRebuild:
     @pytest.mark.asyncio
     async def test_rebuild_memory_layer(self, clean_store, tmp_path, monkeypatch):
         """测试 rebuild() 从 memory.md + consolidation_state 重建 memory 层向量索引"""
-        import importlib; vs_mod = importlib.import_module("memory.vector_store")
+        import importlib; vs_mod = importlib.import_module("storage.vector_store")
 
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
@@ -244,7 +244,7 @@ class TestVectorStoreRebuild:
         """rebuild() 只索引结构完整的整理块，raw 块应跳过。"""
         import importlib
 
-        vs_mod = importlib.import_module("memory.vector_store")
+        vs_mod = importlib.import_module("storage.vector_store")
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
@@ -314,7 +314,7 @@ class TestVectorStoreEdgeCases:
         store = clean_store
 
         import sqlite3
-        from memory.vector_store import embed_sync
+        from storage.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
@@ -355,7 +355,7 @@ class TestVectorStoreEdgeCases:
         assert len(res_old) >= 1, "应该能搜索到昨天的记忆"
 
         import sqlite3
-        from memory.vector_store import embed_sync
+        from storage.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
@@ -393,7 +393,7 @@ class TestVectorStoreEdgeCases:
         assert result == {"lilith": True}
 
         import sqlite3
-        from memory.vector_store import embed_sync
+        from storage.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
@@ -409,7 +409,7 @@ class TestVectorStoreEdgeCases:
     @pytest.mark.asyncio
     async def test_delete_all_agents_full_clear(self, clean_store, tmp_path, monkeypatch):
         """测试 delete_all_agents 命中全角色时走全量清理。"""
-        import importlib; vs_mod = importlib.import_module("memory.vector_store")
+        import importlib; vs_mod = importlib.import_module("storage.vector_store")
 
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
@@ -469,7 +469,7 @@ class TestVectorStoreMemoryIndexing:
         assert len(res2) >= 1, "应命中第二个事件块"
 
         import sqlite3
-        from memory.vector_store import embed_sync
+        from storage.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
@@ -511,7 +511,7 @@ class TestVectorStoreMemoryIndexing:
         assert len(res_hit) >= 1, "应命中索引的日期"
 
         import sqlite3
-        from memory.vector_store import embed_sync
+        from storage.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
@@ -863,7 +863,7 @@ class TestHybridSearch:
         """rebuild() 应从 recall sidecar 恢复 last_recalled_at。"""
         import importlib
 
-        vs_mod = importlib.import_module("memory.vector_store")
+        vs_mod = importlib.import_module("storage.vector_store")
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])

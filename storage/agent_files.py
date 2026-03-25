@@ -7,7 +7,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from engine.config import character_path
+from shared.config import character_path
 from log_config.routing import routing_logger
 
 _EMPTY_PLACEHOLDER = "（暂无）"

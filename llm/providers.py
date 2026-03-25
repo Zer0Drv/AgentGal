@@ -2,7 +2,7 @@
 
 import os
 
-from engine.config import AGENT_TEMPERATURE
+from shared.config import AGENT_TEMPERATURE
 
 SUPPORTED_PROVIDERS = ("openai", "deepseek", "openrouter")
 
