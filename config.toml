@@ -14,8 +14,6 @@ temperature = 0.7
 max_tokens = 0
 # growth.md 去重合并阈值：超过该条数才触发压缩，避免每轮重写
 growth_dedup_threshold = 8
-# 整理时注入的原始消息条数上限（过滤前）；按 visible_to 过滤后通常剩 10-15 条，覆盖当次整理窗口
-raw_dialogue_limit = 20
 
 [vector]
 # 向量检索返回条数
