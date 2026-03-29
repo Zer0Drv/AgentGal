@@ -65,7 +65,7 @@ def log_agent_call(
                   usage 字段: {"prompt_tokens": int, "completion_tokens": int, "total_tokens": int}
     """
     timestamp = datetime.now().isoformat()
-    content = response.get("content", "")
+    content = response.get("content") or ""
     usage = response.get("usage") or {}
 
     # DeepSeek: prompt_cache_hit_tokens（平铺）

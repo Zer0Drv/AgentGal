@@ -305,7 +305,7 @@ class OpenAICompatibleClient(BaseLLMClient):
         message = choice.get("message", {})
 
         return {
-            "content": message.get("content", ""),
+            "content": message.get("content") or "",
             "reasoning_content": message.get(
                 "reasoning_content", ""
             ),  # 即使为空也返回空字符串
