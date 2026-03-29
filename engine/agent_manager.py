@@ -3,6 +3,7 @@
 import asyncio
 import re
 import time
+from pathlib import Path
 
 from shared.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
@@ -26,6 +27,30 @@ from storage.agent_files import (
 )
 from engine.history import build_history_transcript, load_conversation_history
 from memory.retrieval import search_memories
+from memory.parser import extract_status_field
+from shared.config import character_path
+
+
+# ---------------------------------------------------------------------------
+# RAG 查询构造
+# ---------------------------------------------------------------------------
+
+def _build_search_query(agent_name: str, user_input: str) -> str:
+    """用叙事焦点富化检索 query。
+
+    narrator 的叙事焦点比裸玩家输入语义更密，能帮助角色召回更相关的记忆。
+    读取上一轮 narrator 更新后的 status.md；切换场景第一轮可能略有偏差，可接受。
+    """
+    if agent_name == "narrator":
+        return user_input
+    try:
+        status = Path(character_path("narrator", "status.md")).read_text(encoding="utf-8")
+        focus = extract_status_field(status, "叙事焦点").strip()
+    except OSError:
+        focus = ""
+    if not focus:
+        return user_input
+    return f"{focus}\n{user_input}"
 
 
 # ---------------------------------------------------------------------------
@@ -147,13 +172,12 @@ async def _apply_response_updates(agent_name: str, parsed) -> None:
 async def run_agent(
     agent_name: str,
     latest_user_input: str,
-    scene_summary: str = "",
     raw_messages: list[dict] | None = None,
 ) -> str:
     """运行指定角色的 Agent，返回清理后的响应文本。"""
     start = time.time()
 
-    relevant = search_memories(agent_name, latest_user_input)
+    relevant = search_memories(agent_name, _build_search_query(agent_name, latest_user_input))
     memory_prefix = f"<relevant_memories>\n{relevant}\n</relevant_memories>" if relevant else ""
     full_input = _build_user_message(
         agent_name,
@@ -321,7 +345,6 @@ async def run_agent_in_scene(
     agent_name: str,
     targets: list[str],
     user_input: str,
-    scene_summary: str = "",
 ) -> str | None:
     """在场景上下文中运行单个角色并广播响应
 
@@ -331,7 +354,6 @@ async def run_agent_in_scene(
         agent_name: 角色名
         targets: 当前回合所有目标角色
         user_input: 玩家输入
-        scene_summary: 旁白的场景描述
 
     Returns:
         处理后的响应文本，失败返回 None
@@ -342,7 +364,6 @@ async def run_agent_in_scene(
     response = await run_agent(
         agent_name,
         user_input,
-        scene_summary=scene_summary,
         raw_messages=raw_messages,
     )
     response = process_character_response(response)

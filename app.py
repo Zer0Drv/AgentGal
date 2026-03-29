@@ -300,7 +300,7 @@ async def on_message(message: cl.Message):
     for agent_name in targets:
         try:
             response = await run_agent_in_scene(
-                agent_name, targets, user_input, scene_summary=scene_description
+                agent_name, targets, user_input
             )
             if response:
                 agent_responses.append((agent_name, response))
