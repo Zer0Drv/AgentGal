@@ -5,7 +5,7 @@
 
 [memory]
 # 记忆整理间隔（轮）：每隔多少轮触发一次后台整理
-consolidation_interval = 5
+consolidation_interval = 8
 
 [consolidation]
 # 整理 LLM 的温度：较低值保证输出稳定
