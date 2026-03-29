@@ -121,13 +121,9 @@ app.py           ← shared/ + engine/ + memory/
   ↓
 将 narrator 内容写入单一 raw 历史（带 visible_to）
   ↓
-并行调用各 target Agent
+顺序调用各 target Agent（每个 agent 响应写入 history 后，下一个才能看到）
   ↓
-解析每个 Agent 的 <update_notes>
-  ↓
-写回角色 memory.md / status.md / user.md
-  ↓
-广播回应并展示给玩家
+每个 Agent 响应后：解析 <update_notes>、写回文件、广播到 history
   ↓
 调用选项生成（使用 narrator 模型），展示 2-3 个可选行动
   ↓
