@@ -17,7 +17,7 @@ os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
 from shared.config import character_path
-from engine.history import load_conversation_history
+from storage.history import load_conversation_history
 
 
 @pytest.fixture

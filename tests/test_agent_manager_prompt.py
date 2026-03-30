@@ -1,65 +1,65 @@
-"""测试 agent_manager 的 prompt 模板选择。"""
+"""测试 prompt_builder 的 prompt 模板选择。"""
 
-import ast
 import os
-import re
 from pathlib import Path
+
+import pytest
 
 project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
+try:
+    import engine.prompt_builder as prompt_builder_module
+except ModuleNotFoundError as exc:
+    pytest.skip(f"skip prompt builder tests: missing dependency ({exc})", allow_module_level=True)
 
-def _load_build_system_prompt():
-    from shared.text_utils import get_display_name
 
-    source_path = project_root / "engine" / "agent_manager.py"
-    module_ast = ast.parse(source_path.read_text(encoding="utf-8"))
-    selected_nodes = [
-        node
-        for node in module_ast.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_build_system_prompt"
-    ]
-    namespace: dict[str, object] = {"Path": Path, "re": re, "get_display_name": get_display_name}
-    exec(
-        compile(
-            ast.fix_missing_locations(ast.Module(body=selected_nodes, type_ignores=[])),
-            str(source_path),
-            "exec",
-        ),
-        namespace,
+_TEMPLATE_VARS = "{agent_name} {display_name} {soul} {status_fields} {player_fields} {characters_scene_list} {valid_targets}"
+
+
+def test_character_system_prompt_reads_character_template(tmp_path, monkeypatch):
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "character_prompt.txt").write_text("CHARACTER " + _TEMPLATE_VARS, encoding="utf-8")
+    (prompts_dir / "narrator_prompt.txt").write_text("NARRATOR " + _TEMPLATE_VARS, encoding="utf-8")
+
+    monkeypatch.setattr(prompt_builder_module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(prompt_builder_module, "get_allowed_fields", lambda agent_name, field: [])
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "get_agent_names",
+        lambda include_narrator=False: [],
     )
-    return namespace["_build_system_prompt"]
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "read_agent_file",
+        lambda agent_name, filename: "",
+    )
+
+    result = prompt_builder_module.build_system_prompt("mitsuki", "# 美月")
+
+    assert result.startswith("CHARACTER mitsuki")
 
 
-def test_character_system_prompt_reads_character_template(tmp_path):
+def test_narrator_system_prompt_reads_narrator_template(tmp_path, monkeypatch):
     prompts_dir = tmp_path / "prompts"
     prompts_dir.mkdir()
-    (prompts_dir / "character_prompt.txt").write_text("CHARACTER {agent_name}", encoding="utf-8")
-    (prompts_dir / "narrator_prompt.txt").write_text("NARRATOR {agent_name}", encoding="utf-8")
+    (prompts_dir / "character_prompt.txt").write_text("CHARACTER " + _TEMPLATE_VARS, encoding="utf-8")
+    (prompts_dir / "narrator_prompt.txt").write_text("NARRATOR " + _TEMPLATE_VARS, encoding="utf-8")
 
-    build_system_prompt = _load_build_system_prompt()
-    build_system_prompt.__globals__["PROJECT_ROOT"] = tmp_path
-    build_system_prompt.__globals__["get_allowed_fields"] = lambda agent_name, field: []
-    build_system_prompt.__globals__["get_agent_names"] = lambda include_narrator=False: []
-    build_system_prompt.__globals__["read_agent_file"] = lambda agent_name, filename: ""
+    monkeypatch.setattr(prompt_builder_module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(prompt_builder_module, "get_allowed_fields", lambda agent_name, field: [])
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "get_agent_names",
+        lambda include_narrator=False: [],
+    )
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "read_agent_file",
+        lambda agent_name, filename: "",
+    )
 
-    result = build_system_prompt("mitsuki", "# 美月")
+    result = prompt_builder_module.build_system_prompt("narrator", "# 旁白")
 
-    assert result == "CHARACTER mitsuki"
-
-
-def test_narrator_system_prompt_reads_narrator_template(tmp_path):
-    prompts_dir = tmp_path / "prompts"
-    prompts_dir.mkdir()
-    (prompts_dir / "character_prompt.txt").write_text("CHARACTER {agent_name}", encoding="utf-8")
-    (prompts_dir / "narrator_prompt.txt").write_text("NARRATOR {agent_name}", encoding="utf-8")
-
-    build_system_prompt = _load_build_system_prompt()
-    build_system_prompt.__globals__["PROJECT_ROOT"] = tmp_path
-    build_system_prompt.__globals__["get_allowed_fields"] = lambda agent_name, field: []
-    build_system_prompt.__globals__["get_agent_names"] = lambda include_narrator=False: []
-    build_system_prompt.__globals__["read_agent_file"] = lambda agent_name, filename: ""
-
-    result = build_system_prompt("narrator", "# 旁白")
-
-    assert result == "NARRATOR narrator"
+    assert result.startswith("NARRATOR narrator")
