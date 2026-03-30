@@ -1,6 +1,6 @@
 """统一创建并缓存所有 Agent。"""
 
-from agents import Agent, ModelSettings, OpenAIChatCompletionsModel
+from agents import Agent, AgentOutputSchema, ModelSettings, OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 
 from engine.agent_schema import (
@@ -51,16 +51,18 @@ def _build_agent(
     max_tokens: int | None = None,
 ) -> Agent:
     settings_kwargs: dict = {"temperature": config["temperature"]}
+    # extra_body 覆盖 agents 自动生成的 json_schema，因为 deepseek 只支持 json_object
     if output_type is not None:
         settings_kwargs["extra_body"] = {"response_format": {"type": "json_object"}}
     if max_tokens is not None:
         settings_kwargs["max_tokens"] = max_tokens
+    wrapped_output_type = AgentOutputSchema(output_type, strict_json_schema=False) if output_type is not None else None
     return Agent(
         name=name,
         instructions=instructions,
         model=_make_sdk_model(config),
         model_settings=ModelSettings(**settings_kwargs),
-        output_type=output_type,
+        output_type=wrapped_output_type,
     )
 
 
