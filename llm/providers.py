@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 from shared.config import AGENT_TEMPERATURE
 
+
 SUPPORTED_PROVIDERS = ("openai", "deepseek", "openrouter")
 _DEFAULT_PROVIDER = "deepseek"
 _DEFAULT_MODEL_ID = "deepseek-chat"
@@ -121,48 +122,26 @@ def _make_scoped_llm_config(
     return config
 
 
-def _make_scoped_llm_config_getter(
-    env_prefix: str,
-    fallback_getter: Callable[[], dict],
-    *,
-    doc: str,
-) -> Callable[[float | None], dict]:
-    def _getter(temperature: float | None = None) -> dict:
-        return _make_scoped_llm_config(
-            env_prefix,
-            fallback_getter,
-            temperature=temperature,
-        )
+def get_narrator_llm_config() -> dict:
+    """返回 narrator 使用的 LLM 配置。
 
-    _getter.__name__ = f"get_{env_prefix.lower()}_config"
-    _getter.__doc__ = doc
-    return _getter
+    优先使用 NARRATOR_LLM_* 系列环境变量，未设置则复用主 LLM 配置。
+    """
+    return _make_scoped_llm_config("NARRATOR_LLM", get_llm_config)
 
 
-get_narrator_llm_config = _make_scoped_llm_config_getter(
-    "NARRATOR_LLM",
-    get_llm_config,
-    doc=(
-        "返回 narrator 使用的 LLM 配置。\n\n"
-        "优先使用 NARRATOR_LLM_* 系列环境变量，未设置则复用主 LLM 配置。"
-    ),
-)
+def get_choices_llm_config() -> dict:
+    """返回选项生成使用的 LLM 配置。
 
-get_choices_llm_config = _make_scoped_llm_config_getter(
-    "CHOICES_LLM",
-    get_narrator_llm_config,
-    doc=(
-        "返回选项生成使用的 LLM 配置。\n\n"
-        "优先使用 CHOICES_LLM_* 系列环境变量，未设置则复用 narrator LLM 配置。"
-    ),
-)
+    优先使用 CHOICES_LLM_* 系列环境变量，未设置则复用 narrator LLM 配置。
+    """
+    return _make_scoped_llm_config("CHOICES_LLM", get_narrator_llm_config)
 
-get_consolidation_llm_config = _make_scoped_llm_config_getter(
-    "CONSOLIDATION_LLM",
-    get_llm_config,
-    doc=(
-        "返回记忆整理器使用的 LLM 配置。\n\n"
-        "优先使用 CONSOLIDATION_LLM_* 系列环境变量，未设置则复用主 LLM 配置。"
-        "temperature 不为 None 时覆盖默认值。"
-    ),
-)
+
+def get_consolidation_llm_config(temperature: float | None = None) -> dict:
+    """返回记忆整理器使用的 LLM 配置。
+
+    优先使用 CONSOLIDATION_LLM_* 系列环境变量，未设置则复用主 LLM 配置。
+    temperature 不为 None 时覆盖默认值。
+    """
+    return _make_scoped_llm_config("CONSOLIDATION_LLM", get_llm_config, temperature=temperature)
