@@ -1,20 +1,20 @@
 # CLAUDE.md
 
-多 Agent 角色扮演 / 叙事游戏项目。当前实现以 **Chainlit + OpenAI 兼容 LLM + 文件记忆 + sqlite-vec** 为核心，使用 `uv` 作为项目管理器。
+多 Agent 角色扮演 / 叙事游戏项目。当前实现以 **Chainlit + OpenAI Agents SDK + Pydantic 结构化输出 + 文件记忆 + sqlite-vec** 为核心，使用 `uv` 作为项目管理器。
 
 ## 核心设计
 
 - **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 只维护 `status.md` 与 raw 历史
 - **信息差**：消息按 `visible_to` 控制可见范围，未参与场景的角色不会看到该轮内容
-- **旁白先行**：`narrator` 先做路由与场景推进，再并行调用目标角色
-- **结构化更新**：Agent 不直接调用“记忆工具”写文件，而是输出 `<update_notes>`，由系统解析并写回
+- **旁白先行**：`narrator` 先做路由与场景推进，再顺序调用目标角色
+- **结构化输出**：所有 Agent 使用 `output_type=PydanticModel`，不输出 XML；系统直接读取 typed 字段写回文件
 - **双层记忆**：Markdown 文件可读可编辑，向量库负责检索
 
 ## 技术栈
 
 - Python 3.11+
 - Chainlit
-- OpenAI-compatible LLM client（支持 `openai` / `deepseek` / `openrouter`）
+- OpenAI Agents SDK（`openai-agents>=0.13.2`）—— `Agent` / `Runner` / `ModelSettings` / `OpenAIChatCompletionsModel`
 - sqlite-vec + aiosqlite
 - asyncio
 
@@ -29,15 +29,12 @@ agentgal-memos/
 │   ├── templates/              # 故事模板（school / modern）
 │   └── vectors.sqlite          # 向量库
 ├── engine/                     # 应用层编排
-│   ├── agent_manager.py        # Agent prompt 构建、LLM 调用、narrator 路由解析、结果写回
+│   ├── agent_manager.py        # Agent 注册表、SDK Runner 调用、typed 输出写回
 │   ├── history.py              # 对话历史窗口截断（watermark）；re-export load_conversation_history
 │   ├── message_router.py       # 对话写入 / 可见性过滤
-│   ├── response_parser.py      # 解析 <update_notes> XML 标签
 │   └── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 ├── llm/
-│   ├── base.py                 # BaseLLMClient 模板基类
-│   ├── llm_parser.py           # OpenAI 兼容客户端
-│   ├── providers.py            # Provider 配置与 URL 解析
+│   ├── providers.py            # Provider 配置与 URL 解析（返回 api_url/api_key/model/temperature）
 │   ├── embedding.py            # Embeddings 客户端（embed_async / embed_sync）
 │   └── rerank.py               # Rerank API 客户端
 ├── log_config/                 # 路由、记忆、调用日志
@@ -102,28 +99,28 @@ app.py           ← shared/ + engine/ + memory/
 由 `narrator` 负责决定谁参与当前回合。
 
 ```text
-用户输入 → narrator → TARGETS: [角色列表]
+用户输入 → narrator → targets: [“角色名”, ...]（NarratorOutput.targets）
 ```
 
 ### narrator 的职责
 
-- 分析玩家输入，输出 `TARGETS: [...]`
+- 分析玩家输入，输出 `targets` 数组
 - 描述时间、地点、在场信息与环境
 - 推进剧情、切换场景、安排纯 NPC 行为
-- **绝不替角色说话或决定角色行动**（`response_parser.py` 中有防御性截断：检测到角色名开头的行时自动截断）
+- **绝不替角色说话或决定角色行动**
 
 ## 单轮对话流程
 
 ```text
 用户消息
   ↓
-调用 narrator，得到 TARGETS + 旁白内容
+调用 narrator，得到 NarratorOutput（targets + content）
   ↓
 将 narrator 内容写入单一 raw 历史（带 visible_to）
   ↓
 顺序调用各 target Agent（每个 agent 响应写入 history 后，下一个才能看到）
   ↓
-每个 Agent 响应后：解析 <update_notes>、写回文件、广播到 history
+每个 Agent 响应后：从 CharacterOutput typed 字段写回文件、广播到 history
   ↓
 调用选项生成（使用 narrator 模型），展示 2-3 个可选行动
   ↓
@@ -132,25 +129,21 @@ app.py           ← shared/ + engine/ + memory/
 
 ## Agent 输出与写回机制
 
-当前实现不是“Tools 直接修改文件”，而是：
+所有 Agent 使用 OpenAI Agents SDK 的 `output_type=PydanticModel` 结构化输出，不再使用 XML `<update_notes>`：
 
-1. Agent 输出正常回复正文
-2. 同时在末尾输出 `<update_notes>`
-3. `engine/response_parser.py` 解析以下标签：
-   - `<memory>`
-   - `<status>`
-   - `<player>`
-   - `<triggered>`
-   - `<add_event>`
-4. `engine/agent_manager.py` 将解析结果写回文件
+- `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`
+- `NarratorOutput`：`content`, `targets`, `status`, `triggered`, `add_event`
+- `ChoicesOutput`：`choices`
+
+`engine/agent_manager.py` 的 `_apply_response_updates()` 读取 typed 字段写回文件。
 
 ### 写回规则
 
-- 角色 `<memory>` → 追加/更新 `memory.md`
-- `<status>` → 覆盖更新 `status.md` 对应字段
-- `<player>` → 追加到 `tmp_user.md` 对应字段；首次写入时先复制 `user.md` 为工作草稿，整理后再回写 `user.md`
-- `<triggered>` → 从 `status.md` 中移除已执行条目
-- `<add_event>` → 向 `status.md` 中插入新条目
+- `output.memory` → 追加/更新 `memory.md`
+- `output.status` → 覆盖更新 `status.md` 对应字段
+- `output.player` → 追加到 `tmp_user.md` 对应字段；首次写入时先复制 `user.md` 为工作草稿，整理后再回写 `user.md`
+- `output.triggered` → 从 `status.md` 中移除已执行条目
+- `output.add_event` → 向 `status.md` 中插入新条目
 
 其中：
 

@@ -21,6 +21,7 @@ dependencies = [
     "bcrypt",
     "gradio",
     "sseclient",
+    "openai-agents>=0.13.2",
 ]
 
 [project.optional-dependencies]

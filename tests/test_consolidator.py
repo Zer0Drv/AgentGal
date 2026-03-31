@@ -14,9 +14,15 @@ sys.path.insert(0, str(project_root))
 
 try:
     import storage.agent_files as agent_files_module
-    import memory.consolidator as consolidator_module
+    import engine.consolidation_flow as consolidator_module
     import memory.parser as file_ops_module
-    from memory.consolidator import MemoryConsolidator
+    from engine.consolidation_flow import MemoryConsolidationFlow
+    from engine.agent_schema import (
+        MemoryMergeEvent,
+        MemoryMergeOutput,
+        PlayerProfileOutput,
+        PlayerProfileSection,
+    )
     from memory.parser import parse_llm_memory_sections, split_into_events, is_structured_memory_block
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip consolidator tests: missing dependency ({exc})", allow_module_level=True)
@@ -64,7 +70,7 @@ def _consolidated_event(date: str, slot: str, content: str) -> str:
 def test_prepare_window_detects_consolidated_boundary(monkeypatch):
     """已整理块（有关键词）之后的 raw 块应被识别为待整理窗口。"""
     monkeypatch.setattr(consolidator_module, "format_raw_dialogue_for_owner", lambda *_: "旁白：测试")
-    consolidator = MemoryConsolidator()
+    consolidator = MemoryConsolidationFlow()
     sections = OrderedDict(
         {
             "10月6日": "\n\n".join(
@@ -76,7 +82,7 @@ def test_prepare_window_detects_consolidated_boundary(monkeypatch):
             )
         }
     )
-    blocks = consolidator_module._flatten_sections(sections)
+    blocks = consolidator_module.flatten_sections(sections)
     window, skip_reason = consolidator._prepare_consolidation_window("chenxiao", blocks)
 
     assert skip_reason is None
@@ -90,11 +96,11 @@ def test_prepare_window_detects_consolidated_boundary(monkeypatch):
 def test_prepare_window_skips_when_no_participation(monkeypatch):
     """角色最近无发言时跳过，不看 memory 内容。"""
     monkeypatch.setattr(consolidator_module, "format_raw_dialogue_for_owner", lambda *_: "")
-    consolidator = MemoryConsolidator()
+    consolidator = MemoryConsolidationFlow()
     sections = OrderedDict(
         {"10月6日": _event("10月6日", "上午", "早上见面。")}
     )
-    blocks = consolidator_module._flatten_sections(sections)
+    blocks = consolidator_module.flatten_sections(sections)
     window, skip_reason = consolidator._prepare_consolidation_window("chenxiao", blocks)
 
     assert window is None
@@ -104,7 +110,7 @@ def test_prepare_window_skips_when_no_participation(monkeypatch):
 def test_prepare_window_reprocesses_last_block_when_all_consolidated(monkeypatch):
     """全部块都已整理时，将最后一块纳入窗口重整理。"""
     monkeypatch.setattr(consolidator_module, "format_raw_dialogue_for_owner", lambda *_: "旁白：测试")
-    consolidator = MemoryConsolidator()
+    consolidator = MemoryConsolidationFlow()
     sections = OrderedDict(
         {
             "10月6日": "\n\n".join(
@@ -115,7 +121,7 @@ def test_prepare_window_reprocesses_last_block_when_all_consolidated(monkeypatch
             )
         }
     )
-    blocks = consolidator_module._flatten_sections(sections)
+    blocks = consolidator_module.flatten_sections(sections)
     window, skip_reason = consolidator._prepare_consolidation_window("chenxiao", blocks)
 
     assert skip_reason is None
@@ -128,7 +134,7 @@ def test_prepare_window_reprocesses_last_block_when_all_consolidated(monkeypatch
 def test_prepare_window_processes_all_when_none_consolidated(monkeypatch):
     """没有任何已整理块时从头处理。"""
     monkeypatch.setattr(consolidator_module, "format_raw_dialogue_for_owner", lambda *_: "旁白：测试")
-    consolidator = MemoryConsolidator()
+    consolidator = MemoryConsolidationFlow()
     sections = OrderedDict(
         {
             "10月6日": "\n\n".join(
@@ -139,7 +145,7 @@ def test_prepare_window_processes_all_when_none_consolidated(monkeypatch):
             )
         }
     )
-    blocks = consolidator_module._flatten_sections(sections)
+    blocks = consolidator_module.flatten_sections(sections)
     window, skip_reason = consolidator._prepare_consolidation_window("chenxiao", blocks)
 
     assert skip_reason is None
@@ -150,7 +156,7 @@ def test_prepare_window_processes_all_when_none_consolidated(monkeypatch):
 
 def test_prepare_window_starts_from_first_invalid_block_even_if_later_blocks_are_structured(monkeypatch):
     monkeypatch.setattr(consolidator_module, "format_raw_dialogue_for_owner", lambda *_: "旁白：测试")
-    consolidator = MemoryConsolidator()
+    consolidator = MemoryConsolidationFlow()
     sections = OrderedDict(
         {
             "10月17日": "\n\n".join(
@@ -162,7 +168,7 @@ def test_prepare_window_starts_from_first_invalid_block_even_if_later_blocks_are
             "10月18日": _consolidated_event("10月18日", "上午", "后一天已整理内容。"),
         }
     )
-    blocks = consolidator_module._flatten_sections(sections)
+    blocks = consolidator_module.flatten_sections(sections)
     window, skip_reason = consolidator._prepare_consolidation_window("chenxiao", blocks)
 
     assert skip_reason is None
@@ -250,49 +256,41 @@ def test_update_player_keeps_existing_tmp_user_draft(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_consolidate_player_profile_uses_single_draft_profile(tmp_path, monkeypatch):
-    consolidator = MemoryConsolidator()
+    consolidator = MemoryConsolidationFlow()
     agent_name = "chenxiao"
     path_helper = _make_character_path(tmp_path)
 
     monkeypatch.setattr(consolidator_module, "character_path", path_helper)
     monkeypatch.setattr(agent_files_module, "character_path", path_helper)
     monkeypatch.setattr(consolidator_module, "backup_file", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(consolidator_module, "load_text", lambda _path: "整理 prompt")
-    monkeypatch.setattr(consolidator_module, "get_consolidation_llm_config", lambda **_kwargs: {})
+    monkeypatch.setattr(consolidator_module, "get_player_profile_agent", lambda: object())
 
     captured: dict[str, object] = {}
 
-    class FakeClient:
-        def __init__(self, **_kwargs):
-            pass
+    async def fake_run_consolidation_agent(
+        self_inner,
+        *,
+        agent,
+        output_type,
+        agent_name,
+        function_name,
+        user,
+    ):
+        captured["user"] = user
+        assert function_name == "player_profile"
+        return PlayerProfileOutput(
+            sections=[
+                PlayerProfileSection(title="基本信息", bullets=["姓名：李小明"]),
+                PlayerProfileSection(title="对方是什么人", bullets=["稳定判断"]),
+                PlayerProfileSection(title="我们怎么相处", bullets=["稳定互动"]),
+            ]
+        )
 
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def chat(self, messages, enable_thinking=False):
-            captured["messages"] = messages
-            captured["enable_thinking"] = enable_thinking
-            return {
-                "content": "\n".join(
-                    [
-                        "# 角色眼中的玩家",
-                        "",
-                        "## 基本信息",
-                        "- 姓名：李小明",
-                        "",
-                        "## 对方是什么人",
-                        "- 稳定判断",
-                        "",
-                        "## 我们怎么相处",
-                        "- 稳定互动",
-                    ]
-                )
-            }
-
-    monkeypatch.setattr(consolidator_module, "OpenAICompatibleClient", FakeClient)
+    monkeypatch.setattr(
+        consolidator_module.MemoryConsolidationFlow,
+        "_run_consolidation_agent",
+        fake_run_consolidation_agent,
+    )
 
     agent_dir = tmp_path / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
@@ -331,7 +329,7 @@ async def test_consolidate_player_profile_uses_single_draft_profile(tmp_path, mo
     (agent_dir / "tmp_user.md").write_text(draft_content, encoding="utf-8")
 
     before_len, after_len = await consolidator._consolidate_player_profile(agent_name)
-    draft_input = captured["messages"][1]["content"]
+    draft_input = captured["user"]
 
     assert before_len == len(user_content)
     assert after_len > 0
@@ -340,8 +338,93 @@ async def test_consolidate_player_profile_uses_single_draft_profile(tmp_path, mo
     assert "<staged_updates>" not in draft_input
     assert "- 原有判断" in draft_input
     assert "- 新增判断" in draft_input
-    assert captured["enable_thinking"] is False
     assert not (agent_dir / "tmp_user.md").exists()
+
+
+def test_render_player_profile_output_preserves_custom_sections():
+    existing_content = "\n".join(
+        [
+            "# 角色眼中的玩家",
+            "",
+            "## 基本信息",
+            "- 姓名：李小明",
+            "",
+            "## 特殊雷区",
+            "- 讨厌被突然碰手腕",
+            "",
+            "## 我们怎么相处",
+            "- 会先观察我的情绪",
+            "",
+        ]
+    )
+
+    rendered = consolidator_module._render_player_profile_output(
+        PlayerProfileOutput(
+            sections=[
+                PlayerProfileSection(title="基本信息", bullets=["姓名：李小明"]),
+                PlayerProfileSection(title="我们怎么相处", bullets=["会先观察我的情绪", "会主动递台阶"]),
+            ]
+        ),
+        "chenxiao",
+        existing_content=existing_content,
+    )
+
+    assert "## 特殊雷区" in rendered
+    assert "- 讨厌被突然碰手腕" in rendered
+    assert rendered.count("## 特殊雷区") == 1
+
+
+@pytest.mark.asyncio
+async def test_merge_memory_blocks_uses_factory_agent_getter(monkeypatch):
+    consolidator = MemoryConsolidationFlow()
+    sentinel_agent = object()
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(consolidator_module, "get_memory_merge_agent", lambda: sentinel_agent)
+
+    async def fake_run_consolidation_agent(
+        self_inner,
+        *,
+        agent,
+        output_type,
+        agent_name,
+        function_name,
+        user,
+    ):
+        captured["agent"] = agent
+        captured["user"] = user
+        assert output_type is MemoryMergeOutput
+        assert agent_name == "chenxiao"
+        assert function_name == "memory_merge"
+        return MemoryMergeOutput(
+            events=[
+                MemoryMergeEvent(
+                    date="10月19日",
+                    time="10月19日 晚上",
+                    location="餐厅",
+                    participants="我、他",
+                    content="一起吃饭。",
+                )
+            ]
+        )
+
+    monkeypatch.setattr(
+        consolidator_module.MemoryConsolidationFlow,
+        "_run_consolidation_agent",
+        fake_run_consolidation_agent,
+    )
+
+    blocks, merged_markdown = await consolidator._merge_memory_blocks(
+        "chenxiao",
+        "payload",
+        "raw",
+        ["10月19日"],
+    )
+
+    assert captured["agent"] is sentinel_agent
+    assert "<memory_entries>" in captured["user"]
+    assert len(blocks) == 1
+    assert "一起吃饭。" in merged_markdown
 
 
 def test_enforce_user_section_limits_trims_to_configured_caps():
@@ -441,7 +524,7 @@ def test_split_by_date_preserves_blank_line_when_same_date_repeats():
     assert "第二块 raw。" in blocks[1]
 
 
-def test_parse_step1_memories_accepts_non_bulleted_time_field():
+def test_parse_memory_merge_output_accepts_non_bulleted_time_field():
     sections = parse_llm_memory_sections(
         "\n".join(
             [
@@ -461,7 +544,7 @@ def test_parse_step1_memories_accepts_non_bulleted_time_field():
     assert "- **内容**：测试内容。" in sections["10月6日"]
 
 
-def test_parse_step1_memories_accepts_plain_fields_without_bold_markup():
+def test_parse_memory_merge_output_accepts_plain_fields_without_bold_markup():
     sections = parse_llm_memory_sections(
         "\n".join(
             [
@@ -481,7 +564,7 @@ def test_parse_step1_memories_accepts_plain_fields_without_bold_markup():
     assert "- **内容**：他抱着我提议去吃栗子蛋糕，我换上裙子后和他一起出门。" in sections["10月21日"]
 
 
-def test_parse_step1_memories_infers_single_window_date():
+def test_parse_memory_merge_output_infers_single_window_date():
     sections = parse_llm_memory_sections(
         "\n".join(
             [
@@ -513,46 +596,24 @@ def test_is_structured_memory_block_accepts_plain_fields_without_bold_markup():
     )
 
 
-def test_validate_step1_result_rejects_missing_dates():
-    sections = parse_llm_memory_sections(
-        "\n".join(
-            [
-                "## 10月19日",
-                "- **时间**：10月19日 晚上",
-                "- **地点**：餐厅",
-                "- **在场**：我、他",
-                "- **内容**：只输出了最后一天。",
-            ]
-        ),
-        ["10月9日", "10月19日"],
-    )
+def test_validate_memory_merge_output_rejects_missing_dates():
+    events = [
+        MemoryMergeEvent(
+            date="10月19日", time="10月19日 晚上", location="餐厅",
+            participants="我、他", content="只输出了最后一天。"
+        )
+    ]
 
-    error = consolidator_module._validate_step1_result(sections, expected_dates=["10月9日", "10月19日"])
+    error = consolidator_module._validate_memory_merge_output(
+        events,
+        window_dates=["10月9日", "10月19日"],
+    )
 
     assert error == "输出缺少日期：10月9日"
 
 
-def test_build_consolidation_prompt_step1_5_contains_batched_chunks():
-    consolidator = MemoryConsolidator()
-    step1_markdown = "\n".join(
-        [
-            "## 10月6日",
-            _event("10月6日", "19:20", "第一次靠近。"),
-            "",
-            _event("10月6日", "22:10", "分别前对视了很久。"),
-        ]
-    )
-
-    system, user = consolidator._build_consolidation_prompt_step1_5(step1_markdown)
-
-    assert "chunk" in system.lower()
-    assert "<consolidated_memory>" in user
-    assert "第一次靠近。" in user
-    assert "分别前对视了很久。" in user
-
-
-def test_parse_step1_5_metadata_and_apply_to_chunks():
-    blocks = consolidator_module._flatten_sections(
+def test_merge_chunk_metadata_applies_structured_items():
+    blocks = consolidator_module.flatten_sections(
         OrderedDict(
             {
                 "10月6日": "\n\n".join(
@@ -565,24 +626,14 @@ def test_parse_step1_5_metadata_and_apply_to_chunks():
         )
     )
 
-    llm_result = """
-<chunk_meta>
-时间：10月6日 19:20
-keywords：公司 初次靠近 心动 紧张
-importance：4
-</chunk_meta>
+    metadata_items = [
+        {"time": "10月6日 19:20", "keywords": ["公司", "初次靠近", "心动", "紧张"], "importance": 4},
+        {"time": "10月6日 22:10", "keywords": ["公司", "对视", "告别", "不舍"], "importance": 3},
+    ]
 
-<chunk_meta>
-时间：10月6日 22:10
-keywords：公司 对视 告别 不舍
-    importance：3
-</chunk_meta>
-""".strip()
-
-    metadata_items = consolidator_module._parse_step1_5_metadata(llm_result)
     merged = consolidator_module._merge_chunk_metadata(blocks, metadata_items)
 
-    assert len(metadata_items) == 2
+    assert len(merged) == 2
     assert "- **关键词**：公司 初次靠近 心动 紧张" in merged[0]["content"]
     assert "- **重要度**：4" in merged[0]["content"]
     assert "- **关键词**：公司 对视 告别 不舍" in merged[1]["content"]
@@ -591,7 +642,7 @@ keywords：公司 对视 告别 不舍
 
 @pytest.mark.asyncio
 async def test_consolidate_agent_only_replaces_tail_window(tmp_path, monkeypatch):
-    consolidator = MemoryConsolidator()
+    consolidator = MemoryConsolidationFlow()
     agent_name = "chenxiao"
     path_helper = _make_character_path(tmp_path)
 
@@ -607,7 +658,7 @@ async def test_consolidate_agent_only_replaces_tail_window(tmp_path, monkeypatch
     async def fake_profile(_self, _agent_name):
         return 0, 0
 
-    monkeypatch.setattr(MemoryConsolidator, "_consolidate_player_profile", fake_profile)
+    monkeypatch.setattr(MemoryConsolidationFlow, "_consolidate_player_profile", fake_profile)
 
     original_sections = OrderedDict(
         {
@@ -631,7 +682,7 @@ async def test_consolidate_agent_only_replaces_tail_window(tmp_path, monkeypatch
         }
     )
 
-    rewritten_blocks = consolidator_module._flatten_sections(rewritten_sections)
+    rewritten_blocks = consolidator_module.flatten_sections(rewritten_sections)
 
     agent_dir = tmp_path / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
@@ -640,7 +691,7 @@ async def test_consolidate_agent_only_replaces_tail_window(tmp_path, monkeypatch
         encoding="utf-8",
     )
 
-    async def fake_run_memory_pipeline(
+    async def fake_apply_consolidation_pipeline(
         _self,
         _agent_name: str,
         memory_entries: str,
@@ -654,7 +705,11 @@ async def test_consolidate_agent_only_replaces_tail_window(tmp_path, monkeypatch
         assert raw_dialogue == "旁白：测试场景"
         return rewritten_blocks, []
 
-    monkeypatch.setattr(MemoryConsolidator, "_run_memory_pipeline", fake_run_memory_pipeline)
+    monkeypatch.setattr(
+        MemoryConsolidationFlow,
+        "_apply_consolidation_pipeline",
+        fake_apply_consolidation_pipeline,
+    )
 
     vector_calls: list[tuple[str, str, list[str]]] = []
 

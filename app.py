@@ -7,15 +7,18 @@ import os
 import chainlit as cl
 from dotenv import load_dotenv
 
-from engine.agent_manager import (
+from engine.agent_factory import (
+    initialize_conversation_agents,
+    reload_conversation_agent,
+)
+from engine.conversation_flow import (
     call_narrator_and_route,
     generate_choices,
     run_agent_in_scene,
 )
 from shared.config import CHARACTERS_DIR, CONSOLIDATION_INTERVAL, get_agent_names
-from engine.message_router import message_router
-
-from engine.history import load_conversation_history
+from storage.message_router import message_router
+from storage.history import load_conversation_history
 from engine.save_manager import (
     export_save_archive,
     has_existing_save,
@@ -24,8 +27,8 @@ from engine.save_manager import (
     load_story_file,
     reset_game,
 )
-
-from memory.consolidator import memory_consolidator
+from engine.consolidation_flow import memory_consolidation_flow
+from log_config.routing import routing_logger
 
 # 加载环境变量
 load_dotenv()
@@ -150,6 +153,7 @@ async def _handle_continue_game() -> None:
 @cl.on_chat_start
 async def on_chat_start():
     """聊天开始时的初始化 - 有记忆直接加载"""
+    initialize_conversation_agents()
     has_save = has_existing_save()
 
     if not has_save:
@@ -187,6 +191,8 @@ async def _handle_reset_command() -> bool:
     await cl.Message(content="✅ 游戏已重置，开始新故事...").send()
     _clear_last_choices()
     intro_text, opening_text = await reset_game(story_id)
+    for name in get_agent_names():
+        reload_conversation_agent(name)
     await _send_opening_messages(story_id, intro_text, opening_text)
     cl.user_session.set("message_counter", 0)
     return True
@@ -233,6 +239,8 @@ async def _handle_load_command(user_input: str) -> bool:
     success = await import_save_archive(target["filename"])
     if success:
         await cl.Message(content=f"✅ 读档成功：{target['display_time']}").send()
+        for name in get_agent_names():
+            reload_conversation_agent(name)
         cl.user_session.set("message_counter", 0)
         await _handle_continue_game()
     else:
@@ -284,15 +292,16 @@ async def on_message(message: cl.Message):
     await message_router.broadcast_player_message(targets, user_input)
 
     # 3. 广播场景描述并显示
-    if scene_description and is_narrator_valid:
-        await message_router.broadcast_agent_response(
-            "narrator", targets, scene_description
-        )
+    if scene_description:
+        if is_narrator_valid:
+            await message_router.broadcast_agent_response(
+                "narrator", targets, scene_description
+            )
         await cl.Message(content=scene_description, author="Narrator").send()
 
     # 4. 如果没有角色需要回应，结束
     if not targets:
-        print("[导演] 无角色需要回应")
+        routing_logger.info("[导演] 无角色需要回应")
         return
 
     # 5. 顺序处理目标角色，每个完成后立即推送到前端
@@ -306,7 +315,7 @@ async def on_message(message: cl.Message):
                 agent_responses.append((agent_name, response))
                 await cl.Message(content=response, author=agent_name.capitalize()).send()
         except Exception as e:
-            print(f"Agent {agent_name} 运行失败: {e}")
+            routing_logger.error(f"Agent {agent_name} 运行失败: {e}")
             await cl.Message(content=f"[错误: {str(e)}]", author=agent_name.capitalize()).send()
 
     # 6. 生成玩家可选行动
@@ -317,13 +326,10 @@ async def on_message(message: cl.Message):
             await _send_choices_message(choices)
 
     # 7. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
-    print(
-        f"[调试] 当前轮次: {message_counter}, CONSOLIDATION_INTERVAL: {CONSOLIDATION_INTERVAL}, 是否触发: {message_counter % CONSOLIDATION_INTERVAL == 0}"
-    )
     if message_counter % CONSOLIDATION_INTERVAL == 0:
         all_agents = get_agent_names(include_narrator=False)
-        print(f"[调试] 触发记忆整理，目标角色: {all_agents}")
-        asyncio.create_task(memory_consolidator.consolidate_all(all_agents))
+        routing_logger.info(f"触发记忆整理，目标角色: {all_agents}")
+        asyncio.create_task(memory_consolidation_flow.consolidate_all(all_agents))
 
 
 @cl.action_callback("choice")

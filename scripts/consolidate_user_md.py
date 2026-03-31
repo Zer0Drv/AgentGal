@@ -1,7 +1,6 @@
 """一次性脚本：整理指定角色的 user.md / tmp_user.md 草稿。"""
 
 import asyncio
-import re
 import shutil
 import sys
 from datetime import datetime
@@ -14,31 +13,9 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from storage.agent_files import cleanup_old_backups, load_text
-from shared.config import CONSOLIDATION_TEMPERATURE, character_path
-from llm.llm_parser import OpenAICompatibleClient
-from llm.providers import get_consolidation_llm_config
-from memory.consolidator import (
-    _PLAYER_PROMPT_PATH,
-    _build_player_profile_draft_input,
-    _enforce_user_section_limits,
-    build_fields_definition,
-)
-
-
-async def _rewrite_user_profile(agent: str, draft_content: str) -> str:
-    system = load_text(_PLAYER_PROMPT_PATH).format(fields_definition=build_fields_definition(agent))
-    user_message = _build_player_profile_draft_input(draft_content)
-    async with OpenAICompatibleClient(
-        **get_consolidation_llm_config(temperature=CONSOLIDATION_TEMPERATURE),
-        timeout=120.0,
-        max_retries=3,
-    ) as client:
-        resp = await client.chat(
-            [{"role": "system", "content": system}, {"role": "user", "content": user_message}],
-            enable_thinking=False,
-        )
-    return (resp.get("content") or "").strip()
+from storage.agent_files import cleanup_old_backups
+from shared.config import character_path
+from engine.consolidation_flow import MemoryConsolidationFlow
 
 
 async def main(agent: str, *, auto_write: bool = False) -> None:
@@ -53,14 +30,12 @@ async def main(agent: str, *, auto_write: bool = False) -> None:
     print(f"原始: {len(content)} 字")
 
     print("调用 LLM 中...")
-    result = await _rewrite_user_profile(agent, content)
+    consolidator = MemoryConsolidationFlow()
+    extracted = await consolidator.run_player_profile_consolidation(agent, content)
 
-    m = re.search(r"^.*第二步.*档案.*$", result, re.MULTILINE)
-    if m:
-        extracted = result[m.end() :].lstrip("\n").strip()
-    else:
-        extracted = result.strip()
-    extracted = _enforce_user_section_limits(extracted)
+    if extracted is None:
+        print("❌ 整理失败，请查看日志")
+        return
 
     print(
         f"整理后: {len(extracted)} 字 (压缩 {(1 - len(extracted) / len(content)) * 100:.1f}%)"

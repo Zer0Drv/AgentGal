@@ -284,7 +284,7 @@ def render_sections(sections: OrderedDict[str, str]) -> str:
 def parse_llm_memory_sections(
     llm_result: str, expected_dates: list[str] | None = None
 ) -> OrderedDict[str, str]:
-    """解析整理器 step1 的 LLM 输出，容忍 LLM 生成的格式噪声（时间字段内含日期、无标题行等）。
+    """解析记忆归并的 LLM 输出，容忍 LLM 生成的格式噪声（时间字段内含日期、无标题行等）。
 
     与 split_by_date 的区别：split_by_date 处理干净的 memory.md 文本；
     本函数处理 LLM 返回的同格式文本，会做额外的日期推断和 <analysis> 标签剥除。

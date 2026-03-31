@@ -11,8 +11,7 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
-from engine.history import _apply_high_low_watermark, build_history_transcript
-from engine.agent_manager import _build_user_message
+from engine.prompt_builder import _apply_high_low_watermark, build_history_transcript, build_user_message
 
 
 @pytest.fixture(autouse=True)
@@ -21,10 +20,10 @@ def fake_history_window_state():
     state: dict[str, int] = {}
 
     with patch(
-        "engine.history.read_sidecar_json",
+        "engine.prompt_builder.read_sidecar_json",
         side_effect=lambda agent_name, _filename: {"start_raw_index": state.get(agent_name, 0)},
     ), patch(
-        "engine.history.write_sidecar_json",
+        "engine.prompt_builder.write_sidecar_json",
         side_effect=lambda agent_name, _filename, data: state.__setitem__(agent_name, data["start_raw_index"]),
     ):
         yield state
@@ -97,7 +96,7 @@ class TestBuildHistoryTranscript:
             for i in range(40)
         ]
 
-        with patch("engine.history.HISTORY_HIGH", 30), patch("engine.history.HISTORY_LOW", 15):
+        with patch("engine.prompt_builder.HISTORY_HIGH", 30), patch("engine.prompt_builder.HISTORY_LOW", 15):
             result = build_history_transcript("lilith", msgs)
 
         assert "消息24" not in result
@@ -117,7 +116,7 @@ class TestBuildHistoryTranscript:
             for i in range(47)
         ]
 
-        with patch("engine.history.HISTORY_HIGH", 30), patch("engine.history.HISTORY_LOW", 15):
+        with patch("engine.prompt_builder.HISTORY_HIGH", 30), patch("engine.prompt_builder.HISTORY_LOW", 15):
             result_31 = build_history_transcript("lilith", msgs_31)
             result_32 = build_history_transcript("lilith", msgs_32)
             result_47 = build_history_transcript("lilith", msgs_47)
@@ -156,7 +155,7 @@ class TestHighLowWatermarkHelper:
 
 
 # ---------------------------------------------------------------------------
-# _build_user_message
+# build_user_message
 # ---------------------------------------------------------------------------
 
 
@@ -178,10 +177,10 @@ class TestBuildUserMessage:
             return data[filename]
 
         with patch(
-            "engine.agent_manager.read_agent_file",
+            "engine.prompt_builder.read_agent_file",
             side_effect=fake_read,
         ):
-            result = _build_user_message(
+            result = build_user_message(
                 "lilith",
                 "你好",
                 "<relevant_memories>\n记忆内容\n</relevant_memories>",
@@ -204,10 +203,10 @@ class TestBuildUserMessage:
             return data[filename]
 
         with patch(
-            "engine.agent_manager.read_agent_file",
+            "engine.prompt_builder.read_agent_file",
             side_effect=fake_read,
         ):
-            result = _build_user_message(
+            result = build_user_message(
                 "lilith",
                 "你好",
                 "<relevant_memories>\n记忆内容\n</relevant_memories>",
@@ -226,8 +225,8 @@ class TestBuildUserMessage:
             {"role": "guyining", "content": "旧回复", "visible_to": ["narrator"]},
         ]
 
-        with patch("engine.agent_manager.read_agent_file", return_value="故事状态"):
-            result = _build_user_message("narrator", "新输入", "", raw_messages=msgs)
+        with patch("engine.prompt_builder.read_agent_file", return_value="故事状态"):
+            result = build_user_message("narrator", "新输入", "", raw_messages=msgs)
 
         assert "<growth>" not in result
         assert "<user_profile>" not in result

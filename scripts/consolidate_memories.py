@@ -3,7 +3,7 @@
 
 这个脚本的职责：
 1) 找到 data/characters/*/memory.md
-2) 调用 memory.consolidator 对每个 agent 做 LLM 整理
+2) 调用 memory.consolidation_flow 对每个 agent 做 LLM 整理
 3) **显式管理**整理过程里创建的后台任务（尤其是向量重建 rebuild），避免 asyncio.run
    在退出阶段因为"悬挂任务取消不掉"而表现为卡死/只能 Ctrl-C。
 
@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from memory.consolidator import memory_consolidator
+from engine.consolidation_flow import memory_consolidation_flow
 
 
 def _parse_args() -> argparse.Namespace:
@@ -187,7 +187,7 @@ async def main() -> int:
             # 关键：捕获 consolidate_agent 期间新创建的后台任务（主要是 rebuild）
             before = {t for t in asyncio.all_tasks() if t is not asyncio.current_task()}
 
-            coro = memory_consolidator.consolidate_agent(agent)
+            coro = memory_consolidation_flow.consolidate_agent(agent)
             if args.agent_timeout and args.agent_timeout > 0:
                 await asyncio.wait_for(coro, timeout=args.agent_timeout)
             else:

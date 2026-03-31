@@ -1,4 +1,4 @@
-"""测试 consolidation step1 输入构造与 raw 对话重标记。"""
+"""测试记忆归并输入构造与 raw 对话重标记。"""
 
 import os
 import sys
@@ -9,9 +9,9 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
-from memory.consolidation_inputs import (
+from engine.prompt_builder import (
     build_memory_owner_block,
-    build_step1_user_payload,
+    build_memory_merge_payload,
     format_raw_dialogue_for_owner,
 )
 
@@ -49,7 +49,7 @@ def test_format_raw_dialogue_for_character_owner(monkeypatch):
             },
         ]
 
-    monkeypatch.setattr("memory.consolidation_inputs.load_conversation_history", mock_history)
+    monkeypatch.setattr("engine.prompt_builder.load_conversation_history", mock_history)
 
     formatted = format_raw_dialogue_for_owner("chenxiao", 20)
 
@@ -62,15 +62,15 @@ def test_format_raw_dialogue_for_character_owner(monkeypatch):
     assert "## 顾以宁" not in formatted
 
 
-def test_build_step1_user_payload_includes_owner_before_memory(monkeypatch):
-    """step1 payload 应先注入记忆主体，再附带 memory 与 raw 对话。"""
+def test_build_memory_merge_payload_includes_owner_before_memory(monkeypatch):
+    """memory merge payload 应先注入记忆主体，再附带 memory 与 raw 对话。"""
 
     monkeypatch.setattr(
-        "memory.consolidation_inputs.read_agent_file",
+        "engine.prompt_builder.read_agent_file",
         lambda agent_name, filename: "<role>陈晓</role>" if filename == "soul.md" else "",
     )
 
-    payload = build_step1_user_payload(
+    payload = build_memory_merge_payload(
         "chenxiao",
         "## 10月6日\n- **时间**：10月6日 上午\n- **地点**：公司\n- **在场**：我、他\n- **内容**：测试内容。",
         raw_dialogue="旁白：**时间**：10月6日 星期五 11:42",

@@ -1,15 +1,25 @@
 """LLM 配置 - 支持多提供商（OpenAI、DeepSeek、OpenRouter 等 OpenAI 兼容 API）"""
 
 import os
+from collections.abc import Callable
 
 from shared.config import AGENT_TEMPERATURE
 
+
 SUPPORTED_PROVIDERS = ("openai", "deepseek", "openrouter")
+_DEFAULT_PROVIDER = "deepseek"
+_DEFAULT_MODEL_ID = "deepseek-chat"
+_CHAT_COMPLETIONS_SUFFIX = "/chat/completions"
 
 # OpenAI 官方 API URL
 _OPENAI_API_URL = "https://api.openai.com/v1"
 _DEEPSEEK_API_URL = "https://api.deepseek.com/v1"
 _OPENROUTER_API_URL = "https://openrouter.ai/api/v1"
+_PROVIDER_DEFAULT_API_URLS = {
+    "openai": _OPENAI_API_URL,
+    "deepseek": _DEEPSEEK_API_URL,
+    "openrouter": _OPENROUTER_API_URL,
+}
 
 
 def _get_required_env(key: str) -> str:
@@ -20,16 +30,29 @@ def _get_required_env(key: str) -> str:
     return value
 
 
+def _get_default_provider() -> str:
+    return os.getenv("LLM_PROVIDER", _DEFAULT_PROVIDER).lower()
+
+
+def _get_default_model_id() -> str:
+    return os.getenv("LLM_MODEL_ID", _DEFAULT_MODEL_ID)
+
+
+def _normalize_api_url(api_url: str) -> str:
+    """归一化 OpenAI 兼容 Base URL，避免重复拼接 chat/completions。"""
+    normalized = api_url.rstrip("/")
+    if normalized.endswith(_CHAT_COMPLETIONS_SUFFIX):
+        normalized = normalized[: -len(_CHAT_COMPLETIONS_SUFFIX)]
+    return normalized
+
+
 def _resolve_api_url(provider: str, api_url: str | None) -> str:
     """根据 provider 决定最终 API URL。"""
     if api_url:
-        return api_url
-    if provider == "deepseek":
-        return _DEEPSEEK_API_URL
-    if provider == "openrouter":
-        return _OPENROUTER_API_URL
-    if provider == "openai":
-        return _OPENAI_API_URL
+        return _normalize_api_url(api_url)
+    default_api_url = _PROVIDER_DEFAULT_API_URLS.get(provider)
+    if default_api_url:
+        return default_api_url
     # 未知 provider 但没有 api_url
     raise ValueError(
         f"Unsupported LLM provider: '{provider}'. "
@@ -45,18 +68,58 @@ def get_llm_config(
     api_key: str | None = None,
     api_url: str | None = None,
 ) -> dict:
-    """返回创建 OpenAICompatibleClient 所需的配置 dict。
+    """返回 LLM 配置 dict，供 agent_manager 构建 OpenAIChatCompletionsModel 使用。
 
     参数优先级：传入参数 > 环境变量 > 默认值
 
     Returns:
         {"api_url": str, "api_key": str, "model": str, "temperature": float}
     """
-    provider = (provider or os.getenv("LLM_PROVIDER", "deepseek")).lower()
-    model_id = model_id or os.getenv("LLM_MODEL_ID", "deepseek-chat")
+    provider = (provider or _get_default_provider()).lower()
+    model_id = model_id or _get_default_model_id()
     api_key = api_key or _get_required_env("LLM_API_KEY")
     api_url = _resolve_api_url(provider, api_url or os.getenv("LLM_API_URL"))
     return {"api_url": api_url, "api_key": api_key, "model": model_id, "temperature": AGENT_TEMPERATURE}
+
+
+def _read_scoped_overrides(env_prefix: str) -> dict[str, str | None]:
+    return {
+        "provider": os.getenv(f"{env_prefix}_PROVIDER"),
+        "model_id": os.getenv(f"{env_prefix}_MODEL_ID"),
+        "api_key": os.getenv(f"{env_prefix}_API_KEY"),
+        "api_url": os.getenv(f"{env_prefix}_API_URL"),
+    }
+
+
+def _make_scoped_llm_config(
+    env_prefix: str,
+    fallback_getter: Callable[[], dict],
+    *,
+    temperature: float | None = None,
+) -> dict:
+    """基于环境变量前缀构建 scoped LLM 配置。"""
+    overrides = _read_scoped_overrides(env_prefix)
+    if not any(overrides.values()):
+        config = fallback_getter().copy()
+    else:
+        provider = (overrides["provider"] or _get_default_provider()).lower()
+        model_id = overrides["model_id"] or _get_default_model_id()
+        api_key = overrides["api_key"] or os.getenv("LLM_API_KEY")
+        api_url = overrides["api_url"] or os.getenv("LLM_API_URL")
+
+        if not api_key:
+            raise ValueError(f"{env_prefix}_API_KEY or LLM_API_KEY must be set")
+
+        config = get_llm_config(
+            provider=provider,
+            model_id=model_id,
+            api_key=api_key,
+            api_url=api_url,
+        )
+
+    if temperature is not None:
+        config["temperature"] = temperature
+    return config
 
 
 def get_narrator_llm_config() -> dict:
@@ -64,23 +127,7 @@ def get_narrator_llm_config() -> dict:
 
     优先使用 NARRATOR_LLM_* 系列环境变量，未设置则复用主 LLM 配置。
     """
-    provider = os.getenv("NARRATOR_LLM_PROVIDER")
-    model_id = os.getenv("NARRATOR_LLM_MODEL_ID")
-    api_key = os.getenv("NARRATOR_LLM_API_KEY")
-    api_url = os.getenv("NARRATOR_LLM_API_URL")
-
-    if not any([provider, model_id, api_key, api_url]):
-        return get_llm_config()
-
-    provider = provider or os.getenv("LLM_PROVIDER", "deepseek")
-    model_id = model_id or os.getenv("LLM_MODEL_ID", "deepseek-chat")
-    api_key = api_key or os.getenv("LLM_API_KEY")
-    api_url = api_url or os.getenv("LLM_API_URL")
-
-    if not api_key:
-        raise ValueError("NARRATOR_LLM_API_KEY or LLM_API_KEY must be set")
-
-    return get_llm_config(provider=provider, model_id=model_id, api_key=api_key, api_url=api_url)
+    return _make_scoped_llm_config("NARRATOR_LLM", get_llm_config)
 
 
 def get_choices_llm_config() -> dict:
@@ -88,51 +135,13 @@ def get_choices_llm_config() -> dict:
 
     优先使用 CHOICES_LLM_* 系列环境变量，未设置则复用 narrator LLM 配置。
     """
-    provider = os.getenv("CHOICES_LLM_PROVIDER")
-    model_id = os.getenv("CHOICES_LLM_MODEL_ID")
-    api_key = os.getenv("CHOICES_LLM_API_KEY")
-    api_url = os.getenv("CHOICES_LLM_API_URL")
-
-    if not any([provider, model_id, api_key, api_url]):
-        return get_narrator_llm_config()
-
-    provider = provider or os.getenv("LLM_PROVIDER", "deepseek")
-    model_id = model_id or os.getenv("LLM_MODEL_ID", "deepseek-chat")
-    api_key = api_key or os.getenv("LLM_API_KEY")
-    api_url = api_url or os.getenv("LLM_API_URL")
-
-    if not api_key:
-        raise ValueError("CHOICES_LLM_API_KEY or LLM_API_KEY must be set")
-
-    return get_llm_config(provider=provider, model_id=model_id, api_key=api_key, api_url=api_url)
+    return _make_scoped_llm_config("CHOICES_LLM", get_narrator_llm_config)
 
 
 def get_consolidation_llm_config(temperature: float | None = None) -> dict:
     """返回记忆整理器使用的 LLM 配置。
 
-    优先使用 CONSOLIDATION_* 系列环境变量，未设置则复用主 LLM 配置。
+    优先使用 CONSOLIDATION_LLM_* 系列环境变量，未设置则复用主 LLM 配置。
     temperature 不为 None 时覆盖默认值。
     """
-    provider = os.getenv("CONSOLIDATION_LLM_PROVIDER")
-    model_id = os.getenv("CONSOLIDATION_LLM_MODEL_ID")
-    api_key = os.getenv("CONSOLIDATION_LLM_API_KEY")
-    api_url = os.getenv("CONSOLIDATION_LLM_API_URL")
-
-    # 没有任何独立配置，直接复用主 LLM
-    if not any([provider, model_id, api_key, api_url]):
-        config = get_llm_config()
-    else:
-        # 部分配置时，缺失项使用主 LLM 的默认值
-        provider = provider or os.getenv("LLM_PROVIDER", "deepseek")
-        model_id = model_id or os.getenv("LLM_MODEL_ID", "deepseek-chat")
-        api_key = api_key or os.getenv("LLM_API_KEY")
-        api_url = api_url or os.getenv("LLM_API_URL")
-
-        if not api_key:
-            raise ValueError("CONSOLIDATION_LLM_API_KEY or LLM_API_KEY must be set")
-
-        config = get_llm_config(provider=provider, model_id=model_id, api_key=api_key, api_url=api_url)
-
-    if temperature is not None:
-        config["temperature"] = temperature
-    return config
+    return _make_scoped_llm_config("CONSOLIDATION_LLM", get_llm_config, temperature=temperature)
