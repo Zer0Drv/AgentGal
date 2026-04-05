@@ -1,20 +1,20 @@
 # AgentGal
 
-多 Agent 角色扮演 / 叙事游戏系统。项目围绕 **旁白路由 + 角色独立记忆 + 结构化写回 + 向量检索** 构建，当前主要以 **Chainlit** 作为交互入口。
+多 Agent 角色扮演 / 叙事游戏系统。项目围绕 **旁白路由 + 角色独立记忆 + 结构化写回 + 向量检索** 构建，以 **FastAPI + 原生 HTML/JS** 作为交互入口，支持 SSE 流式对话与可视化存档管理。
 
 ## 项目特点
 
 - **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 只维护 `status.md` 和单一 raw 历史
 - **真实信息差**：消息通过 `visible_to` 控制可见性，不在场的角色不会自动知情
 - **旁白驱动路由**：`narrator` 决定谁参与当前回合，并推进场景与时间
-- **结构化更新**：Agent 通过 `<update_notes>` 输出记忆/状态更新，由系统统一写回
+- **结构化更新**：Agent 使用 Pydantic 结构化输出，系统直接读取 typed 字段写回文件
 - **双层记忆**：Markdown 文件负责可读存储，`sqlite-vec` 负责检索
 
 ## 当前技术栈
 
 - Python 3.11+
-- Chainlit
-- OpenAI-compatible LLM client
+- FastAPI + uvicorn（SSE 流式对话）
+- OpenAI Agents SDK（结构化输出）
 - sqlite-vec + aiosqlite
 - asyncio
 - `uv` 包管理
@@ -50,13 +50,13 @@ cp .env.example .env
 
 > 说明：如果你想使用 Anthropic 模型，请通过 `openrouter` 路由，而不是把 `LLM_PROVIDER` 直接写成 `anthropic`。
 
-### 3. 启动 Chainlit
+### 3. 启动服务
 
 ```bash
-uv run chainlit run app.py
+uv run uvicorn server:app --reload
 ```
 
-默认可在浏览器打开 `http://localhost:8100`。
+默认可在浏览器打开 `http://localhost:8000`。
 
 ## 使用方式
 
@@ -91,17 +91,12 @@ uv run chainlit run app.py
 
 ### 3. 结构化写回
 
-Agent 回复由两部分组成：
+所有 Agent 使用 Pydantic 结构化输出（`output_type=PydanticModel`），系统直接读取 typed 字段写回文件：
 
-1. 面向玩家展示的正文
-2. 末尾的 `<update_notes>`
-
-系统会解析并写回：
-
-- 角色的 `<memory>` → `memory.md`
-- `<status>` → `status.md`
-- `<player>` → 追加到 `tmp_user.md`；首次写入时先复制 `user.md` 作为工作草稿，整理后再回写 `user.md`
-- `<triggered>` / `<add_event>` → `status.md` 中的事件区块
+- `output.memory` → `memory.md`
+- `output.status` → `status.md`
+- `output.player` → 追加到 `tmp_user.md`；首次写入时先复制 `user.md` 作为工作草稿，整理后再回写 `user.md`
+- `output.triggered` / `output.add_event` → `status.md` 中的事件区块
 
 其中：
 
@@ -132,7 +127,7 @@ Agent 回复由两部分组成：
 
 ```text
 .
-├── app.py
+├── server.py
 ├── data/
 │   ├── characters/
 │   └── templates/
@@ -257,28 +252,7 @@ uv run pytest
 - `scripts/query_vectors.py`：查询向量库
 - `scripts/rebuild_vectors.py`：重建向量索引
 
-## 说明
-
-- 当前主入口是 `app.py`
-- 如需了解具体 prompt 约束，请查看 `prompts/character_prompt.txt` 和 `prompts/narrator_prompt.txt`
-
-## TODO
-
-- [x] **玩家选项生成**：在角色回复完成后，生成 2-3 个可选行动引导玩家
-
-## FastAPI 前端（fastapi-frontend 分支）
-
-替代 Chainlit 的轻量前端，提供可视化存档管理面板。
-
-### 启动
-
-```bash
-uv run uvicorn server:app --reload
-```
-
-然后访问 http://localhost:8100
-
-### 新增端点
+## API 端点
 
 | 端点 | 方法 | 说明 |
 |---|---|---|

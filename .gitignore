@@ -18,3 +18,5 @@ data/*
 
 # examples/ 下的模板文件需要入库
 !templates/
+
+.claude/
