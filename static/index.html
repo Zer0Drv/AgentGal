@@ -279,6 +279,7 @@ body::after {
 
 /* ── Character bubble ───────────────────────────────────────────────────── */
 .msg-char {
+  width: fit-content;
   max-width: 620px;
   margin: 14px 36px;
   animation: msgIn 0.38s ease forwards;
@@ -307,6 +308,7 @@ body::after {
 
 /* ── Player bubble ──────────────────────────────────────────────────────── */
 .msg-player {
+  width: fit-content;
   max-width: 500px;
   margin: 14px 36px;
   margin-left: auto;
@@ -446,6 +448,12 @@ body::after {
   background: var(--surface);
   border-left: 1px solid var(--border);
   display: flex; flex-direction: column; flex-shrink: 0;
+  transition: width 0.28s ease, border-color 0.28s ease;
+  overflow: hidden;
+}
+#sidebar.collapsed {
+  width: 0;
+  border-left-color: transparent;
 }
 .sidebar-head {
   padding: 15px 16px 12px;
@@ -487,6 +495,20 @@ body::after {
 .save-focus { font-size: 11px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .save-empty { padding: 20px 12px; text-align: center; font-size: 12px; color: var(--text-muted); letter-spacing: 0.05em; }
 
+/* ── Mobile ─────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  #sidebar {
+    position: absolute;
+    top: 50px; right: 0; bottom: 0;
+    z-index: 200;
+    box-shadow: -4px 0 20px rgba(0,0,0,0.12);
+  }
+  #sidebar.collapsed { box-shadow: none; }
+  .msg-char   { margin: 12px 12px; max-width: calc(100vw - 24px); }
+  .msg-player { margin: 12px 12px; max-width: calc(100vw - 24px); }
+  .msg-narrator { padding: 0 16px; }
+}
+
 /* ── Markdown body ──────────────────────────────────────────────────────── */
 .msg-body h1 { font-size: 1.25em; font-weight: 500; margin: .4em 0 .3em; }
 .msg-body h2 { font-size: 1.1em; font-weight: 500; margin: .3em 0 .25em; }
@@ -521,6 +543,7 @@ body::after {
   <!-- ── Navbar ─────────────────────────────────────────────────────────── -->
   <nav id="navbar">
     <div id="nav-title">AgentGal <small>♡ 恋爱物语</small></div>
+    <button class="nav-btn" id="btn-toggle-sidebar" title="档案室">📂</button>
     <button class="nav-btn" id="btn-save">存档</button>
     <button class="nav-btn danger" id="btn-reset">重开</button>
   </nav>
@@ -783,6 +806,13 @@ sendBtn.onclick = () => submitMessage(inputArea.value.trim());
 inputArea.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitMessage(inputArea.value.trim()); }
 });
+
+// ── Sidebar toggle ───────────────────────────────────────────────────────────
+const sidebar = document.getElementById('sidebar');
+if (window.innerWidth <= 640) sidebar.classList.add('collapsed');
+document.getElementById('btn-toggle-sidebar').onclick = () => {
+  sidebar.classList.toggle('collapsed');
+};
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 init();
