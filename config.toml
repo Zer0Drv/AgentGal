@@ -3,10 +3,6 @@
 # 部署相关配置（API 密钥、模型选择等）请在 .env 中设置
 # ============================================
 
-[memory]
-# 记忆整理间隔（轮）：每隔多少轮触发一次后台整理
-consolidation_interval = 8
-
 [consolidation]
 # 整理 LLM 的温度：较低值保证输出稳定
 temperature = 0.7

@@ -18,11 +18,9 @@ with open(PROJECT_ROOT / "config.toml", "rb") as _f:
     _cfg = tomllib.load(_f)
 
 # 记忆整理
-CONSOLIDATION_INTERVAL: int = _cfg["memory"]["consolidation_interval"]
 CONSOLIDATION_TEMPERATURE: float = _cfg["consolidation"]["temperature"]
 CONSOLIDATION_MAX_TOKENS: int | None = _cfg["consolidation"]["max_tokens"] or None
 GROWTH_DEDUP_THRESHOLD: int = _cfg["consolidation"]["growth_dedup_threshold"]
-RAW_DIALOGUE_LIMIT: int = CONSOLIDATION_INTERVAL * 4
 
 # 向量检索
 VECTOR_SEARCH_LIMIT: int = _cfg["vector"]["search_limit"]

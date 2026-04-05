@@ -226,7 +226,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 `narrator` 不维护 `memory.md`，也不参与整理。
 
-默认按 `config.toml` 中的 `[memory].consolidation_interval` 控制触发频率。
+整理在对话历史窗口触发高水位截断时自动触发（事件驱动，无固定计数器）。
 
 ## 配置来源
 

@@ -16,7 +16,7 @@ from engine.conversation_flow import (
     generate_choices,
     run_agent_in_scene,
 )
-from shared.config import CHARACTERS_DIR, CONSOLIDATION_INTERVAL, get_agent_names
+from shared.config import CHARACTERS_DIR, get_agent_names
 from storage.message_router import message_router
 from storage.history import load_conversation_history
 from engine.save_manager import (
@@ -27,7 +27,6 @@ from engine.save_manager import (
     load_story_file,
     reset_game,
 )
-from engine.consolidation_flow import memory_consolidation_flow
 from log_config.routing import routing_logger
 
 # 加载环境变量
@@ -194,7 +193,6 @@ async def _handle_reset_command() -> bool:
     for name in get_agent_names():
         reload_conversation_agent(name)
     await _send_opening_messages(story_id, intro_text, opening_text)
-    cl.user_session.set("message_counter", 0)
     return True
 
 
@@ -241,7 +239,6 @@ async def _handle_load_command(user_input: str) -> bool:
         await cl.Message(content=f"✅ 读档成功：{target['display_time']}").send()
         for name in get_agent_names():
             reload_conversation_agent(name)
-        cl.user_session.set("message_counter", 0)
         await _handle_continue_game()
     else:
         await cl.Message(content="❌ 读档失败，请检查日志。").send()
@@ -266,9 +263,6 @@ async def on_message(message: cl.Message):
     """处理用户消息"""
     user_input = message.content.strip()
 
-    # 获取当前计数器（从 session 中）
-    message_counter = cl.user_session.get("message_counter", 0)
-
     # 命令分发处理：前缀命令（/load 需要子参数）
     if user_input.lower().startswith("/load"):
         await _handle_load_command(user_input)
@@ -279,9 +273,6 @@ async def on_message(message: cl.Message):
     if handler:
         await handler()
         return
-
-    message_counter += 1
-    cl.user_session.set("message_counter", message_counter)
 
     # 1. 调用 narrator 获取路由决策和场景描述
     targets, scene_description, is_narrator_valid = await call_narrator_and_route(
@@ -324,12 +315,6 @@ async def on_message(message: cl.Message):
         if choices:
             _save_last_choices(choices)
             await _send_choices_message(choices)
-
-    # 7. 每 N 轮触发记忆整理（后台执行，不阻塞用户交互）
-    if message_counter % CONSOLIDATION_INTERVAL == 0:
-        all_agents = get_agent_names(include_narrator=False)
-        routing_logger.info(f"触发记忆整理，目标角色: {all_agents}")
-        asyncio.create_task(memory_consolidation_flow.consolidate_all(all_agents))
 
 
 @cl.action_callback("choice")

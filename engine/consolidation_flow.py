@@ -20,7 +20,7 @@ from llm.providers import get_consolidation_llm_config
 from shared.config import (
     CONSOLIDATION_TEMPERATURE,
     GROWTH_DEDUP_THRESHOLD,
-    RAW_DIALOGUE_LIMIT,
+    HISTORY_HIGH,
     character_path,
 )
 from engine.prompt_builder import (
@@ -563,9 +563,9 @@ class MemoryConsolidationFlow:
         stable_blocks = blocks[:start_index]
         window_blocks = blocks[start_index:]
         window_dates = list(OrderedDict.fromkeys(block["date"] for block in window_blocks))
-        raw_dialogue = format_raw_dialogue_for_owner(agent_name, RAW_DIALOGUE_LIMIT)
+        raw_dialogue = format_raw_dialogue_for_owner(agent_name, HISTORY_HIGH)
         if not raw_dialogue:
-            return None, f"最近 {RAW_DIALOGUE_LIMIT} 条消息中无参与"
+            return None, f"最近 {HISTORY_HIGH} 条消息中无参与"
         return _ConsolidationWindow(
             stable_blocks=stable_blocks,
             window_blocks=window_blocks,
@@ -705,7 +705,7 @@ class MemoryConsolidationFlow:
         memory_entries = sections.get(date, "")
         if not memory_entries:
             return None, f"没有找到 {date} 的记忆"
-        raw_dialogue = format_raw_dialogue_for_owner(agent_name, RAW_DIALOGUE_LIMIT)
+        raw_dialogue = format_raw_dialogue_for_owner(agent_name, HISTORY_HIGH)
         try:
             blocks, _ = await self._merge_memory_blocks(agent_name, memory_entries, raw_dialogue, [date])
             date_blocks = [block for block in blocks if block["date"] == date]

@@ -6,6 +6,7 @@ import re
 from engine.agent_factory import get_choices_agent, get_conversation_agent
 from engine.agent_runner import run_structured_agent
 from engine.agent_schema import CharacterOutput, ChoicesOutput, NarratorOutput
+from engine.consolidation_flow import memory_consolidation_flow
 from engine.prompt_builder import build_history_transcript, build_search_query, build_user_message
 from storage.history import load_conversation_history
 from llm.providers import get_choices_llm_config, get_llm_config, get_narrator_llm_config
@@ -135,12 +136,15 @@ async def _run_conversation_agent(
         if relevant_memories
         else ""
     )
-    user_message = build_user_message(
+    user_message, was_truncated = build_user_message(
         agent_name,
         latest_user_input,
         memory_prefix,
         raw_messages=raw_messages,
     )
+    if was_truncated and agent_name != "narrator":
+        routing_logger.info("[%s] 历史窗口截断，触发记忆整理", agent_name)
+        asyncio.create_task(memory_consolidation_flow.consolidate_agent(agent_name))
 
     config = get_narrator_llm_config() if agent_name == "narrator" else get_llm_config()
     output_type = NarratorOutput if agent_name == "narrator" else CharacterOutput
@@ -165,7 +169,7 @@ async def generate_choices(
     """根据当前场景和角色回应生成玩家可选行动（2-3 个）。"""
     raw_messages = load_conversation_history(limit=None)
     parts: list[str] = []
-    history = build_history_transcript("narrator", raw_messages)
+    history, _ = build_history_transcript("narrator", raw_messages)
     if history:
         parts.append(f"【近期对话】\n{history}")
     if scene_description:

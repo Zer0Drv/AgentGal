@@ -31,28 +31,32 @@ def _apply_high_low_watermark(
     start_raw_index: int,
     high: int,
     low: int,
-) -> tuple[int, list[int]]:
-    """应用高低水位缓冲，返回本轮应显示的消息下标范围。"""
+) -> tuple[int, list[int], bool]:
+    """应用高低水位缓冲，返回本轮应显示的消息下标范围及是否触发了截断。"""
     if not visible_indices:
-        return 0, []
+        return 0, [], False
 
     kept_indices = [idx for idx in visible_indices if idx >= start_raw_index]
     if not kept_indices:
         start_raw_index = visible_indices[0]
         kept_indices = visible_indices
 
+    was_truncated = False
     if len(kept_indices) > high:
         routing_logger.info("[%s] 历史窗口触发高水位", agent_name)
         kept_indices = kept_indices[-low:]
         start_raw_index = kept_indices[0]
+        was_truncated = True
 
-    return start_raw_index, kept_indices
+    return start_raw_index, kept_indices, was_truncated
 
 
-def _get_windowed_visible_messages(agent_name: str, raw_messages: list[dict]) -> list[dict]:
-    """按 agent 维度应用高低水位窗口，并持久化窗口起点。"""
+def _get_windowed_visible_messages(
+    agent_name: str, raw_messages: list[dict]
+) -> tuple[list[dict], bool]:
+    """按 agent 维度应用高低水位窗口，并持久化窗口起点。返回 (消息列表, 是否触发截断)。"""
     if not raw_messages:
-        return []
+        return [], False
 
     if agent_name != "narrator":
         visible_indices = [
@@ -62,11 +66,11 @@ def _get_windowed_visible_messages(agent_name: str, raw_messages: list[dict]) ->
         visible_indices = list(range(len(raw_messages)))
 
     if not visible_indices:
-        return []
+        return [], False
 
     _hw = read_sidecar_json(agent_name, ".history_window_state.json")
     start_raw_index = min(max(0, int(_hw.get("start_raw_index", 0))), len(raw_messages) - 1)
-    next_start_raw_index, kept_indices = _apply_high_low_watermark(
+    next_start_raw_index, kept_indices, was_truncated = _apply_high_low_watermark(
         agent_name,
         visible_indices,
         start_raw_index,
@@ -78,18 +82,18 @@ def _get_windowed_visible_messages(agent_name: str, raw_messages: list[dict]) ->
         ".history_window_state.json",
         {"start_raw_index": max(0, next_start_raw_index)},
     )
-    return [raw_messages[idx] for idx in kept_indices]
+    return [raw_messages[idx] for idx in kept_indices], was_truncated
 
 
 def build_history_transcript(
     agent_name: str,
     raw_messages: list[dict],
-) -> str:
-    """将 JSONL 原始消息转为单段历史文本（高低水位窗口 + 可见性过滤）。"""
-    visible = _get_windowed_visible_messages(agent_name, raw_messages)
+) -> tuple[str, bool]:
+    """将 JSONL 原始消息转为单段历史文本（高低水位窗口 + 可见性过滤）。返回 (文本, 是否触发截断)。"""
+    visible, was_truncated = _get_windowed_visible_messages(agent_name, raw_messages)
 
     if not visible:
-        return ""
+        return "", False
 
     lines: list[str] = []
     for msg in visible:
@@ -100,7 +104,7 @@ def build_history_transcript(
         speaker = "玩家" if role == "player" else role
         lines.append(f"{speaker}: {content}")
 
-    return "\n\n".join(lines)
+    return "\n\n".join(lines), was_truncated
 
 
 # ---------------------------------------------------------------------------
@@ -160,13 +164,13 @@ def build_user_message(
     latest_user_input: str,
     memory_prefix: str,
     raw_messages: list[dict] | None = None,
-) -> str:
-    """构建单条大 user message，按稳定度排序上下文。"""
+) -> tuple[str, bool]:
+    """构建单条大 user message，按稳定度排序上下文。返回 (消息文本, 是否触发历史截断)。"""
     parts: list[str] = []
 
     growth_content = read_agent_file(agent_name, "growth.md") if agent_name != "narrator" else ""
     user_content = read_agent_file(agent_name, "user.md") if agent_name != "narrator" else ""
-    history = build_history_transcript(agent_name, raw_messages or [])
+    history, was_truncated = build_history_transcript(agent_name, raw_messages or [])
     status_content = read_agent_file(agent_name, "status.md")
 
     parts.append(f"<growth>\n{growth_content.strip()}\n</growth>" if growth_content else "")
@@ -178,7 +182,7 @@ def build_user_message(
     parts.append(memory_prefix if memory_prefix else "")
     parts.append(f"玩家新消息: {latest_user_input}")
 
-    return "\n\n---\n\n".join(part for part in parts if part)
+    return "\n\n---\n\n".join(part for part in parts if part), was_truncated
 
 
 # ---------------------------------------------------------------------------

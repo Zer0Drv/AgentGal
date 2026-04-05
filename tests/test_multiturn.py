@@ -44,7 +44,7 @@ class TestBuildHistoryTranscript:
             {"role": "mitsuki", "content": "mitsuki 回复", "visible_to": ["narrator", "lilith"]},
         ]
 
-        result = build_history_transcript("lilith", msgs)
+        result, _ = build_history_transcript("lilith", msgs)
 
         assert "玩家: 你好" in result
         assert "narrator: 场景描述" in result
@@ -57,7 +57,7 @@ class TestBuildHistoryTranscript:
             {"role": "lilith", "content": "lilith回复", "visible_to": ["narrator", "lilith"]},
         ]
 
-        result = build_history_transcript("lilith", msgs)
+        result, _ = build_history_transcript("lilith", msgs)
 
         assert "公开消息" in result
         assert "lilith: lilith回复" in result
@@ -69,7 +69,7 @@ class TestBuildHistoryTranscript:
             {"role": "mitsuki", "content": "mitsuki", "visible_to": ["narrator", "mitsuki"]},
         ]
 
-        result = build_history_transcript("narrator", msgs)
+        result, _ = build_history_transcript("narrator", msgs)
 
         assert "玩家: 公开" in result
         assert "mitsuki: mitsuki" in result
@@ -85,8 +85,8 @@ class TestBuildHistoryTranscript:
             {"role": "narrator", "content": "n2", "visible_to": ["narrator", "lilith"]},
         ]
 
-        result_n = build_history_transcript("lilith", msgs_turn_n)
-        result_n1 = build_history_transcript("lilith", msgs_turn_n1)
+        result_n, _ = build_history_transcript("lilith", msgs_turn_n)
+        result_n1, _ = build_history_transcript("lilith", msgs_turn_n1)
 
         assert result_n1.startswith(result_n + "\n\n")
 
@@ -97,7 +97,7 @@ class TestBuildHistoryTranscript:
         ]
 
         with patch("engine.prompt_builder.HISTORY_HIGH", 30), patch("engine.prompt_builder.HISTORY_LOW", 15):
-            result = build_history_transcript("lilith", msgs)
+            result, _ = build_history_transcript("lilith", msgs)
 
         assert "消息24" not in result
         assert "消息25" in result
@@ -117,9 +117,9 @@ class TestBuildHistoryTranscript:
         ]
 
         with patch("engine.prompt_builder.HISTORY_HIGH", 30), patch("engine.prompt_builder.HISTORY_LOW", 15):
-            result_31 = build_history_transcript("lilith", msgs_31)
-            result_32 = build_history_transcript("lilith", msgs_32)
-            result_47 = build_history_transcript("lilith", msgs_47)
+            result_31, _ = build_history_transcript("lilith", msgs_31)
+            result_32, _ = build_history_transcript("lilith", msgs_32)
+            result_47, _ = build_history_transcript("lilith", msgs_47)
 
         assert result_31.startswith("玩家: 消息16")
         assert result_32.startswith("玩家: 消息16")
@@ -127,31 +127,36 @@ class TestBuildHistoryTranscript:
         assert result_47.startswith("玩家: 消息32")
 
     def test_empty_history_returns_empty(self):
-        assert build_history_transcript("lilith", []) == ""
+        result, _ = build_history_transcript("lilith", [])
+        assert result == ""
 
     def test_all_filtered_returns_empty(self):
         msgs = [
             {"role": "player", "content": "消息", "visible_to": ["narrator", "mitsuki"]},
         ]
 
-        assert build_history_transcript("lilith", msgs) == ""
+        result, _ = build_history_transcript("lilith", msgs)
+        assert result == ""
 
 
 class TestHighLowWatermarkHelper:
     """纯逻辑：真正的高低水位缓冲"""
 
     def test_apply_high_low_watermark_batches_trimming(self):
-        start_raw_index, kept = _apply_high_low_watermark("lilith", list(range(31)), 0, 30, 15)
+        start_raw_index, kept, was_truncated = _apply_high_low_watermark("lilith", list(range(31)), 0, 30, 15)
         assert start_raw_index == 16
         assert kept == list(range(16, 31))
+        assert was_truncated is True
 
-        start_raw_index, kept = _apply_high_low_watermark("lilith", list(range(32)), start_raw_index, 30, 15)
+        start_raw_index, kept, was_truncated = _apply_high_low_watermark("lilith", list(range(32)), start_raw_index, 30, 15)
         assert start_raw_index == 16
         assert kept == list(range(16, 32))
+        assert was_truncated is False
 
-        start_raw_index, kept = _apply_high_low_watermark("lilith", list(range(47)), start_raw_index, 30, 15)
+        start_raw_index, kept, was_truncated = _apply_high_low_watermark("lilith", list(range(47)), start_raw_index, 30, 15)
         assert start_raw_index == 32
         assert kept == list(range(32, 47))
+        assert was_truncated is True
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +185,7 @@ class TestBuildUserMessage:
             "engine.prompt_builder.read_agent_file",
             side_effect=fake_read,
         ):
-            result = build_user_message(
+            result, _ = build_user_message(
                 "lilith",
                 "你好",
                 "<relevant_memories>\n记忆内容\n</relevant_memories>",
@@ -206,7 +211,7 @@ class TestBuildUserMessage:
             "engine.prompt_builder.read_agent_file",
             side_effect=fake_read,
         ):
-            result = build_user_message(
+            result, _ = build_user_message(
                 "lilith",
                 "你好",
                 "<relevant_memories>\n记忆内容\n</relevant_memories>",
@@ -226,7 +231,7 @@ class TestBuildUserMessage:
         ]
 
         with patch("engine.prompt_builder.read_agent_file", return_value="故事状态"):
-            result = build_user_message("narrator", "新输入", "", raw_messages=msgs)
+            result, _ = build_user_message("narrator", "新输入", "", raw_messages=msgs)
 
         assert "<growth>" not in result
         assert "<user_profile>" not in result
