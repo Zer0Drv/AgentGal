@@ -56,7 +56,7 @@ cp .env.example .env
 uv run chainlit run app.py
 ```
 
-默认可在浏览器打开 `http://localhost:8000`。
+默认可在浏览器打开 `http://localhost:8100`。
 
 ## 使用方式
 
@@ -265,3 +265,29 @@ uv run pytest
 ## TODO
 
 - [x] **玩家选项生成**：在角色回复完成后，生成 2-3 个可选行动引导玩家
+
+## FastAPI 前端（fastapi-frontend 分支）
+
+替代 Chainlit 的轻量前端，提供可视化存档管理面板。
+
+### 启动
+
+```bash
+uv run uvicorn server:app --reload
+```
+
+然后访问 http://localhost:8100
+
+### 新增端点
+
+| 端点 | 方法 | 说明 |
+|---|---|---|
+| `GET /` | — | 游戏主界面 |
+| `GET /api/init` | — | 检查存档状态 |
+| `GET /api/stories` | — | 列出故事模板 |
+| `POST /api/new_game` | — | 开始新游戏 |
+| `POST /api/chat` | SSE 流式 | 核心对话 |
+| `GET /api/saves` | — | 列出所有存档 |
+| `POST /api/save` | — | 创建存档 |
+| `POST /api/load` | — | 加载存档 |
+| `POST /api/reset` | — | 重置游戏 |
