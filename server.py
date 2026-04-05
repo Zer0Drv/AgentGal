@@ -22,7 +22,7 @@ from engine.save_manager import (
     reset_game,
 )
 from log_config.routing import routing_logger
-from shared.config import CHARACTERS_DIR, CONSOLIDATION_INTERVAL, get_agent_names
+from shared.config import CHARACTERS_DIR, get_agent_names
 from storage.history import load_conversation_history
 from storage.message_router import message_router
 
@@ -32,9 +32,6 @@ app = FastAPI(title="AgentGal")
 
 STATIC_DIR = Path(__file__).parent / "static"
 _LAST_CHOICES_FILE = CHARACTERS_DIR / "last_choices.json"
-
-# 单用户本地运行：全局会话状态
-_message_counter: int = 0
 
 
 # =============================================================================
@@ -138,12 +135,10 @@ class NewGameRequest(BaseModel):
 @app.post("/api/new_game")
 async def api_new_game(req: NewGameRequest) -> JSONResponse:
     """重置并开始新游戏，返回开场内容。"""
-    global _message_counter
     _clear_last_choices()
     intro_text, opening_text = await reset_game(req.story_id)
     for name in get_agent_names(include_narrator=True):
         reload_conversation_agent(name)
-    _message_counter = 0
 
     opening_choices_text = load_story_file(req.story_id, "opening_choices.txt")
     choices = [line.strip() for line in opening_choices_text.splitlines() if line.strip()]
@@ -164,9 +159,6 @@ class ChatRequest(BaseModel):
 
 async def _chat_stream(user_input: str):
     """核心游戏循环，通过 SSE 逐步推送结果。"""
-    global _message_counter
-    _message_counter += 1
-
     # 1. narrator 路由
     targets, scene_description, is_narrator_valid = await call_narrator_and_route(user_input)
 
@@ -202,12 +194,6 @@ async def _chat_stream(user_input: str):
         if choices:
             _save_last_choices(choices)
             yield _sse_event("choices", {"choices": choices})
-
-    # 6. 后台记忆整理
-    if _message_counter % CONSOLIDATION_INTERVAL == 0:
-        all_agents = get_agent_names(include_narrator=False)
-        routing_logger.info(f"触发记忆整理，目标角色: {all_agents}")
-        asyncio.create_task(memory_consolidation_flow.consolidate_all(all_agents))
 
     yield _sse_event("done", {})
 
@@ -259,12 +245,10 @@ class LoadRequest(BaseModel):
 @app.post("/api/load")
 async def api_load(req: LoadRequest) -> JSONResponse:
     """加载存档。"""
-    global _message_counter
     success = await import_save_archive(req.filename)
     if success:
         for name in get_agent_names(include_narrator=True):
             reload_conversation_agent(name)
-        _message_counter = 0
         raw = load_conversation_history(limit=5)
         recent = [
             {"role": m.get("role", ""), "content": m.get("content", "").strip()}
@@ -288,12 +272,10 @@ class ResetRequest(BaseModel):
 @app.post("/api/reset")
 async def api_reset(req: ResetRequest) -> JSONResponse:
     """重置游戏。"""
-    global _message_counter
     _clear_last_choices()
     intro_text, opening_text = await reset_game(req.story_id)
     for name in get_agent_names(include_narrator=True):
         reload_conversation_agent(name)
-    _message_counter = 0
 
     opening_choices_text = load_story_file(req.story_id, "opening_choices.txt")
     choices = [line.strip() for line in opening_choices_text.splitlines() if line.strip()]
