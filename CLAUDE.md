@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-多 Agent 角色扮演 / 叙事游戏项目。当前实现以 **Chainlit + OpenAI Agents SDK + Pydantic 结构化输出 + 文件记忆 + sqlite-vec** 为核心，使用 `uv` 作为项目管理器。
+多 Agent 角色扮演 / 叙事游戏项目。当前实现以 **FastAPI + OpenAI Agents SDK + Pydantic 结构化输出 + 文件记忆 + sqlite-vec** 为核心，使用 `uv` 作为项目管理器。
 
 ## 核心设计
 
@@ -13,7 +13,7 @@
 ## 技术栈
 
 - Python 3.11+
-- Chainlit
+- FastAPI + SSE（服务端推送）
 - OpenAI Agents SDK（`openai-agents>=0.13.2`）—— `Agent` / `Runner` / `ModelSettings` / `OpenAIChatCompletionsModel`
 - sqlite-vec + aiosqlite
 - asyncio
@@ -22,7 +22,7 @@
 
 ```text
 agentgal-memos/
-├── app.py                      # Chainlit 入口（UI 适配层）
+├── server.py                   # FastAPI 入口（UI 适配层）
 ├── config.toml                 # 非密钥运行参数
 ├── data/
 │   ├── characters/             # 运行时角色数据
@@ -243,12 +243,12 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ## 存档与重置
 
-由 `engine/save_manager.py` 负责：
+由 `engine/save_manager.py` 负责，通过 FastAPI 接口暴露：
 
-- `/save`：导出 zip 到 `saves/`
-- `/load list`：列出存档
-- `/load <序号>`：恢复存档并重建必要索引
-- `/reset`：从 `data/templates/{story_id}` 重置运行时数据
+- `POST /api/save`：导出 zip 到 `saves/`
+- `GET /api/saves`：列出存档
+- `POST /api/load`：恢复存档并重建必要索引
+- `POST /api/reset`：从 `data/templates/{story_id}` 重置运行时数据
 
 存档会包含：
 
