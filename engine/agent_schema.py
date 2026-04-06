@@ -17,10 +17,20 @@ class CharacterOutput(BaseModel):
     add_event: list[str] = Field(default_factory=list)
 
 
+class NarratorStatus(BaseModel):
+    """narrator status 的强类型字段，防止 LLM 将多个字段混写成单个 key 的值导致 JSON 非法。"""
+
+    场景: str = ""
+    角色位置: str = ""
+    当前时间: str = ""
+    叙事焦点: str = ""
+    关系现状: str = ""
+
+
 class NarratorOutput(BaseModel):
     targets: list[str]
     content: str
-    status: dict[str, str] = Field(default_factory=dict)
+    status: NarratorStatus = Field(default_factory=NarratorStatus)
     triggered: list[str] = Field(default_factory=list)
     add_event: list[str] = Field(default_factory=list)
 

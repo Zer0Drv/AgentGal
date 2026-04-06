@@ -5,7 +5,7 @@ import re
 
 from engine.agent_factory import get_choices_agent, get_conversation_agent
 from engine.agent_runner import run_structured_agent
-from engine.agent_schema import CharacterOutput, ChoicesOutput, NarratorOutput
+from engine.agent_schema import CharacterOutput, ChoicesOutput, NarratorOutput, NarratorStatus
 from engine.consolidation_flow import memory_consolidation_flow
 from engine.prompt_builder import build_history_transcript, build_search_query, build_user_message
 from storage.history import load_conversation_history
@@ -45,7 +45,13 @@ async def _apply_response_updates(
     if isinstance(output, CharacterOutput) and output.memory:
         _safe_update("memory", lambda: update_memory(agent_name, output.memory))
 
-    for field, content in output.status.items():
+    # NarratorStatus 是强类型子模型，需先转 dict；CharacterOutput.status 已是 dict
+    status_dict = (
+        output.status.model_dump() if isinstance(output.status, NarratorStatus) else output.status
+    )
+    for field, content in status_dict.items():
+        if not content:  # 跳过 NarratorStatus 中未填写的默认空字段
+            continue
         _safe_update(
             f"status[{field}]",
             lambda field_name=field, field_content=content: update_status(
@@ -183,7 +189,7 @@ async def generate_choices(
             agent=get_choices_agent(),
             user_input="\n\n".join(parts),
             output_type=ChoicesOutput,
-            timeout_seconds=30,
+            timeout_seconds=5,
             workflow_name="agentgal_choices",
             trace_metadata=None,
             usage_agent="choices",
