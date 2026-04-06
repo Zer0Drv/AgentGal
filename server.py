@@ -1,10 +1,14 @@
-"""FastAPI 入口 - 替代 Chainlit app.py"""
+"""FastAPI 入口"""
+
+# load_dotenv 必须在所有内部模块 import 之前执行，
+# 否则 llm/embedding.py 等模块级常量会在 .env 加载前就固化为空值
+from dotenv import load_dotenv
+load_dotenv()
 
 import asyncio
 import json
 from pathlib import Path
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
