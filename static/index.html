@@ -265,7 +265,7 @@ body::after {
 }
 .narrator-body {
   color: var(--text-dim);
-  font-style: italic;
+  font-style: normal;
   font-size: 14.5px;
   font-weight: 300;
   line-height: 2;
@@ -575,6 +575,11 @@ body::after {
 </div>
 
 <script>
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
+
 // ── State ──────────────────────────────────────────────────────────────────
 let busy = false;
 const agentColorMap = new Map();
@@ -615,6 +620,48 @@ function getAgentStyle(author) {
   return agentColorMap.get(author);
 }
 
+function formatNarratorContent(content) {
+  const lines = content.split('\n').map(line => {
+    if (!/^\s*(?:\*\*时间\*\*：|\*\*时间：\*\*|时间：)/.test(line)) return line;
+    return line.replace(
+      /([^\s])[\t \u00a0]*(\*\*(?:地点|在场)\*\*：|\*\*(?:地点|在场)：\*\*|(?:地点|在场)：)/g,
+      '$1\u00a0\u00a0$2'
+    );
+  });
+
+  let inPresenceList = false;
+  let sawPresenceItem = false;
+  const isPresenceHeading = line => /(?:^|\s)(?:\*\*在场\*\*：|\*\*在场：\*\*|在场：)\s*$/.test(line);
+  const isListItem = line => /^\s*[-*+•]\s+/.test(line);
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (isPresenceHeading(line)) {
+      inPresenceList = true;
+      sawPresenceItem = false;
+      continue;
+    }
+    if (!inPresenceList) continue;
+    if (!line.trim()) {
+      inPresenceList = false;
+      sawPresenceItem = false;
+      continue;
+    }
+    if (isListItem(line)) {
+      sawPresenceItem = true;
+      continue;
+    }
+    if (sawPresenceItem) {
+      lines.splice(i, 0, '');
+      inPresenceList = false;
+      sawPresenceItem = false;
+      i += 1;
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function addMessage(cls, author, content) {
   let el;
   if (cls === 'narrator') {
@@ -622,7 +669,7 @@ function addMessage(cls, author, content) {
     el.className = 'msg-narrator';
     el.innerHTML = `
       <div class="narrator-ornament">✿  ✿  ✿</div>
-      <div class="narrator-body msg-body">${marked.parse(content)}</div>`;
+      <div class="narrator-body msg-body">${marked.parse(formatNarratorContent(content))}</div>`;
   } else if (cls === 'player') {
     el = document.createElement('div');
     el.className = 'msg-player';
