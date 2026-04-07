@@ -13,8 +13,8 @@
 ## 当前技术栈
 
 - Python 3.11+
-- FastAPI + uvicorn（SSE 流式对话）
-- OpenAI Agents SDK（结构化输出）
+- FastAPI + SSE（服务端推送）
+- OpenAI Agents SDK（`output_type=PydanticModel` 结构化输出）
 - sqlite-vec + aiosqlite
 - asyncio
 - `uv` 包管理
@@ -105,23 +105,25 @@ uv run uvicorn server:app --reload
 
 ### 4. 记忆整理
 
-`memory/consolidator.py` 会定期整理角色记忆：
+`engine/consolidation_flow.py` 负责角色后台记忆整理：
 
-- 通过 `memory/consolidation_inputs.py` 组装 step1 输入，并把 raw 对话对齐到当前角色视角
-- `memory.md`
-- `growth.md`（仅角色）
-- `user.md`（仅角色）
+- 通过 `engine/prompt_builder.py` 组装整理输入，并把 raw 对话对齐到当前角色视角
+- 归并 `memory.md`
+- 提炼、更新并去重压缩 `growth.md`（仅角色）
+- 顺带精炼 `user.md`（仅角色）
+- 按进度同步向量索引
 
-`narrator` 不维护 `memory.md`，也不参与整理。整理频率由 `config.toml` 中的 `[memory].consolidation_interval` 控制。
+`narrator` 不维护 `memory.md`，也不参与整理。整理在角色对话历史窗口触发高水位截断时自动启动（事件驱动，无固定计数器）。
 
 ### 5. 长期记忆检索
 
 - 只有角色会做向量召回，`narrator` 依赖 `status.md` 中的场景状态和待触发事件推进剧情
 - 向量库只索引 `memory.md` 中的长期记忆事件，不再混入其他来源
-- `memory/retrieval.py` 会先按规则生成 `vector_query` 与 `bm25_query`，再分别送入向量检索与 BM25 检索
-- 检索默认走 hybrid search：向量相关性 + BM25 关键字相关性，再叠加游戏内时间 recency 排序
+- `memory/retrieval.py` 负责完整检索 pipeline：embedding → 向量/BM25 候选 → hybrid 融合 → 可选 rerank → recency 排序 → recall 状态更新
+- `storage/vector_store.py` 只做存储层：提供向量与 BM25 原始候选，pipeline 逻辑不放在 storage 层
+- 检索默认走 hybrid search：向量相关性 + BM25 关键字相关性，可选 rerank 替换 relevance 信号，最后叠加游戏内时间 recency
 - `logs/memory/memory.log` 会记录每轮的 query 与 top 命中摘要，便于调试召回效果
-- 每个角色会维护 `.memory_recall_state.json`，记录记忆最近一次被想起的游戏日期，供重建和存档恢复
+- `last_recalled_at` 会在命中后更新到 DB；`.memory_recall_state.json` 仅在存档时从 DB 导出，读档重建时作为降级数据源
 
 ## 关键目录说明
 
@@ -132,12 +134,14 @@ uv run uvicorn server:app --reload
 │   ├── characters/
 │   └── templates/
 ├── engine/
-├── game/
 ├── llm/
 ├── log_config/
 ├── memory/
 ├── prompts/
 ├── scripts/
+├── shared/
+├── static/
+├── storage/
 └── tests/
 ```
 
@@ -155,11 +159,11 @@ uv run uvicorn server:app --reload
 - `memory.md`：角色长期记忆（仅角色有）
 - `status.md`：当前状态 / 打算 / 待触发事件
 - `user.md`：角色对玩家的认知（仅角色有）
-- `tmp_user.md`：`user.md` 的工作草稿；由 `<player>` 增量写入，整理后删除
+- `tmp_user.md`：`user.md` 的工作草稿；由 typed `player` 字段增量写入，整理后删除
 - `growth.md`：整理器维护的人格沉淀（仅角色有）
 - `.history_window_state.json`：对话历史高低水位窗口 sidecar
 - `.consolidation_state.json`：角色整理进度 sidecar
-- `.memory_recall_state.json`：角色记忆召回状态 sidecar
+- `.memory_recall_state.json`：角色记忆 recall 快照（仅存档时从 DB 生成，运行期不维护）
 
 ## 配置速览
 
@@ -196,7 +200,6 @@ uv run uvicorn server:app --reload
 
 | 键 | 说明 |
 |---|---|
-| `[memory].consolidation_interval` | 记忆整理触发频率 |
 | `[consolidation].temperature` | 整理模型温度 |
 | `[consolidation].max_tokens` | 整理输出上限 |
 | `[consolidation].growth_dedup_threshold` | `growth.md` 去重阈值 |
@@ -211,7 +214,7 @@ uv run uvicorn server:app --reload
 | `[agent].temperature` | 角色与 narrator 对话温度 |
 | `[text].max_actions` / `[text].max_ellipsis` | 回复后处理约束 |
 
-> 对话历史使用高低水位截断，由 `config.toml` 中的 `[history].history_high` / `[history].history_low` 控制；超过 high 时会批量截到 low，并通过 `.history_window_state.json` 维持窗口。
+> 对话历史使用高低水位截断，由 `config.toml` 中的 `[history].history_high` / `[history].history_low` 控制；超过 high 时会批量截到 low，通过 `.history_window_state.json` 维持窗口，并触发对应角色的后台记忆整理。
 
 ## 存档机制
 

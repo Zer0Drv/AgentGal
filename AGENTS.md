@@ -1,6 +1,4 @@
-# AGENTS.md
-
-多 Agent 角色扮演 / 叙事游戏项目。当前实现以 **FastAPI + 原生 HTML/JS + OpenAI Agents SDK + 文件记忆 + sqlite-vec** 为核心，使用 `uv` 作为项目管理器。
+多 Agent 角色扮演 / 叙事游戏项目。当前实现以 **FastAPI + OpenAI Agents SDK + Pydantic 结构化输出 + 文件记忆 + sqlite-vec** 为核心，使用 `uv` 作为项目管理器。
 
 ## 核心设计
 
@@ -13,7 +11,7 @@
 ## 技术栈
 
 - Python 3.11+
-- FastAPI + uvicorn（SSE 流式对话）
+- FastAPI + SSE（服务端推送）
 - OpenAI Agents SDK（`openai-agents>=0.13.2`）—— `Agent` / `Runner` / `ModelSettings` / `OpenAIChatCompletionsModel`
 - sqlite-vec + aiosqlite
 - asyncio
@@ -22,43 +20,56 @@
 
 ```text
 agentgal-memos/
-├── server.py                   # FastAPI 入口（SSE 流式对话 + 存档 API）
+├── server.py                   # FastAPI 入口（UI 适配层）
 ├── config.toml                 # 非密钥运行参数
 ├── data/
 │   ├── characters/             # 运行时角色数据
 │   ├── templates/              # 故事模板（school / modern）
 │   └── vectors.sqlite          # 向量库
 ├── engine/                     # 应用层编排
-│   ├── agent_manager.py        # Agent 注册表、SDK Runner 调用、typed 输出写回
-│   ├── history.py              # 对话历史窗口截断（watermark）
-│   ├── message_router.py       # 对话写入 / 可见性过滤
+│   ├── agent_factory.py        # Agent 创建、注册表与 SDK model 配置
+│   ├── agent_runner.py         # SDK Runner 调用、用量日志与 typed parse
+│   ├── agent_schema.py         # Pydantic 结构化输出类型
+│   ├── conversation_flow.py    # 单轮对话编排、路由、typed 输出写回
+│   ├── consolidation_flow.py   # 记忆整理编排
+│   ├── prompt_builder.py       # prompt / 历史窗口 / 整理输入构造
 │   └── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 ├── llm/
-│   ├── providers.py            # Provider 配置与 URL 解析
-│   ├── embedding.py            # Embeddings 客户端
+│   ├── providers.py            # Provider 配置与 URL 解析（返回 api_url/api_key/model/temperature）
+│   ├── embedding.py            # Embeddings 客户端（embed_async / embed_sync）
 │   └── rerank.py               # Rerank API 客户端
 ├── log_config/                 # 路由、记忆、调用日志
-├── memory/
-│   ├── consolidator.py         # 记忆整理器
-│   ├── consolidation_inputs.py # 整理 step1 输入构造与 raw 对话视角对齐
-│   ├── indexer.py              # 向量索引重建入口
-│   ├── parser.py               # memory.md 格式解析、事件切分
-│   └── retrieval.py            # 完整检索 pipeline（融合、rerank、recency）
+├── memory/                     # 记忆规则与流程
+│   ├── indexer.py              # 向量索引重建入口（从 memory.md 解析后写入 storage）
+│   ├── parser.py               # memory.md 格式解析、事件切分、日期工具、记忆块操作
+│   └── retrieval.py            # 完整检索 pipeline（融合、rerank、recency、召回状态更新）
 ├── shared/                     # 纯配置与无副作用工具函数
-│   ├── config.py               # 路径、运行参数、character_path
-│   └── text_utils.py           # 文本清理
-├── storage/                    # 持久化基础设施
-│   ├── agent_files.py          # 角色目录文件操作
+│   ├── config.py               # 路径、运行参数、character_path、get_agent_names
+│   └── text_utils.py           # 文本清理、get_display_name
+├── storage/                    # 持久化基础设施（文件 / JSONL / sqlite-vec）
+│   ├── agent_files.py          # 角色目录文件操作（read/write soul/memory/status/user/growth/sidecar）
 │   ├── history.py              # narrator raw JSONL 对话历史读取
-│   └── vector_store.py         # sqlite-vec 向量存储
-├── static/
-│   └── index.html              # 原生 HTML/JS 前端
+│   ├── message_router.py       # 对话写入 / 可见性过滤
+│   └── vector_store.py         # sqlite-vec 向量存储（write/delete + 原始候选检索）
 ├── prompts/                    # narrator / character / consolidation prompts
 ├── scripts/                    # 维护脚本
+├── static/                     # 原生 HTML/JS 前端
 ├── tests/                      # pytest 测试
 ├── README.md
+├── AGENTS.md
 ├── CLAUDE.md
 └── .env
+```
+
+### 分层依赖方向
+
+```
+shared/          ← 无内部依赖
+storage/         ← shared/
+llm/             ← shared/
+memory/          ← shared/ + storage/ + llm/
+engine/          ← shared/ + storage/ + memory/ + llm/
+server.py        ← shared/ + storage/ + engine/
 ```
 
 ## 运行时文件职责
@@ -83,14 +94,14 @@ agentgal-memos/
 - `data/characters/last_choices.json`：最新一组玩家选项，续档时恢复展示，重置时清除
 - `data/characters/*/.history_window_state.json`：各 Agent 的对话历史高低水位窗口 sidecar
 - `data/characters/*/.consolidation_state.json`：角色记忆整理进度 sidecar
-- `data/characters/*/.memory_recall_state.json`：角色长期记忆 recall sidecar
+- `data/characters/*/.memory_recall_state.json`：角色长期记忆 recall 快照（仅存档时从 DB 生成，运行期不维护）
 
 ## 消息路由
 
 由 `narrator` 负责决定谁参与当前回合。
 
 ```text
-用户输入 → narrator → targets: ["角色名", ...]（NarratorOutput.targets）
+用户输入 → narrator → targets: [“角色名”, ...]（NarratorOutput.targets）
 ```
 
 ### narrator 的职责
@@ -126,7 +137,7 @@ agentgal-memos/
 - `NarratorOutput`：`content`, `targets`, `status`, `triggered`, `add_event`
 - `ChoicesOutput`：`choices`
 
-`engine/agent_manager.py` 的 `_apply_response_updates()` 读取 typed 字段写回文件。
+`engine/conversation_flow.py` 的 `_apply_response_updates()` 读取 typed 字段写回文件。
 
 ### 写回规则
 
@@ -140,7 +151,7 @@ agentgal-memos/
 
 - `narrator` 操作区块：`待触发事件`
 - 其他角色操作区块：`打算`
-- `打算` / `待触发事件` 不能通过 `status` 整段覆盖，只能通过 `triggered` / `add_event` 逐条维护
+- `打算` / `待触发事件` 不能通过 `<status>` 整段覆盖，只能通过 `<triggered>` / `<add_event>` 逐条维护
 
 ## Prompt 组成
 
@@ -157,13 +168,13 @@ agentgal-memos/
 2. `prompts/character_prompt.txt`
 3. 允许写回的字段白名单
 
-`user` 消息按以下顺序拼装：
+`user` 消息按以下顺序拼装为**单条大消息**：
 
 1. `growth.md`
-2. 最近可见对话历史（按 `visible_to` 过滤，并使用 `[history].history_high` / `history_low` 做高低水位截断）
+2. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断）
 3. `user.md`（`tmp_user.md` 仅作为工作草稿参与整理，不直接注入 prompt）
 4. `status.md`
-5. `<relevant_memories>`（仅角色；来自 `memory.md` 的长期记忆召回）
+5. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
 6. 本轮玩家输入
 
 ### narrator Agent
@@ -173,7 +184,7 @@ agentgal-memos/
 1. `soul.md`
 2. `prompts/narrator_prompt.txt`
 
-`user` 消息包含：
+`user` 消息按以下顺序拼装为**单条大消息**：
 
 1. 最近对话历史
 2. `status.md`
@@ -196,17 +207,19 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 - 向量库只索引 `memory.md` 中的长期记忆事件，owner scope 固定为当前角色
 - 默认检索路径是 memory-only；非 memory 检索已停用
-- `memory/retrieval.py` 负责把玩家原话、场景摘要和最近历史改写成 `vector_query` / `bm25_query`
-- 召回排序为：向量相关性与 BM25 相关性先融合，再叠加游戏内时间 recency
+- `memory/retrieval.py` 负责完整检索 pipeline：embedding → 向量/BM25 候选 → hybrid 融合 → (可选) rerank → recency 排序 → recall 状态更新
+- `storage/vector_store.py` 只做存储层：提供 `get_vector_candidates` / `get_bm25_candidates` 原始候选，pipeline 逻辑不在此处
+- `memory/indexer.py` 负责从 `memory.md` 重建向量索引（解析、过滤、元数据提取在此层，storage 只做 I/O）
+- 召回排序为：向量相关性与 BM25 相关性先融合，rerank（可选）替换 relevance 信号，最后叠加游戏内时间 recency
 - `logs/memory/memory.log` 会记录每轮检索 query 和 top 命中摘要，便于排查召回质量
-- `last_recalled_at` 会在命中后更新，并同步写回 `.memory_recall_state.json`
-- `rebuild()` 会结合 `.consolidation_state.json` 和 `.memory_recall_state.json` 恢复长期记忆索引与 recall 状态
+- `last_recalled_at` 会在命中后更新到 DB；`.memory_recall_state.json` 仅在存档时从 DB 导出，读档重建时作为降级数据源
+- `memory/indexer.rebuild_memory_index()` 会结合 `.consolidation_state.json` 恢复长期记忆索引；recall 状态优先从 DB 读取，DB 为空时降级读 `.memory_recall_state.json`
 
 ## 记忆整理
 
-`memory/consolidator.py` 负责角色后台整理：
+`engine/consolidation_flow.py` 负责角色后台整理：
 
-- 组装整理流程，并调用 `memory/consolidation_inputs.py` 准备 step1 输入
+- 组装整理流程，并调用 `engine/prompt_builder.py` 准备整理输入
 - 归并 `memory.md`
 - 提炼 / 更新 `growth.md`（仅角色）
 - 去重压缩 `growth.md`（仅角色）
@@ -215,7 +228,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 `narrator` 不维护 `memory.md`，也不参与整理。
 
-默认按 `config.toml` 中的 `[memory].consolidation_interval` 控制触发频率。
+整理在对话历史窗口触发高水位截断时自动触发（事件驱动，无固定计数器）。
 
 ## 配置来源
 
@@ -227,17 +240,17 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ### `config.toml`
 
-- 放运行时策略参数，例如 Agent temperature、超时、整理频率、向量检索权重
+- 放运行时策略参数，例如 Agent temperature、超时、向量检索权重
 - `[history]` 中的 `history_high` / `history_low` 控制多轮消息高低水位截断
 
 ## 存档与重置
 
-由 `game/save_manager.py` 负责：
+由 `engine/save_manager.py` 负责，通过 FastAPI 接口暴露：
 
-- `/save`：导出 zip 到 `saves/`
-- `/load list`：列出存档
-- `/load <序号>`：恢复存档并重建必要索引
-- `/reset`：从 `data/templates/{story_id}` 重置运行时数据
+- `POST /api/save`：导出 zip 到 `saves/`
+- `GET /api/saves`：列出存档
+- `POST /api/load`：恢复存档并重建必要索引
+- `POST /api/reset`：从 `data/templates/{story_id}` 重置运行时数据
 
 存档会包含：
 

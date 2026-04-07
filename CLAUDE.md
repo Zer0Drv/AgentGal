@@ -1,5 +1,3 @@
-# CLAUDE.md
-
 多 Agent 角色扮演 / 叙事游戏项目。当前实现以 **FastAPI + OpenAI Agents SDK + Pydantic 结构化输出 + 文件记忆 + sqlite-vec** 为核心，使用 `uv` 作为项目管理器。
 
 ## 核心设计
@@ -29,9 +27,12 @@ agentgal-memos/
 │   ├── templates/              # 故事模板（school / modern）
 │   └── vectors.sqlite          # 向量库
 ├── engine/                     # 应用层编排
-│   ├── agent_manager.py        # Agent 注册表、SDK Runner 调用、typed 输出写回
-│   ├── history.py              # 对话历史窗口截断（watermark）；re-export load_conversation_history
-│   ├── message_router.py       # 对话写入 / 可见性过滤
+│   ├── agent_factory.py        # Agent 创建、注册表与 SDK model 配置
+│   ├── agent_runner.py         # SDK Runner 调用、用量日志与 typed parse
+│   ├── agent_schema.py         # Pydantic 结构化输出类型
+│   ├── conversation_flow.py    # 单轮对话编排、路由、typed 输出写回
+│   ├── consolidation_flow.py   # 记忆整理编排
+│   ├── prompt_builder.py       # prompt / 历史窗口 / 整理输入构造
 │   └── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 ├── llm/
 │   ├── providers.py            # Provider 配置与 URL 解析（返回 api_url/api_key/model/temperature）
@@ -39,8 +40,6 @@ agentgal-memos/
 │   └── rerank.py               # Rerank API 客户端
 ├── log_config/                 # 路由、记忆、调用日志
 ├── memory/                     # 记忆规则与流程
-│   ├── consolidation_inputs.py # 整理 step1 输入构造与 raw 对话视角对齐
-│   ├── consolidator.py         # 记忆整理器（归并、提炼 growth、精炼 user.md）
 │   ├── indexer.py              # 向量索引重建入口（从 memory.md 解析后写入 storage）
 │   ├── parser.py               # memory.md 格式解析、事件切分、日期工具、记忆块操作
 │   └── retrieval.py            # 完整检索 pipeline（融合、rerank、recency、召回状态更新）
@@ -50,11 +49,14 @@ agentgal-memos/
 ├── storage/                    # 持久化基础设施（文件 / JSONL / sqlite-vec）
 │   ├── agent_files.py          # 角色目录文件操作（read/write soul/memory/status/user/growth/sidecar）
 │   ├── history.py              # narrator raw JSONL 对话历史读取
+│   ├── message_router.py       # 对话写入 / 可见性过滤
 │   └── vector_store.py         # sqlite-vec 向量存储（write/delete + 原始候选检索）
 ├── prompts/                    # narrator / character / consolidation prompts
 ├── scripts/                    # 维护脚本
+├── static/                     # 原生 HTML/JS 前端
 ├── tests/                      # pytest 测试
 ├── README.md
+├── AGENTS.md
 ├── CLAUDE.md
 └── .env
 ```
@@ -67,7 +69,7 @@ storage/         ← shared/
 llm/             ← shared/
 memory/          ← shared/ + storage/ + llm/
 engine/          ← shared/ + storage/ + memory/ + llm/
-app.py           ← shared/ + engine/ + memory/
+server.py        ← shared/ + storage/ + engine/
 ```
 
 ## 运行时文件职责
@@ -135,7 +137,7 @@ app.py           ← shared/ + engine/ + memory/
 - `NarratorOutput`：`content`, `targets`, `status`, `triggered`, `add_event`
 - `ChoicesOutput`：`choices`
 
-`engine/agent_manager.py` 的 `_apply_response_updates()` 读取 typed 字段写回文件。
+`engine/conversation_flow.py` 的 `_apply_response_updates()` 读取 typed 字段写回文件。
 
 ### 写回规则
 
@@ -215,9 +217,9 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ## 记忆整理
 
-`memory/consolidator.py` 负责角色后台整理：
+`engine/consolidation_flow.py` 负责角色后台整理：
 
-- 组装整理流程，并调用 `memory/consolidation_inputs.py` 准备 step1 输入
+- 组装整理流程，并调用 `engine/prompt_builder.py` 准备整理输入
 - 归并 `memory.md`
 - 提炼 / 更新 `growth.md`（仅角色）
 - 去重压缩 `growth.md`（仅角色）
@@ -238,7 +240,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ### `config.toml`
 
-- 放运行时策略参数，例如 Agent temperature、超时、整理频率、向量检索权重
+- 放运行时策略参数，例如 Agent temperature、超时、向量检索权重
 - `[history]` 中的 `history_high` / `history_low` 控制多轮消息高低水位截断
 
 ## 存档与重置
