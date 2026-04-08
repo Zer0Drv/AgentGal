@@ -20,8 +20,6 @@ try:
     from engine.agent_schema import (
         MemoryMergeEvent,
         MemoryMergeOutput,
-        PlayerProfileOutput,
-        PlayerProfileSection,
     )
     from memory.parser import parse_llm_memory_sections, split_into_events, is_structured_memory_block
 except ModuleNotFoundError as exc:
@@ -264,33 +262,40 @@ async def test_consolidate_player_profile_uses_single_draft_profile(tmp_path, mo
     monkeypatch.setattr(agent_files_module, "character_path", path_helper)
     monkeypatch.setattr(consolidator_module, "backup_file", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(consolidator_module, "get_player_profile_agent", lambda: object())
+    monkeypatch.setattr(
+        consolidator_module,
+        "get_consolidation_llm_config",
+        lambda temperature=None: {"model": "test-model"},
+    )
 
     captured: dict[str, object] = {}
 
-    async def fake_run_consolidation_agent(
-        self_inner,
+    async def fake_run_text_agent(
         *,
         agent,
-        output_type,
-        agent_name,
-        function_name,
-        user,
+        user_input,
+        **kwargs,
     ):
-        captured["user"] = user
-        assert function_name == "player_profile"
-        return PlayerProfileOutput(
-            sections=[
-                PlayerProfileSection(title="基本信息", bullets=["姓名：李小明"]),
-                PlayerProfileSection(title="对方是什么人", bullets=["稳定判断"]),
-                PlayerProfileSection(title="我们怎么相处", bullets=["稳定互动"]),
+        captured["agent"] = agent
+        captured["user"] = user_input
+        assert kwargs["usage_phase"] == "consolidation.player_profile"
+        return "\n".join(
+            [
+                "# 角色眼中的玩家",
+                "",
+                "## 基本信息",
+                "- 姓名：李小明",
+                "",
+                "## 对方是什么人",
+                "- 稳定判断",
+                "",
+                "## 我们怎么相处",
+                "- 稳定互动",
+                "",
             ]
         )
 
-    monkeypatch.setattr(
-        consolidator_module.MemoryConsolidationFlow,
-        "_run_consolidation_agent",
-        fake_run_consolidation_agent,
-    )
+    monkeypatch.setattr(consolidator_module, "run_text_agent", fake_run_text_agent)
 
     agent_dir = tmp_path / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
@@ -338,10 +343,11 @@ async def test_consolidate_player_profile_uses_single_draft_profile(tmp_path, mo
     assert "<staged_updates>" not in draft_input
     assert "- 原有判断" in draft_input
     assert "- 新增判断" in draft_input
+    assert (agent_dir / "user.md").read_text(encoding="utf-8").strip().endswith("- 稳定互动")
     assert not (agent_dir / "tmp_user.md").exists()
 
 
-def test_render_player_profile_output_preserves_custom_sections():
+def test_enforce_user_section_limits_preserves_custom_sections():
     existing_content = "\n".join(
         [
             "# 角色眼中的玩家",
@@ -358,16 +364,7 @@ def test_render_player_profile_output_preserves_custom_sections():
         ]
     )
 
-    rendered = consolidator_module._render_player_profile_output(
-        PlayerProfileOutput(
-            sections=[
-                PlayerProfileSection(title="基本信息", bullets=["姓名：李小明"]),
-                PlayerProfileSection(title="我们怎么相处", bullets=["会先观察我的情绪", "会主动递台阶"]),
-            ]
-        ),
-        "chenxiao",
-        existing_content=existing_content,
-    )
+    rendered = consolidator_module._enforce_user_section_limits(existing_content)
 
     assert "## 特殊雷区" in rendered
     assert "- 讨厌被突然碰手腕" in rendered
