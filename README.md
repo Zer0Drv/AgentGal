@@ -1,6 +1,6 @@
 # AgentGal
 
-多 Agent 角色扮演 / 叙事游戏系统。项目围绕 **旁白路由 + 角色独立记忆 + 结构化写回 + 向量检索** 构建，以 **FastAPI + 原生 HTML/JS** 作为交互入口，支持 SSE 流式对话与可视化存档管理。
+多 Agent 角色扮演 / 叙事游戏系统。项目围绕 **旁白路由 + 角色独立记忆 + 结构化写回 + 向量检索** 构建，以 **FastAPI + Alpine.js 静态前端** 作为交互入口，支持 SSE 流式对话与可视化存档管理。
 
 ## 项目特点
 
@@ -14,6 +14,7 @@
 
 - Python 3.11+
 - FastAPI + SSE（服务端推送）
+- Alpine.js + marked（CDN 前端依赖）
 - OpenAI Agents SDK（`output_type=PydanticModel` 结构化输出）
 - sqlite-vec + aiosqlite
 - asyncio

@@ -53,7 +53,7 @@ agentgal-memos/
 │   └── vector_store.py         # sqlite-vec 向量存储（write/delete + 原始候选检索）
 ├── prompts/                    # narrator / character / consolidation prompts
 ├── scripts/                    # 维护脚本
-├── static/                     # 原生 HTML/JS 前端
+├── static/                     # Alpine.js + HTML/JS 前端
 ├── tests/                      # pytest 测试
 ├── README.md
 ├── AGENTS.md
