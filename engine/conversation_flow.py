@@ -3,9 +3,19 @@
 import asyncio
 import re
 
-from engine.agent_factory import get_choices_agent, get_conversation_agent
+from engine.agent_factory import (
+    get_choices_agent,
+    get_conversation_agent,
+    get_state_updater_agent,
+)
 from engine.agent_runner import run_structured_agent
-from engine.agent_schema import CharacterOutput, ChoicesOutput, NarratorOutput, NarratorStatus
+from engine.agent_schema import (
+    CharacterOutput,
+    ChoicesOutput,
+    NarratorOutput,
+    NarratorStatus,
+    StateUpdaterOutput,
+)
 from engine.consolidation_flow import memory_consolidation_flow
 from engine.prompt_builder import build_history_transcript, build_search_query, build_user_message
 from storage.history import load_conversation_history
@@ -31,7 +41,7 @@ from storage.agent_files import (
 
 async def _apply_response_updates(
     agent_name: str,
-    output: CharacterOutput | NarratorOutput,
+    output: CharacterOutput | StateUpdaterOutput,
 ) -> None:
     """将 typed output 的更新指令写回对应文件。"""
     results: list[str] = []
@@ -165,8 +175,65 @@ async def _run_conversation_agent(
         usage_phase="agent_run",
         model_name=config["model"],
     )
-    await _apply_response_updates(agent_name, output)
+    if isinstance(output, CharacterOutput):
+        await _apply_response_updates(agent_name, output)
     return output
+
+
+def _build_state_updater_input(
+    user_input: str,
+    scene_description: str,
+    targets: list[str],
+    agent_responses: list[tuple[str, str]],
+) -> str:
+    status_content = read_agent_file("narrator", "status.md")
+    targets_text = ", ".join(targets) if targets else "无"
+    response_blocks = [
+        f"【{agent_name}】\n{response}" for agent_name, response in agent_responses if response
+    ]
+    responses_text = "\n\n".join(response_blocks) if response_blocks else "无"
+
+    parts = [
+        f"<current_narrator_status>\n{status_content}\n</current_narrator_status>",
+        f"<player_input>\n{user_input}\n</player_input>",
+        f"<narrator_targets>\n{targets_text}\n</narrator_targets>",
+        f"<narrator_content>\n{scene_description or '无'}\n</narrator_content>",
+        f"<agent_responses>\n{responses_text}\n</agent_responses>",
+    ]
+    return "\n\n---\n\n".join(parts)
+
+
+async def run_state_updater(
+    user_input: str,
+    scene_description: str,
+    targets: list[str],
+    agent_responses: list[tuple[str, str]],
+) -> None:
+    """回合结束后维护 narrator 的状态和待触发事件。"""
+    user_message = _build_state_updater_input(
+        user_input,
+        scene_description,
+        targets,
+        agent_responses,
+    )
+    config = get_narrator_llm_config()
+    try:
+        output = await run_structured_agent(
+            agent=get_state_updater_agent(),
+            user_input=user_message,
+            output_type=StateUpdaterOutput,
+            timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
+            workflow_name="agentgal_state_update",
+            trace_metadata={"agent_name": "state_updater"},
+            usage_agent="state_updater",
+            usage_phase="agent_run",
+            model_name=config["model"],
+        )
+    except Exception as e:
+        routing_logger.error(f"[state_updater] 运行失败: {e}")
+        return
+
+    await _apply_response_updates("narrator", output)
 
 
 async def generate_choices(

@@ -127,6 +127,8 @@ server.py        ← shared/ + storage/ + engine/
 调用选项生成（使用 narrator 模型），展示 2-3 个可选行动
   ↓
 持久化最新选项到 last_choices.json（供续档恢复）
+  ↓
+后台调用 state_updater，更新 narrator/status.md（场景、时间、待触发事件）
 ```
 
 ## Agent 输出与写回机制
@@ -134,7 +136,8 @@ server.py        ← shared/ + storage/ + engine/
 所有 Agent 使用 OpenAI Agents SDK 的 `output_type=PydanticModel` 结构化输出，不再使用 XML `<update_notes>`：
 
 - `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`
-- `NarratorOutput`：`content`, `targets`, `status`, `triggered`, `add_event`
+- `NarratorOutput`：`content`, `targets`（仅路由与场景描述）
+- `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`
 
 `engine/conversation_flow.py` 的 `_apply_response_updates()` 读取 typed 字段写回文件。

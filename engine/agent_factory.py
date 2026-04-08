@@ -11,6 +11,7 @@ from engine.agent_schema import (
     MemoryMergeOutput,
     MemoryMetadataOutput,
     NarratorOutput,
+    StateUpdaterOutput,
 )
 from engine.prompt_builder import build_system_prompt
 from llm.providers import (
@@ -28,9 +29,11 @@ _GROWTH_EXTRACT_PROMPT_PATH = PROJECT_ROOT / "prompts" / "growth_extract.txt"
 _GROWTH_DEDUP_PROMPT_PATH = PROJECT_ROOT / "prompts" / "growth_dedupe.txt"
 _PLAYER_PROFILE_PROMPT_PATH = PROJECT_ROOT / "prompts" / "player_profile_consolidation_prompt.txt"
 _CHOICES_PROMPT_PATH = PROJECT_ROOT / "prompts" / "choices_prompt.txt"
+_STATE_UPDATER_PROMPT_PATH = PROJECT_ROOT / "prompts" / "state_updater_prompt.txt"
 
 _conversation_agents: dict[str, Agent] = {}
 _choices_agent: Agent | None = None
+_state_updater_agent: Agent | None = None
 _consolidation_agents: dict[str, Agent] = {}
 
 
@@ -106,6 +109,21 @@ def get_choices_agent() -> Agent:
             output_type=ChoicesOutput,
         )
     return _choices_agent
+
+
+def get_state_updater_agent() -> Agent:
+    global _state_updater_agent
+
+    if _state_updater_agent is None:
+        config = get_narrator_llm_config()
+        instructions = _STATE_UPDATER_PROMPT_PATH.read_text(encoding="utf-8")
+        _state_updater_agent = _build_agent(
+            name="state_updater",
+            instructions=instructions,
+            config=config,
+            output_type=StateUpdaterOutput,
+        )
+    return _state_updater_agent
 
 
 def _ensure_consolidation_agents() -> None:

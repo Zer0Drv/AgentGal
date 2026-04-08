@@ -16,7 +16,12 @@ from pydantic import BaseModel
 
 from engine.agent_factory import initialize_conversation_agents, reload_conversation_agent
 from engine.consolidation_flow import memory_consolidation_flow
-from engine.conversation_flow import call_narrator_and_route, generate_choices, run_agent_in_scene
+from engine.conversation_flow import (
+    call_narrator_and_route,
+    generate_choices,
+    run_agent_in_scene,
+    run_state_updater,
+)
 from engine.save_manager import (
     export_save_archive,
     has_existing_save,
@@ -36,6 +41,7 @@ app = FastAPI(title="AgentGal")
 
 STATIC_DIR = Path(__file__).parent / "static"
 _LAST_CHOICES_FILE = CHARACTERS_DIR / "last_choices.json"
+_pending_state_update_task: asyncio.Task[None] | None = None
 
 
 # =============================================================================
@@ -62,6 +68,35 @@ def _sse_event(event_type: str, data: dict) -> str:
     """格式化单条 SSE 事件。"""
     payload = json.dumps({"type": event_type, **data}, ensure_ascii=False)
     return f"data: {payload}\n\n"
+
+
+async def _settle_pending_state_update(*, cancel: bool = False) -> None:
+    """结清后台 state_updater 任务。cancel=True 时先取消（用于重置/读档）。"""
+    global _pending_state_update_task
+    task = _pending_state_update_task
+    if task is None:
+        return
+    _pending_state_update_task = None
+    if cancel and not task.done():
+        task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        routing_logger.info("[state_updater] 后台任务已取消")
+    except Exception as e:
+        routing_logger.error(f"[state_updater] 后台任务失败: {e}")
+
+
+def _start_state_update(
+    user_input: str,
+    scene_description: str,
+    targets: list[str],
+    agent_responses: list[tuple[str, str]],
+) -> None:
+    global _pending_state_update_task
+    _pending_state_update_task = asyncio.create_task(
+        run_state_updater(user_input, scene_description, targets, agent_responses)
+    )
 
 
 # =============================================================================
@@ -139,6 +174,7 @@ class NewGameRequest(BaseModel):
 @app.post("/api/new_game")
 async def api_new_game(req: NewGameRequest) -> JSONResponse:
     """重置并开始新游戏，返回开场内容。"""
+    await _settle_pending_state_update(cancel=True)
     _clear_last_choices()
     intro_text, opening_text = await reset_game(req.story_id)
     for name in get_agent_names(include_narrator=True):
@@ -163,6 +199,8 @@ class ChatRequest(BaseModel):
 
 async def _chat_stream(user_input: str):
     """核心游戏循环，通过 SSE 逐步推送结果。"""
+    await _settle_pending_state_update()
+
     # 1. narrator 路由
     targets, scene_description, is_narrator_valid = await call_narrator_and_route(user_input)
 
@@ -177,6 +215,8 @@ async def _chat_stream(user_input: str):
 
     if not targets:
         routing_logger.info("[导演] 无角色需要回应")
+        if scene_description:
+            _start_state_update(user_input, scene_description, targets, [])
         yield _sse_event("done", {})
         return
 
@@ -192,7 +232,8 @@ async def _chat_stream(user_input: str):
             routing_logger.error(f"Agent {agent_name} 运行失败: {e}")
             yield _sse_event("agent", {"content": f"[错误: {e}]", "author": agent_name.capitalize()})
 
-    # 5. 生成选项
+    # 5. 生成选项，同时后台维护 narrator 状态
+    _start_state_update(user_input, scene_description, targets, agent_responses)
     if agent_responses:
         choices = await generate_choices(scene_description, agent_responses)
         if choices:
@@ -231,6 +272,7 @@ async def api_list_saves() -> JSONResponse:
 @app.post("/api/save")
 async def api_save() -> JSONResponse:
     """导出存档。"""
+    await _settle_pending_state_update()
     save_path = await export_save_archive()
     if save_path:
         return JSONResponse({"ok": True, "path": save_path})
@@ -249,6 +291,7 @@ class LoadRequest(BaseModel):
 @app.post("/api/load")
 async def api_load(req: LoadRequest) -> JSONResponse:
     """加载存档。"""
+    await _settle_pending_state_update(cancel=True)
     success = await import_save_archive(req.filename)
     if success:
         for name in get_agent_names(include_narrator=True):
@@ -276,6 +319,7 @@ class ResetRequest(BaseModel):
 @app.post("/api/reset")
 async def api_reset(req: ResetRequest) -> JSONResponse:
     """重置游戏。"""
+    await _settle_pending_state_update(cancel=True)
     _clear_last_choices()
     intro_text, opening_text = await reset_game(req.story_id)
     for name in get_agent_names(include_narrator=True):

@@ -30,6 +30,9 @@ class NarratorStatus(BaseModel):
 class NarratorOutput(BaseModel):
     targets: list[str]
     content: str
+
+
+class StateUpdaterOutput(BaseModel):
     status: NarratorStatus = Field(default_factory=NarratorStatus)
     triggered: list[str] = Field(default_factory=list)
     add_event: list[str] = Field(default_factory=list)
@@ -72,4 +75,3 @@ class GrowthExtractOutput(BaseModel):
 
 class GrowthDedupOutput(BaseModel):
     entries: list[str] = Field(default_factory=list)
-
