@@ -990,13 +990,14 @@ svg {
 
 .modal-surface {
   width: min(1040px, 100%);
+  max-height: calc(100dvh - 48px);
   border-radius: 34px;
   border: 1px solid rgba(255, 255, 255, 0.3);
   background:
     linear-gradient(180deg, rgba(255, 252, 248, 0.97), rgba(255, 248, 242, 0.92)),
     var(--panel-strong);
   box-shadow: 0 30px 50px -28px rgba(38, 25, 26, 0.34);
-  overflow: hidden;
+  overflow: auto;
 }
 
 .story-shell {
@@ -1372,6 +1373,16 @@ svg {
 }
 
 @media (max-width: 920px) {
+  html,
+  body {
+    overflow: auto;
+  }
+
+  #app {
+    min-height: 100dvh;
+    height: auto;
+  }
+
   .topbar {
     padding: 16px 18px 14px;
   }
@@ -1390,13 +1401,14 @@ svg {
   }
 
   .chat-shell {
+    min-height: calc(100dvh - 120px);
     border-radius: 26px;
   }
 
   .scene-strip {
     grid-template-columns: 1fr;
-    gap: 12px;
-    padding: 18px 18px 16px;
+    gap: 10px;
+    padding: 14px 14px 12px;
   }
 
   .message-stage {
@@ -1464,6 +1476,14 @@ svg {
 
   .overlay {
     padding: 14px;
+    align-items: stretch;
+    overflow-y: auto;
+  }
+
+  .modal-surface {
+    width: 100%;
+    max-height: calc(100dvh - 28px);
+    border-radius: 26px;
   }
 
   .story-main,
@@ -1486,6 +1506,16 @@ svg {
   .topbar {
     gap: 12px;
     min-height: 64px;
+    padding: 12px 12px 10px;
+  }
+
+  .overlay {
+    padding: 8px;
+  }
+
+  .modal-surface {
+    max-height: calc(100dvh - 16px);
+    border-radius: 22px;
   }
 
   .brand-kicker {
@@ -1501,7 +1531,60 @@ svg {
   }
 
   .story-headline {
-    font-size: 22px;
+    font-size: 20px;
+  }
+
+  .story-main,
+  .story-side,
+  .confirm-shell {
+    padding: 16px 14px;
+  }
+
+  .story-grid {
+    gap: 12px;
+  }
+
+  .story-card {
+    padding: 16px;
+    border-radius: 22px;
+  }
+
+  .story-card.choice-card {
+    min-height: auto;
+  }
+
+  .story-card.choice-card .story-card-title {
+    font-size: 24px;
+  }
+
+  .story-card-copy,
+  .return-card-copy,
+  .resume-copy {
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .resume-panel {
+    padding: 16px;
+    border-radius: 22px;
+  }
+
+  .resume-title {
+    margin-bottom: 10px;
+    font-size: 16px;
+  }
+
+  .resume-copy {
+    flex: 0 1 auto;
+    display: -webkit-box;
+    -webkit-line-clamp: 5;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .resume-meta {
+    margin: 14px 0 16px;
+    gap: 8px;
   }
 
   .topbar-actions {
