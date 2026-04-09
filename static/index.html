@@ -6,771 +6,2564 @@
 <title>AgentGal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Noto+Serif+SC:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Noto+Serif+SC:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 <style>
-
-/* ── Variables ──────────────────────────────────────────────────────────── */
 :root {
-  --bg:           #faf5f0;
-  --surface:      #f4ede6;
-  --card:         #fffaf7;
-  --card-hover:   #fdf2ec;
-  --border:       #e8d8cc;
-  --border-dim:   #f0e4da;
-  --text:         #3a2828;
-  --text-dim:     #7a5a58;
-  --text-muted:   #b09090;
-  --accent:       #c45870;
-  --accent-glow:  rgba(196, 88, 112, 0.14);
-  --accent-dim:   #9e3a50;
+  --bg: #f3ece3;
+  --panel: rgba(255, 250, 246, 0.82);
+  --panel-strong: #fffaf5;
+  --line: rgba(113, 84, 74, 0.14);
+  --text: #2f2324;
+  --text-soft: #6e5753;
+  --text-muted: #98817b;
+  --accent: #b45a64;
+  --accent-strong: #93444e;
+  --danger: #a25858;
+  --shadow: 0 20px 45px -24px rgba(83, 49, 45, 0.22);
+  --shadow-soft: 0 14px 34px -22px rgba(83, 49, 45, 0.18);
+  --radius-lg: 22px;
+  --easing: cubic-bezier(0.16, 1, 0.3, 1);
+  --drawer-width: clamp(300px, 28vw, 360px);
 }
 
-/* ── Reset ──────────────────────────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; overflow: hidden; }
-[x-cloak] { display: none !important; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+[x-cloak] {
+  display: none !important;
+}
 
 body {
-  background: var(--bg);
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at top left, rgba(180, 90, 100, 0.12), transparent 36%),
+    radial-gradient(circle at 88% 18%, rgba(111, 146, 139, 0.1), transparent 26%),
+    linear-gradient(180deg, #f7f1ea 0%, #f3ece3 100%);
   color: var(--text);
-  font-family: 'Noto Serif SC', 'Songti SC', Georgia, serif;
-  font-size: 15px;
-  line-height: 1.8;
+  font-family: "Outfit", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  text-rendering: optimizeLegibility;
 }
 
-/* Subtle warm paper grain */
-body::after {
-  content: '';
+body::before {
+  content: "";
   position: fixed;
   inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
   pointer-events: none;
-  z-index: 9000;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), transparent 24%),
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.62), transparent 56%);
+  z-index: 0;
 }
 
-/* ── Scrollbar ──────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 3px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
-
-/* ── Modal ──────────────────────────────────────────────────────────────── */
-#modal-overlay {
-  display: none;
-  position: fixed; inset: 0;
-  background: rgba(58, 40, 40, 0.55);
-  backdrop-filter: blur(12px);
-  z-index: 1000;
-  align-items: center;
-  justify-content: center;
-}
-#modal-overlay.open { display: flex; }
-
-#modal-box {
-  background: var(--card);
-  border: 1px solid var(--border);
-  padding: 44px 48px;
-  max-width: 460px;
-  width: 92%;
-  position: relative;
-  border-radius: 4px;
-  box-shadow: 0 20px 60px rgba(196,88,112,0.1), 0 4px 20px rgba(0,0,0,0.08);
-}
-
-/* Floral corner ornaments */
-#modal-box::before {
-  content: '❧';
-  position: absolute;
-  top: 14px; left: 18px;
-  color: var(--accent);
-  font-size: 18px;
-  opacity: 0.35;
-  line-height: 1;
-}
-#modal-box::after {
-  content: '❧';
-  position: absolute;
-  bottom: 14px; right: 18px;
-  color: var(--accent);
-  font-size: 18px;
-  opacity: 0.35;
-  line-height: 1;
-  transform: rotate(180deg);
-}
-
-.modal-eyebrow {
-  font-family: 'Playfair Display', serif;
-  font-style: italic;
-  font-size: 13px;
-  letter-spacing: 0.08em;
-  color: var(--accent);
-  opacity: 0.85;
-  margin-bottom: 8px;
-}
-.modal-heading {
-  font-size: 22px;
-  font-weight: 400;
-  letter-spacing: 0.04em;
-  color: var(--text);
-  margin-bottom: 32px;
-  line-height: 1.4;
-}
-
-.story-btn {
-  display: block;
-  width: 100%;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  font-family: 'Noto Serif SC', serif;
-  font-size: 15px;
-  padding: 14px 18px;
-  text-align: left;
-  cursor: pointer;
-  margin-bottom: 8px;
-  transition: all 0.22s;
-  position: relative;
-  overflow: hidden;
-  letter-spacing: 0.03em;
-  border-radius: 2px;
-}
-.story-btn::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 2px;
-  background: var(--accent);
-  transform: scaleY(0);
-  transition: transform 0.22s;
-  transform-origin: bottom;
-}
-.story-btn:hover {
-  border-color: rgba(196,88,112,0.4);
-  background: rgba(196,88,112,0.04);
-  color: var(--text);
-}
-.story-btn:hover::before { transform: scaleY(1); }
-
-.modal-divider {
-  display: flex; align-items: center; gap: 12px;
-  margin: 22px 0;
-  color: var(--text-muted);
-  font-size: 11px;
-  letter-spacing: 0.2em;
-}
-.modal-divider::before, .modal-divider::after {
-  content: ''; flex: 1; height: 1px; background: var(--border);
-}
-
-.continue-btn {
-  display: block; width: 100%;
-  background: transparent;
-  border: 1px solid rgba(196,88,112,0.5);
-  color: var(--accent);
-  font-family: 'Noto Serif SC', serif;
-  font-size: 14px;
-  padding: 12px 18px;
-  cursor: pointer;
-  transition: all 0.22s;
-  letter-spacing: 0.08em;
-  border-radius: 2px;
-}
-.continue-btn:hover { background: var(--accent-glow); }
-
-/* ── Layout ─────────────────────────────────────────────────────────────── */
-#app { display: flex; flex-direction: column; height: 100%; }
-
-/* ── Navbar ─────────────────────────────────────────────────────────────── */
-#navbar {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  height: 50px;
-  padding: 0 24px;
-  display: flex; align-items: center; gap: 12px;
-  flex-shrink: 0;
-}
-#nav-title {
-  font-family: 'Playfair Display', serif;
-  font-style: italic;
-  font-size: 17px;
-  letter-spacing: 0.04em;
-  color: var(--accent);
-  flex: 1;
-}
-#nav-title small {
-  font-family: 'Noto Serif SC', serif;
-  font-style: normal;
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 0.05em;
-  margin-left: 10px;
-  font-weight: 300;
-}
-.nav-btn {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-family: 'Noto Serif SC', serif;
-  font-size: 12px;
-  padding: 5px 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-  letter-spacing: 0.05em;
-}
-.nav-btn:hover { border-color: var(--accent-dim); color: var(--accent); }
-.nav-btn.danger:hover { border-color: rgba(180,72,72,0.5); color: #bc7070; }
-
-/* ── Main ───────────────────────────────────────────────────────────────── */
-#main { display: flex; flex: 1; overflow: hidden; }
-
-/* ── Chat column ────────────────────────────────────────────────────────── */
-#chat-wrap {
-  flex: 1; display: flex; flex-direction: column;
-  overflow: hidden; position: relative;
-}
-/* Soft rose center glow */
-#chat-wrap::before {
-  content: '';
-  position: absolute; inset: 0;
-  background: radial-gradient(ellipse 80% 60% at 50% 30%, rgba(196,88,112,0.04) 0%, transparent 70%);
-  pointer-events: none; z-index: 0;
-}
-
-#messages {
-  flex: 1; overflow-y: auto;
-  padding: 36px 0 20px;
-  position: relative; z-index: 1;
-}
-
-/* ── Message entrance animation ─────────────────────────────────────────── */
-@keyframes msgIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ── Narrator ───────────────────────────────────────────────────────────── */
-.msg-narrator {
-  max-width: 580px;
-  margin: 20px auto;
-  padding: 0 40px;
-  animation: msgIn 0.45s ease forwards;
-}
-.narrator-ornament {
-  text-align: center;
-  color: var(--accent);
-  font-size: 14px;
-  margin-bottom: 10px;
-  opacity: 0.45;
-  letter-spacing: 0.4em;
-}
-.narrator-body {
-  color: var(--text-dim);
-  font-style: normal;
-  font-size: 14.5px;
-  font-weight: 300;
-  line-height: 2;
-  text-align: justify;
-  text-indent: 2em;
-}
-.narrator-body p { margin-bottom: 0.6em; text-indent: 2em; }
-.narrator-body.msg-body p:first-child { text-align: left; text-indent: 0; }
-.narrator-body p:last-child { margin-bottom: 0; }
-.narrator-body strong { font-weight: 500; color: var(--text); font-style: normal; }
-.narrator-body em { opacity: 0.8; }
-
-/* ── Character bubble ───────────────────────────────────────────────────── */
-.msg-char {
-  width: fit-content;
-  max-width: 620px;
-  margin: 14px 36px;
-  animation: msgIn 0.38s ease forwards;
-}
-.char-name {
-  font-size: 11px;
-  letter-spacing: 0.15em;
-  margin-bottom: 7px;
-  display: flex; align-items: center; gap: 8px;
-}
-.char-name::after {
-  content: '';
-  display: block; flex: 0 0 18px;
-  height: 1px; background: currentColor; opacity: 0.25;
-}
-.char-bubble {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-left-width: 2px;
-  border-radius: 0 10px 10px 10px;
-  padding: 14px 18px;
-  font-size: 15px;
-  line-height: 1.85;
-  box-shadow: 0 2px 8px rgba(196,88,112,0.05);
-}
-
-/* ── Player bubble ──────────────────────────────────────────────────────── */
-.msg-player {
-  width: fit-content;
-  max-width: 500px;
-  margin: 14px 36px;
-  margin-left: auto;
-  animation: msgIn 0.38s ease forwards;
-}
-.player-label {
-  text-align: right;
-  font-size: 10px;
-  color: var(--text-muted);
-  letter-spacing: 0.15em;
-  margin-bottom: 6px;
-}
-.player-bubble {
-  background: rgba(196, 88, 112, 0.07);
-  border: 1px solid rgba(196, 88, 112, 0.22);
-  border-radius: 10px 0 10px 10px;
-  padding: 12px 16px;
-  color: var(--text-dim);
-  font-size: 15px;
-  line-height: 1.8;
-  text-align: right;
-  box-shadow: 0 2px 8px rgba(196,88,112,0.06);
-}
-
-/* ── Status ─────────────────────────────────────────────────────────────── */
-#status-bar {
-  min-height: 26px;
-  padding: 4px 36px;
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 0.06em;
-  display: flex; align-items: center; gap: 8px;
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.68' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='280' height='280' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity: 0.7;
   z-index: 1;
 }
-#status-bar.active::before {
-  content: '✿';
-  color: var(--accent);
-  font-size: 12px;
-  animation: breathe 1.6s ease infinite;
-}
-@keyframes breathe {
-  0%,100% { opacity: 1; } 50% { opacity: 0.25; }
+
+button,
+textarea {
+  font: inherit;
 }
 
-/* ── Choices ────────────────────────────────────────────────────────────── */
-#choices-bar {
-  padding: 10px 32px 12px;
-  display: flex; flex-wrap: wrap; gap: 8px;
-  border-top: 1px solid var(--border-dim);
-  background: rgba(10, 8, 6, 0.6);
-  z-index: 1;
-}
-#choices-bar:empty { display: none; }
-
-.choice-btn {
-  background: var(--card);
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  font-family: 'Noto Serif SC', serif;
-  font-size: 13px;
-  padding: 7px 16px;
-  cursor: pointer;
-  transition: all 0.2s;
-  letter-spacing: 0.02em;
-  line-height: 1.5;
-  text-align: left;
-  position: relative;
-  border-radius: 20px;
-}
-.choice-btn::before {
-  content: '♡';
-  font-size: 11px;
-  color: var(--accent);
-  margin-right: 7px;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-.choice-btn:hover {
-  border-color: rgba(196,88,112,0.45);
-  color: var(--text);
-  background: rgba(196,88,112,0.05);
-  box-shadow: 0 2px 12px rgba(196,88,112,0.1);
-}
-.choice-btn:hover::before { opacity: 1; }
-
-/* ── Input area ─────────────────────────────────────────────────────────── */
-#input-area {
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  padding: 14px 24px;
-  display: flex; gap: 12px; align-items: flex-end;
-  z-index: 1;
-}
-#user-input {
-  flex: 1;
-  background: rgba(255,255,255,0.025);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-family: 'Noto Serif SC', serif;
-  font-size: 14px;
-  line-height: 1.75;
-  padding: 10px 14px;
-  resize: none;
-  outline: none;
-  transition: border-color 0.2s;
-  min-height: 56px;
-  max-height: 130px;
-}
-#user-input::placeholder { color: var(--text-muted); }
-#user-input:focus { border-color: var(--accent-dim); }
-#user-input:disabled { opacity: 0.4; }
-
-#send-btn {
-  background: var(--accent);
+button {
   border: none;
-  color: #fff;
-  font-family: 'Noto Serif SC', serif;
-  font-size: 13px;
-  letter-spacing: 0.1em;
-  padding: 0 20px;
-  height: 40px;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-  flex-shrink: 0;
-  border-radius: 20px;
+  background: none;
+  padding: 0;
 }
-#send-btn:hover:not(:disabled) {
-  background: var(--accent-dim);
-  box-shadow: 0 4px 16px rgba(196,88,112,0.25);
-}
-#send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-/* ── Sidebar ────────────────────────────────────────────────────────────── */
-#sidebar {
-  width: 210px;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  display: flex; flex-direction: column; flex-shrink: 0;
-  transition: width 0.28s ease, border-color 0.28s ease;
-  overflow: visible;
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+svg {
+  display: block;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(113, 84, 74, 0.18);
+  border-radius: 999px;
+}
+
+#app {
   position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  height: 100dvh;
 }
-#sidebar.collapsed {
-  width: 0;
-  border-left-color: transparent;
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 72px;
+  padding: 18px 28px 16px;
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(18px);
+  background: rgba(250, 244, 237, 0.7);
+  box-shadow: 0 10px 24px -24px rgba(83, 49, 45, 0.24);
 }
-#sidebar.collapsed .sidebar-head,
-#sidebar.collapsed #save-list { opacity: 0; pointer-events: none; }
-.sidebar-toggle-btn {
-  position: absolute;
-  top: 10px;
-  left: -33px;
-  width: 32px;
-  height: 32px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-right: none;
-  border-radius: 6px 0 0 6px;
+
+.brand-block {
+  min-width: 0;
+}
+
+.brand-kicker {
+  margin-bottom: 4px;
   color: var(--text-muted);
-  cursor: pointer; font-size: 14px; line-height: 1; z-index: 5;
-  transition: color 0.2s, border-color 0.2s, background 0.2s;
-}
-.sidebar-toggle-btn:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--card); }
-.sidebar-head {
-  padding: 15px 16px 12px;
-  border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-  width: 210px;
-  transition: opacity 0.18s;
-}
-.sidebar-title {
-  font-family: 'Cinzel', serif;
-  font-size: 9px;
-  letter-spacing: 0.3em;
-  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
-.sidebar-icon-btn {
-  background: transparent; border: none;
-  color: var(--text-muted);
-  cursor: pointer; font-size: 13px;
-  padding: 2px 4px;
-  transition: color 0.2s;
-  line-height: 1;
-}
-.sidebar-icon-btn:hover { color: var(--accent); }
 
-#save-list { flex: 1; overflow-y: auto; padding: 6px 8px; width: 210px; transition: opacity 0.18s; }
+.brand-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.brand-title {
+  font-size: clamp(24px, 3vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+}
+
+.brand-subtitle {
+  color: var(--text-soft);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.ghost-btn,
+.primary-btn,
+.story-card,
+.resume-button,
+.save-card,
+.choice-chip {
+  cursor: pointer;
+  transition:
+    transform 0.28s var(--easing),
+    border-color 0.28s var(--easing),
+    background-color 0.28s var(--easing),
+    color 0.28s var(--easing),
+    box-shadow 0.28s var(--easing),
+    opacity 0.28s var(--easing);
+}
+
+.ghost-btn,
+.primary-btn,
+.resume-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text-soft);
+  background: rgba(255, 250, 245, 0.66);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  touch-action: manipulation;
+}
+
+.ghost-btn:hover,
+.resume-button:hover,
+.save-card:hover,
+.choice-chip:hover,
+.story-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(180, 90, 100, 0.28);
+}
+
+.ghost-btn:active,
+.primary-btn:active,
+.resume-button:active,
+.save-card:active,
+.choice-chip:active,
+.story-card:active {
+  transform: translateY(0) scale(0.985);
+}
+
+.ghost-btn:hover {
+  color: var(--text);
+  background: rgba(255, 250, 245, 0.92);
+}
+
+.ghost-btn.danger:hover {
+  color: var(--danger);
+  border-color: rgba(162, 88, 88, 0.26);
+}
+
+.ghost-btn:disabled,
+.primary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.btn-icon {
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+}
+
+.primary-btn {
+  background: var(--accent);
+  color: #fffaf5;
+  border-color: transparent;
+  box-shadow: 0 18px 30px -22px rgba(148, 68, 78, 0.6);
+}
+
+.primary-btn:hover {
+  background: var(--accent-strong);
+}
+
+.main-shell {
+  position: relative;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.chat-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 22px 20px;
+}
+
+.chat-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  border: 1px solid rgba(113, 84, 74, 0.12);
+  border-radius: 32px;
+  background:
+    linear-gradient(180deg, rgba(255, 253, 250, 0.76), rgba(255, 249, 243, 0.68)),
+    var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.chat-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(180, 90, 100, 0.09), transparent 32%),
+    radial-gradient(circle at 100% 100%, rgba(91, 125, 134, 0.09), transparent 28%);
+  z-index: 0;
+}
+
+.scene-strip,
+.message-scroll,
+.feedback-strip,
+.choice-rail,
+.composer-shell {
+  position: relative;
+  z-index: 1;
+}
+
+.scene-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: start;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 250, 245, 0.8);
+  backdrop-filter: blur(16px);
+}
+
+.scene-title {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.scene-summary {
+  max-width: none;
+  font-size: clamp(19px, 2.2vw, 28px);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+
+.scene-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 252, 248, 0.82);
+  color: var(--text-soft);
+  min-height: 34px;
+}
+
+.meta-chip-label {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.meta-chip-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.scene-state {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  min-height: 42px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 252, 248, 0.84);
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.state-pill::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(148, 68, 78, 0.3);
+  transition: transform 0.28s var(--easing), background-color 0.28s var(--easing), opacity 0.28s var(--easing);
+}
+
+.state-pill.tone-idle::before {
+  background: rgba(91, 125, 134, 0.44);
+}
+
+.state-pill.tone-busy::before {
+  background: rgba(180, 90, 100, 0.86);
+  animation: pulseState 1.5s ease infinite;
+}
+
+.state-pill.tone-error::before {
+  background: rgba(162, 88, 88, 0.92);
+}
+
+@keyframes pulseState {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.72); opacity: 0.38; }
+}
+
+.message-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  padding: 18px 0 20px;
+}
+
+.message-stage {
+  width: min(920px, calc(100% - 40px));
+  margin: 0 auto;
+}
+
+.empty-stage {
+  margin: 32px 0 10px;
+  padding: 28px 24px;
+  border: 1px dashed rgba(113, 84, 74, 0.2);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 251, 247, 0.66);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.empty-stage-title {
+  margin-bottom: 10px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.empty-stage-copy {
+  max-width: 56ch;
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+
+.message-row {
+  margin-bottom: 18px;
+  animation: messageIn 0.42s var(--easing);
+}
+
+@keyframes messageIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-row.narrator {
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+.narrator-shell {
+  padding: 6px 8px;
+}
+
+.message-kicker {
+  margin-bottom: 10px;
+  color: var(--accent);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.narrator-body {
+  color: var(--text-soft);
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 15px;
+  line-height: 2;
+}
+
+.message-row.agent,
+.message-row.player {
+  max-width: 680px;
+}
+
+.message-row.player {
+  margin-left: auto;
+}
+
+.message-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.message-row.player .message-head {
+  justify-content: flex-end;
+}
+
+.speaker-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+}
+
+.speaker-label {
+  font-weight: 500;
+  color: var(--text-soft);
+}
+
+.message-card {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 16px 18px;
+  background: rgba(255, 251, 247, 0.88);
+  box-shadow: var(--shadow-soft);
+  line-height: 1.78;
+}
+
+.message-row.agent .message-card::before,
+.message-row.player .message-card::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 999px;
+  background: rgba(180, 90, 100, 0.4);
+}
+
+.message-row.agent .message-card::before {
+  left: 10px;
+}
+
+.message-row.player .message-card::before {
+  right: 10px;
+}
+
+.message-row.agent .message-card {
+  padding-left: 24px;
+}
+
+.message-row.player .message-card {
+  padding-right: 24px;
+  background: rgba(180, 90, 100, 0.08);
+}
+
+.message-skeleton {
+  max-width: 660px;
+}
+
+.skeleton-shell {
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(113, 84, 74, 0.12);
+  background: rgba(255, 251, 247, 0.78);
+  overflow: hidden;
+}
+
+.skeleton-line {
+  position: relative;
+  display: block;
+  height: 12px;
+  margin-bottom: 10px;
+  border-radius: 999px;
+  background: rgba(113, 84, 74, 0.08);
+  overflow: hidden;
+}
+
+.skeleton-line:last-child {
+  margin-bottom: 0;
+}
+
+.skeleton-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.82), transparent);
+  transform: translateX(-100%);
+  animation: shimmer 1.5s ease infinite;
+}
+
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.feedback-strip {
+  padding: 0 24px 12px;
+}
+
+.notice-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 251, 247, 0.86);
+  color: var(--text-soft);
+  line-height: 1.6;
+}
+
+.notice-banner.tone-error {
+  border-color: rgba(162, 88, 88, 0.24);
+  background: rgba(162, 88, 88, 0.08);
+  color: #724b4b;
+}
+
+.notice-banner.tone-success {
+  border-color: rgba(91, 125, 134, 0.24);
+  background: rgba(91, 125, 134, 0.08);
+  color: #46666f;
+}
+
+.notice-badge {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(180, 90, 100, 0.12);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+
+.choice-rail {
+  padding: 0 24px 16px;
+}
+
+.choice-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.choice-rail-title {
+  color: var(--text-soft);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.choice-rail-subtitle {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.choice-list {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scroll-snap-type: x proximity;
+}
+
+.choice-chip {
+  min-width: 240px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255, 251, 247, 0.86);
+  box-shadow: var(--shadow-soft);
+  color: var(--text-soft);
+  text-align: left;
+  scroll-snap-align: start;
+}
+
+.choice-chip:hover {
+  background: rgba(180, 90, 100, 0.08);
+  color: var(--text);
+}
+
+.choice-chip-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--accent);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.choice-chip-text {
+  line-height: 1.58;
+}
+
+.composer-shell {
+  padding: 18px 24px calc(20px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: rgba(248, 242, 236, 0.88);
+  backdrop-filter: blur(20px);
+}
+
+.composer-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.composer-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.composer-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.composer-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.composer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#user-input {
+  width: 100%;
+  min-height: 112px;
+  max-height: 240px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(255, 252, 248, 0.9);
+  color: var(--text);
+  resize: none;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  line-height: 1.72;
+  transition: border-color 0.28s var(--easing), box-shadow 0.28s var(--easing), background-color 0.28s var(--easing), opacity 0.28s var(--easing);
+}
+
+#user-input::placeholder {
+  color: var(--text-muted);
+}
+
+#user-input:focus {
+  border-color: rgba(180, 90, 100, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 0 0 4px rgba(180, 90, 100, 0.08);
+}
+
+#user-input:disabled {
+  opacity: 0.56;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.archive-drawer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 0;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid transparent;
+  background: rgba(249, 243, 237, 0.86);
+  backdrop-filter: blur(20px);
+  overflow: hidden;
+  transition: width 0.34s var(--easing), border-color 0.34s var(--easing), box-shadow 0.34s var(--easing);
+}
+
+.archive-drawer.open {
+  width: var(--drawer-width);
+  border-left-color: var(--line);
+  box-shadow: -14px 0 30px -30px rgba(83, 49, 45, 0.24);
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 22px 20px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-title-wrap {
+  min-width: 0;
+}
+
+.drawer-kicker {
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.drawer-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-soft);
+  background: rgba(255, 251, 247, 0.76);
+  cursor: pointer;
+  transition:
+    transform 0.28s var(--easing),
+    border-color 0.28s var(--easing),
+    background-color 0.28s var(--easing),
+    color 0.28s var(--easing);
+}
+
+.icon-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(180, 90, 100, 0.28);
+  background: rgba(255, 251, 247, 0.96);
+  color: var(--text);
+}
+
+.icon-btn:active {
+  transform: scale(0.985);
+}
+
+.drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 18px;
+}
+
+.drawer-copy {
+  margin-bottom: 14px;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.drawer-empty,
+.drawer-error {
+  padding: 18px 16px;
+  border-radius: 18px;
+  border: 1px dashed rgba(113, 84, 74, 0.18);
+  color: var(--text-soft);
+  background: rgba(255, 251, 247, 0.72);
+  line-height: 1.65;
+}
+
+.drawer-error {
+  border-style: solid;
+  border-color: rgba(162, 88, 88, 0.2);
+  background: rgba(162, 88, 88, 0.07);
+  color: #724b4b;
+}
+
+.save-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 
 .save-card {
-  background: transparent;
-  border: 1px solid transparent;
-  padding: 9px 10px;
-  cursor: pointer;
-  transition: all 0.2s;
-  margin-bottom: 3px;
+  width: 100%;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255, 251, 247, 0.84);
+  box-shadow: var(--shadow-soft);
+  text-align: left;
 }
-.save-card:hover {
-  border-color: var(--border);
-  background: var(--card-hover);
-}
-.save-time { font-size: 11px; color: var(--text-dim); line-height: 1.5; word-break: break-all; }
-.save-focus { font-size: 11px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.save-empty { padding: 20px 12px; text-align: center; font-size: 12px; color: var(--text-muted); letter-spacing: 0.05em; }
 
-/* ── Mobile ─────────────────────────────────────────────────────────────── */
-@media (max-width: 640px) {
-  #sidebar {
-    position: absolute;
-    top: 50px; right: 0; bottom: 0;
-    z-index: 200;
-    box-shadow: -4px 0 20px rgba(0,0,0,0.12);
+.save-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.save-card-label {
+  color: var(--accent);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.save-card-arrow {
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+.save-card-time {
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.save-card-focus {
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.drawer-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.overlay,
+.drawer-backdrop,
+.toast-stack {
+  position: fixed;
+}
+
+.overlay {
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(47, 35, 36, 0.42);
+  backdrop-filter: blur(18px);
+}
+
+.modal-surface {
+  width: min(1040px, 100%);
+  border-radius: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background:
+    linear-gradient(180deg, rgba(255, 252, 248, 0.97), rgba(255, 248, 242, 0.92)),
+    var(--panel-strong);
+  box-shadow: 0 30px 50px -28px rgba(38, 25, 26, 0.34);
+  overflow: hidden;
+}
+
+.story-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: min(72dvh, 700px);
+}
+
+.story-main,
+.story-side {
+  padding: 34px 32px;
+}
+
+.story-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 18px;
+  border-right: 1px solid var(--line);
+}
+
+.story-eyebrow {
+  margin-bottom: 0;
+  color: var(--accent);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.story-main-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.story-headline {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.story-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-auto-rows: minmax(260px, auto);
+  gap: 16px;
+  min-height: 0;
+  align-content: start;
+}
+
+.story-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  padding: 20px;
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(255, 247, 241, 0.76)),
+    rgba(255, 251, 247, 0.9);
+  box-shadow: var(--shadow-soft);
+  text-align: left;
+}
+
+.story-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top right, rgba(180, 90, 100, 0.14), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26), transparent 42%);
+  opacity: 0.9;
+}
+
+.story-card.choice-card {
+  min-height: 300px;
+}
+
+.story-card.choice-card.warm {
+  background:
+    radial-gradient(circle at 86% 18%, rgba(180, 90, 100, 0.16), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 246, 239, 0.94)),
+    rgba(255, 251, 247, 0.96);
+}
+
+.story-card.choice-card.cool {
+  background:
+    radial-gradient(circle at 84% 18%, rgba(91, 125, 134, 0.11), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(248, 243, 238, 0.9)),
+    rgba(255, 251, 247, 0.9);
+}
+
+.story-card.return-card {
+  grid-column: 1 / -1;
+  min-height: 150px;
+  background:
+    linear-gradient(180deg, rgba(250, 244, 238, 0.96), rgba(246, 239, 232, 0.92)),
+    rgba(255, 251, 247, 0.88);
+}
+
+.story-card-shell {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+}
+
+.story-card-top {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.story-card-title {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.story-card.choice-card .story-card-title {
+  font-size: clamp(28px, 3.3vw, 42px);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+}
+
+.story-card-tagline {
+  color: var(--accent);
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.story-card-copy {
+  max-width: 24ch;
+  color: var(--text-soft);
+  line-height: 1.7;
+  font-size: 15px;
+}
+
+.story-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+}
+
+.story-card-cue {
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.story-card-enter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.return-card-copy {
+  color: var(--text-soft);
+  line-height: 1.68;
+  font-size: 14px;
+}
+
+.story-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: rgba(250, 244, 237, 0.72);
+}
+
+.resume-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  border-radius: 30px;
+  border: 1px solid var(--line);
+  background: rgba(255, 251, 247, 0.9);
+}
+
+.resume-label {
+  margin-bottom: 12px;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.resume-title {
+  margin-bottom: 12px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.resume-copy {
+  flex: 1;
+  color: var(--text-soft);
+  line-height: 1.72;
+  font-size: 14px;
+}
+
+.resume-meta {
+  margin: 18px 0 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.resume-button {
+  width: 100%;
+  justify-content: center;
+  background: rgba(180, 90, 100, 0.08);
+  color: var(--accent);
+  border-color: rgba(180, 90, 100, 0.2);
+}
+
+.confirm-shell {
+  width: min(480px, 100%);
+  padding: 28px;
+}
+
+.confirm-title {
+  margin-bottom: 10px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.confirm-copy {
+  color: var(--text-soft);
+  line-height: 1.74;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 26px;
+}
+
+.drawer-backdrop {
+  inset: 0;
+  z-index: 18;
+  background: rgba(47, 35, 36, 0.18);
+  backdrop-filter: blur(4px);
+}
+
+.toast-stack {
+  top: 18px;
+  right: 18px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(320px, calc(100vw - 24px));
+}
+
+.toast {
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 251, 247, 0.94);
+  color: var(--text-soft);
+  box-shadow: var(--shadow-soft);
+  line-height: 1.55;
+}
+
+.toast.tone-success {
+  border-color: rgba(91, 125, 134, 0.22);
+  background: rgba(246, 252, 252, 0.96);
+  color: #46666f;
+}
+
+.toast.tone-error {
+  border-color: rgba(162, 88, 88, 0.22);
+  background: rgba(252, 246, 246, 0.96);
+  color: #724b4b;
+}
+
+.markdown-body p {
+  margin: 0 0 0.56em;
+}
+
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.markdown-body em {
+  font-style: italic;
+  opacity: 0.9;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  margin: 0.3em 0 0.34em;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.markdown-body h1 { font-size: 1.26em; }
+.markdown-body h2 { font-size: 1.14em; }
+.markdown-body h3 { font-size: 1.05em; }
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.42em 0;
+  padding-left: 1.3em;
+}
+
+.markdown-body li {
+  margin-bottom: 0.18em;
+}
+
+.markdown-body code {
+  padding: 0.12em 0.34em;
+  border-radius: 8px;
+  background: rgba(47, 35, 36, 0.07);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.9em;
+}
+
+.markdown-body pre {
+  margin: 0.6em 0;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(47, 35, 36, 0.08);
+  overflow-x: auto;
+}
+
+.markdown-body pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown-body blockquote {
+  margin: 0.64em 0;
+  padding: 0.2em 0 0.2em 1em;
+  border-left: 2px solid rgba(180, 90, 100, 0.26);
+  color: var(--text-soft);
+}
+
+.markdown-body hr {
+  margin: 0.84em 0;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+.markdown-body a {
+  color: var(--accent);
+}
+
+@media (max-width: 920px) {
+  .topbar {
+    padding: 16px 18px 14px;
   }
-  #sidebar.collapsed { box-shadow: none; }
-  .msg-char   { margin: 12px 12px; max-width: calc(100vw - 24px); }
-  .msg-player { margin: 12px 12px; max-width: calc(100vw - 24px); }
-  .msg-narrator { padding: 0 16px; }
+
+  .brand-row {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .brand-subtitle {
+    white-space: normal;
+  }
+
+  .chat-panel {
+    padding: 12px 12px 14px;
+  }
+
+  .chat-shell {
+    border-radius: 26px;
+  }
+
+  .scene-strip {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 18px 18px 16px;
+  }
+
+  .message-stage {
+    width: calc(100% - 24px);
+  }
+
+  .feedback-strip,
+  .choice-rail,
+  .composer-shell {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .composer-body {
+    grid-template-columns: 1fr;
+  }
+
+  .composer-actions .primary-btn {
+    width: 100%;
+  }
+
+  .archive-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    width: min(88vw, 360px);
+    transform: translateX(100%);
+    border-left-color: var(--line);
+    box-shadow: -20px 0 50px -34px rgba(38, 25, 26, 0.44);
+    transition: transform 0.34s var(--easing);
+  }
+
+  .archive-drawer.open {
+    width: min(88vw, 360px);
+    transform: translateX(0);
+  }
+
+  .story-shell {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .story-main {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .story-main-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .story-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+
+  .story-card.choice-card,
+  .story-card.return-card {
+    grid-column: auto;
+    min-height: auto;
+  }
+
+  .overlay {
+    padding: 14px;
+  }
+
+  .story-main,
+  .story-side,
+  .confirm-shell {
+    padding: 22px 20px;
+  }
+
+  .confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .confirm-actions .ghost-btn,
+  .confirm-actions .primary-btn {
+    width: 100%;
+  }
 }
 
-/* ── Markdown body ──────────────────────────────────────────────────────── */
-.msg-body h1 { font-size: 1.25em; font-weight: 500; margin: .4em 0 .3em; }
-.msg-body h2 { font-size: 1.1em; font-weight: 500; margin: .3em 0 .25em; }
-.msg-body h3 { font-size: 1.05em; font-weight: 500; margin: .3em 0 .2em; }
-.msg-body strong { font-weight: 500; }
-.msg-body em { font-style: italic; opacity: 0.82; }
-.msg-body p { margin-bottom: 0.45em; }
-.msg-body p:last-child { margin-bottom: 0; }
-.msg-body pre { background: rgba(0,0,0,0.35); padding: 10px 12px; border-radius: 3px; overflow-x: auto; margin: .5em 0; }
-.msg-body pre code { background: none; padding: 0; font-size: .88em; }
-.msg-body code { background: rgba(0,0,0,0.28); padding: 1px 5px; border-radius: 3px; font-size: .86em; }
-.msg-body ul, .msg-body ol { padding-left: 1.5em; margin: .3em 0; }
-.msg-body li { list-style: inherit; margin-bottom: .1em; }
-.msg-body hr { border: none; border-top: 1px solid var(--border); margin: .8em 0; }
+@media (max-width: 640px) {
+  .topbar {
+    gap: 12px;
+    min-height: 64px;
+  }
 
+  .brand-kicker {
+    font-size: 10px;
+  }
+
+  .brand-title {
+    font-size: 26px;
+  }
+
+  .brand-subtitle {
+    font-size: 12px;
+  }
+
+  .story-headline {
+    font-size: 22px;
+  }
+
+  .topbar-actions {
+    gap: 8px;
+  }
+
+  .ghost-btn,
+  .primary-btn,
+  .resume-button {
+    min-height: 38px;
+    padding: 0 12px;
+  }
+
+  .scene-summary {
+    font-size: 22px;
+  }
+
+  .meta-chip {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .message-row.narrator,
+  .message-row.agent,
+  .message-row.player,
+  .message-skeleton {
+    max-width: 100%;
+  }
+
+  .message-card {
+    padding: 14px 15px;
+    border-radius: 18px;
+  }
+
+  .message-row.agent .message-card {
+    padding-left: 20px;
+  }
+
+  .message-row.player .message-card {
+    padding-right: 20px;
+  }
+
+  .choice-chip {
+    min-width: min(82vw, 320px);
+  }
+
+  .composer-head,
+  .composer-foot,
+  .choice-rail-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  #user-input {
+    min-height: 100px;
+  }
+
+  .toast-stack {
+    top: auto;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    width: min(320px, calc(100vw - 24px));
+  }
+}
 </style>
 </head>
 <body>
-<div id="app" x-data="agentGalApp" x-cloak>
-
-  <!-- ── Modal ──────────────────────────────────────────────────────────── -->
-  <div id="modal-overlay" :class="{ open: modalOpen }">
-    <div id="modal-box">
-      <div class="modal-eyebrow">Choose Your Story</div>
-      <h2 class="modal-heading">选择一个故事</h2>
-      <div id="story-list">
-        <template x-for="story in stories" :key="story.id">
-          <button type="button" class="story-btn" x-text="story.label" @click="startNewGame(story.id)"></button>
-        </template>
+<div
+  id="app"
+  x-data="agentGalApp"
+  x-cloak
+  @keydown.escape.window="handleEscape()"
+>
+  <header class="topbar">
+    <div class="brand-block">
+      <div class="brand-row">
+        <div class="brand-title">AgentGal</div>
+        <div class="brand-subtitle">恋爱叙事实验场</div>
       </div>
-      <div id="modal-or" class="modal-divider" x-show="hasSave">或</div>
-      <button class="continue-btn" id="continue-btn" x-show="hasSave" @click="continueGame(initialRecent, initialChoices)">↩ 继续上次游戏</button>
+    </div>
+
+    <div class="topbar-actions">
+      <button type="button" class="ghost-btn" :aria-expanded="drawerOpen" @click="toggleDrawer()">
+        <span class="btn-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7.5h7l2 2H21v7.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
+            <path d="M3 7.5v-1A2.5 2.5 0 0 1 5.5 4h4.8a2 2 0 0 1 1.4.58l1.3 1.32"/>
+          </svg>
+        </span>
+        <span>档案</span>
+      </button>
+
+      <button type="button" class="ghost-btn" :disabled="busy" @click="saveGame()">
+        <span class="btn-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 4h11l3 3v12.5A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5Z"/>
+            <path d="M8 4v5h7V4"/>
+            <path d="M8 15h8"/>
+          </svg>
+        </span>
+        <span>存档</span>
+      </button>
+
+      <button type="button" class="ghost-btn danger" :disabled="busy" @click="showResetConfirmation()">
+        <span class="btn-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 2.64-6.36"/>
+            <path d="M3 4.5v5h5"/>
+          </svg>
+        </span>
+        <span>重开</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="main-shell">
+    <section class="chat-panel">
+      <div class="chat-shell">
+        <section class="scene-strip">
+          <div>
+            <div class="scene-title">当前场景</div>
+            <div class="scene-summary" x-text="sceneSummary()"></div>
+            <div class="scene-meta">
+              <template x-for="chip in sceneChips()" :key="chip.label">
+                <div class="meta-chip">
+                  <span class="meta-chip-label" x-text="chip.label"></span>
+                  <span class="meta-chip-value" x-text="chip.value"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="scene-state" x-show="shouldShowSceneState()">
+            <div class="state-pill" :class="statusToneClass()" aria-live="polite" x-text="statusLabel()"></div>
+          </div>
+        </section>
+
+        <div id="messages" class="message-scroll" x-ref="messages">
+          <div class="message-stage">
+            <template x-if="!messages.length && !busy">
+              <section class="empty-stage">
+                <div class="empty-stage-title">从一个具体场面开始</div>
+                <div class="empty-stage-copy">
+                  选择故事后，旁白会先铺开时间、地点和在场角色。你可以把输入框当成台词、动作、停顿，甚至是一句短促的试探。
+                </div>
+              </section>
+            </template>
+
+            <template x-for="message in messages" :key="message.id">
+              <article class="message-row" :class="message.kind">
+                <template x-if="message.kind === 'narrator'">
+                  <div class="narrator-shell">
+                    <div class="message-kicker">旁白</div>
+                    <div class="narrator-body markdown-body" x-html="message.html"></div>
+                  </div>
+                </template>
+
+                <template x-if="message.kind === 'agent'">
+                  <div>
+                    <div class="message-head">
+                      <span class="speaker-dot" :style="`background:${message.color};`"></span>
+                      <span class="speaker-label" x-text="message.author"></span>
+                    </div>
+                    <div class="message-card markdown-body" x-html="message.html" :style="`background:${message.background};border-color:${message.border};`"></div>
+                  </div>
+                </template>
+
+                <template x-if="message.kind === 'player'">
+                  <div>
+                    <div class="message-head">
+                      <span class="speaker-label" x-text="message.author"></span>
+                      <span class="speaker-dot" :style="`background:${message.color};`"></span>
+                    </div>
+                    <div class="message-card markdown-body" x-html="message.html" :style="`background:${message.background};border-color:${message.border};`"></div>
+                  </div>
+                </template>
+              </article>
+            </template>
+
+            <template x-if="busy">
+              <article class="message-row message-skeleton">
+                <div class="skeleton-shell">
+                  <span class="skeleton-line" style="width: 72%;"></span>
+                  <span class="skeleton-line" style="width: 58%;"></span>
+                  <span class="skeleton-line" style="width: 82%;"></span>
+                </div>
+              </article>
+            </template>
+          </div>
+        </div>
+
+        <div class="feedback-strip" x-show="noticeText">
+          <div class="notice-banner" :class="noticeTone ? `tone-${noticeTone}` : ''">
+            <div class="notice-badge" x-text="noticeBadge()"></div>
+            <div x-text="noticeText"></div>
+          </div>
+        </div>
+
+        <section class="choice-rail" x-show="choices.length">
+          <div class="choice-rail-head">
+            <div class="choice-rail-title">建议行动</div>
+            <div class="choice-rail-subtitle">选项只是建议，也可以直接输入你想说的话。</div>
+          </div>
+
+          <div class="choice-list">
+            <template x-for="choice in choices" :key="choice">
+              <button type="button" class="choice-chip" @click="submitMessage(choice)">
+                <span class="choice-chip-text" x-text="choice"></span>
+              </button>
+            </template>
+          </div>
+        </section>
+
+        <section class="composer-shell">
+          <div class="composer-head">
+            <div class="composer-title">你的行动</div>
+            <div class="composer-hint" x-text="isCompact ? '手机端建议使用发送按钮' : 'Enter 发送，Shift + Enter 换行'"></div>
+          </div>
+
+          <div class="composer-body">
+            <div class="composer-field">
+              <textarea
+                id="user-input"
+                x-ref="composerInput"
+                x-model="inputText"
+                :disabled="busy"
+                placeholder="输入台词、动作，或一段压低声音的心思。"
+                @input="handleComposerInput($event)"
+                @keydown="handleInputKeydown($event)"
+              ></textarea>
+            </div>
+
+            <div class="composer-actions">
+              <button type="button" class="primary-btn" :disabled="busy || !trimmedInput()" @click="submitCurrentInput()">
+                <span class="btn-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m4 12 15-7-3.8 14-4.4-5.1Z"/>
+                    <path d="m19 5-7.8 8"/>
+                  </svg>
+                </span>
+                <span x-text="busy ? '处理中' : '发送'"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="composer-foot">
+            <div>可以直接输入，也可以点击上方建议行动。</div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <div class="drawer-backdrop" x-show="drawerOpen && isCompact" @click="closeDrawer()"></div>
+
+    <aside class="archive-drawer" :class="{ open: drawerOpen }">
+      <div class="drawer-head">
+        <div class="drawer-title-wrap">
+          <div class="drawer-title">档案室</div>
+        </div>
+
+        <div class="drawer-actions">
+          <button type="button" class="icon-btn" title="刷新存档" :disabled="saveLoading" @click="refreshSaves()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 11a8 8 0 1 0-2.34 5.66"/>
+              <path d="M20 4v7h-7"/>
+            </svg>
+          </button>
+
+          <button type="button" class="icon-btn" title="关闭档案室" x-show="isCompact" @click="closeDrawer()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 6 18 18"/>
+              <path d="m18 6-12 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="drawer-body">
+        <div class="drawer-copy">
+          存档以最近焦点展示。读档前会覆盖当前运行时状态。
+        </div>
+
+        <template x-if="saveLoading">
+          <div class="drawer-skeleton">
+            <div class="skeleton-shell">
+              <span class="skeleton-line" style="width: 34%;"></span>
+              <span class="skeleton-line" style="width: 72%;"></span>
+              <span class="skeleton-line" style="width: 58%;"></span>
+            </div>
+            <div class="skeleton-shell">
+              <span class="skeleton-line" style="width: 42%;"></span>
+              <span class="skeleton-line" style="width: 82%;"></span>
+              <span class="skeleton-line" style="width: 54%;"></span>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="!saveLoading && saveError">
+          <div class="drawer-error" x-text="saveError"></div>
+        </template>
+
+        <template x-if="!saveLoading && !saveError && !saves.length">
+          <div class="drawer-empty">还没有可读取的存档。开始一个故事后，顶部可以随时手动存档。</div>
+        </template>
+
+        <div class="save-list" x-show="!saveLoading && !saveError && saves.length">
+          <template x-for="save in saves" :key="save.filename">
+            <button type="button" class="save-card" @click="promptLoadSave(save.filename)">
+              <div class="save-card-top">
+                <span class="save-card-label">SNAPSHOT</span>
+                <span class="save-card-arrow" aria-hidden="true">→</span>
+              </div>
+              <div class="save-card-time" x-text="save.display"></div>
+              <div class="save-card-focus" x-text="save.focus || '未提供额外焦点摘要。'"></div>
+            </button>
+          </template>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="overlay" x-show="storyModalOpen">
+    <div class="modal-surface">
+      <div class="story-shell">
+        <div class="story-main">
+          <div class="story-main-head">
+            <div class="story-eyebrow">选择故事</div>
+            <div class="story-headline">从一个合适的开场进入。</div>
+          </div>
+
+          <div class="story-grid">
+            <template x-if="stories.length">
+              <template x-for="(story, index) in stories" :key="story.id">
+                <button
+                  type="button"
+                  class="story-card"
+                  :class="storyCardClass(index)"
+                  @click="startNewGame(story.id)"
+                >
+                  <div class="story-card-shell">
+                    <div class="story-card-top">
+                      <div class="story-card-tagline" x-text="story.tagline || ''"></div>
+                      <div class="story-card-title" x-text="story.title || story.label"></div>
+                    </div>
+                    <div class="story-card-copy" x-text="story.summary || story.label"></div>
+                    <div class="story-card-foot">
+                      <span class="story-card-cue" x-text="storyCardCue(index)"></span>
+                      <span class="story-card-enter">进入故事 →</span>
+                    </div>
+                  </div>
+                </button>
+              </template>
+            </template>
+
+            <template x-if="canDismissStoryModal()">
+              <button type="button" class="story-card return-card" @click="closeStoryModal()">
+                <div class="story-card-shell">
+                  <div class="story-card-top">
+                    <div class="story-card-tagline">当前进度</div>
+                    <div class="story-card-title">返回当前对话</div>
+                  </div>
+                  <div class="return-card-copy">不重新开局，继续当前已经展开的这一幕。</div>
+                  <div class="story-card-foot">
+                    <span class="story-card-cue">继续当前场面</span>
+                    <span class="story-card-enter">返回 →</span>
+                  </div>
+                </div>
+              </button>
+            </template>
+
+            <template x-if="!stories.length">
+              <div class="drawer-empty">故事列表加载失败或为空，请稍后重试。</div>
+            </template>
+          </div>
+        </div>
+
+        <div class="story-side">
+          <div class="resume-panel" x-show="hasSave">
+            <div class="resume-label">可继续的进度</div>
+            <div class="resume-title">继续上次进度</div>
+            <div class="resume-copy" x-text="recentPreview()"></div>
+            <div class="resume-meta">
+              <div class="meta-chip">
+                <span class="meta-chip-label">近期对话</span>
+                <span class="meta-chip-value" x-text="`${initialRecent.length} 条近期消息`"></span>
+              </div>
+              <div class="meta-chip">
+                <span class="meta-chip-label">建议行动</span>
+                <span class="meta-chip-value" x-text="`${initialChoices.length} 个建议行动`"></span>
+              </div>
+            </div>
+            <button type="button" class="resume-button" @click="continueGame(initialRecent, initialChoices)">继续上次游戏</button>
+          </div>
+
+          <div class="resume-panel" x-show="!hasSave">
+            <div class="resume-label">新的开始</div>
+            <div class="resume-title">还没有可继续的进度</div>
+            <div class="resume-copy">从左侧挑一个故事，直接进入新的开场。</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- ── Navbar ─────────────────────────────────────────────────────────── -->
-  <nav id="navbar">
-    <div id="nav-title">AgentGal <small>♡ 恋爱物语</small></div>
-    <button class="nav-btn" id="btn-save" @click="saveGame()">存档</button>
-    <button class="nav-btn danger" id="btn-reset" @click="showResetModal()">重开</button>
-  </nav>
+  <div class="overlay" x-show="confirmDialog.open">
+    <div class="modal-surface confirm-shell">
+      <div class="story-eyebrow">确认</div>
+      <div class="confirm-title" x-text="confirmDialog.title"></div>
+      <div class="confirm-copy" x-text="confirmDialog.body"></div>
 
-  <!-- ── Main ───────────────────────────────────────────────────────────── -->
-  <div id="main">
-
-    <!-- Chat -->
-    <div id="chat-wrap">
-      <div id="messages" x-ref="messages">
-        <template x-for="message in messages" :key="message.id">
-          <div :class="message.cls" x-html="message.html"></div>
-        </template>
-      </div>
-      <div id="status-bar" :class="{ active: status }" x-text="status"></div>
-      <div id="choices-bar" x-show="choices.length">
-        <template x-for="choice in choices" :key="choice">
-          <button type="button" class="choice-btn" x-text="choice" @click="submitMessage(choice)"></button>
-        </template>
-      </div>
-      <div id="input-area">
-        <textarea id="user-input" rows="2" placeholder="输入你的对话或行动…" x-model="inputText" :disabled="busy" @keydown="handleInputKeydown($event)"></textarea>
-        <button id="send-btn" :disabled="busy" @click="submitCurrentInput()">发送</button>
+      <div class="confirm-actions">
+        <button type="button" class="ghost-btn" @click="closeConfirm()">取消</button>
+        <button type="button" class="primary-btn" @click="runConfirm()" x-text="confirmDialog.confirmText"></button>
       </div>
     </div>
+  </div>
 
-    <!-- Sidebar -->
-    <aside id="sidebar" :class="{ collapsed: sidebarCollapsed }">
-      <button class="sidebar-toggle-btn" id="btn-toggle-sidebar" title="档案室" aria-label="切换档案室" @click="sidebarCollapsed = !sidebarCollapsed">📂</button>
-      <div class="sidebar-head">
-        <span class="sidebar-title">档案室</span>
-        <button class="sidebar-icon-btn" id="btn-refresh-saves" title="刷新" @click="refreshSaves()">⟳</button>
-      </div>
-      <div id="save-list">
-        <template x-if="!saves.length">
-          <div class="save-empty">暂无存档</div>
-        </template>
-        <template x-for="save in saves" :key="save.filename">
-          <div class="save-card" @click="loadSave(save.filename)">
-            <div class="save-time" x-text="save.display"></div>
-            <template x-if="save.focus">
-              <div class="save-focus" x-text="save.focus"></div>
-            </template>
-          </div>
-        </template>
-      </div>
-    </aside>
-
+  <div class="toast-stack" aria-live="polite">
+    <template x-for="toast in toasts" :key="toast.id">
+      <div class="toast" :class="toast.tone ? `tone-${toast.tone}` : ''" x-text="toast.message"></div>
+    </template>
   </div>
 </div>
 
 <script>
 marked.setOptions({ breaks: true, gfm: true });
 
-document.addEventListener('alpine:init', () => {
-  Alpine.data('agentGalApp', () => ({
+document.addEventListener("alpine:init", () => {
+  Alpine.data("agentGalApp", () => ({
     busy: false,
-    status: '',
-    modalOpen: false,
+    statusText: "",
+    noticeText: "",
+    noticeTone: "",
+    noticeTimer: null,
+    storyModalOpen: false,
+    confirmDialog: {
+      open: false,
+      title: "",
+      body: "",
+      confirmText: "确定",
+    },
+    confirmAction: null,
     hasSave: false,
-    sidebarCollapsed: window.innerWidth <= 640,
-    inputText: '',
+    isCompact: false,
+    drawerOpen: false,
+    inputText: "",
     stories: [],
     messages: [],
     choices: [],
     saves: [],
+    saveLoading: false,
+    saveError: "",
     initialRecent: [],
     initialChoices: [],
     nextMessageId: 1,
+    activeStreamController: null,
+    toastTimers: new Map(),
+    toasts: [],
+    mediaQuery: null,
+    handleViewportChangeBound: null,
+    sceneMeta: {
+      summary: "",
+      time: "",
+      location: "",
+      present: "",
+    },
     agentStyleByAuthor: {},
     agentPalette: [
-      { color: '#c45870', border: 'rgba(196,88,112,0.45)',  bg: 'rgba(196,88,112,0.05)'  },
-      { color: '#8870bc', border: 'rgba(136,112,188,0.45)', bg: 'rgba(136,112,188,0.05)' },
-      { color: '#5898a8', border: 'rgba(88,152,168,0.45)',  bg: 'rgba(88,152,168,0.05)'  },
-      { color: '#b87890', border: 'rgba(184,120,144,0.45)', bg: 'rgba(184,120,144,0.05)' },
+      { color: "#b45a64", border: "rgba(180, 90, 100, 0.18)", background: "rgba(180, 90, 100, 0.08)" },
+      { color: "#6a8165", border: "rgba(106, 129, 101, 0.2)", background: "rgba(106, 129, 101, 0.08)" },
+      { color: "#5b7d86", border: "rgba(91, 125, 134, 0.2)", background: "rgba(91, 125, 134, 0.08)" },
+      { color: "#95684d", border: "rgba(149, 104, 77, 0.2)", background: "rgba(149, 104, 77, 0.08)" },
     ],
 
     async init() {
-      const [stories, initState] = await Promise.all([
-        this.fetchJson('/api/stories'),
-        this.fetchJson('/api/init'),
-        this.refreshSaves(),
-      ]);
-      this.stories = stories.stories || [];
-      this.hasSave = Boolean(initState.has_save);
-      this.initialRecent = initState.recent || [];
-      this.initialChoices = initState.last_choices || [];
-      this.modalOpen = true;
+      this.setupViewportListener();
+      this.storyModalOpen = true;
+      this.resizeComposer();
+
+      try {
+        const storiesResponse = await this.fetchJson("/api/stories");
+        this.stories = storiesResponse.stories || [];
+      } catch (error) {
+        this.setNotice("故事列表加载失败，稍后仍可重新尝试。", "error", true);
+      }
+
+      try {
+        const initState = await this.fetchJson("/api/init");
+        this.hasSave = Boolean(initState.has_save);
+        this.initialRecent = initState.recent || [];
+        this.initialChoices = initState.last_choices || [];
+      } catch (error) {
+        this.setNotice("初始化失败，部分功能可能暂时不可用。", "error", true);
+      }
+
+      await this.refreshSaves({ quiet: true });
+    },
+
+    destroy() {
+      if (this.mediaQuery && this.handleViewportChangeBound) {
+        this.mediaQuery.removeEventListener("change", this.handleViewportChangeBound);
+      }
+      this.cancelActiveStream({ silent: true });
+      if (this.noticeTimer) {
+        window.clearTimeout(this.noticeTimer);
+      }
+      this.toastTimers.forEach(timeoutId => window.clearTimeout(timeoutId));
+      this.toastTimers.clear();
+    },
+
+    setupViewportListener() {
+      this.mediaQuery = window.matchMedia("(max-width: 920px)");
+      this.handleViewportChangeBound = (event) => {
+        this.isCompact = event.matches;
+        this.drawerOpen = !event.matches;
+      };
+      this.handleViewportChangeBound(this.mediaQuery);
+      this.mediaQuery.addEventListener("change", this.handleViewportChangeBound);
+    },
+
+    handleEscape() {
+      if (this.confirmDialog.open) {
+        this.closeConfirm();
+        return;
+      }
+      if (this.storyModalOpen && this.canDismissStoryModal()) {
+        this.closeStoryModal();
+        return;
+      }
+      if (this.drawerOpen && this.isCompact) {
+        this.closeDrawer();
+      }
+    },
+
+    statusToneClass() {
+      if (this.statusText) return "tone-busy";
+      if (this.noticeTone === "error") return "tone-error";
+      return "tone-idle";
+    },
+
+    shouldShowSceneState() {
+      return Boolean(this.statusText || this.noticeTone === "error");
+    },
+
+    statusLabel() {
+      if (this.statusText) return this.statusText;
+      if (this.noticeTone === "error") return "需要处理";
+      return "就绪";
+    },
+
+    sceneSummary() {
+      return this.sceneMeta.summary || "等待你选定故事，场景概览会在这里持续更新。";
+    },
+
+    sceneChips() {
+      const chips = [];
+      if (this.sceneMeta.time) chips.push({ label: "时间", value: this.sceneMeta.time });
+      if (this.sceneMeta.location) chips.push({ label: "地点", value: this.sceneMeta.location });
+      if (this.sceneMeta.present) chips.push({ label: "在场", value: this.sceneMeta.present });
+      return chips;
+    },
+
+    noticeBadge() {
+      if (this.noticeTone === "error") return "!";
+      if (this.noticeTone === "success") return "OK";
+      return "i";
+    },
+
+    trimmedInput() {
+      return String(this.inputText || "").trim();
+    },
+
+    canDismissStoryModal() {
+      return this.messages.length > 0;
+    },
+
+    storyCardClass(index) {
+      return index % 2 === 0 ? "choice-card warm" : "choice-card cool";
+    },
+
+    storyCardCue(index) {
+      if (index === 0) return "主线开场";
+      return "另一种氛围";
+    },
+
+    toggleDrawer() {
+      this.drawerOpen = !this.drawerOpen;
+    },
+
+    closeDrawer() {
+      this.drawerOpen = false;
     },
 
     async fetchJson(url, options = {}) {
       const response = await fetch(url, options);
-      if (!response.ok) throw new Error(`${url} failed: ${response.status}`);
+      if (!response.ok) {
+        let detail = "";
+        try {
+          detail = await response.text();
+        } catch (error) {
+          detail = "";
+        }
+        throw new Error(`${url} failed: ${response.status}${detail ? ` ${detail.slice(0, 120)}` : ""}`);
+      }
       return response.json();
     },
 
     postJson(url, body) {
       return this.fetchJson(url, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
     },
 
-    escapeHtml(value) {
-      const div = document.createElement('div');
-      div.textContent = value || '';
-      return div.innerHTML;
+    setBusyStatus(text) {
+      this.statusText = text;
+    },
+
+    clearBusyStatus() {
+      this.statusText = "";
+    },
+
+    clearNotice() {
+      this.noticeText = "";
+      this.noticeTone = "";
+      if (this.noticeTimer) {
+        window.clearTimeout(this.noticeTimer);
+        this.noticeTimer = null;
+      }
+    },
+
+    setNotice(text, tone = "success", sticky = false) {
+      this.noticeText = text;
+      this.noticeTone = tone;
+      if (this.noticeTimer) {
+        window.clearTimeout(this.noticeTimer);
+        this.noticeTimer = null;
+      }
+      if (!sticky) {
+        this.noticeTimer = window.setTimeout(() => {
+          this.noticeText = "";
+          this.noticeTone = "";
+          this.noticeTimer = null;
+        }, 3600);
+      }
+    },
+
+    pushToast(message, tone = "success") {
+      const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      this.toasts.push({ id, message, tone });
+      const timeoutId = window.setTimeout(() => {
+        this.dismissToast(id);
+      }, 3200);
+      this.toastTimers.set(id, timeoutId);
+    },
+
+    dismissToast(id) {
+      this.toasts = this.toasts.filter(toast => toast.id !== id);
+      const timeoutId = this.toastTimers.get(id);
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+        this.toastTimers.delete(id);
+      }
+    },
+
+    openConfirm({ title, body, confirmText = "确定", onConfirm }) {
+      this.confirmDialog = {
+        open: true,
+        title,
+        body,
+        confirmText,
+      };
+      this.confirmAction = onConfirm;
+    },
+
+    closeConfirm() {
+      this.confirmDialog = {
+        open: false,
+        title: "",
+        body: "",
+        confirmText: "确定",
+      };
+      this.confirmAction = null;
+    },
+
+    async runConfirm() {
+      const action = this.confirmAction;
+      this.closeConfirm();
+      if (action) {
+        await action();
+      }
+    },
+
+    closeStoryModal() {
+      if (!this.canDismissStoryModal()) return;
+      this.storyModalOpen = false;
+    },
+
+    showResetConfirmation() {
+      if (this.busy) {
+        this.setNotice("请等待当前回合完成后再重开。", "error");
+        return;
+      }
+      this.openConfirm({
+        title: "重新选择故事？",
+        body: "当前运行时数据会被新开局覆盖。确认后会回到故事选择界面。",
+        confirmText: "继续",
+        onConfirm: async () => {
+          this.storyModalOpen = true;
+        },
+      });
+    },
+
+    recentPreview() {
+      const recent = [...this.initialRecent].reverse().find(message => String(message.content || "").trim());
+      if (!recent) return "发现一个可继续的进度，读取后会恢复最近对话和建议行动。";
+      return this.excerptPlain(recent.content, 88);
+    },
+
+    excerptPlain(content, maxLength = 72) {
+      const plain = this.stripMarkdown(content || "").replace(/\s+/g, " ").trim();
+      if (plain.length <= maxLength) return plain;
+      return `${plain.slice(0, maxLength - 1)}…`;
+    },
+
+    uniqueStrings(values) {
+      return [...new Set(values.map(value => String(value || "").trim()).filter(Boolean))];
+    },
+
+    stripMarkdown(value) {
+      return String(value || "")
+        .replace(/!\[[^\]]*]\([^)]*\)/g, "")
+        .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+        .replace(/[`*_>#~-]/g, "")
+        .replace(/\s+/g, " ");
+    },
+
+    handleComposerInput(event) {
+      this.resizeComposer(event.target);
+    },
+
+    resizeComposer(target = null) {
+      const textarea = target || this.$refs?.composerInput;
+      if (!textarea) return;
+      textarea.style.height = "auto";
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
+    },
+
+    resetComposer() {
+      this.inputText = "";
+      this.$nextTick(() => this.resizeComposer());
+    },
+
+    normalizeNarratorText(content) {
+      const lines = String(content || "").split("\n");
+      const normalized = [];
+      let previousWasMeta = false;
+
+      for (const rawLine of lines) {
+        const line = rawLine.trimEnd();
+        if (!line.trim()) {
+          normalized.push("");
+          previousWasMeta = false;
+          continue;
+        }
+
+        const isMetaLine = /^(?:\*\*时间\*\*[:：]|\*\*时间[:：]\*\*|时间[:：]|\*\*地点\*\*[:：]|\*\*地点[:：]\*\*|地点[:：]|\*\*在场\*\*[:：]|\*\*在场[:：]\*\*|在场[:：])/.test(line.trim());
+        if (isMetaLine && normalized.length && !previousWasMeta) {
+          normalized.push("");
+        }
+        normalized.push(line);
+        previousWasMeta = isMetaLine;
+      }
+
+      return normalized.join("\n").replace(/\n{3,}/g, "\n\n");
+    },
+
+    isSafeLink(href) {
+      const value = String(href || "").trim().toLowerCase();
+      return value.startsWith("http://") || value.startsWith("https://") || value.startsWith("mailto:");
+    },
+
+    sanitizeHtml(html) {
+      const template = document.createElement("template");
+      template.innerHTML = html;
+
+      const allowedTags = new Set([
+        "a",
+        "blockquote",
+        "br",
+        "code",
+        "em",
+        "h1",
+        "h2",
+        "h3",
+        "hr",
+        "li",
+        "ol",
+        "p",
+        "pre",
+        "strong",
+        "ul",
+      ]);
+      const dropTags = new Set(["script", "style", "iframe", "object", "embed", "form", "input", "button", "textarea"]);
+      const nodes = Array.from(template.content.querySelectorAll("*")).reverse();
+
+      nodes.forEach(node => {
+        const tag = node.tagName.toLowerCase();
+        if (dropTags.has(tag)) {
+          node.remove();
+          return;
+        }
+        if (!allowedTags.has(tag)) {
+          const parent = node.parentNode;
+          if (!parent) return;
+          while (node.firstChild) {
+            parent.insertBefore(node.firstChild, node);
+          }
+          parent.removeChild(node);
+          return;
+        }
+
+        Array.from(node.attributes).forEach(attr => {
+          const name = attr.name.toLowerCase();
+          if (tag === "a" && ["href", "title"].includes(name)) return;
+          node.removeAttribute(attr.name);
+        });
+
+        if (tag === "a") {
+          const href = node.getAttribute("href");
+          if (!this.isSafeLink(href)) {
+            node.removeAttribute("href");
+          } else {
+            node.setAttribute("target", "_blank");
+            node.setAttribute("rel", "noopener noreferrer");
+          }
+        }
+      });
+
+      return template.innerHTML;
+    },
+
+    renderMarkdown(content, { narrator = false } = {}) {
+      const source = narrator ? this.normalizeNarratorText(content) : String(content || "");
+      return this.sanitizeHtml(marked.parse(source));
+    },
+
+    summarizeSceneLine(line) {
+      const plain = this.stripMarkdown(line).trim();
+      if (!plain) return "";
+
+      const sentenceMatch = plain.match(/^(.+?[。！？!?])/);
+      if (sentenceMatch && sentenceMatch[1].length <= 42) {
+        return sentenceMatch[1];
+      }
+
+      const clauseMatch = plain.match(/^(.+?[，；,;])/);
+      if (clauseMatch && clauseMatch[1].length >= 8) {
+        return this.excerptPlain(clauseMatch[1], 36);
+      }
+
+      return this.excerptPlain(plain, 36);
+    },
+
+    extractPresenceNames(text) {
+      const plain = this.stripMarkdown(text).trim();
+      if (!plain) return [];
+
+      const colonMatches = [...plain.matchAll(/(?:^|[，、；;]\s*)([^：:,，、；;]{1,12})\s*[：:]/g)]
+        .map(match => match[1].trim());
+      if (colonMatches.length) {
+        return this.uniqueStrings(colonMatches);
+      }
+
+      const simpleNames = plain
+        .split(/[、，,\/]/)
+        .map(item => item.trim())
+        .filter(item => item && item.length <= 12 && !/[。！？!?]/.test(item));
+
+      return this.uniqueStrings(simpleNames);
     },
 
     getAgentStyle(author) {
-      const key = author || '角色';
+      const key = author || "角色";
       if (!this.agentStyleByAuthor[key]) {
-        this.agentStyleByAuthor[key] = this.agentPalette[Object.keys(this.agentStyleByAuthor).length % this.agentPalette.length];
+        const index = Object.keys(this.agentStyleByAuthor).length % this.agentPalette.length;
+        this.agentStyleByAuthor[key] = this.agentPalette[index];
       }
       return this.agentStyleByAuthor[key];
     },
 
-    formatNarratorContent(content) {
-      const lines = content.split('\n').map(line => {
-        if (!/^\s*(?:\*\*时间\*\*：|\*\*时间：\*\*|时间：)/.test(line)) return line;
-        return line.replace(
-          /([^\s])[\t \u00a0]*(\*\*(?:地点|在场)\*\*：|\*\*(?:地点|在场)：\*\*|(?:地点|在场)：)/g,
-          '$1\n$2'
-        );
-      });
-      let inPresenceList = false;
-      let sawPresenceItem = false;
-      const isPresenceHeading = line => /(?:^|\s)(?:\*\*在场\*\*：|\*\*在场：\*\*|在场：)\s*$/.test(line);
-      const isListItem = line => /^\s*[-*+•]\s+/.test(line);
+    extractNarratorMeta(content) {
+      const result = {
+        summary: "",
+        time: "",
+        location: "",
+        present: "",
+      };
 
-      for (let i = 0; i < lines.length; i += 1) {
-        const line = lines[i];
-        if (isPresenceHeading(line)) {
-          inPresenceList = true;
-          sawPresenceItem = false;
-        } else if (inPresenceList && !line.trim()) {
-          inPresenceList = false;
-          sawPresenceItem = false;
-        } else if (inPresenceList && isListItem(line)) {
-          sawPresenceItem = true;
-        } else if (inPresenceList && sawPresenceItem) {
-          lines.splice(i, 0, '');
-          inPresenceList = false;
-          sawPresenceItem = false;
-          i += 1;
+      const lines = String(content || "")
+        .split("\n")
+        .map(line => line.trim())
+        .filter(Boolean);
+
+      const presentItems = [];
+      let readingPresenceList = false;
+
+      const readField = (line, field) => {
+        const patterns = [
+          new RegExp(`^\\*\\*${field}\\*\\*[:：]\\s*(.*)$`),
+          new RegExp(`^\\*\\*${field}[:：]\\*\\*\\s*(.*)$`),
+          new RegExp(`^${field}[:：]\\s*(.*)$`),
+        ];
+        for (const pattern of patterns) {
+          const match = line.match(pattern);
+          if (match) return this.stripMarkdown(match[1]).trim();
+        }
+        return null;
+      };
+
+      for (const line of lines) {
+        const time = readField(line, "时间");
+        if (time !== null) {
+          result.time = time;
+          readingPresenceList = false;
+          continue;
+        }
+
+        const location = readField(line, "地点");
+        if (location !== null) {
+          result.location = location;
+          readingPresenceList = false;
+          continue;
+        }
+
+        const presence = readField(line, "在场");
+        if (presence !== null) {
+          if (presence) {
+            presentItems.push(...this.extractPresenceNames(presence));
+            readingPresenceList = false;
+          } else {
+            readingPresenceList = true;
+          }
+          continue;
+        }
+
+        if (readingPresenceList && /^\s*[-*+•]\s+/.test(line)) {
+          presentItems.push(...this.extractPresenceNames(line.replace(/^\s*[-*+•]\s+/, "")));
+          continue;
+        }
+
+        readingPresenceList = false;
+
+        if (!result.summary && !/^\s*[-*+•]\s+/.test(line)) {
+          result.summary = this.summarizeSceneLine(line);
         }
       }
-      return lines.join('\n');
+
+      result.present = this.uniqueStrings(presentItems).join("、");
+      return result;
     },
 
-    messageHtml(kind, author, content) {
-      const text = String(content || '');
-      if (kind === 'narrator') {
-        return `<div class="narrator-ornament">✿  ✿  ✿</div><div class="narrator-body msg-body">${marked.parse(this.formatNarratorContent(text))}</div>`;
-      }
-      if (kind === 'player') {
-        return `<div class="player-label">你</div><div class="player-bubble msg-body">${marked.parse(text)}</div>`;
-      }
-      const style = this.getAgentStyle(author);
-      return `<div class="char-name" style="color:${style.color}">${this.escapeHtml(author || '角色')}</div><div class="char-bubble msg-body" style="border-left-color:${style.border};background:${style.bg}">${marked.parse(text)}</div>`;
+    updateSceneMeta(content) {
+      const extracted = this.extractNarratorMeta(content);
+      this.sceneMeta = {
+        summary: extracted.summary || this.sceneMeta.summary,
+        time: extracted.time || this.sceneMeta.time,
+        location: extracted.location || this.sceneMeta.location,
+        present: extracted.present || this.sceneMeta.present,
+      };
     },
 
     addMessage(kind, author, content) {
-      this.messages.push({
+      const text = String(content || "").trim();
+      if (!text) return;
+
+      const style = kind === "agent" ? this.getAgentStyle(author) : {
+        color: "#b45a64",
+        border: "rgba(180, 90, 100, 0.18)",
+        background: kind === "player" ? "rgba(180, 90, 100, 0.08)" : "rgba(255, 251, 247, 0.88)",
+      };
+
+      const message = {
         id: this.nextMessageId++,
-        cls: kind === 'narrator' ? 'msg-narrator' : (kind === 'player' ? 'msg-player' : 'msg-char'),
-        html: this.messageHtml(kind, author, content),
-      });
+        kind,
+        author: kind === "player" ? "你" : (author || "旁白"),
+        color: style.color,
+        border: style.border,
+        background: style.background,
+        html: this.renderMarkdown(text, { narrator: kind === "narrator" }),
+      };
+
+      this.messages.push(message);
+      if (kind === "narrator") {
+        this.updateSceneMeta(text);
+      }
       this.$nextTick(() => {
-        this.$refs.messages.scrollTop = this.$refs.messages.scrollHeight;
+        if (this.$refs.messages) {
+          this.$refs.messages.scrollTop = this.$refs.messages.scrollHeight;
+        }
       });
     },
 
     addHistory(messages) {
-      (messages || []).forEach(m => {
-        const kind = m.role === 'player' ? 'player' : (m.role === 'narrator' ? 'narrator' : 'agent');
-        this.addMessage(kind, m.role === 'player' ? '你' : m.role, m.content);
+      (messages || []).forEach(message => {
+        const role = message.role || "";
+        const kind = role === "player" ? "player" : (role === "narrator" ? "narrator" : "agent");
+        const author = kind === "player" ? "你" : (message.author || role);
+        this.addMessage(kind, author, message.content || "");
       });
     },
 
-    async startNewGame(storyId) {
-      this.modalOpen = false;
+    resetConversation() {
       this.messages = [];
       this.choices = [];
+      this.nextMessageId = 1;
+      this.sceneMeta = {
+        summary: "",
+        time: "",
+        location: "",
+        present: "",
+      };
+      this.agentStyleByAuthor = {};
+      this.clearNotice();
+      this.resetComposer();
+    },
+
+    async startNewGame(storyId) {
+      if (this.busy) return;
+      this.cancelActiveStream({ silent: true });
+      this.storyModalOpen = false;
+      this.resetConversation();
       this.busy = true;
-      this.status = '正在开始新游戏…';
-      const response = await this.postJson('/api/new_game', {story_id: storyId});
-      this.busy = false;
-      this.status = '';
-      if (response.intro) this.addMessage('narrator', null, response.intro);
-      if (response.opening) this.addMessage('narrator', 'Narrator', response.opening);
-      this.choices = response.choices || [];
-      await this.refreshSaves();
+      this.setBusyStatus("正在布置开场");
+
+      try {
+        const response = await this.postJson("/api/new_game", { story_id: storyId });
+        if (response.intro) this.addMessage("narrator", "旁白", response.intro);
+        if (response.opening) this.addMessage("narrator", "旁白", response.opening);
+        this.choices = response.choices || [];
+        this.hasSave = true;
+        this.initialRecent = [];
+        this.initialChoices = this.choices;
+        await this.refreshSaves({ quiet: true });
+        this.pushToast("新故事已开始", "success");
+      } catch (error) {
+        this.storyModalOpen = true;
+        this.setNotice("新故事启动失败，请稍后再试。", "error", true);
+      } finally {
+        this.busy = false;
+        this.clearBusyStatus();
+      }
     },
 
     continueGame(recent, lastChoices) {
-      this.modalOpen = false;
-      this.messages = [];
+      this.storyModalOpen = false;
+      this.resetConversation();
       this.addHistory(recent);
       this.choices = lastChoices || [];
+      if (this.isCompact) this.closeDrawer();
+      this.setNotice("已恢复最近进度。", "success");
     },
 
     submitCurrentInput() {
@@ -778,93 +2571,197 @@ document.addEventListener('alpine:init', () => {
     },
 
     handleInputKeydown(event) {
-      if (event.key !== 'Enter' || event.shiftKey) return;
+      if (this.isCompact) return;
+      if (event.isComposing) return;
+      if (event.key !== "Enter" || event.shiftKey) return;
       event.preventDefault();
       this.submitCurrentInput();
     },
 
+    cancelActiveStream({ silent = false } = {}) {
+      if (!this.activeStreamController) return;
+      this.activeStreamController.abort();
+      this.activeStreamController = null;
+      if (!silent) {
+        this.pushToast("当前请求已取消。", "success");
+      }
+    },
+
     async submitMessage(text) {
-      const message = String(text || '').trim();
+      const message = String(text || "").trim();
       if (!message || this.busy) return;
-      this.addMessage('player', '你', message);
-      this.inputText = '';
+
+      this.addMessage("player", "你", message);
+      this.resetComposer();
       this.choices = [];
       this.busy = true;
-      this.status = '角色思考中…';
-      await this.streamChat(message);
-      this.busy = false;
-      this.status = '';
+      this.setBusyStatus("旁白与角色正在回应");
+
+      try {
+        await this.streamChat(message);
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          this.setNotice("消息发送失败，请检查连接后重试。", "error", true);
+          this.pushToast("发送失败", "error");
+        }
+      } finally {
+        this.busy = false;
+        this.clearBusyStatus();
+        this.activeStreamController = null;
+      }
     },
 
     async streamChat(message) {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({message}),
+      this.activeStreamController = new AbortController();
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+        signal: this.activeStreamController.signal,
       });
+
+      if (!response.ok) {
+        throw new Error(`/api/chat failed: ${response.status}`);
+      }
+      if (!response.body) {
+        throw new Error("SSE body is empty");
+      }
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      let buffer = "";
 
       while (true) {
-        const {done, value} = await reader.read();
+        const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, {stream: true});
-        const parts = buffer.split('\n\n');
-        buffer = parts.pop();
-        parts.forEach(part => this.handleStreamPart(part));
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() || "";
+        chunks.forEach(chunk => this.handleStreamPart(chunk));
       }
-      if (buffer.trim()) this.handleStreamPart(buffer);
+
+      if (buffer.trim()) {
+        this.handleStreamPart(buffer);
+      }
     },
 
     handleStreamPart(part) {
-      const line = part.replace(/^data: /, '').trim();
-      if (!line) return;
+      const payload = part
+        .split("\n")
+        .filter(line => line.startsWith("data:"))
+        .map(line => line.replace(/^data:\s*/, ""))
+        .join("");
+
+      if (!payload) return;
+
       try {
-        const event = JSON.parse(line);
-        if (event.type === 'narrator') this.addMessage('narrator', 'Narrator', event.content);
-        else if (event.type === 'agent') this.addMessage('agent', event.author, event.content);
-        else if (event.type === 'choices') this.choices = event.choices || [];
-        else if (event.type === 'done') { this.status = ''; this.busy = false; }
+        const event = JSON.parse(payload);
+        if (event.type === "narrator") {
+          this.addMessage("narrator", event.author || "旁白", event.content);
+          this.setBusyStatus("角色开始接续这一轮");
+        } else if (event.type === "agent") {
+          this.addMessage("agent", event.author, event.content);
+          this.setBusyStatus(`已收到 ${event.author} 的回应`);
+        } else if (event.type === "choices") {
+          this.choices = event.choices || [];
+          if (this.choices.length) {
+            this.setNotice("这一轮已生成新的建议行动。", "success");
+          } else {
+            this.setNotice("这一轮没有预设选项，你可以直接输入下一句。", "success");
+          }
+        } else if (event.type === "done") {
+          this.clearBusyStatus();
+        }
       } catch (error) {
-        console.warn('SSE parse error', error, line);
+        this.setNotice("实时消息解析失败，界面可能没有完整更新。", "error", true);
       }
     },
 
     normalizeSave(save) {
-      return typeof save === 'string'
-        ? { filename: save, display: save, focus: '' }
-        : { filename: save.filename, display: save.display_time || save.filename, focus: save.focus || '' };
+      return typeof save === "string"
+        ? { filename: save, display: save, focus: "" }
+        : {
+            filename: save.filename,
+            display: save.display_time || save.filename,
+            focus: save.focus || "",
+          };
     },
 
-    async refreshSaves() {
-      const response = await this.fetchJson('/api/saves');
-      this.saves = (response.saves || []).map(save => this.normalizeSave(save));
+    async refreshSaves({ quiet = false } = {}) {
+      this.saveLoading = true;
+      this.saveError = "";
+      try {
+        const response = await this.fetchJson("/api/saves");
+        this.saves = (response.saves || []).map(save => this.normalizeSave(save));
+      } catch (error) {
+        this.saveError = "存档列表加载失败，请稍后再试。";
+        if (!quiet) {
+          this.setNotice(this.saveError, "error", true);
+        }
+      } finally {
+        this.saveLoading = false;
+      }
+    },
+
+    promptLoadSave(filename) {
+      if (this.busy) {
+        this.setNotice("请等待当前回合结束后再读档。", "error");
+        return;
+      }
+      this.openConfirm({
+        title: "读取这个存档？",
+        body: `当前运行时内容会被 "${filename}" 覆盖。`,
+        confirmText: "读取",
+        onConfirm: async () => {
+          await this.loadSave(filename);
+        },
+      });
     },
 
     async loadSave(filename) {
-      if (!confirm(`读取存档 "${filename}"？当前进度将被覆盖。`)) return;
       this.busy = true;
-      this.status = '加载存档中…';
-      const response = await this.postJson('/api/load', {filename});
-      if (response.ok) {
+      this.setBusyStatus("正在加载存档");
+
+      try {
+        const response = await this.postJson("/api/load", { filename });
+        if (!response.ok) {
+          throw new Error("load failed");
+        }
+        this.hasSave = true;
+        this.initialRecent = response.recent || [];
+        this.initialChoices = response.last_choices || [];
         this.continueGame(response.recent, response.last_choices);
-        this.status = '存档已加载';
-      } else {
-        this.status = '加载失败';
+        await this.refreshSaves({ quiet: true });
+        this.pushToast("存档已加载", "success");
+      } catch (error) {
+        this.setNotice("存档读取失败，请稍后再试。", "error", true);
+        this.pushToast("读档失败", "error");
+      } finally {
+        this.busy = false;
+        this.clearBusyStatus();
       }
-      this.busy = false;
     },
 
     async saveGame() {
-      this.status = '存档中…';
-      const response = await this.fetchJson('/api/save', {method: 'POST'});
-      this.status = response.ok ? `✓ 已保存: ${response.path}` : '存档失败';
-      await this.refreshSaves();
-    },
+      if (this.busy) return;
+      if (!this.messages.length) {
+        this.setNotice("还没有可保存的对话内容。", "error");
+        return;
+      }
 
-    showResetModal() {
-      if (confirm('确定要重置游戏吗？当前进度将丢失。')) this.modalOpen = true;
+      this.setBusyStatus("正在打包存档");
+      try {
+        const response = await this.fetchJson("/api/save", { method: "POST" });
+        this.hasSave = true;
+        await this.refreshSaves({ quiet: true });
+        this.setNotice(`已保存到 ${response.path}`, "success");
+        this.pushToast("存档完成", "success");
+      } catch (error) {
+        this.setNotice("存档失败，请稍后再试。", "error", true);
+        this.pushToast("存档失败", "error");
+      } finally {
+        this.clearBusyStatus();
+      }
     },
   }));
 });

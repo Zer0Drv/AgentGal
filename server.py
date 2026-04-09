@@ -32,6 +32,8 @@ from engine.save_manager import (
 )
 from log_config.routing import routing_logger
 from shared.config import CHARACTERS_DIR, get_agent_names
+from shared.text_utils import get_display_name
+from storage.agent_files import read_agent_file
 from storage.history import load_conversation_history
 from storage.message_router import message_router
 
@@ -42,6 +44,7 @@ app = FastAPI(title="AgentGal")
 STATIC_DIR = Path(__file__).parent / "static"
 _LAST_CHOICES_FILE = CHARACTERS_DIR / "last_choices.json"
 _pending_state_update_task: asyncio.Task[None] | None = None
+_RECENT_HISTORY_LIMIT = 12
 
 
 # =============================================================================
@@ -62,6 +65,16 @@ def _load_last_choices() -> list[str]:
 
 def _clear_last_choices() -> None:
     _LAST_CHOICES_FILE.unlink(missing_ok=True)
+
+
+def _get_agent_display_name(agent_name: str) -> str:
+    if agent_name == "narrator":
+        return "旁白"
+    if agent_name == "player":
+        return "你"
+
+    soul_content = read_agent_file(agent_name, "soul.md")
+    return get_display_name(agent_name, soul_content) if soul_content else agent_name
 
 
 def _sse_event(event_type: str, data: dict) -> str:
@@ -130,18 +143,24 @@ async def index() -> HTMLResponse:
 
 @app.get("/api/init")
 async def api_init() -> JSONResponse:
-    """返回初始状态：是否有存档、最近5条历史、最近选项。"""
+    """返回初始状态：是否有存档、最近历史、最近选项。"""
     has_save = has_existing_save()
     recent: list[dict] = []
     last_choices: list[str] = []
 
     if has_save:
-        raw = load_conversation_history(limit=5)
+        raw = load_conversation_history(limit=_RECENT_HISTORY_LIMIT)
         for msg in raw:
             role = msg.get("role", "")
             content = msg.get("content", "").strip()
             if content:
-                recent.append({"role": role, "content": content})
+                recent.append(
+                    {
+                        "role": role,
+                        "author": _get_agent_display_name(role) if role else "",
+                        "content": content,
+                    }
+                )
         last_choices = _load_last_choices()
 
     return JSONResponse({"has_save": has_save, "recent": recent, "last_choices": last_choices})
@@ -156,8 +175,20 @@ async def api_init() -> JSONResponse:
 async def api_stories() -> JSONResponse:
     """列出可选故事模板。"""
     stories = [
-        {"id": "school", "label": "\U0001f3eb 私立城川中学 · 青春校园"},
-        {"id": "modern", "label": "\U0001f306 不期而遇 · 现代都市"},
+        {
+            "id": "school",
+            "label": "私立城川中学",
+            "title": "私立城川中学",
+            "tagline": "青春校园",
+            "summary": "夏季午后的教室、走廊与操场里，关系会在一次次对话和试探中慢慢偏移。",
+        },
+        {
+            "id": "modern",
+            "label": "不期而遇",
+            "title": "不期而遇",
+            "tagline": "现代都市",
+            "summary": "在城市日常与偶然重逢之间，让暧昧、克制和误差一点点累积成新的局面。",
+        },
     ]
     return JSONResponse({"stories": stories})
 
@@ -211,7 +242,7 @@ async def _chat_stream(user_input: str):
     if scene_description:
         if is_narrator_valid:
             await message_router.broadcast_agent_response("narrator", targets, scene_description)
-        yield _sse_event("narrator", {"content": scene_description, "author": "Narrator"})
+        yield _sse_event("narrator", {"content": scene_description, "author": "旁白"})
 
     if not targets:
         routing_logger.info("[导演] 无角色需要回应")
@@ -227,10 +258,16 @@ async def _chat_stream(user_input: str):
             response = await run_agent_in_scene(agent_name, targets, user_input)
             if response:
                 agent_responses.append((agent_name, response))
-                yield _sse_event("agent", {"content": response, "author": agent_name.capitalize()})
+                yield _sse_event(
+                    "agent",
+                    {"content": response, "author": _get_agent_display_name(agent_name)},
+                )
         except Exception as e:
             routing_logger.error(f"Agent {agent_name} 运行失败: {e}")
-            yield _sse_event("agent", {"content": f"[错误: {e}]", "author": agent_name.capitalize()})
+            yield _sse_event(
+                "agent",
+                {"content": f"[错误: {e}]", "author": _get_agent_display_name(agent_name)},
+            )
 
     # 5. 生成选项，同时后台维护 narrator 状态
     _start_state_update(user_input, scene_description, targets, agent_responses)
@@ -296,9 +333,13 @@ async def api_load(req: LoadRequest) -> JSONResponse:
     if success:
         for name in get_agent_names(include_narrator=True):
             reload_conversation_agent(name)
-        raw = load_conversation_history(limit=5)
+        raw = load_conversation_history(limit=_RECENT_HISTORY_LIMIT)
         recent = [
-            {"role": m.get("role", ""), "content": m.get("content", "").strip()}
+            {
+                "role": m.get("role", ""),
+                "author": _get_agent_display_name(m.get("role", "")) if m.get("role", "") else "",
+                "content": m.get("content", "").strip(),
+            }
             for m in raw
             if m.get("content", "").strip()
         ]
