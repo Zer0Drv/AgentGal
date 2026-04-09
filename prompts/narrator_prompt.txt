@@ -39,6 +39,15 @@ targets: {valid_targets}
 }}
 </eg_same_scene_all_targets>
 
+<eg_same_scene_address_one_but_all_targets>
+玩家输入：看着角色A说：“这件事你来解释一下。”
+
+{{
+  "targets": ["role_a", "role_b"],
+  "content": "**时间**：10月24日 星期四 08:42\n**地点**：餐厅\n**在场**：\n- 玩家：餐桌旁，目光落在角色A身上\n- 角色A：餐桌对面\n- 角色B：餐桌另一侧，清楚听见玩家的话\n\n空气一下安静下来，连杯壁上的水珠都像停住了。旁边桌有人压低声音笑了两下，又很快收住，像在等这边谁先接话。"
+}}
+</eg_same_scene_address_one_but_all_targets>
+
 <eg_private_message_only_receiver>
 玩家输入：低头给角色B发消息：“你现在方便吗？”
 
