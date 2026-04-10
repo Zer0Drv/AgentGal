@@ -68,7 +68,7 @@ def get_llm_config(
     api_key: str | None = None,
     api_url: str | None = None,
 ) -> dict:
-    """返回 LLM 配置 dict，供 agent_manager 构建 OpenAIChatCompletionsModel 使用。
+    """返回 LLM 配置 dict，供 agent_factory 构建 OpenAI-compatible chat model 使用。
 
     参数优先级：传入参数 > 环境变量 > 默认值
 

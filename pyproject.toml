@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A chatbot with long-term memory and personal customization"
 requires-python = ">=3.11"
 dependencies = [
+    "pydantic-ai>=1.79.0",
     "openai>=1.0",
     "python-dotenv>=1.0",
     "tiktoken>=0.7",
@@ -18,7 +19,6 @@ dependencies = [
     "asyncpg>=0.30.0",
     "bcrypt",
     "sseclient",
-    "openai-agents>=0.13.2",
 ]
 
 [project.optional-dependencies]

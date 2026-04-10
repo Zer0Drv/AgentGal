@@ -15,7 +15,7 @@
 - Python 3.11+
 - FastAPI + SSE（服务端推送）
 - Alpine.js + marked（CDN 前端依赖）
-- OpenAI Agents SDK（`output_type=PydanticModel` 结构化输出）
+- pydantic-ai（统一使用 `PromptedOutput` 结构化输出）
 - sqlite-vec + aiosqlite
 - asyncio
 - `uv` 包管理
@@ -92,7 +92,7 @@ uv run uvicorn server:app --reload
 
 ### 3. 结构化写回
 
-所有 Agent 使用 Pydantic 结构化输出（`output_type=PydanticModel`），系统直接读取 typed 字段写回文件：
+所有结构化 Agent 使用 Pydantic 结构化输出（`PromptedOutput`），系统直接读取 typed 字段写回文件：
 
 - `output.memory` → `memory.md`
 - `output.status` → `status.md`
@@ -194,6 +194,9 @@ uv run uvicorn server:app --reload
 | `RERANK_MODEL` | 否 | rerank 模型，未开启时忽略 |
 | `RERANK_API_URL` | 否 | rerank 端点 URL |
 | `RERANK_API_KEY` | 否 | rerank API Key |
+| `LOGFIRE_TOKEN` | 否 | 已配置时上报 Logfire traces，未配置则静默跳过 |
+| `LOGFIRE_SEND_TO_LOGFIRE` | 否 | 覆盖 Logfire 是否发送数据 |
+| `LOGFIRE_ENVIRONMENT` | 否 | Logfire 环境标签 |
 
 ### `config.toml`
 
@@ -225,9 +228,10 @@ uv run uvicorn server:app --reload
 
 ## 日志与观测
 
-- `logs/agent/agent_calls_readable.log`：可读的请求/响应日志
-- `logs/agent/agent_calls.jsonl`：结构化调用日志
-- Agent 调用日志会记录 token 使用量，以及 prompt cache 的 hit / miss / ratio（provider 支持时）
+- `logs/llm_usage/llm_usage.jsonl`：结构化 token 使用日志
+- `logs/routing/routing.log`：对话路由、失败与文件写回日志
+- `logs/memory/memory.log`：长期记忆召回与整理日志
+- 已配置 Logfire（本地 CLI 或 `LOGFIRE_TOKEN`）时，会额外上报 PydanticAI traces；未配置时静默跳过
 
 ## 测试
 

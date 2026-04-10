@@ -31,6 +31,7 @@ from engine.save_manager import (
     reset_game,
 )
 from log_config.routing import routing_logger
+from log_config.logfire import setup_logfire
 from shared.config import CHARACTERS_DIR, get_agent_names
 from shared.text_utils import get_display_name
 from storage.agent_files import read_agent_file
@@ -119,6 +120,7 @@ def _start_state_update(
 
 @app.on_event("startup")
 async def startup() -> None:
+    setup_logfire()
     initialize_conversation_agents()
 
 
