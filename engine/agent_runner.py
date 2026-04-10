@@ -1,9 +1,11 @@
 """统一的 Agent 运行层。"""
 
 import asyncio
+import json
 from typing import TypeVar
 
 from agents import RunConfig, Runner
+from pydantic import TypeAdapter
 
 from log_config.llm_usage import log_llm_usage
 from log_config.routing import routing_logger
@@ -105,7 +107,14 @@ async def run_structured_agent(
     try:
         return result.final_output_as(output_type, raise_if_incorrect_type=True)
     except Exception as e:
+        # LLM 有时在 JSON 字符串值内输出裸控制字符（如字面换行），strict=False 允许此类输入。
+        raw = result.final_output or ""
+        try:
+            data = json.loads(raw, strict=False)
+            return TypeAdapter(output_type).validate_python(data)
+        except (json.JSONDecodeError, ValueError) as fallback_err:
+            routing_logger.debug(f"[{label}] lenient parse fallback 也失败: {fallback_err}")
         routing_logger.error(
-            f"[{label}] structured output 解析失败: {e}，raw={result.final_output!r}"
+            f"[{label}] structured output 解析失败: {e}，raw={raw!r}"
         )
         raise
