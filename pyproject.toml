@@ -5,6 +5,7 @@ description = "A chatbot with long-term memory and personal customization"
 requires-python = ">=3.11"
 dependencies = [
     "chainlit>=2.0",
+    "pydantic-ai>=1.79.0",
     "openai>=1.0",
     "python-dotenv>=1.0",
     "tiktoken>=0.7",
@@ -21,7 +22,6 @@ dependencies = [
     "bcrypt",
     "gradio",
     "sseclient",
-    "openai-agents>=0.13.2",
 ]
 
 [project.optional-dependencies]

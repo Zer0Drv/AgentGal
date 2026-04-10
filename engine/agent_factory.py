@@ -1,7 +1,11 @@
 """统一创建并缓存所有 Agent。"""
 
-from agents import Agent, AgentOutputSchema, ModelSettings, OpenAIChatCompletionsModel
-from openai import AsyncOpenAI
+from __future__ import annotations
+
+from pydantic_ai import Agent, PromptedOutput
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
 
 from engine.agent_schema import (
     CharacterOutput,
@@ -20,7 +24,12 @@ from llm.providers import (
     get_llm_config,
     get_narrator_llm_config,
 )
-from shared.config import CONSOLIDATION_MAX_TOKENS, CONSOLIDATION_TEMPERATURE, PROJECT_ROOT, get_agent_names
+from shared.config import (
+    CONSOLIDATION_MAX_TOKENS,
+    CONSOLIDATION_TEMPERATURE,
+    PROJECT_ROOT,
+    get_agent_names,
+)
 from storage.agent_files import load_text, read_agent_file
 
 _MEMORY_MERGE_PROMPT_PATH = PROJECT_ROOT / "prompts" / "memory_scene_merge.txt"
@@ -31,18 +40,32 @@ _PLAYER_PROFILE_PROMPT_PATH = PROJECT_ROOT / "prompts" / "player_profile_consoli
 _CHOICES_PROMPT_PATH = PROJECT_ROOT / "prompts" / "choices_prompt.txt"
 _STATE_UPDATER_PROMPT_PATH = PROJECT_ROOT / "prompts" / "state_updater_prompt.txt"
 
-_conversation_agents: dict[str, Agent] = {}
-_choices_agent: Agent | None = None
-_state_updater_agent: Agent | None = None
-_consolidation_agents: dict[str, Agent] = {}
+ConversationAgent = Agent[None, CharacterOutput | NarratorOutput]
+StructuredAgent = Agent[None, object]
+TextAgent = Agent[None, str]
+
+_conversation_agents: dict[str, ConversationAgent] = {}
+_choices_agent: Agent[None, ChoicesOutput] | None = None
+_state_updater_agent: Agent[None, StateUpdaterOutput] | None = None
+_consolidation_agents: dict[str, StructuredAgent | TextAgent] = {}
 
 
-def _make_sdk_model(config: dict) -> OpenAIChatCompletionsModel:
-    oai_client = AsyncOpenAI(base_url=config["api_url"], api_key=config["api_key"])
-    return OpenAIChatCompletionsModel(
-        model=config["model"],
-        openai_client=oai_client,
+def _make_sdk_model(config: dict) -> OpenAIChatModel:
+    return OpenAIChatModel(
+        config["model"],
+        provider=OpenAIProvider(base_url=config["api_url"], api_key=config["api_key"]),
     )
+
+
+def _build_model_settings(
+    config: dict,
+    *,
+    max_tokens: int | None = None,
+) -> ModelSettings:
+    settings: ModelSettings = {"temperature": config["temperature"]}
+    if max_tokens is not None:
+        settings["max_tokens"] = max_tokens
+    return settings
 
 
 def _build_agent(
@@ -52,20 +75,14 @@ def _build_agent(
     config: dict,
     output_type: type | None = None,
     max_tokens: int | None = None,
-) -> Agent:
-    settings_kwargs: dict = {"temperature": config["temperature"]}
-    # extra_body 覆盖 agents 自动生成的 json_schema，因为 deepseek 只支持 json_object
-    if output_type is not None:
-        settings_kwargs["extra_body"] = {"response_format": {"type": "json_object"}}
-    if max_tokens is not None:
-        settings_kwargs["max_tokens"] = max_tokens
-    wrapped_output_type = AgentOutputSchema(output_type, strict_json_schema=False) if output_type is not None else None
+) -> Agent[None, object] | Agent[None, str]:
+    agent_output = PromptedOutput(output_type) if output_type is not None else str
     return Agent(
+        _make_sdk_model(config),
         name=name,
         instructions=instructions,
-        model=_make_sdk_model(config),
-        model_settings=ModelSettings(**settings_kwargs),
-        output_type=wrapped_output_type,
+        model_settings=_build_model_settings(config, max_tokens=max_tokens),
+        output_type=agent_output,
     )
 
 
@@ -90,13 +107,13 @@ def reload_conversation_agent(name: str) -> None:
         _choices_agent = None
 
 
-def get_conversation_agent(name: str) -> Agent:
+def get_conversation_agent(name: str) -> ConversationAgent:
     if name not in _conversation_agents:
         reload_conversation_agent(name)
     return _conversation_agents[name]
 
 
-def get_choices_agent() -> Agent:
+def get_choices_agent() -> Agent[None, ChoicesOutput]:
     global _choices_agent
 
     if _choices_agent is None:
@@ -111,7 +128,7 @@ def get_choices_agent() -> Agent:
     return _choices_agent
 
 
-def get_state_updater_agent() -> Agent:
+def get_state_updater_agent() -> Agent[None, StateUpdaterOutput]:
     global _state_updater_agent
 
     if _state_updater_agent is None:
@@ -167,26 +184,26 @@ def _ensure_consolidation_agents() -> None:
     )
 
 
-def _get_consolidation_agent(key: str) -> Agent:
+def _get_consolidation_agent(key: str) -> StructuredAgent | TextAgent:
     _ensure_consolidation_agents()
     return _consolidation_agents[key]
 
 
-def get_memory_merge_agent() -> Agent:
+def get_memory_merge_agent() -> Agent[None, MemoryMergeOutput]:
     return _get_consolidation_agent("memory_merge")
 
 
-def get_memory_metadata_agent() -> Agent:
+def get_memory_metadata_agent() -> Agent[None, MemoryMetadataOutput]:
     return _get_consolidation_agent("memory_metadata")
 
 
-def get_growth_extract_agent() -> Agent:
+def get_growth_extract_agent() -> Agent[None, GrowthExtractOutput]:
     return _get_consolidation_agent("growth_extract")
 
 
-def get_growth_dedup_agent() -> Agent:
+def get_growth_dedup_agent() -> Agent[None, GrowthDedupOutput]:
     return _get_consolidation_agent("growth_dedup")
 
 
-def get_player_profile_agent() -> Agent:
+def get_player_profile_agent() -> TextAgent:
     return _get_consolidation_agent("player_profile")

@@ -1,18 +1,18 @@
-多 Agent 角色扮演 / 叙事游戏项目。当前实现以 **FastAPI + OpenAI Agents SDK + Pydantic 结构化输出 + 文件记忆 + sqlite-vec** 为核心，使用 `uv` 作为项目管理器。
+多 Agent 角色扮演 / 叙事游戏项目。当前实现以 **FastAPI + pydantic-ai + Pydantic 结构化输出 + 文件记忆 + sqlite-vec** 为核心，使用 `uv` 作为项目管理器。
 
 ## 核心设计
 
 - **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 只维护 `status.md` 与 raw 历史
 - **信息差**：消息按 `visible_to` 控制可见范围，未参与场景的角色不会看到该轮内容
 - **旁白先行**：`narrator` 先做路由与场景推进，再顺序调用目标角色
-- **结构化输出**：所有 Agent 使用 `output_type=PydanticModel`，不输出 XML；系统直接读取 typed 字段写回文件
+- **结构化输出**：所有结构化 Agent 使用 `PromptedOutput`，不输出 XML；系统直接读取 typed 字段写回文件
 - **双层记忆**：Markdown 文件可读可编辑，向量库负责检索
 
 ## 技术栈
 
 - Python 3.11+
 - FastAPI + SSE（服务端推送）
-- OpenAI Agents SDK（`openai-agents>=0.13.2`）—— `Agent` / `Runner` / `ModelSettings` / `OpenAIChatCompletionsModel`
+- pydantic-ai（`pydantic-ai`）—— `Agent` / `PromptedOutput` / `OpenAIChatModel` / `OpenAIProvider`
 - sqlite-vec + aiosqlite
 - asyncio
 
@@ -133,7 +133,7 @@ server.py        ← shared/ + storage/ + engine/
 
 ## Agent 输出与写回机制
 
-所有 Agent 使用 OpenAI Agents SDK 的 `output_type=PydanticModel` 结构化输出，不再使用 XML `<update_notes>`：
+所有结构化 Agent 使用 pydantic-ai 的 `PromptedOutput` 结构化输出，不再使用 XML `<update_notes>`：
 
 - `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`
 - `NarratorOutput`：`content`, `targets`（仅路由与场景描述）
@@ -298,9 +298,10 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ## 日志与观测
 
-- `logs/agent/agent_calls_readable.log`：可读调用日志
-- `logs/agent/agent_calls.jsonl`：结构化调用日志
-- 调用日志会记录 token 用量，以及 provider 支持时的 prompt cache hit / miss / ratio
+- `logs/llm_usage/llm_usage.jsonl`：结构化 token 使用日志
+- `logs/routing/routing.log`：对话路由、失败与文件写回日志
+- `logs/memory/memory.log`：长期记忆召回与整理日志
+- 已配置 Logfire（本地 CLI 或 `LOGFIRE_TOKEN`）时，会额外上报 PydanticAI traces；未配置时静默跳过
 
 ## 测试约定
 
