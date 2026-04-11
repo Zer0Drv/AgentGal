@@ -43,7 +43,6 @@ def _apply_high_low_watermark(
 
     was_truncated = False
     if len(kept_indices) > high:
-        routing_logger.info("[%s] 历史窗口触发高水位", agent_name)
         kept_indices = kept_indices[-low:]
         start_raw_index = kept_indices[0]
         was_truncated = True
