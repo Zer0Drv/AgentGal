@@ -19,7 +19,7 @@ from typing import Any
 import aiosqlite
 
 from log_config.memory import memory_logger
-from llm.embedding import embed_async, embed_sync, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
+from llm.embedding import embed_async, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
 from shared.config import (
     character_path,
     PROJECT_ROOT,
@@ -114,6 +114,9 @@ class VectorStore:
         # 单连接下显式串行化写事务；按事件循环懒初始化避免跨 loop 复用报错
         self._write_lock: asyncio.Lock | None = None
         self._write_lock_loop: asyncio.AbstractEventLoop | None = None
+        # 建表只需执行一次；同样按事件循环绑定
+        self._tables_initialized: bool = False
+        self._tables_initialized_loop: asyncio.AbstractEventLoop | None = None
 
     def _get_write_lock(self) -> asyncio.Lock:
         """获取当前事件循环绑定的写锁。"""
@@ -122,6 +125,15 @@ class VectorStore:
             self._write_lock = asyncio.Lock()
             self._write_lock_loop = loop
         return self._write_lock
+
+    async def _ensure_tables(self) -> None:
+        """建表/迁移只做一次；跨 loop 重建（脚本场景）。"""
+        loop = asyncio.get_running_loop()
+        if self._tables_initialized and self._tables_initialized_loop is loop:
+            return
+        await self.init_tables()
+        self._tables_initialized = True
+        self._tables_initialized_loop = loop
 
     async def _query_db_recall_by_hash(
         self,
@@ -367,11 +379,11 @@ class VectorStore:
         db: aiosqlite.Connection,
         agent_name: str,
         payloads: list[tuple[str, str, str, str, int, str, str]],
+        embeddings: list[list[float]],
     ) -> None:
-        """embed + 写入三张表，不做删除。"""
+        """将 payloads 与对应 embeddings 写入三张表，不做删除。"""
         if not payloads:
             return
-        embeddings = await embed_async([item[2] for item in payloads])
         for i, (memory_key, event_date, text, keywords, importance, c_hash, recalled_at) in enumerate(payloads):
             cur = await db.execute(
                 "INSERT INTO memory_chunks(memory_key, owner_agent, game_date, content, keywords, importance, content_hash, last_recalled_at) "
@@ -417,41 +429,48 @@ class VectorStore:
             )
             return
 
-        # sidecar fallback 可以在锁外读（仅文件 I/O，load 后才命中）
+        # embed_async 是 HTTP 请求，绝不能在写锁或事务内调用
+        try:
+            embeddings = await embed_async([text for text, _, _ in items])
+        except Exception as e:
+            memory_logger.error(
+                "[VectorStore] embedding 计算失败: agent=%s, date=%s, error=%s",
+                agent_name, date, e,
+            )
+            return
+
         sidecar_recall = self._sidecar_recall_by_hash(agent_name, date)
+        recall_by_hash = await self._query_db_recall_by_hash(agent_name, date)
+        if not recall_by_hash:
+            recall_by_hash = sidecar_recall
+
+        payloads: list[tuple[str, str, str, str, int, str, str]] = []
+        for idx, (text, keywords, importance) in enumerate(items, start=1):
+            memory_key = f"memory::{agent_name}::{date}::{idx}"
+            content_hash = hashlib.sha1(text.encode("utf-8")).hexdigest()
+            recalled_at = recall_by_hash.get(content_hash, date)
+            payloads.append((
+                memory_key, date, text, keywords, importance,
+                content_hash, recalled_at,
+            ))
+
+        memory_logger.info(
+            "[VectorStore] 开始长期记忆索引: agent=%s, date=%s, 待写入事件=%s",
+            agent_name, date, len(payloads),
+        )
 
         db: aiosqlite.Connection | None = None
         try:
             async with self._get_write_lock():
-                await self.init_tables()
+                await self._ensure_tables()
                 db = await self._get_db()
-
-                # 在事务内查 recall 状态，避免与并发写竞争
-                recall_by_hash = await self._query_db_recall_by_hash(agent_name, date)
-                if not recall_by_hash:
-                    recall_by_hash = sidecar_recall
-
-                payloads: list[tuple[str, str, str, str, int, str, str]] = []
-                for idx, (text, keywords, importance) in enumerate(items, start=1):
-                    memory_key = f"memory::{agent_name}::{date}::{idx}"
-                    content_hash = hashlib.sha1(text.encode("utf-8")).hexdigest()
-                    recalled_at = recall_by_hash.get(content_hash, date)
-                    payloads.append((
-                        memory_key, date, text, keywords, importance,
-                        content_hash, recalled_at,
-                    ))
-
-                memory_logger.info(
-                    "[VectorStore] 开始长期记忆索引: agent=%s, date=%s, 待写入事件=%s",
-                    agent_name, date, len(payloads),
-                )
                 await db.execute("BEGIN")
                 await self._delete_chunks(db, agent_name, date)
-                await self._insert_chunks(db, agent_name, payloads)
+                await self._insert_chunks(db, agent_name, payloads, embeddings)
                 await db.commit()
                 memory_logger.info(
                     "[VectorStore] 长期记忆索引完成: agent=%s, date=%s, 写入事件=%s",
-                    agent_name, date, len(payloads)
+                    agent_name, date, len(payloads),
                 )
         except Exception as e:
             try:
@@ -461,7 +480,7 @@ class VectorStore:
                 pass
             memory_logger.error(
                 "[VectorStore] 索引长期记忆失败: agent=%s, date=%s, error=%s",
-                agent_name, date, e
+                agent_name, date, e,
             )
 
     # ----------------------------- 原始检索 -----------------------------
@@ -557,10 +576,11 @@ class VectorStore:
     async def delete(self, agent_name: str) -> bool:
         """删除指定 agent 的所有记忆索引。"""
         try:
-            await self.init_tables()
+            await self._ensure_tables()
             db = await self._get_db()
-            await self._delete_chunks(db, agent_name)
-            await db.commit()
+            async with self._get_write_lock():
+                await self._delete_chunks(db, agent_name)
+                await db.commit()
             memory_logger.info("[VectorStore] 已清空 %s 的记忆索引", agent_name)
             return True
         except Exception as e:
@@ -576,7 +596,7 @@ class VectorStore:
         if all_agents and set(unique_names) == all_agents:
             db: aiosqlite.Connection | None = None
             try:
-                await self.init_tables()
+                await self._ensure_tables()
                 db = await self._get_db()
                 async with self._get_write_lock():
                     await db.execute("BEGIN")
@@ -594,8 +614,7 @@ class VectorStore:
                     pass
                 memory_logger.error(f"[VectorStore] 全量清理失败，回退逐角色删除: {e}")
 
-        results = await asyncio.gather(*(self.delete(name) for name in unique_names))
-        return dict(zip(unique_names, results))
+        return {name: await self.delete(name) for name in unique_names}
 
 
 # 全局实例
