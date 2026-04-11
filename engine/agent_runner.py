@@ -3,76 +3,46 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TypeVar
+from typing import Any, TypeVar
 
-from log_config.logfire import logfire_span
 from log_config.routing import routing_logger
 
 T = TypeVar("T")
 
 
-def _build_usage_trace_attributes(result) -> dict[str, int | float]:
-    usage = result.usage()
-    if not usage:
-        return {}
-
-    input_tokens = usage.input_tokens
-    output_tokens = usage.output_tokens
-    total_tokens = usage.total_tokens
-    cache_read_tokens = usage.cache_read_tokens
-
-    attributes: dict[str, int | float] = {}
-    if input_tokens is not None:
-        attributes["input_tokens"] = input_tokens
-    if output_tokens is not None:
-        attributes["output_tokens"] = output_tokens
-    if total_tokens is not None:
-        attributes["total_tokens"] = total_tokens
-    if cache_read_tokens is not None:
-        attributes["cache_read_tokens"] = cache_read_tokens
-
-    if input_tokens and input_tokens > 0:
-        cache_ratio = round((cache_read_tokens or 0) / input_tokens, 4)
-        attributes["token_hit_cache_ratio"] = cache_ratio
-        attributes["token_hit_cache_percent"] = round(cache_ratio * 100, 2)
-
-    return attributes
-
-
-def _attach_usage_trace_attributes(span, result) -> None:
-    if span is None or not hasattr(span, "set_attributes"):
-        return
-
-    attributes = _build_usage_trace_attributes(result)
-    if not attributes:
-        return
-
-    try:
-        span.set_attributes(attributes)
-    except Exception:  # noqa: BLE001
-        return
-
-
-def _build_trace_span_name(*, usage_agent: str, usage_phase: str, output_kind: str) -> str:
-    return f"{usage_agent}.{usage_phase}.{output_kind}"
-
-
-def _build_trace_attributes(
+def _build_run_metadata(
     workflow_name: str,
     usage_agent: str,
     usage_phase: str,
     model_name: str,
     trace_metadata: dict[str, str] | None,
 ) -> dict[str, str]:
-    attributes = {
+    metadata = {
         "workflow_name": workflow_name,
         "usage_agent": usage_agent,
         "usage_phase": usage_phase,
         "model_name": model_name,
     }
     if trace_metadata:
-        attributes.update(trace_metadata)
-    return attributes
+        metadata.update(trace_metadata)
+    return metadata
+
+
+async def _run_agent(
+    agent,
+    user_input: str,
+    metadata: dict[str, str],
+    timeout_seconds: float,
+    label: str,
+) -> Any:
+    try:
+        return await asyncio.wait_for(
+            agent.run(user_input, metadata=metadata),
+            timeout=timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        routing_logger.error(f"{label} 运行超时（>{timeout_seconds}s），强制终止")
+        raise
 
 
 async def run_text_agent(
@@ -89,22 +59,13 @@ async def run_text_agent(
 ) -> str:
     """执行文本 Agent，返回原始字符串输出。"""
     label = error_label or usage_agent
-    try:
-        with logfire_span(
-            _build_trace_span_name(
-                usage_agent=usage_agent,
-                usage_phase=usage_phase,
-                output_kind="text",
-            ),
-            **_build_trace_attributes(
-                workflow_name, usage_agent, usage_phase, model_name, trace_metadata
-            ),
-        ) as span:
-            result = await asyncio.wait_for(agent.run(user_input), timeout=timeout_seconds)
-            _attach_usage_trace_attributes(span, result)
-    except asyncio.TimeoutError:
-        routing_logger.error(f"{label} 运行超时（>{timeout_seconds}s），强制终止")
-        raise
+    result = await _run_agent(
+        agent,
+        user_input,
+        _build_run_metadata(workflow_name, usage_agent, usage_phase, model_name, trace_metadata),
+        timeout_seconds,
+        label,
+    )
 
     output = result.output
     if not isinstance(output, str):
@@ -128,22 +89,13 @@ async def run_structured_agent(
 ) -> T:
     """执行结构化 Agent，并统一处理超时、用量日志和 typed parse。"""
     label = error_label or usage_agent
-    try:
-        with logfire_span(
-            _build_trace_span_name(
-                usage_agent=usage_agent,
-                usage_phase=usage_phase,
-                output_kind="structured",
-            ),
-            **_build_trace_attributes(
-                workflow_name, usage_agent, usage_phase, model_name, trace_metadata
-            ),
-        ) as span:
-            result = await asyncio.wait_for(agent.run(user_input), timeout=timeout_seconds)
-            _attach_usage_trace_attributes(span, result)
-    except asyncio.TimeoutError:
-        routing_logger.error(f"{label} 运行超时（>{timeout_seconds}s），强制终止")
-        raise
+    result = await _run_agent(
+        agent,
+        user_input,
+        _build_run_metadata(workflow_name, usage_agent, usage_phase, model_name, trace_metadata),
+        timeout_seconds,
+        label,
+    )
 
     output = result.output
     if isinstance(output, output_type):

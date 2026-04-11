@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-from contextlib import nullcontext
 from threading import Lock
 from typing import Any
 
@@ -61,23 +60,13 @@ def setup_logfire() -> None:
         try:
             environment = os.getenv("LOGFIRE_ENVIRONMENT") or None
             logfire.configure(
+                console=False,
                 environment=environment,
             )
-            logfire.instrument_pydantic_ai()
+            logfire.instrument_pydantic_ai(include_content=True, include_binary_content=False)
             attach_logfire_handlers(logfire)
             _logfire = logfire
         except Exception as exc:  # noqa: BLE001
             _logger.warning("Logfire 初始化失败，已跳过: %s", exc)
         finally:
             _configured = True
-
-
-def logfire_span(name: str, **attributes: Any):
-    """返回一个可选的 Logfire span 上下文。"""
-    setup_logfire()
-    if _logfire is None:
-        return nullcontext()
-    try:
-        return _logfire.span(name, **attributes)
-    except Exception:  # noqa: BLE001
-        return nullcontext()
