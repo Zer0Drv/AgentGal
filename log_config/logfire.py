@@ -8,6 +8,8 @@ from contextlib import nullcontext
 from threading import Lock
 from typing import Any
 
+from log_config.app_logging import attach_logfire_handlers
+
 _logfire = None
 _configured = False
 _lock = Lock()
@@ -40,6 +42,7 @@ def setup_logfire() -> None:
                 environment=environment,
             )
             logfire.instrument_pydantic_ai()
+            attach_logfire_handlers(logfire)
             _logfire = logfire
         except Exception as exc:  # noqa: BLE001
             _logger.warning("Logfire 初始化失败，已跳过: %s", exc)

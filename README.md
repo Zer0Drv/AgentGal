@@ -123,7 +123,7 @@ uv run uvicorn server:app --reload
 - `memory/retrieval.py` 负责完整检索 pipeline：embedding → 向量/BM25 候选 → hybrid 融合 → 可选 rerank → recency 排序 → recall 状态更新
 - `storage/vector_store.py` 只做存储层：提供向量与 BM25 原始候选，pipeline 逻辑不放在 storage 层
 - 检索默认走 hybrid search：向量相关性 + BM25 关键字相关性，可选 rerank 替换 relevance 信号，最后叠加游戏内时间 recency
-- `logs/memory/memory.log` 会记录每轮的 query 与 top 命中摘要，便于调试召回效果
+- 已配置 Logfire 时，记忆检索会记录每轮的 query 与 top 命中摘要，便于调试召回效果
 - `last_recalled_at` 会在命中后更新到 DB；`.memory_recall_state.json` 仅在存档时从 DB 导出，读档重建时作为降级数据源
 
 ## 关键目录说明
@@ -152,7 +152,7 @@ uv run uvicorn server:app --reload
 - `data/templates/`：故事模板
 - `data/vectors.sqlite`：长期记忆向量库
 - `saves/`：导出的 zip 存档
-- `logs/`：路由、记忆、调用日志
+- 本地 `logs/` 不再默认写入；观测信息通过 Logfire 上报（配置后启用）
 
 ### 角色文件职责
 
@@ -228,10 +228,8 @@ uv run uvicorn server:app --reload
 
 ## 日志与观测
 
-- `logs/llm_usage/llm_usage.jsonl`：结构化 token 使用日志
-- `logs/routing/routing.log`：对话路由、失败与文件写回日志
-- `logs/memory/memory.log`：长期记忆召回与整理日志
-- 已配置 Logfire（本地 CLI 或 `LOGFIRE_TOKEN`）时，会额外上报 PydanticAI traces；未配置时静默跳过
+- 已配置 Logfire（本地 CLI 或 `LOGFIRE_TOKEN`）时，上报 PydanticAI traces、token/cost、路由事件、记忆检索与整理事件；未配置时静默跳过。
+- 路由与记忆模块仍使用标准 logger 作为业务事件入口，但默认不再写入本地 `logs/*.log` 轮转文件。
 
 ## 测试
 

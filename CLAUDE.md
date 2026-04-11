@@ -28,7 +28,7 @@ agentgal-memos/
 │   └── vectors.sqlite          # 向量库
 ├── engine/                     # 应用层编排
 │   ├── agent_factory.py        # Agent 创建、注册表与 SDK model 配置
-│   ├── agent_runner.py         # SDK Runner 调用、用量日志与 typed parse
+│   ├── agent_runner.py         # SDK Runner 调用、Logfire trace 与 typed parse
 │   ├── agent_schema.py         # Pydantic 结构化输出类型
 │   ├── conversation_flow.py    # 单轮对话编排、路由、typed 输出写回
 │   ├── consolidation_flow.py   # 记忆整理编排
@@ -38,7 +38,7 @@ agentgal-memos/
 │   ├── providers.py            # Provider 配置与 URL 解析（返回 api_url/api_key/model/temperature）
 │   ├── embedding.py            # Embeddings 客户端（embed_async / embed_sync）
 │   └── rerank.py               # Rerank API 客户端
-├── log_config/                 # 路由、记忆、调用日志
+├── log_config/                 # Logfire 与业务 logger 配置
 ├── memory/                     # 记忆规则与流程
 │   ├── indexer.py              # 向量索引重建入口（从 memory.md 解析后写入 storage）
 │   ├── parser.py               # memory.md 格式解析、事件切分、日期工具、记忆块操作
@@ -214,7 +214,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 - `storage/vector_store.py` 只做存储层：提供 `get_vector_candidates` / `get_bm25_candidates` 原始候选，pipeline 逻辑不在此处
 - `memory/indexer.py` 负责从 `memory.md` 重建向量索引（解析、过滤、元数据提取在此层，storage 只做 I/O）
 - 召回排序为：向量相关性与 BM25 相关性先融合，rerank（可选）替换 relevance 信号，最后叠加游戏内时间 recency
-- `logs/memory/memory.log` 会记录每轮检索 query 和 top 命中摘要，便于排查召回质量
+- 已配置 Logfire 时，记忆检索会记录每轮 query 和 top 命中摘要，便于排查召回质量
 - `last_recalled_at` 会在命中后更新到 DB；`.memory_recall_state.json` 仅在存档时从 DB 导出，读档重建时作为降级数据源
 - `memory/indexer.rebuild_memory_index()` 会结合 `.consolidation_state.json` 恢复长期记忆索引；recall 状态优先从 DB 读取，DB 为空时降级读 `.memory_recall_state.json`
 
@@ -298,10 +298,8 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ## 日志与观测
 
-- `logs/llm_usage/llm_usage.jsonl`：结构化 token 使用日志
-- `logs/routing/routing.log`：对话路由、失败与文件写回日志
-- `logs/memory/memory.log`：长期记忆召回与整理日志
-- 已配置 Logfire（本地 CLI 或 `LOGFIRE_TOKEN`）时，会额外上报 PydanticAI traces；未配置时静默跳过
+- 已配置 Logfire（本地 CLI 或 `LOGFIRE_TOKEN`）时，上报 PydanticAI traces、token/cost、路由事件、记忆检索与整理事件；未配置时静默跳过
+- 路由与记忆模块仍使用标准 logger 作为业务事件入口，但默认不再写入本地 `logs/*.log` 轮转文件
 
 ## 测试约定
 

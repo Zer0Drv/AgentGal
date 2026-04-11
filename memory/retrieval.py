@@ -28,6 +28,7 @@ from shared.config import (
     character_path,
 )
 from log_config.memory import memory_logger
+from log_config.memory_events import log_retrieval_results
 from llm.embedding import embed_sync
 from llm.rerank import rerank, RERANK_MODEL
 from memory.parser import extract_status_field, canonical_cn_date, game_day_diff
@@ -291,20 +292,13 @@ def search_memories(agent_name: str, query: str) -> str:
             "[Retrieval] 搜索完成: agent=%s, limit=%s, 命中=%s, hybrid=%s",
             agent_name, VECTOR_SEARCH_LIMIT, len(ranked), HYBRID_SEARCH_ENABLED,
         )
-        if ranked:
-            summary = "; ".join(
-                (
-                    f"id={r.get('id')} date={r.get('date', '')} "
-                    f"score={float(r.get('score', 0.0)):.3f} "
-                    f"rel={float(r.get('relevance', 0.0)):.3f} "
-                    f"rec={float(r.get('recency', 0.0)):.3f} "
-                    f"imp={int(r.get('importance', 3))}"
-                )
-                for r in ranked
-            )
-            memory_logger.info("[Retrieval] Top结果: agent=%s, %s", agent_name, summary)
-        else:
-            memory_logger.info("[Retrieval] Top结果: agent=%s, （无命中）", agent_name)
+        log_retrieval_results(
+            agent_name=agent_name,
+            query=query,
+            ranked=ranked,
+            limit=VECTOR_SEARCH_LIMIT,
+            hybrid_enabled=HYBRID_SEARCH_ENABLED,
+        )
 
     except Exception as e:
         memory_logger.error("[Retrieval] 检索失败: agent=%s, error=%s", agent_name, e)

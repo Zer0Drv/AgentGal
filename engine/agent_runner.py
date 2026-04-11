@@ -5,27 +5,10 @@ from __future__ import annotations
 import asyncio
 from typing import TypeVar
 
-from log_config.llm_usage import log_llm_usage
 from log_config.logfire import logfire_span
 from log_config.routing import routing_logger
 
 T = TypeVar("T")
-
-
-def _log_run_usage(agent_name: str, phase: str, model_name: str, result) -> None:
-    usage = result.usage()
-    if not usage:
-        return
-    cached_tokens = usage.cache_read_tokens or None
-    log_llm_usage(
-        agent=agent_name,
-        phase=phase,
-        model=model_name,
-        input_tokens=usage.input_tokens or None,
-        output_tokens=usage.output_tokens or None,
-        total_tokens=usage.total_tokens or None,
-        cached_tokens=cached_tokens,
-    )
 
 
 def _build_usage_trace_attributes(result) -> dict[str, int | float]:
@@ -123,8 +106,6 @@ async def run_text_agent(
         routing_logger.error(f"{label} 运行超时（>{timeout_seconds}s），强制终止")
         raise
 
-    _log_run_usage(usage_agent, usage_phase, model_name, result)
-
     output = result.output
     if not isinstance(output, str):
         routing_logger.error(f"[{label}] 文本输出类型异常: {type(output)!r}")
@@ -163,8 +144,6 @@ async def run_structured_agent(
     except asyncio.TimeoutError:
         routing_logger.error(f"{label} 运行超时（>{timeout_seconds}s），强制终止")
         raise
-
-    _log_run_usage(usage_agent, usage_phase, model_name, result)
 
     output = result.output
     if isinstance(output, output_type):

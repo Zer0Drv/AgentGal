@@ -264,7 +264,6 @@ async def generate_choices(
             model_name=config["model"],
         )
     except Exception as e:
-        routing_logger.warning(f"选项生成失败: {e}")
         return []
     return output.choices[:3]
 

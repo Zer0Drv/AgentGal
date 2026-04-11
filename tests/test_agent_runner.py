@@ -82,10 +82,8 @@ def _capture_logfire_span(monkeypatch) -> _FakeSpan:
 
 
 @pytest.mark.asyncio
-async def test_run_text_agent_returns_stripped_text_and_logs_usage(monkeypatch):
+async def test_run_text_agent_returns_stripped_text(monkeypatch):
     _disable_logfire(monkeypatch)
-    captured: dict = {}
-    monkeypatch.setattr(agent_runner_module, "log_llm_usage", lambda **kwargs: captured.update(kwargs))
 
     agent = _FakeAgent(_FakeResult("  hello  ", _FakeUsage(input_tokens=11, output_tokens=5, cache_read_tokens=3)))
     output = await agent_runner_module.run_text_agent(
@@ -101,14 +99,11 @@ async def test_run_text_agent_returns_stripped_text_and_logs_usage(monkeypatch):
 
     assert output == "hello"
     assert agent.calls == ["hi"]
-    assert captured["agent"] == "tester"
-    assert captured["cached_tokens"] == 3
 
 
 @pytest.mark.asyncio
 async def test_run_structured_agent_returns_typed_output(monkeypatch):
     _disable_logfire(monkeypatch)
-    monkeypatch.setattr(agent_runner_module, "log_llm_usage", lambda **_kwargs: None)
 
     expected = _StructuredOutput(content="ok")
     agent = _FakeAgent(_FakeResult(expected, _FakeUsage(input_tokens=7, output_tokens=2)))
@@ -130,7 +125,6 @@ async def test_run_structured_agent_returns_typed_output(monkeypatch):
 @pytest.mark.asyncio
 async def test_run_structured_agent_sets_usage_attributes_on_span(monkeypatch):
     span = _capture_logfire_span(monkeypatch)
-    monkeypatch.setattr(agent_runner_module, "log_llm_usage", lambda **_kwargs: None)
 
     expected = _StructuredOutput(content="ok")
     agent = _FakeAgent(_FakeResult(expected, _FakeUsage(input_tokens=11, output_tokens=5, cache_read_tokens=3)))
@@ -160,7 +154,6 @@ async def test_run_structured_agent_sets_usage_attributes_on_span(monkeypatch):
 @pytest.mark.asyncio
 async def test_run_text_agent_sets_zero_cache_ratio_on_span(monkeypatch):
     span = _capture_logfire_span(monkeypatch)
-    monkeypatch.setattr(agent_runner_module, "log_llm_usage", lambda **_kwargs: None)
 
     agent = _FakeAgent(_FakeResult("ok", _FakeUsage(input_tokens=7, output_tokens=2, cache_read_tokens=0)))
     output = await agent_runner_module.run_text_agent(
@@ -196,7 +189,6 @@ def test_build_trace_span_name_places_agent_first():
 @pytest.mark.asyncio
 async def test_run_structured_agent_raises_on_unexpected_output_type(monkeypatch):
     _disable_logfire(monkeypatch)
-    monkeypatch.setattr(agent_runner_module, "log_llm_usage", lambda **_kwargs: None)
 
     agent = _FakeAgent(_FakeResult("not-json", _FakeUsage(input_tokens=7, output_tokens=2)))
 
