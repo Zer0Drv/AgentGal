@@ -5,11 +5,13 @@ import json
 import os
 import re
 import shutil
+import traceback
 import uuid
 import zipfile
 from datetime import datetime
 
 from shared.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
+from log_config.routing import routing_logger
 from storage.agent_files import read_agent_file
 from storage.history import append_message, load_conversation_history
 from memory.parser import extract_status_field
@@ -335,12 +337,8 @@ def _read_narrator_focus() -> str:
     return ""
 
 
-async def export_save_archive() -> str | None:
-    """导出存档文件，返回存档文件路径
-
-    Returns:
-        存档文件路径，如果失败返回 None
-    """
+async def export_save_archive_with_detail() -> tuple[str | None, str | None]:
+    """导出存档，并返回路径或可直接展示的错误详情。"""
     save_id = _read_save_id()
     theme = _read_story_theme()
     focus = _read_narrator_focus()
@@ -353,7 +351,7 @@ async def export_save_archive() -> str | None:
     all_agents = get_agent_names()
     if not all_agents:
         print("[存档] 没有找到任何角色")
-        return None
+        return None, "没有找到任何角色，无法创建存档。"
 
     try:
         # 存档前从 DB 导出 recall 状态写入 sidecar（运行期不维护 sidecar）
@@ -394,8 +392,16 @@ async def export_save_archive() -> str | None:
                         print(f"[存档] 已添加: {filepath}")
 
         print(f"[存档] 导出完成: {save_path}")
-        return save_path
+        return save_path, None
 
     except Exception as e:
-        print(f"[存档] 导出失败: {e}")
-        return None
+        detail = f"{type(e).__name__}: {e}"
+        print(f"[存档] 导出失败: {detail}")
+        routing_logger.error("[save] 导出异常: %s\n%s", detail, traceback.format_exc())
+        return None, detail
+
+
+async def export_save_archive() -> str | None:
+    """兼容旧接口：仅返回存档路径。"""
+    save_path, _ = await export_save_archive_with_detail()
+    return save_path

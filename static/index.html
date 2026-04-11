@@ -2183,7 +2183,18 @@ document.addEventListener("alpine:init", () => {
       if (!response.ok) {
         let detail = "";
         try {
-          detail = await response.text();
+          const text = await response.text();
+          detail = text;
+          if (text) {
+            try {
+              const parsed = JSON.parse(text);
+              if (parsed && typeof parsed === "object") {
+                detail = parsed.detail || parsed.error || text;
+              }
+            } catch (error) {
+              detail = text;
+            }
+          }
         } catch (error) {
           detail = "";
         }
@@ -2840,7 +2851,8 @@ document.addEventListener("alpine:init", () => {
         this.setNotice(`已保存到 ${response.path}`, "success");
         this.pushToast("存档完成", "success");
       } catch (error) {
-        this.setNotice("存档失败，请稍后再试。", "error", true);
+        const message = error instanceof Error ? error.message : "存档失败，请稍后再试。";
+        this.setNotice(`存档失败：${message}`, "error", true);
         this.pushToast("存档失败", "error");
       } finally {
         this.clearBusyStatus();

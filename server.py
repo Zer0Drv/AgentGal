@@ -7,6 +7,7 @@ load_dotenv()
 
 import asyncio
 import json
+import traceback
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -23,7 +24,7 @@ from engine.conversation_flow import (
     run_state_updater,
 )
 from engine.save_manager import (
-    export_save_archive,
+    export_save_archive_with_detail,
     has_existing_save,
     import_save_archive,
     list_save_archives,
@@ -311,11 +312,18 @@ async def api_list_saves() -> JSONResponse:
 @app.post("/api/save")
 async def api_save() -> JSONResponse:
     """导出存档。"""
-    await _settle_pending_state_update()
-    save_path = await export_save_archive()
-    if save_path:
-        return JSONResponse({"ok": True, "path": save_path})
-    return JSONResponse({"ok": False}, status_code=500)
+    try:
+        await _settle_pending_state_update()
+        save_path, error_detail = await export_save_archive_with_detail()
+        if save_path:
+            return JSONResponse({"ok": True, "path": save_path})
+        detail = error_detail or "存档导出失败。"
+        routing_logger.error("[save] /api/save 失败: %s", detail)
+        return JSONResponse({"ok": False, "detail": detail}, status_code=500)
+    except Exception as e:
+        detail = f"{type(e).__name__}: {e}"
+        routing_logger.error("[save] /api/save 未捕获异常: %s\n%s", detail, traceback.format_exc())
+        return JSONResponse({"ok": False, "detail": detail}, status_code=500)
 
 
 # =============================================================================
