@@ -15,7 +15,7 @@ from engine.agent_factory import (
     get_player_profile_agent,
 )
 from engine.agent_runner import run_structured_agent, run_text_agent
-from log_config.memory import memory_logger as routing_logger
+from log_config.memory import memory_logger
 from llm.providers import get_consolidation_llm_config
 from shared.config import (
     CONSOLIDATION_TEMPERATURE,
@@ -73,13 +73,13 @@ def safe_write_memory(
     if current_content.startswith(original_content):
         appended = current_content[len(original_content):]
         if appended:
-            routing_logger.info(
+            memory_logger.info(
                 f"[整理器] {agent_name} 检测到并发尾部追加 ({len(appended)} 字符)，将保留"
             )
     elif current_content == original_content:
         appended = ""
     else:
-        routing_logger.warning(
+        memory_logger.warning(
             f"[整理器] {agent_name} 检测到并发中间变更，已放弃写回以避免覆盖（建议稍后重试）"
         )
         return -1, -1
@@ -419,7 +419,7 @@ class MemoryConsolidationFlow:
             ]
             return _merge_chunk_metadata(blocks, metadata_items)
         except Exception as e:
-            routing_logger.error(f"[整理器] {agent_name} memory metadata 失败: {e}")
+            memory_logger.error(f"[整理器] {agent_name} memory metadata 失败: {e}")
             return _apply_default_chunk_metadata(blocks)
 
     async def _extract_growth_updates(
@@ -443,20 +443,20 @@ class MemoryConsolidationFlow:
         )
         updates = [{"content": entry.strip()} for entry in output.updates if entry.strip()]
         if updates:
-            routing_logger.info(
+            memory_logger.info(
                 f"[整理器] {agent_name} growth.md: {self._apply_growth_updates(agent_name, updates)}"
             )
         else:
-            routing_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
+            memory_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
 
     async def _dedup_growth_entries(self, agent_name: str) -> None:
         current_count = len(read_growth_entries(agent_name))
         if current_count <= GROWTH_DEDUP_THRESHOLD:
-            routing_logger.info(
+            memory_logger.info(
                 f"[整理器] {agent_name} 跳过 growth dedup（当前 {current_count} 条，未超过阈值 {GROWTH_DEDUP_THRESHOLD}）"
             )
             return
-        routing_logger.info(
+        memory_logger.info(
             f"[整理器] {agent_name} 触发 growth dedup（当前 {current_count} 条，阈值 {GROWTH_DEDUP_THRESHOLD}）"
         )
         growth_content = read_agent_file(agent_name, "growth.md") or "（尚无）"
@@ -470,7 +470,7 @@ class MemoryConsolidationFlow:
         )
         entries = [entry.strip() for entry in output.entries if entry.strip()]
         if not entries:
-            routing_logger.warning(f"[整理器] {agent_name} growth dedup 结果为空，跳过")
+            memory_logger.warning(f"[整理器] {agent_name} growth dedup 结果为空，跳过")
             return
 
         growth_path = Path(character_path(agent_name, "growth.md"))
@@ -481,7 +481,7 @@ class MemoryConsolidationFlow:
             agent_name,
             {f"P{i:03d}": entry for i, entry in enumerate(entries, start=1)},
         )
-        routing_logger.info(f"[整理器] {agent_name} growth dedup 完成，条目数: {len(entries)}")
+        memory_logger.info(f"[整理器] {agent_name} growth dedup 完成，条目数: {len(entries)}")
 
     def _apply_growth_updates(self, agent_name: str, updates: list[dict]) -> str:
         entries = read_growth_entries(agent_name)
@@ -516,27 +516,27 @@ class MemoryConsolidationFlow:
             )
         except Exception as e:
             errors.append(f"第一步调用失败: {e}")
-            routing_logger.error(f"[整理器] {agent_name} 第一步调用失败: {e}")
+            memory_logger.error(f"[整理器] {agent_name} 第一步调用失败: {e}")
             return None, errors
 
         blocks = await self._annotate_memory_metadata(agent_name, blocks, merged_markdown)
 
         if not self._supports_growth(agent_name):
-            routing_logger.info(f"[整理器] {agent_name} 跳过 growth.md 流程")
+            memory_logger.info(f"[整理器] {agent_name} 跳过 growth.md 流程")
             return blocks, errors
 
         try:
             await self._extract_growth_updates(agent_name, merged_markdown)
         except Exception as e:
             errors.append(f"第二步调用失败: {e}")
-            routing_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
+            memory_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
             return blocks, errors
 
         try:
             await self._dedup_growth_entries(agent_name)
         except Exception as e:
             errors.append(f"第三步调用失败: {e}")
-            routing_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
+            memory_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
 
         return blocks, errors
 
@@ -615,18 +615,18 @@ class MemoryConsolidationFlow:
             consolidated = _enforce_user_section_limits(consolidated)
 
             if len(consolidated.strip()) < 20:
-                routing_logger.warning(f"[整理器] {agent_name} user.md LLM 返回过短，跳过")
+                memory_logger.warning(f"[整理器] {agent_name} user.md LLM 返回过短，跳过")
                 return 0, 0
 
             user_path.write_text(consolidated.strip() + "\n", encoding="utf-8")
             tmp_path.unlink(missing_ok=True)
             before_len, after_len = len(user_content), len(consolidated)
-            routing_logger.info(
+            memory_logger.info(
                 f"[整理器] {agent_name} user.md 整理完成 (长度: {before_len} → {after_len})"
             )
             return before_len, after_len
         except Exception as e:
-            routing_logger.error(f"[整理器] {agent_name} user.md 整理失败: {e}")
+            memory_logger.error(f"[整理器] {agent_name} user.md 整理失败: {e}")
             return 0, 0
 
     async def consolidate_agent(self, agent_name: str) -> _ConsolidationResult | None:
@@ -649,7 +649,7 @@ class MemoryConsolidationFlow:
             if window is None:
                 if skip_reason:
                     result.skipped, result.skip_reason = True, skip_reason
-                    routing_logger.info(f"[整理器] {agent_name} 跳过: {skip_reason}")
+                    memory_logger.info(f"[整理器] {agent_name} 跳过: {skip_reason}")
                 return result if result.skipped else None
 
             result.days = len(window.window_dates)
@@ -670,7 +670,7 @@ class MemoryConsolidationFlow:
                     merged_blocks = window.stable_blocks + rewritten_blocks
             except Exception as e:
                 result.errors.append(f"整合失败: {e}")
-                routing_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
+                memory_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
 
             merged_sections = group_blocks(merged_blocks)
             result.final_len, _consolidated_len = safe_write_memory(
@@ -724,14 +724,14 @@ class MemoryConsolidationFlow:
         try:
             return await self._call_player_profile_agent(agent_name, draft_content)
         except Exception as e:
-            routing_logger.error(f"[整理器] {agent_name} user.md 整理失败: {e}")
+            memory_logger.error(f"[整理器] {agent_name} user.md 整理失败: {e}")
             return None
 
     async def consolidate_all(self, agent_names: list[str]):
         t0 = time.monotonic()
         agent_names = [name for name in agent_names if name != "narrator"]
         if not agent_names:
-            routing_logger.info("[整理器] 无需整理：当前列表中没有可整理角色")
+            memory_logger.info("[整理器] 无需整理：当前列表中没有可整理角色")
             return
 
         summaries: list[str] = []
@@ -742,7 +742,7 @@ class MemoryConsolidationFlow:
                 if path.exists()
                 else f"{name}(无文件)"
             )
-        routing_logger.info(f"[整理器] 开始记忆整理: {', '.join(summaries)}")
+        memory_logger.info(f"[整理器] 开始记忆整理: {', '.join(summaries)}")
 
         raw_results = await asyncio.gather(
             *(self.consolidate_agent(name) for name in agent_names),
@@ -750,12 +750,12 @@ class MemoryConsolidationFlow:
         )
         for item in raw_results:
             if isinstance(item, Exception):
-                routing_logger.error(f"[整理器] 异常: {item}")
+                memory_logger.error(f"[整理器] 异常: {item}")
                 continue
             if item is None:
                 continue
             if item.skipped:
-                routing_logger.info(f"[整理器] {item.agent_name} 跳过: {item.skip_reason}")
+                memory_logger.info(f"[整理器] {item.agent_name} 跳过: {item.skip_reason}")
                 continue
 
             mem_part = (
@@ -770,12 +770,12 @@ class MemoryConsolidationFlow:
                 else ""
             )
             err_part = f" | 错误: {', '.join(item.errors)}" if item.errors else ""
-            routing_logger.info(
+            memory_logger.info(
                 f"[整理器] {item.agent_name} 完成: {item.days}天({item.date_range}) "
                 f"{mem_part}{user_part}{err_part}"
             )
 
-        routing_logger.info(f"[整理器] 全部完成 (耗时 {time.monotonic() - t0:.1f}s)")
+        memory_logger.info(f"[整理器] 全部完成 (耗时 {time.monotonic() - t0:.1f}s)")
 
 
 memory_consolidation_flow = MemoryConsolidationFlow()

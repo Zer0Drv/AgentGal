@@ -1,5 +1,6 @@
 """Routing business logger."""
 
-from log_config.app_logging import get_app_logger
+import logging
 
-routing_logger = get_app_logger("routing")
+routing_logger = logging.getLogger("agentgal.routing")
+routing_logger.setLevel(logging.INFO)

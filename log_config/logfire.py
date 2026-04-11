@@ -8,12 +8,34 @@ from contextlib import nullcontext
 from threading import Lock
 from typing import Any
 
-from log_config.app_logging import attach_logfire_handlers
-
 _logfire = None
 _configured = False
 _lock = Lock()
 _logger = logging.getLogger("logfire")
+_APP_LOGGER_NAMES = ("agentgal.routing", "agentgal.memory")
+_LOGFIRE_HANDLER_MARKER = "_agentgal_logfire_handler"
+
+
+def attach_logfire_handlers(logfire_module: Any) -> None:
+    """Forward application loggers to Logfire when its logging handler exists."""
+    handler_cls = getattr(logfire_module, "LogfireLoggingHandler", None)
+    if handler_cls is None:
+        return
+
+    for logger_name in _APP_LOGGER_NAMES:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.INFO)
+        if any(getattr(handler, _LOGFIRE_HANDLER_MARKER, False) for handler in logger.handlers):
+            continue
+
+        try:
+            handler = handler_cls(level=logging.INFO)
+        except Exception:  # noqa: BLE001
+            continue
+
+        setattr(handler, _LOGFIRE_HANDLER_MARKER, True)
+        logger.addHandler(handler)
+        logger.propagate = False
 
 
 def setup_logfire() -> None:

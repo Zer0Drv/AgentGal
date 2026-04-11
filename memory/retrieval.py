@@ -27,8 +27,7 @@ from shared.config import (
     VECTOR_SEARCH_LIMIT,
     character_path,
 )
-from log_config.memory import memory_logger
-from log_config.memory_events import log_retrieval_results
+from log_config.memory import log_retrieval_results, memory_logger
 from llm.embedding import embed_sync
 from llm.rerank import rerank, RERANK_MODEL
 from memory.parser import extract_status_field, canonical_cn_date, game_day_diff
@@ -250,28 +249,24 @@ def search_memories(agent_name: str, query: str) -> str:
 
         # Step 2: 拉取候选，hybrid 时合并 BM25；否则纯向量
         vec_rows = vector_store.get_vector_candidates(conn, agent_name, qvec, VECTOR_CANDIDATE_LIMIT)
+        bm25_rows: list[tuple] = []
 
         if HYBRID_SEARCH_ENABLED:
             bm25_rows = vector_store.get_bm25_candidates(conn, agent_name, query, BM25_CANDIDATE_LIMIT)
             if bm25_rows:
                 candidates = hybrid_fusion(vec_rows, bm25_rows)
-                memory_logger.info(
-                    "[Retrieval] hybrid fusion: agent=%s, vec=%s, bm25=%s, merged=%s",
-                    agent_name, len(vec_rows), len(bm25_rows), len(candidates),
-                )
             else:
-                # BM25 无命中时回退到纯向量 relevance
                 candidates = _vec_rows_to_candidates(vec_rows)
         else:
             candidates = _vec_rows_to_candidates(vec_rows)
+        candidate_count = len(candidates)
 
         # Step 3: rerank（可选）— 替换 relevance 分，rerank 失败时降级保留 fusion 结果
+        rerank_applied = False
         if RERANK_MODEL and candidates:
             try:
                 candidates = rerank(query, candidates, top_n=RERANK_TOP_N)
-                memory_logger.info(
-                    f"[Retrieval] rerank 完成: agent={agent_name}, 候选={len(vec_rows)}, 返回={len(candidates)}"
-                )
+                rerank_applied = True
             except Exception as e:
                 memory_logger.warning(f"[Retrieval] rerank 失败，降级为 fusion 结果: agent={agent_name}, error={e}")
 
@@ -288,16 +283,18 @@ def search_memories(agent_name: str, query: str) -> str:
             except Exception as e:
                 memory_logger.warning("[Retrieval] 更新 last_recalled_at 失败: %s", e)
 
-        memory_logger.info(
-            "[Retrieval] 搜索完成: agent=%s, limit=%s, 命中=%s, hybrid=%s",
-            agent_name, VECTOR_SEARCH_LIMIT, len(ranked), HYBRID_SEARCH_ENABLED,
-        )
         log_retrieval_results(
             agent_name=agent_name,
             query=query,
             ranked=ranked,
             limit=VECTOR_SEARCH_LIMIT,
             hybrid_enabled=HYBRID_SEARCH_ENABLED,
+            vector_candidate_count=len(vec_rows),
+            bm25_candidate_count=len(bm25_rows),
+            candidate_count=candidate_count,
+            rerank_enabled=bool(RERANK_MODEL),
+            rerank_applied=rerank_applied,
+            rerank_model=RERANK_MODEL,
         )
 
     except Exception as e:

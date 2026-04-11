@@ -18,7 +18,7 @@ from typing import Any
 
 import aiosqlite
 
-from log_config.memory import memory_logger as routing_logger
+from log_config.memory import memory_logger
 from llm.embedding import embed_async, embed_sync, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
 from shared.config import (
     character_path,
@@ -260,7 +260,7 @@ class VectorStore:
             await db.execute(f"DROP TABLE IF EXISTS {table}")
         await db.execute("DROP INDEX IF EXISTS idx_chunks_round_id")
         await db.execute("DROP INDEX IF EXISTS idx_chunks_chunk_id")
-        routing_logger.info("[VectorStore] 已清除旧版 schema (chunks/vec_chunks/chunks_fts)")
+        memory_logger.info("[VectorStore] 已清除旧版 schema (chunks/vec_chunks/chunks_fts)")
 
     async def init_tables(self):
         db = await self._get_db()
@@ -403,7 +403,7 @@ class VectorStore:
             chunks: [(text, keywords, importance), ...] 预提取的元数据
         """
         if not _CN_DATE_RE.match(date):
-            routing_logger.warning(
+            memory_logger.warning(
                 "[VectorStore] 跳过长期记忆索引: agent=%s, date=%s, 日期格式无效",
                 agent_name, date,
             )
@@ -411,7 +411,7 @@ class VectorStore:
 
         items = [(t.strip(), kw, imp) for t, kw, imp in chunks if t.strip()]
         if not items:
-            routing_logger.info(
+            memory_logger.info(
                 "[VectorStore] 跳过长期记忆索引: agent=%s, date=%s, 无有效事件",
                 agent_name, date,
             )
@@ -441,7 +441,7 @@ class VectorStore:
                         content_hash, recalled_at,
                     ))
 
-                routing_logger.info(
+                memory_logger.info(
                     "[VectorStore] 开始长期记忆索引: agent=%s, date=%s, 待写入事件=%s",
                     agent_name, date, len(payloads),
                 )
@@ -449,7 +449,7 @@ class VectorStore:
                 await self._delete_chunks(db, agent_name, date)
                 await self._insert_chunks(db, agent_name, payloads)
                 await db.commit()
-                routing_logger.info(
+                memory_logger.info(
                     "[VectorStore] 长期记忆索引完成: agent=%s, date=%s, 写入事件=%s",
                     agent_name, date, len(payloads)
                 )
@@ -459,7 +459,7 @@ class VectorStore:
                     await db.execute("ROLLBACK")
             except Exception:
                 pass
-            routing_logger.error(
+            memory_logger.error(
                 "[VectorStore] 索引长期记忆失败: agent=%s, date=%s, error=%s",
                 agent_name, date, e
             )
@@ -530,7 +530,7 @@ class VectorStore:
         try:
             return conn.execute(sql, (agent_name, fts_query, limit)).fetchall()
         except Exception as e:
-            routing_logger.warning("[VectorStore] BM25 检索失败（降级跳过）: %s", e)
+            memory_logger.warning("[VectorStore] BM25 检索失败（降级跳过）: %s", e)
             return []
 
     def update_recall_timestamps(
@@ -561,10 +561,10 @@ class VectorStore:
             db = await self._get_db()
             await self._delete_chunks(db, agent_name)
             await db.commit()
-            routing_logger.info("[VectorStore] 已清空 %s 的记忆索引", agent_name)
+            memory_logger.info("[VectorStore] 已清空 %s 的记忆索引", agent_name)
             return True
         except Exception as e:
-            routing_logger.error("[VectorStore] 删除 %s 失败: %s", agent_name, e)
+            memory_logger.error("[VectorStore] 删除 %s 失败: %s", agent_name, e)
             return False
 
     async def delete_all_agents(self, agent_names: list[str]) -> dict[str, bool]:
@@ -584,7 +584,7 @@ class VectorStore:
                     await db.execute("DELETE FROM memory_chunks_fts")
                     await db.execute("DELETE FROM memory_chunks")
                     await db.commit()
-                routing_logger.info("[VectorStore] delete_all_agents 命中全角色，已全量清空记忆索引")
+                memory_logger.info("[VectorStore] delete_all_agents 命中全角色，已全量清空记忆索引")
                 return {name: True for name in unique_names}
             except Exception as e:
                 try:
@@ -592,7 +592,7 @@ class VectorStore:
                         await db.execute("ROLLBACK")
                 except Exception:
                     pass
-                routing_logger.error(f"[VectorStore] 全量清理失败，回退逐角色删除: {e}")
+                memory_logger.error(f"[VectorStore] 全量清理失败，回退逐角色删除: {e}")
 
         results = await asyncio.gather(*(self.delete(name) for name in unique_names))
         return dict(zip(unique_names, results))
