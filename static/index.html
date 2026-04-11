@@ -125,8 +125,8 @@ svg {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  min-height: 72px;
-  padding: 18px 28px 16px;
+  min-height: 62px;
+  padding: 10px 28px;
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(18px);
   background: rgba(250, 244, 237, 0.7);
@@ -179,7 +179,8 @@ svg {
 .story-card,
 .resume-button,
 .save-card,
-.choice-chip {
+.choice-chip,
+.mini-action-btn {
   cursor: pointer;
   transition:
     transform 0.28s var(--easing),
@@ -221,7 +222,8 @@ svg {
 .resume-button:active,
 .save-card:active,
 .choice-chip:active,
-.story-card:active {
+.story-card:active,
+.mini-action-btn:active {
   transform: translateY(0) scale(0.985);
 }
 
@@ -236,7 +238,8 @@ svg {
 }
 
 .ghost-btn:disabled,
-.primary-btn:disabled {
+.primary-btn:disabled,
+.mini-action-btn:disabled {
   cursor: not-allowed;
   opacity: 0.46;
 }
@@ -312,49 +315,76 @@ svg {
 .scene-strip {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
-  align-items: start;
-  padding: 22px 24px 18px;
+  gap: 12px;
+  align-items: center;
+  min-height: 58px;
+  padding: 9px 16px;
   border-bottom: 1px solid var(--line);
   background: rgba(255, 250, 245, 0.8);
   backdrop-filter: blur(16px);
 }
 
+.scene-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
 .scene-title {
-  margin-bottom: 8px;
-  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid rgba(113, 84, 74, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 252, 248, 0.72);
+  color: var(--accent);
   font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  letter-spacing: 0.18em;
+  font-size: 10px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .scene-summary {
-  max-width: none;
-  font-size: clamp(19px, 2.2vw, 28px);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
   font-weight: 600;
-  line-height: 1.08;
-  letter-spacing: -0.04em;
+  line-height: 1.35;
+  letter-spacing: 0;
 }
 
 .scene-meta {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(44vw, 540px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.scene-meta::-webkit-scrollbar {
+  display: none;
 }
 
 .meta-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex: 0 0 auto;
   max-width: 100%;
-  padding: 8px 11px;
+  padding: 5px 9px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 252, 248, 0.82);
   color: var(--text-soft);
-  min-height: 34px;
+  min-height: 28px;
 }
 
 .meta-chip-label {
@@ -368,10 +398,11 @@ svg {
 
 .meta-chip-value {
   min-width: 0;
+  max-width: 18ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .scene-state {
@@ -383,13 +414,13 @@ svg {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  min-height: 42px;
+  padding: 7px 10px;
+  min-height: 32px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: rgba(255, 252, 248, 0.84);
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .state-pill::before {
@@ -739,6 +770,41 @@ svg {
 .composer-hint {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.composer-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mobile-quick-actions {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.mini-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 252, 248, 0.82);
+  color: var(--text-soft);
+  font-size: 12px;
+  touch-action: manipulation;
+}
+
+.mini-action-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(180, 90, 100, 0.28);
+  background: rgba(255, 250, 245, 0.96);
+  color: var(--text);
 }
 
 .composer-body {
@@ -1375,16 +1441,23 @@ svg {
 @media (max-width: 920px) {
   html,
   body {
-    overflow: auto;
+    overflow: hidden;
   }
 
   #app {
     min-height: 100dvh;
-    height: auto;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .main-shell {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
   }
 
   .topbar {
-    padding: 16px 18px 14px;
+    min-height: 54px;
+    padding: 8px 14px;
   }
 
   .brand-row {
@@ -1397,18 +1470,58 @@ svg {
   }
 
   .chat-panel {
-    padding: 12px 12px 14px;
+    min-height: 0;
+    padding: 8px 10px 10px;
   }
 
   .chat-shell {
-    min-height: calc(100dvh - 120px);
-    border-radius: 26px;
+    min-height: 0;
+    height: 100%;
+    border-radius: 22px;
   }
 
   .scene-strip {
-    grid-template-columns: 1fr;
-    gap: 10px;
-    padding: 14px 14px 12px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 50px;
+    padding: 8px 10px;
+  }
+
+  .scene-main {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .scene-title {
+    display: none;
+  }
+
+  .scene-summary {
+    font-size: 14px;
+  }
+
+  .scene-meta {
+    max-width: 100%;
+  }
+
+  .meta-chip {
+    min-height: 24px;
+    padding: 3px 7px;
+  }
+
+  .meta-chip-label {
+    font-size: 9px;
+  }
+
+  .meta-chip-value {
+    max-width: 16ch;
+    font-size: 11px;
+  }
+
+  .state-pill {
+    min-height: 28px;
+    padding: 5px 8px;
+    font-size: 11px;
   }
 
   .message-stage {
@@ -1426,26 +1539,38 @@ svg {
     grid-template-columns: 1fr;
   }
 
+  .composer-tools {
+    flex-wrap: wrap;
+  }
+
+  .mobile-quick-actions {
+    display: flex;
+  }
+
   .composer-actions .primary-btn {
     width: 100%;
   }
 
   .archive-drawer {
     position: fixed;
-    top: 0;
     right: 0;
+    left: 0;
     bottom: 0;
+    top: auto;
     z-index: 20;
-    width: min(88vw, 360px);
-    transform: translateX(100%);
-    border-left-color: var(--line);
-    box-shadow: -20px 0 50px -34px rgba(38, 25, 26, 0.44);
-    transition: transform 0.34s var(--easing);
+    width: 100%;
+    max-height: min(78dvh, 620px);
+    border-top: 1px solid var(--line);
+    border-left: none;
+    border-radius: 24px 24px 0 0;
+    transform: translateY(100%);
+    box-shadow: 0 -24px 52px -36px rgba(38, 25, 26, 0.5);
+    transition: transform 0.34s var(--easing), box-shadow 0.34s var(--easing);
   }
 
   .archive-drawer.open {
-    width: min(88vw, 360px);
-    transform: translateX(0);
+    width: 100%;
+    transform: translateY(0);
   }
 
   .story-shell {
@@ -1504,9 +1629,9 @@ svg {
 
 @media (max-width: 640px) {
   .topbar {
-    gap: 12px;
-    min-height: 64px;
-    padding: 12px 12px 10px;
+    gap: 8px;
+    min-height: 48px;
+    padding: 7px 10px;
   }
 
   .overlay {
@@ -1523,11 +1648,11 @@ svg {
   }
 
   .brand-title {
-    font-size: 26px;
+    font-size: 22px;
   }
 
   .brand-subtitle {
-    font-size: 12px;
+    display: none;
   }
 
   .story-headline {
@@ -1588,7 +1713,17 @@ svg {
   }
 
   .topbar-actions {
-    gap: 8px;
+    gap: 6px;
+  }
+
+  .topbar-actions .ghost-btn {
+    width: 34px;
+    min-height: 34px;
+    padding: 0;
+  }
+
+  .topbar-actions .ghost-btn span:not(.btn-icon) {
+    display: none;
   }
 
   .ghost-btn,
@@ -1599,12 +1734,21 @@ svg {
   }
 
   .scene-summary {
-    font-size: 22px;
+    font-size: 13px;
+  }
+
+  .scene-strip {
+    min-height: 46px;
+    padding: 7px 9px;
   }
 
   .meta-chip {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
+    justify-content: flex-start;
+  }
+
+  .meta-chip-value {
+    max-width: 12ch;
   }
 
   .message-row.narrator,
@@ -1638,8 +1782,28 @@ svg {
     align-items: flex-start;
   }
 
+  .composer-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .composer-tools {
+    gap: 8px;
+  }
+
+  .composer-hint {
+    display: none;
+  }
+
+  .composer-foot {
+    display: none;
+  }
+
   #user-input {
-    min-height: 100px;
+    min-height: 78px;
+    padding: 12px 13px;
+    border-radius: 16px;
   }
 
   .toast-stack {
@@ -1667,7 +1831,7 @@ svg {
     </div>
 
     <div class="topbar-actions">
-      <button type="button" class="ghost-btn" :aria-expanded="drawerOpen" @click="toggleDrawer()">
+      <button type="button" class="ghost-btn" aria-label="打开档案室" :aria-expanded="drawerOpen" @click="toggleDrawer()">
         <span class="btn-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 7.5h7l2 2H21v7.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
@@ -1677,7 +1841,7 @@ svg {
         <span>档案</span>
       </button>
 
-      <button type="button" class="ghost-btn" :disabled="busy" @click="saveGame()">
+      <button type="button" class="ghost-btn" aria-label="保存当前进度" :disabled="busy" @click="saveGame()">
         <span class="btn-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M5 4h11l3 3v12.5A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5Z"/>
@@ -1688,7 +1852,7 @@ svg {
         <span>存档</span>
       </button>
 
-      <button type="button" class="ghost-btn danger" :disabled="busy" @click="showResetConfirmation()">
+      <button type="button" class="ghost-btn danger" aria-label="重新选择故事" :disabled="busy" @click="showResetConfirmation()">
         <span class="btn-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 12a9 9 0 1 0 2.64-6.36"/>
@@ -1704,7 +1868,7 @@ svg {
     <section class="chat-panel">
       <div class="chat-shell">
         <section class="scene-strip">
-          <div>
+          <div class="scene-main">
             <div class="scene-title">当前场景</div>
             <div class="scene-summary" x-text="sceneSummary()"></div>
             <div class="scene-meta">
@@ -1801,7 +1965,13 @@ svg {
         <section class="composer-shell">
           <div class="composer-head">
             <div class="composer-title">你的行动</div>
-            <div class="composer-hint" x-text="isCompact ? '手机端建议使用发送按钮' : 'Enter 发送，Shift + Enter 换行'"></div>
+            <div class="composer-tools">
+              <div class="mobile-quick-actions" x-show="isCompact">
+                <button type="button" class="mini-action-btn" :aria-expanded="drawerOpen" @click="toggleDrawer()">档案</button>
+                <button type="button" class="mini-action-btn" :disabled="busy" @click="saveGame()">存档</button>
+              </div>
+              <div class="composer-hint" x-text="isCompact ? '手机端使用发送按钮' : 'Enter 发送，Shift + Enter 换行'"></div>
+            </div>
           </div>
 
           <div class="composer-body">
@@ -1887,7 +2057,7 @@ svg {
         </template>
 
         <template x-if="!saveLoading && !saveError && !saves.length">
-          <div class="drawer-empty">还没有可读取的存档。开始一个故事后，顶部可以随时手动存档。</div>
+          <div class="drawer-empty">还没有可读取的存档。开始一个故事后，可以在输入区旁随时手动存档。</div>
         </template>
 
         <div class="save-list" x-show="!saveLoading && !saveError && saves.length">
