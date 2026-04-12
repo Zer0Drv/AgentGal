@@ -102,7 +102,7 @@ async def _apply_response_updates(
         )
 
     if results:
-        routing_logger.info(
+        routing_logger.debug(
             "[FileUpdate] 文件更新: agent=%s, count=%s",
             agent_name,
             len(results),

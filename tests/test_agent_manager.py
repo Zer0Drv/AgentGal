@@ -189,10 +189,10 @@ async def test_apply_response_updates_logs_structured_file_updates(monkeypatch):
             }
         ),
     )
-    def fake_log_info(*args, **kwargs):
+    def fake_log_debug(*args, **kwargs):
         logs.append((args, kwargs))
 
-    monkeypatch.setattr(conversation_flow_module.routing_logger, "info", fake_log_info)
+    monkeypatch.setattr(conversation_flow_module.routing_logger, "debug", fake_log_debug)
 
     output = conversation_flow_module.CharacterOutput(
         content="回应",
