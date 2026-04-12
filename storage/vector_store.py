@@ -454,11 +454,6 @@ class VectorStore:
                 content_hash, recalled_at,
             ))
 
-        memory_logger.info(
-            "[VectorStore] 开始长期记忆索引: agent=%s, date=%s, 待写入事件=%s",
-            agent_name, date, len(payloads),
-        )
-
         db: aiosqlite.Connection | None = None
         try:
             async with self._get_write_lock():

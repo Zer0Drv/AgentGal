@@ -98,8 +98,6 @@ async def _settle_pending_state_update(*, cancel: bool = False) -> None:
         await task
     except asyncio.CancelledError:
         routing_logger.info("[state_updater] 后台任务已取消")
-    except Exception as e:
-        routing_logger.error(f"[state_updater] 后台任务失败: {e}")
 
 
 def _start_state_update(

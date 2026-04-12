@@ -755,7 +755,6 @@ class MemoryConsolidationFlow:
             if item is None:
                 continue
             if item.skipped:
-                memory_logger.info(f"[整理器] {item.agent_name} 跳过: {item.skip_reason}")
                 continue
 
             mem_part = (

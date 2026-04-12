@@ -312,7 +312,6 @@ async def call_narrator_and_route(
             routing_logger.warning("narrator 重试后仍缺少有效 TARGETS")
             return [], "", False
 
-    routing_logger.info(f"narrator 决定 targets: {targets}")
     return targets, scene_description, is_valid_response(scene_description, "narrator")
 
 
