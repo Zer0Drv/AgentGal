@@ -5,36 +5,33 @@ from __future__ import annotations
 import logging
 import os
 from threading import Lock
-from typing import Any
 
-_logfire = None
 _configured = False
 _lock = Lock()
 _logger = logging.getLogger("logfire")
-_APP_LOGGER_NAMES = ("agentgal.routing", "agentgal.memory")
+_APP_LOGGER_NAME = "agentgal"
 _LOGFIRE_HANDLER_MARKER = "_agentgal_logfire_handler"
 
 
-def attach_logfire_handlers(logfire_module: Any) -> None:
-    """Forward application loggers to Logfire when its logging handler exists."""
+def _attach_logfire_handler(logfire_module: object) -> None:
+    """Forward application logs to Logfire through the app logger namespace."""
     handler_cls = getattr(logfire_module, "LogfireLoggingHandler", None)
     if handler_cls is None:
         return
 
-    for logger_name in _APP_LOGGER_NAMES:
-        logger = logging.getLogger(logger_name)
-        logger.setLevel(logging.INFO)
-        if any(getattr(handler, _LOGFIRE_HANDLER_MARKER, False) for handler in logger.handlers):
-            continue
+    logger = logging.getLogger(_APP_LOGGER_NAME)
+    logger.setLevel(logging.INFO)
+    if any(getattr(handler, _LOGFIRE_HANDLER_MARKER, False) for handler in logger.handlers):
+        return
 
-        try:
-            handler = handler_cls(level=logging.INFO)
-        except Exception:  # noqa: BLE001
-            continue
+    try:
+        handler = handler_cls(level=logging.INFO)
+    except Exception:  # noqa: BLE001
+        return
 
-        setattr(handler, _LOGFIRE_HANDLER_MARKER, True)
-        logger.addHandler(handler)
-        logger.propagate = False
+    setattr(handler, _LOGFIRE_HANDLER_MARKER, True)
+    logger.addHandler(handler)
+    logger.propagate = False
 
 
 def setup_logfire() -> None:
@@ -42,7 +39,7 @@ def setup_logfire() -> None:
 
     未安装、未配置或初始化失败时静默跳过，不影响主流程。
     """
-    global _configured, _logfire
+    global _configured
 
     if _configured:
         return
@@ -64,8 +61,7 @@ def setup_logfire() -> None:
                 environment=environment,
             )
             logfire.instrument_pydantic_ai(include_content=True, include_binary_content=False)
-            attach_logfire_handlers(logfire)
-            _logfire = logfire
+            _attach_logfire_handler(logfire)
         except Exception as exc:  # noqa: BLE001
             _logger.warning("Logfire 初始化失败，已跳过: %s", exc)
         finally:
