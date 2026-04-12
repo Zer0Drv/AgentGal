@@ -207,7 +207,12 @@ def test_update_player_bootstraps_tmp_user_from_current_profile(tmp_path, monkey
     result = agent_files_module.update_player(agent_name, "对方是什么人", "- 很直接")
     tmp_content = (agent_dir / "tmp_user.md").read_text(encoding="utf-8")
 
-    assert result == "已追加到 对方是什么人"
+    assert result == {
+        "file": "tmp_user.md",
+        "target": "对方是什么人",
+        "operation": "append",
+        "appended": "- 很直接",
+    }
     assert "## 基本信息" in tmp_content
     assert "- 姓名：李小明" in tmp_content
     assert "## 对方是什么人" in tmp_content
@@ -250,6 +255,87 @@ def test_update_player_keeps_existing_tmp_user_draft(tmp_path, monkeypatch):
     assert tmp_content.count("## 对方是什么人") == 1
     assert "- 很直接" in tmp_content
     assert "- 很细心" in tmp_content
+
+
+def test_agent_file_updates_return_structured_json_items(tmp_path, monkeypatch):
+    agent_name = "chenxiao"
+    path_helper = _make_character_path(tmp_path)
+
+    monkeypatch.setattr(agent_files_module, "character_path", path_helper)
+
+    agent_dir = tmp_path / agent_name
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    (agent_dir / "status.md").write_text(
+        "\n".join(
+            [
+                "# 我的状态",
+                "",
+                "## 场景",
+                "旧教学楼走廊",
+                "",
+                "## 打算",
+                "- [ ] 【去天台】午休去天台找玩家",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    replace_result = agent_files_module.update_status(agent_name, "场景", "图书馆二楼靠窗座位")
+    assert replace_result == {
+        "file": "status.md",
+        "target": "场景",
+        "operation": "replace",
+        "before": "旧教学楼走廊",
+        "after": "图书馆二楼靠窗座位",
+    }
+
+    add_result = agent_files_module.add_pending_event(agent_name, "【新计划】去图书馆", "打算")
+    assert add_result == {
+        "file": "status.md",
+        "target": "打算",
+        "operation": "add",
+        "added": "- [ ] 【新计划】去图书馆",
+    }
+
+    skip_result = agent_files_module.add_pending_event(agent_name, "【新计划】去图书馆", "打算")
+    assert skip_result == {
+        "file": "status.md",
+        "target": "打算",
+        "operation": "skip",
+        "reason": "【新计划】已存在，跳过",
+    }
+
+    remove_result = agent_files_module.mark_event_triggered(agent_name, "去天台", "打算")
+    assert remove_result == {
+        "file": "status.md",
+        "target": "打算",
+        "operation": "remove",
+        "removed": "- [ ] 【去天台】午休去天台找玩家",
+    }
+
+    memory_entry = (
+        "- **时间**：10月24日 上午\n"
+        "- **地点**：图书馆\n"
+        "- **在场**：我、玩家\n"
+        "- **内容**：玩家主动替我解围。"
+    )
+    append_result = agent_files_module.update_memory(agent_name, memory_entry)
+    appended_memory = "\n\n".join(memory_entry.split("\n"))
+    assert append_result == {
+        "file": "memory.md",
+        "target": "长期记忆",
+        "operation": "append",
+        "appended": appended_memory,
+    }
+
+    duplicate_result = agent_files_module.update_memory(agent_name, memory_entry)
+    assert duplicate_result == {
+        "file": "memory.md",
+        "target": "长期记忆",
+        "operation": "skip",
+        "reason": "所有 entry 已存在，跳过",
+    }
 
 
 @pytest.mark.asyncio

@@ -88,17 +88,17 @@ async def test_state_updater_output_writes_narrator_status_and_events(monkeypatc
     monkeypatch.setattr(
         conversation_flow_module,
         "update_status",
-        lambda agent, field, content: calls.append(("status", agent, field, content)) or "ok",
+        lambda agent, field, content: calls.append(("status", agent, field, content)) or {},
     )
     monkeypatch.setattr(
         conversation_flow_module,
         "mark_event_triggered",
-        lambda agent, event, section: calls.append(("triggered", agent, event, section)) or "ok",
+        lambda agent, event, section: calls.append(("triggered", agent, event, section)) or {},
     )
     monkeypatch.setattr(
         conversation_flow_module,
         "add_pending_event",
-        lambda agent, event, section: calls.append(("add_event", agent, event, section)) or "ok",
+        lambda agent, event, section: calls.append(("add_event", agent, event, section)) or {},
     )
 
     output = conversation_flow_module.StateUpdaterOutput(
@@ -123,6 +123,139 @@ async def test_state_updater_output_writes_narrator_status_and_events(monkeypatc
         "【楼下碰面】10月24日 09:30 角色B到达公寓楼下",
         "待触发事件",
     ) in calls
+
+
+@pytest.mark.asyncio
+async def test_apply_response_updates_logs_structured_file_updates(monkeypatch):
+    logs: list[tuple[tuple, dict]] = []
+
+    monkeypatch.setattr(
+        conversation_flow_module,
+        "update_memory",
+        lambda agent, content: {
+            "file": "memory.md",
+            "target": "长期记忆",
+            "operation": "append",
+            "appended": content,
+        },
+    )
+    monkeypatch.setattr(
+        conversation_flow_module,
+        "update_status",
+        lambda agent, field, content: {
+            "file": "status.md",
+            "target": field,
+            "operation": "replace",
+            "before": "旧场景",
+            "after": content,
+        },
+    )
+    monkeypatch.setattr(
+        conversation_flow_module,
+        "update_player",
+        lambda agent, field, content: {
+            "file": "tmp_user.md",
+            "target": field,
+            "operation": "append",
+            "appended": content,
+        },
+    )
+    monkeypatch.setattr(
+        conversation_flow_module,
+        "mark_event_triggered",
+        lambda agent, event, section: {
+            "file": "status.md",
+            "target": section,
+            "operation": "remove",
+            "removed": f"- [ ] 【{event}】去天台",
+        },
+    )
+    monkeypatch.setattr(
+        conversation_flow_module,
+        "add_pending_event",
+        lambda agent, event, section: (
+            {
+                "file": "status.md",
+                "target": section,
+                "operation": "skip",
+                "reason": "【重复】已存在，跳过",
+            }
+            if "重复" in event
+            else {
+                "file": "status.md",
+                "target": section,
+                "operation": "add",
+                "added": f"- [ ] {event}",
+            }
+        ),
+    )
+    def fake_log_info(*args, **kwargs):
+        logs.append((args, kwargs))
+
+    monkeypatch.setattr(conversation_flow_module.routing_logger, "info", fake_log_info)
+
+    output = conversation_flow_module.CharacterOutput(
+        content="回应",
+        memory=(
+            "- **时间**：10月24日 上午\n"
+            "- **地点**：图书馆\n"
+            "- **在场**：我、玩家\n"
+            "- **内容**：玩家主动替我解围。"
+        ),
+        status={"场景": "图书馆二楼靠窗座位"},
+        player={"对方是什么人": "- 很直接\n- 会主动推进话题"},
+        triggered=["去天台"],
+        add_event=["【新计划】去图书馆", "【重复】去图书馆"],
+    )
+
+    await conversation_flow_module._apply_response_updates("lilith", output)
+
+    args, kwargs = logs[0]
+    assert args == ("[FileUpdate] 文件更新: agent=%s, count=%s", "lilith", 6)
+    extra = kwargs["extra"]
+    assert extra["event.name"] == "agentgal.routing.file_updates"
+    assert extra["file_update.agent"] == "lilith"
+    assert extra["file_update.count"] == 6
+    assert "file_update.items" not in extra
+    assert extra["file_update.updates"] == [
+        {
+            "file": "memory.md",
+            "target": "长期记忆",
+            "operation": "append",
+            "appended": output.memory,
+        },
+        {
+            "file": "status.md",
+            "target": "场景",
+            "operation": "replace",
+            "before": "旧场景",
+            "after": "图书馆二楼靠窗座位",
+        },
+        {
+            "file": "tmp_user.md",
+            "target": "对方是什么人",
+            "operation": "append",
+            "appended": "- 很直接\n- 会主动推进话题",
+        },
+        {
+            "file": "status.md",
+            "target": "打算",
+            "operation": "remove",
+            "removed": "- [ ] 【去天台】去天台",
+        },
+        {
+            "file": "status.md",
+            "target": "打算",
+            "operation": "add",
+            "added": "- [ ] 【新计划】去图书馆",
+        },
+        {
+            "file": "status.md",
+            "target": "打算",
+            "operation": "skip",
+            "reason": "【重复】已存在，跳过",
+        },
+    ]
 
 
 @pytest.mark.asyncio

@@ -30,6 +30,7 @@ from shared.text_utils import (
     process_character_response,
 )
 from storage.agent_files import (
+    FileUpdateResult,
     add_pending_event,
     mark_event_triggered,
     read_agent_file,
@@ -38,17 +39,19 @@ from storage.agent_files import (
     update_status,
 )
 
+_FILE_UPDATES_EVENT = "agentgal.routing.file_updates"
+
 
 async def _apply_response_updates(
     agent_name: str,
     output: CharacterOutput | StateUpdaterOutput,
 ) -> None:
     """将 typed output 的更新指令写回对应文件。"""
-    results: list[str] = []
+    results: list[FileUpdateResult] = []
 
     def _safe_update(label: str, fn) -> None:
         try:
-            results.append(f"{label}: {fn()}")
+            results.append(fn())
         except Exception as e:
             routing_logger.error(f"[{agent_name}] {label} 失败: {e}")
 
@@ -99,7 +102,17 @@ async def _apply_response_updates(
         )
 
     if results:
-        routing_logger.info(f"[{agent_name}] 文件更新: {'; '.join(results)}")
+        routing_logger.info(
+            "[FileUpdate] 文件更新: agent=%s, count=%s",
+            agent_name,
+            len(results),
+            extra={
+                "event.name": _FILE_UPDATES_EVENT,
+                "file_update.agent": agent_name,
+                "file_update.count": len(results),
+                "file_update.updates": results,
+            },
+        )
 
 
 def _sanitize_narrator_scene_description(scene_description: str) -> str:
