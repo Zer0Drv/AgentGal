@@ -37,44 +37,59 @@ def fake_history_window_state():
 class TestBuildHistoryTranscript:
     """历史文本构建"""
 
-    def test_player_and_other_roles_have_prefixes(self):
+    def test_returns_history_with_only_last_visible_narrator_message(self):
         msgs = [
             {"role": "player", "content": "你好", "visible_to": ["narrator", "lilith"]},
-            {"role": "narrator", "content": "场景描述", "visible_to": ["narrator", "lilith"]},
+            {"role": "narrator", "content": "旧场景描述", "visible_to": ["narrator", "lilith"]},
             {"role": "mitsuki", "content": "mitsuki 回复", "visible_to": ["narrator", "lilith"]},
+            {"role": "narrator", "content": "新场景描述", "visible_to": ["narrator", "lilith"]},
         ]
 
         result, _ = build_history_transcript("lilith", msgs)
 
-        assert "玩家: 你好" in result
-        assert "narrator: 场景描述" in result
-        assert "mitsuki: mitsuki 回复" in result
+        assert result == "玩家: 你好\n\nmitsuki: mitsuki 回复\n\n旁白: 新场景描述"
+        assert "旧场景描述" not in result
 
     def test_character_only_sees_visible_messages(self):
         msgs = [
-            {"role": "player", "content": "公开消息", "visible_to": ["narrator", "lilith", "mitsuki"]},
-            {"role": "mitsuki", "content": "私密回复", "visible_to": ["narrator", "mitsuki"]},
+            {"role": "narrator", "content": "公开场景", "visible_to": ["narrator", "lilith", "mitsuki"]},
+            {"role": "narrator", "content": "mitsuki 私密场景", "visible_to": ["narrator", "mitsuki"]},
             {"role": "lilith", "content": "lilith回复", "visible_to": ["narrator", "lilith"]},
         ]
 
         result, _ = build_history_transcript("lilith", msgs)
 
-        assert "公开消息" in result
-        assert "lilith: lilith回复" in result
+        assert result == "旁白: 公开场景\n\nlilith: lilith回复"
+        assert "mitsuki 私密场景" not in result
+
+    def test_uses_last_narrator_visible_to_agent_not_global_latest(self):
+        msgs = [
+            {"role": "player", "content": "公开消息", "visible_to": ["narrator", "lilith", "mitsuki"]},
+            {"role": "narrator", "content": "lilith 可见场景", "visible_to": ["narrator", "lilith"]},
+            {"role": "mitsuki", "content": "私密回复", "visible_to": ["narrator", "mitsuki"]},
+            {"role": "narrator", "content": "mitsuki 私密场景", "visible_to": ["narrator", "mitsuki"]},
+        ]
+
+        result, _ = build_history_transcript("lilith", msgs)
+
+        assert result == "玩家: 公开消息\n\n旁白: lilith 可见场景"
+        assert "mitsuki 私密场景" not in result
         assert "私密回复" not in result
 
-    def test_narrator_sees_all(self):
+    def test_narrator_sees_last_narrator_message(self):
         msgs = [
             {"role": "player", "content": "公开", "visible_to": ["narrator", "lilith"]},
+            {"role": "narrator", "content": "旧场景", "visible_to": ["narrator", "lilith"]},
             {"role": "mitsuki", "content": "mitsuki", "visible_to": ["narrator", "mitsuki"]},
+            {"role": "narrator", "content": "最新场景", "visible_to": ["narrator", "mitsuki"]},
         ]
 
         result, _ = build_history_transcript("narrator", msgs)
 
-        assert "玩家: 公开" in result
-        assert "mitsuki: mitsuki" in result
+        assert result == "玩家: 公开\n\nmitsuki: mitsuki\n\n旁白: 最新场景"
+        assert "旧场景" not in result
 
-    def test_prefix_stable_across_turns(self):
+    def test_prefix_stable_across_turns_while_old_narrator_is_replaced(self):
         msgs_turn_n = [
             {"role": "player", "content": "p1", "visible_to": ["narrator", "lilith"]},
             {"role": "narrator", "content": "n1", "visible_to": ["narrator", "lilith"]},
@@ -88,51 +103,62 @@ class TestBuildHistoryTranscript:
         result_n, _ = build_history_transcript("lilith", msgs_turn_n)
         result_n1, _ = build_history_transcript("lilith", msgs_turn_n1)
 
-        assert result_n1.startswith(result_n + "\n\n")
+        assert result_n == "玩家: p1\n\n旁白: n1\n\nlilith: l1"
+        assert result_n1 == "玩家: p1\n\nlilith: l1\n\n玩家: p2\n\n旁白: n2"
 
     def test_truncates_when_exceeds_high(self):
         msgs = [
-            {"role": "player", "content": f"消息{i}", "visible_to": ["narrator", "lilith"]}
+            {"role": "narrator", "content": f"消息{i}", "visible_to": ["narrator", "lilith"]}
             for i in range(40)
         ]
 
         with patch("engine.prompt_builder.HISTORY_HIGH", 30), patch("engine.prompt_builder.HISTORY_LOW", 15):
-            result, _ = build_history_transcript("lilith", msgs)
+            result, was_truncated = build_history_transcript("lilith", msgs)
 
-        assert "消息24" not in result
-        assert "消息25" in result
-        assert "消息39" in result
+        assert result == "旁白: 消息39"
+        assert was_truncated is True
 
     def test_true_high_low_window_does_not_slide_every_turn(self):
         msgs_31 = [
-            {"role": "player", "content": f"消息{i}", "visible_to": ["narrator", "lilith"]}
+            {"role": "narrator", "content": f"消息{i}", "visible_to": ["narrator", "lilith"]}
             for i in range(31)
         ]
         msgs_32 = msgs_31 + [
-            {"role": "player", "content": "消息31", "visible_to": ["narrator", "lilith"]},
+            {"role": "narrator", "content": "消息31", "visible_to": ["narrator", "lilith"]},
         ]
         msgs_47 = [
-            {"role": "player", "content": f"消息{i}", "visible_to": ["narrator", "lilith"]}
+            {"role": "narrator", "content": f"消息{i}", "visible_to": ["narrator", "lilith"]}
             for i in range(47)
         ]
 
         with patch("engine.prompt_builder.HISTORY_HIGH", 30), patch("engine.prompt_builder.HISTORY_LOW", 15):
-            result_31, _ = build_history_transcript("lilith", msgs_31)
-            result_32, _ = build_history_transcript("lilith", msgs_32)
-            result_47, _ = build_history_transcript("lilith", msgs_47)
+            result_31, truncated_31 = build_history_transcript("lilith", msgs_31)
+            result_32, truncated_32 = build_history_transcript("lilith", msgs_32)
+            result_47, truncated_47 = build_history_transcript("lilith", msgs_47)
 
-        assert result_31.startswith("玩家: 消息16")
-        assert result_32.startswith("玩家: 消息16")
-        assert "消息31" in result_32
-        assert result_47.startswith("玩家: 消息32")
+        assert result_31 == "旁白: 消息30"
+        assert truncated_31 is True
+        assert result_32 == "旁白: 消息31"
+        assert truncated_32 is False
+        assert result_47 == "旁白: 消息46"
+        assert truncated_47 is True
 
     def test_empty_history_returns_empty(self):
         result, _ = build_history_transcript("lilith", [])
         assert result == ""
 
+    def test_visible_non_narrator_messages_are_kept(self):
+        msgs = [
+            {"role": "player", "content": "消息", "visible_to": ["narrator", "lilith"]},
+            {"role": "lilith", "content": "回复", "visible_to": ["narrator", "lilith"]},
+        ]
+
+        result, _ = build_history_transcript("lilith", msgs)
+        assert result == "玩家: 消息\n\nlilith: 回复"
+
     def test_all_filtered_returns_empty(self):
         msgs = [
-            {"role": "player", "content": "消息", "visible_to": ["narrator", "mitsuki"]},
+            {"role": "narrator", "content": "消息", "visible_to": ["narrator", "mitsuki"]},
         ]
 
         result, _ = build_history_transcript("lilith", msgs)
@@ -227,6 +253,7 @@ class TestBuildUserMessage:
     def test_narrator_uses_single_big_user_message_without_growth(self):
         msgs = [
             {"role": "player", "content": "旧消息", "visible_to": ["narrator"]},
+            {"role": "narrator", "content": "旧场景", "visible_to": ["narrator"]},
             {"role": "guyining", "content": "旧回复", "visible_to": ["narrator"]},
         ]
 
@@ -236,5 +263,8 @@ class TestBuildUserMessage:
         assert "<growth>" not in result
         assert "<user_profile>" not in result
         assert "最近对话历史:" in result
+        assert "玩家: 旧消息" in result
+        assert "旁白: 旧场景" in result
+        assert "guyining: 旧回复" in result
         assert result.index("最近对话历史:") < result.index("<status>")
         assert result.index("<status>") < result.index("玩家新消息: 新输入")

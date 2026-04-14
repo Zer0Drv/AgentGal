@@ -88,19 +88,35 @@ def build_history_transcript(
     agent_name: str,
     raw_messages: list[dict],
 ) -> tuple[str, bool]:
-    """将 JSONL 原始消息转为单段历史文本（高低水位窗口 + 可见性过滤）。返回 (文本, 是否触发截断)。"""
+    """将 JSONL 原始消息转为历史文本，但只保留最后一条可见旁白。
+
+    高低水位窗口与可见性过滤仍照常应用。返回 (文本, 是否触发截断)。
+    """
     visible, was_truncated = _get_windowed_visible_messages(agent_name, raw_messages)
 
     if not visible:
         return "", False
 
-    lines: list[str] = []
-    for msg in visible:
-        role = msg.get("role", "unknown")
+    last_narrator_index: int | None = None
+    for idx in range(len(visible) - 1, -1, -1):
+        msg = visible[idx]
+        if msg.get("role") != "narrator":
+            continue
         content = re.sub(r"\n+", "\n", msg.get("content", "").strip())
         if not content:
             continue
-        speaker = "玩家" if role == "player" else role
+        last_narrator_index = idx
+        break
+
+    lines: list[str] = []
+    for idx, msg in enumerate(visible):
+        role = msg.get("role", "unknown")
+        if role == "narrator" and idx != last_narrator_index:
+            continue
+        content = re.sub(r"\n+", "\n", msg.get("content", "").strip())
+        if not content:
+            continue
+        speaker = "玩家" if role == "player" else ("旁白" if role == "narrator" else role)
         lines.append(f"{speaker}: {content}")
 
     return "\n\n".join(lines), was_truncated

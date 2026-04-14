@@ -178,7 +178,7 @@ server.py        ← shared/ + storage/ + engine/
 `user` 消息按以下顺序拼装为**单条大消息**：
 
 1. `growth.md`
-2. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断）
+2. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断；历史中的旁白只保留最后一条）
 3. `user.md`（`tmp_user.md` 仅作为工作草稿参与整理，不直接注入 prompt）
 4. `status.md`
 5. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
@@ -193,7 +193,7 @@ server.py        ← shared/ + storage/ + engine/
 
 `user` 消息按以下顺序拼装为**单条大消息**：
 
-1. 最近对话历史
+1. 最近对话历史（旁白只保留最后一条）
 2. `status.md`
 3. 本轮玩家输入
 

@@ -89,6 +89,7 @@ uv run uvicorn server:app --reload
 - 对话统一写入 `data/characters/narrator/raw/YYYY-MM-DD.jsonl`
 - 每条消息记录 `visible_to`
 - 各角色在读取上下文时，按 `visible_to` 过滤出自己能看到的内容
+- 对话 prompt 中的“最近对话历史”仍保留玩家和角色消息，但旁白只保留最后一条可见旁白；完整 raw 历史仍用于存档、窗口截断和记忆整理
 
 ### 3. 结构化写回
 
