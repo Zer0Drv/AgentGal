@@ -2,7 +2,7 @@
 
 ## 核心设计
 
-- **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 只维护 `status.md` 与 raw 历史
+- **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 维护 `status.md`、任务队列与 raw 历史
 - **信息差**：消息按 `visible_to` 控制可见范围，未参与场景的角色不会看到该轮内容
 - **旁白先行**：`narrator` 先做路由与场景推进，再顺序调用目标角色
 - **结构化输出**：所有结构化 Agent 使用 `PromptedOutput`，不输出 XML；系统直接读取 typed 字段写回文件
@@ -30,7 +30,8 @@ agentgal-memos/
 │   ├── agent_factory.py        # Agent 创建、注册表与 SDK model 配置
 │   ├── agent_runner.py         # SDK Runner 调用、Logfire trace 与 typed parse
 │   ├── agent_schema.py         # Pydantic 结构化输出类型
-│   ├── conversation_flow.py    # 单轮对话编排、路由、typed 输出写回
+│   ├── character.py            # Character / Narrator 运行封装与 typed 输出写回
+│   ├── conversation_flow.py    # 单轮对话编排与 UI 适配函数
 │   ├── consolidation_flow.py   # 记忆整理编排
 │   ├── prompt_builder.py       # prompt / 历史窗口 / 整理输入构造
 │   └── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
@@ -92,6 +93,7 @@ server.py        ← shared/ + storage/ + engine/
 ### 其他运行时文件
 
 - `data/characters/last_choices.json`：最新一组玩家选项，续档时恢复展示，重置时清除
+- `data/characters/narrator/tasks.md`：narrator 待触发事件队列；当 `status.md` 的「待触发事件」为空时，优先激活第一条
 - `data/characters/*/.history_window_state.json`：各 Agent 的对话历史高低水位窗口 sidecar
 - `data/characters/*/.consolidation_state.json`：角色记忆整理进度 sidecar
 - `data/characters/*/.memory_recall_state.json`：角色长期记忆 recall 快照（仅存档时从 DB 生成，运行期不维护）
@@ -115,6 +117,8 @@ server.py        ← shared/ + storage/ + engine/
 
 ```text
 用户消息
+  ↓
+当待触发事件为空时，从 narrator/tasks.md 激活第一条任务
   ↓
 调用 narrator，得到 NarratorOutput（targets + content）
   ↓
@@ -140,7 +144,7 @@ server.py        ← shared/ + storage/ + engine/
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`
 
-`engine/conversation_flow.py` 的 `_apply_response_updates()` 读取 typed 字段写回文件。
+`engine/character.py` 的 `Character` / `Narrator` 运行封装读取 typed 字段写回文件。
 
 ### 写回规则
 
@@ -193,7 +197,7 @@ server.py        ← shared/ + storage/ + engine/
 2. `status.md`
 3. 本轮玩家输入
 
-`narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点和待触发事件管理剧情推进。
+`narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点、待触发事件和 `tasks.md` 队列管理剧情推进。
 
 narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置时回退到主 LLM。
 
@@ -259,6 +263,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 - 角色 markdown 文件（`narrator` 不含 `memory.md`）
 - narrator 的 raw 历史
+- narrator 的 `tasks.md` 任务队列
 - 各 Agent `.history_window_state.json`
 - 角色 `.consolidation_state.json`
 - 角色 `.memory_recall_state.json`

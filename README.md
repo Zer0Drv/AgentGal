@@ -4,7 +4,7 @@
 
 ## 项目特点
 
-- **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 只维护 `status.md` 和单一 raw 历史
+- **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 维护 `status.md`、任务队列和单一 raw 历史
 - **真实信息差**：消息通过 `visible_to` 控制可见性，不在场的角色不会自动知情
 - **旁白驱动路由**：`narrator` 决定谁参与当前回合，并推进场景与时间
 - **结构化更新**：Agent 使用 Pydantic 结构化输出，系统直接读取 typed 字段写回文件
@@ -76,7 +76,7 @@ uv run uvicorn server:app --reload
 
 ### 1. narrator 先路由
 
-每轮先调用 `narrator`，由它输出：
+每轮先激活 narrator 任务队列中可用的下一条待触发事件，再调用 `narrator`，由它输出：
 
 - `TARGETS: [角色列表]`
 - 当前时间、地点、在场信息
@@ -118,7 +118,7 @@ uv run uvicorn server:app --reload
 
 ### 5. 长期记忆检索
 
-- 只有角色会做向量召回，`narrator` 依赖 `status.md` 中的场景状态和待触发事件推进剧情
+- 只有角色会做向量召回，`narrator` 依赖 `status.md` 中的场景状态、待触发事件和任务队列推进剧情
 - 向量库只索引 `memory.md` 中的长期记忆事件，不再混入其他来源
 - `memory/retrieval.py` 负责完整检索 pipeline：embedding → 向量/BM25 候选 → hybrid 融合 → 可选 rerank → recency 排序 → recall 状态更新
 - `storage/vector_store.py` 只做存储层：提供向量与 BM25 原始候选，pipeline 逻辑不放在 storage 层
@@ -162,6 +162,7 @@ uv run uvicorn server:app --reload
 - `user.md`：角色对玩家的认知（仅角色有）
 - `tmp_user.md`：`user.md` 的工作草稿；由 typed `player` 字段增量写入，整理后删除
 - `growth.md`：整理器维护的人格沉淀（仅角色有）
+- `tasks.md`：narrator 的待触发事件队列；当 `status.md` 的「待触发事件」为空时，优先激活第一条
 - `.history_window_state.json`：对话历史高低水位窗口 sidecar
 - `.consolidation_state.json`：角色整理进度 sidecar
 - `.memory_recall_state.json`：角色记忆 recall 快照（仅存档时从 DB 生成，运行期不维护）
@@ -222,7 +223,7 @@ uv run uvicorn server:app --reload
 
 ## 存档机制
 
-- `/save` 会将当前角色数据、角色记忆、narrator raw 历史、历史窗口 sidecar、角色整理 sidecar、角色 recall sidecar 等打包为 zip 存入 `saves/`
+- `/save` 会将当前角色数据、角色记忆、narrator raw 历史、任务队列、历史窗口 sidecar、角色整理 sidecar、角色 recall sidecar 等打包为 zip 存入 `saves/`
 - `/load <序号>` 会恢复角色目录，并按需要重建向量索引
 - `/reset` 会清空当前运行数据，并从 `data/templates/{story_id}` 重建
 
