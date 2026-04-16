@@ -272,7 +272,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 当前内置故事模板：
 
-- `school`：`lilith` / `mitsuki` / `narrator`
+- `school`：`mitsuki` / `narrator`
 - `modern`：`chenxiao` / `guyining` / `narrator`
 
 ## 开发约定
