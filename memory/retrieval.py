@@ -221,6 +221,17 @@ def _vec_rows_to_candidates(rows: list[tuple]) -> list[dict[str, Any]]:
     ]
 
 
+def _format_retrieved_memory(item: dict[str, Any]) -> str:
+    """将召回结果恢复成带日期上下文的 memory.md 片段。"""
+    content = item.get("content", "").strip()
+    if not content:
+        return ""
+    date = item.get("date", "").strip()
+    if not date:
+        return content
+    return f"## {date}\n{content}"
+
+
 def search_memories(agent_name: str, query: str) -> str:
     """执行完整检索 pipeline 并格式化记忆块。
 
@@ -304,5 +315,5 @@ def search_memories(agent_name: str, query: str) -> str:
         if conn is not None:
             conn.close()
 
-    memories = [r["content"].strip() for r in ranked if r["content"].strip()]
+    memories = [formatted for r in ranked if (formatted := _format_retrieved_memory(r))]
     return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
