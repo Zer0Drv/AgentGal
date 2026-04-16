@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Callable
-from pathlib import Path
 
 from engine.agent_factory import get_conversation_agent
 from engine.agent_runner import run_structured_agent
@@ -13,9 +12,8 @@ from engine.agent_schema import CharacterOutput, NarratorOutput, StateUpdaterOut
 from engine.prompt_builder import build_search_query, build_user_message
 from llm.providers import get_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
-from memory.parser import extract_status_field
 from memory.retrieval import search_memories
-from shared.config import AGENT_RUN_TIMEOUT_SECONDS, character_path, get_agent_names
+from shared.config import AGENT_RUN_TIMEOUT_SECONDS, get_agent_names
 from shared.text_utils import clean_response, get_display_name, is_valid_response
 from storage.agent_files import (
     FileUpdateResult,
@@ -29,8 +27,6 @@ from storage.agent_files import (
 from storage.history import load_conversation_history
 
 _FILE_UPDATES_EVENT = "agentgal.routing.file_updates"
-_NARRATOR_TASK_QUEUE_FILENAMES = ("tasks.md",)
-_EMPTY_PENDING_EVENT_VALUES = {"", "（暂无）", "暂无", "无", "（空）", "(空)"}
 
 
 def _apply_file_updates(agent_name: str, ops: list[tuple[str, Callable]]) -> None:
@@ -137,34 +133,50 @@ class Narrator:
     async def route(
         self, user_input: str, raw_messages: list[dict] | None = None
     ) -> tuple[list[str], str, bool]:
-        """激活任务队列 → 运行 narrator → 返回 (targets, scene_description, is_valid)。"""
+        """运行 narrator → 返回 (targets, scene_description, is_valid)。"""
         valid_agents = get_agent_names(include_narrator=False)
-        self._activate_next_task_if_needed()
         if raw_messages is None:
             raw_messages = load_conversation_history(limit=None)
 
-        async def _run() -> tuple[list[str], str]:
-            output = await self._run_narrator(user_input, raw_messages)
+        async def _run(narrator_input: str) -> tuple[list[str], str]:
+            output = await self._run_narrator(narrator_input, raw_messages)
             valid_targets = [t for t in output.targets if t in valid_agents]
             scene = self._sanitize_scene_description(output.content)
             return valid_targets, scene
 
+        async def _retry() -> tuple[list[str], str]:
+            correction = (
+                f"{user_input}\n\n"
+                "<routing_correction>"
+                "上一轮没有返回有效 targets。请保留玩家原意，重新输出 JSON；"
+                "targets 必须包含至少 1 个 <fields> 中可回应的角色id。"
+                "</routing_correction>"
+            )
+            return await _run(correction)
+
+        retried = False
         try:
-            targets, scene = await _run()
+            targets, scene = await _run(user_input)
         except Exception as e:
             self._log_failure("首次调用", e)
-            return [], "", False
-
-        if not targets:
-            routing_logger.warning("narrator 响应缺少有效 TARGETS，重试中...")
+            retried = True
             try:
-                targets, scene = await _run()
+                targets, scene = await _retry()
             except Exception as e:
                 self._log_failure("重试调用", e)
                 return [], "", False
+
+        if not targets:
+            if not retried:
+                routing_logger.warning("narrator 响应缺少有效 TARGETS，重试中...")
+                try:
+                    targets, scene = await _retry()
+                except Exception as e:
+                    self._log_failure("重试调用", e)
+                    return [], "", False
             if not targets:
                 routing_logger.warning("narrator 重试后仍缺少有效 TARGETS")
-                return [], "", False
+                return [], scene, False
 
         return targets, scene, is_valid_response(scene, "narrator")
 
@@ -229,78 +241,6 @@ class Narrator:
                         break
 
         return sanitized
-
-    def _activate_next_task_if_needed(self) -> FileUpdateResult | None:
-        """当「待触发事件」为空时，把 tasks.md 第一条激活到 status.md。"""
-        status_content = read_agent_file("narrator", "status.md")
-        if not self._is_pending_events_empty(status_content):
-            return None
-
-        task_path = self._find_task_queue_path()
-        if task_path is None:
-            return None
-
-        first_task = self._read_first_task(task_path)
-        if first_task is None:
-            return None
-
-        title, body, start, end, content = first_task
-        result = add_pending_event(
-            "narrator",
-            self._format_task_event(title, body),
-            "待触发事件",
-        )
-        if result.get("operation") == "add":
-            self._remove_task_block(task_path, start, end, content)
-            routing_logger.debug(
-                "[narrator] 激活 tasks.md 第一条待触发事件: %s",
-                title,
-                extra={
-                    "event.name": _FILE_UPDATES_EVENT,
-                    "file_update.agent": "narrator",
-                    "file_update.count": 1,
-                    "file_update.updates": [result],
-                },
-            )
-        return result
-
-    @staticmethod
-    def _is_pending_events_empty(status_content: str) -> bool:
-        pending_events = extract_status_field(status_content, "待触发事件")
-        normalized_lines = [line.strip() for line in pending_events.splitlines() if line.strip()]
-        return all(line in _EMPTY_PENDING_EVENT_VALUES for line in normalized_lines)
-
-    @staticmethod
-    def _find_task_queue_path() -> Path | None:
-        for filename in _NARRATOR_TASK_QUEUE_FILENAMES:
-            task_path = Path(character_path("narrator", filename))
-            if task_path.exists():
-                return task_path
-        return None
-
-    @staticmethod
-    def _read_first_task(task_path: Path) -> tuple[str, str, int, int, str] | None:
-        content = task_path.read_text(encoding="utf-8")
-        match = re.search(
-            r"^##\s+(.+?)\s*\n(.*?)(?=^##\s+|\Z)", content, re.MULTILINE | re.DOTALL
-        )
-        if not match:
-            return None
-        title = match.group(1).strip()
-        body = match.group(2).strip()
-        if not title:
-            return None
-        return title, body, match.start(), match.end(), content
-
-    @staticmethod
-    def _format_task_event(title: str, body: str) -> str:
-        body_text = " ".join(line.strip() for line in body.splitlines() if line.strip())
-        return f"【{title}】{body_text}" if body_text else f"【{title}】"
-
-    @staticmethod
-    def _remove_task_block(task_path: Path, start: int, end: int, content: str) -> None:
-        new_content = f"{content[:start].rstrip()}\n\n{content[end:].lstrip()}".rstrip()
-        task_path.write_text(f"{new_content}\n" if new_content else "", encoding="utf-8")
 
     @staticmethod
     def _log_failure(stage: str, exc: Exception) -> None:

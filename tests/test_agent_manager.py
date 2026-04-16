@@ -41,11 +41,6 @@ async def test_call_narrator_and_route_returns_fallback_on_run_failure(monkeypat
         lambda include_narrator=False: ["mitsuki"],
     )
     monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
-    monkeypatch.setattr(
-        character_module.Narrator,
-        "_activate_next_task_if_needed",
-        lambda self: None,
-    )
 
     async def fake_run_narrator(self, *_args, **_kwargs):
         raise asyncio.TimeoutError
@@ -69,11 +64,6 @@ async def test_call_narrator_and_route_filters_targets_and_sanitizes_scene(monke
         lambda include_narrator=False: ["mitsuki"],
     )
     monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
-    monkeypatch.setattr(
-        character_module.Narrator,
-        "_activate_next_task_if_needed",
-        lambda self: None,
-    )
     monkeypatch.setattr(character_module, "read_agent_file", lambda *_args: "# 美月")
     monkeypatch.setattr(character_module, "get_display_name", lambda *_args: "美月")
 
@@ -94,70 +84,85 @@ async def test_call_narrator_and_route_filters_targets_and_sanitizes_scene(monke
     assert is_valid is True
 
 
-def test_activate_next_narrator_task_moves_first_task_to_status(tmp_path, monkeypatch):
-    import storage.agent_files as agent_files_module
-
-    narrator_dir = tmp_path / "narrator"
-    narrator_dir.mkdir()
-    (narrator_dir / "status.md").write_text(
-        "# 故事状态\n\n## 场景\n办公室\n\n## 待触发事件\n\n",
-        encoding="utf-8",
+@pytest.mark.asyncio
+async def test_call_narrator_and_route_retries_when_targets_filter_to_empty(monkeypatch):
+    monkeypatch.setattr(
+        character_module,
+        "get_agent_names",
+        lambda include_narrator=False: ["mitsuki"],
     )
-    (narrator_dir / "tasks.md").write_text(
-        "# Narrator Tasks\n\n"
-        "## 第一件事\n"
-        "触发时机：现在。\n"
-        "事实：门口有人敲门。\n\n"
-        "## 第二件事\n"
-        "触发时机：稍后。\n"
-        "事实：手机亮起。\n",
-        encoding="utf-8",
+    monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
+    calls = 0
+
+    async def fake_run_narrator(self, *_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return NarratorOutput(targets=["ghost"], content="走廊里传来广播声。")
+        return NarratorOutput(targets=["mitsuki"], content="美月站在走廊尽头。")
+
+    monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
+
+    targets, scene_description, is_valid = await conversation_flow_module.call_narrator_and_route(
+        "回家睡觉"
     )
 
-    def fake_character_path(agent_name: str, *subpaths: str) -> str:
-        return str(tmp_path / agent_name / Path(*subpaths))
-
-    monkeypatch.setattr(character_module, "character_path", fake_character_path)
-    monkeypatch.setattr(agent_files_module, "character_path", fake_character_path)
-
-    result = Narrator()._activate_next_task_if_needed()
-
-    assert result is not None
-    assert result["operation"] == "add"
-    status = (narrator_dir / "status.md").read_text(encoding="utf-8")
-    assert "- [ ] 【第一件事】触发时机：现在。 事实：门口有人敲门。" in status
-    tasks = (narrator_dir / "tasks.md").read_text(encoding="utf-8")
-    assert "## 第一件事" not in tasks
-    assert "## 第二件事" in tasks
+    assert calls == 2
+    assert targets == ["mitsuki"]
+    assert scene_description == "美月站在走廊尽头。"
+    assert is_valid is True
 
 
-def test_activate_next_narrator_task_keeps_queue_when_pending_event_exists(tmp_path, monkeypatch):
-    import storage.agent_files as agent_files_module
-
-    narrator_dir = tmp_path / "narrator"
-    narrator_dir.mkdir()
-    (narrator_dir / "status.md").write_text(
-        "# 故事状态\n\n## 待触发事件\n- [ ] 【已有】当前事件\n",
-        encoding="utf-8",
+@pytest.mark.asyncio
+async def test_call_narrator_and_route_retries_when_targets_are_empty(monkeypatch):
+    monkeypatch.setattr(
+        character_module,
+        "get_agent_names",
+        lambda include_narrator=False: ["mitsuki"],
     )
-    original_tasks = (
-        "# Narrator Tasks\n\n"
-        "## 第一件事\n"
-        "触发时机：现在。\n"
-        "事实：门口有人敲门。\n"
+    monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
+    calls = 0
+
+    async def fake_run_narrator(self, *_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return NarratorOutput(targets=[], content="走廊里传来广播声。")
+        return NarratorOutput(targets=["mitsuki"], content="美月站在走廊尽头。")
+
+    monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
+
+    targets, scene_description, is_valid = await conversation_flow_module.call_narrator_and_route(
+        "回家睡觉"
     )
-    (narrator_dir / "tasks.md").write_text(original_tasks, encoding="utf-8")
 
-    def fake_character_path(agent_name: str, *subpaths: str) -> str:
-        return str(tmp_path / agent_name / Path(*subpaths))
+    assert calls == 2
+    assert targets == ["mitsuki"]
+    assert scene_description == "美月站在走廊尽头。"
+    assert is_valid is True
 
-    monkeypatch.setattr(character_module, "character_path", fake_character_path)
-    monkeypatch.setattr(agent_files_module, "character_path", fake_character_path)
 
-    result = Narrator()._activate_next_task_if_needed()
+@pytest.mark.asyncio
+async def test_call_narrator_and_route_rejects_scene_without_valid_targets(monkeypatch):
+    monkeypatch.setattr(
+        character_module,
+        "get_agent_names",
+        lambda include_narrator=False: ["mitsuki"],
+    )
+    monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
 
-    assert result is None
-    assert (narrator_dir / "tasks.md").read_text(encoding="utf-8") == original_tasks
+    async def fake_run_narrator(self, *_args, **_kwargs):
+        return NarratorOutput(targets=["ghost"], content="走廊里传来广播声。")
+
+    monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
+
+    targets, scene_description, is_valid = await conversation_flow_module.call_narrator_and_route(
+        "回家睡觉"
+    )
+
+    assert targets == []
+    assert scene_description == "走廊里传来广播声。"
+    assert is_valid is False
 
 
 @pytest.mark.asyncio
@@ -344,11 +349,21 @@ async def test_run_state_updater_uses_state_updater_agent(monkeypatch):
     applied: list[tuple] = []
     fake_agent = object()
 
+    def fake_read_agent_file(agent, filename):
+        files = {
+            ("narrator", "status.md"): "# narrator status\n\n## 场景\n旧场景",
+            ("role_b", "status.md"): "# 角色B的状态\n\n## 打算\n- [ ] 【楼下碰面】10月24日 09:30 公寓楼下。去见玩家。",
+            ("role_b", "soul.md"): "# 角色B",
+        }
+        return files.get((agent, filename), "")
+
+    monkeypatch.setattr(conversation_flow_module, "read_agent_file", fake_read_agent_file)
     monkeypatch.setattr(
         conversation_flow_module,
-        "read_agent_file",
-        lambda agent, filename: "# narrator status\n\n## 场景\n旧场景",
+        "get_agent_names",
+        lambda include_narrator=False: ["role_b"],
     )
+    monkeypatch.setattr(conversation_flow_module, "get_display_name", lambda *_args: "角色B")
     monkeypatch.setattr(
         conversation_flow_module,
         "get_narrator_llm_config",
@@ -383,6 +398,10 @@ async def test_run_state_updater_uses_state_updater_agent(monkeypatch):
     assert captured["output_type"] is StateUpdaterOutput
     assert captured["usage_agent"] == "state_updater"
     assert "<current_narrator_status>" in captured["user_input"]
+    assert "<character_intentions>" in captured["user_input"]
+    assert "【role_b / 角色B】" in captured["user_input"]
+    assert "【楼下碰面】10月24日 09:30 公寓楼下。去见玩家。" in captured["user_input"]
+    assert "<milestones>" not in captured["user_input"]
     assert "手机屏幕亮了一下。" in captured["user_input"]
     assert applied[0][0] == "narrator"
     assert applied[0][1].status.叙事焦点 == "玩家私下联系角色B"

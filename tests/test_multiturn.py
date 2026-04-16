@@ -193,7 +193,7 @@ class TestHighLowWatermarkHelper:
 class TestBuildUserMessage:
     """单条大 user message 构建"""
 
-    def test_character_orders_stable_context_before_dynamic_tail(self):
+    def test_character_orders_profile_before_history_and_dynamic_tail(self):
         msgs = [
             {"role": "player", "content": "旧消息", "visible_to": ["narrator", "lilith"]},
             {"role": "narrator", "content": "旧场景", "visible_to": ["narrator", "lilith"]},
@@ -218,8 +218,8 @@ class TestBuildUserMessage:
                 raw_messages=msgs,
             )
 
-        assert result.index("<growth>") < result.index("最近对话历史:")
-        assert result.index("最近对话历史:") < result.index("<user_profile>")
+        assert result.index("<growth>") < result.index("<user_profile>")
+        assert result.index("<user_profile>") < result.index("最近对话历史:")
         assert result.index("最近对话历史:") < result.index("<status>")
         assert result.index("<status>") < result.index("记忆内容")
         assert result.index("记忆内容") < result.index("玩家新消息: 你好")

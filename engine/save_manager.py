@@ -241,6 +241,9 @@ async def import_save_archive(save_filename: str) -> bool:
             for member in zf.namelist():
                 if member == "metadata.json":
                     continue
+                if os.path.basename(member) == "milestones.md":
+                    print(f"[读档] 跳过旧里程碑文件: {member}", flush=True)
+                    continue
                 zf.extract(member, characters_dir)
                 print(f"[读档] 已恢复: {member}", flush=True)
 
@@ -283,7 +286,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
         if os.path.exists(filepath):
             files.append(filepath)
 
-    for filename in ["states.md", "events.md", "tasks.md"]:
+    for filename in ["states.md", "events.md"]:
         filepath = f"{base}/{filename}"
         if os.path.exists(filepath):
             files.append(filepath)

@@ -2,7 +2,7 @@
 
 ## 核心设计
 
-- **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 维护 `status.md`、任务队列与 raw 历史
+- **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 维护 `status.md` 与 raw 历史
 - **信息差**：消息按 `visible_to` 控制可见范围，未参与场景的角色不会看到该轮内容
 - **旁白先行**：`narrator` 先做路由与场景推进，再顺序调用目标角色
 - **结构化输出**：所有结构化 Agent 使用 `PromptedOutput`，不输出 XML；系统直接读取 typed 字段写回文件
@@ -93,7 +93,7 @@ server.py        ← shared/ + storage/ + engine/
 ### 其他运行时文件
 
 - `data/characters/last_choices.json`：最新一组玩家选项，续档时恢复展示，重置时清除
-- `data/characters/narrator/tasks.md`：narrator 待触发事件队列；当 `status.md` 的「待触发事件」为空时，优先激活第一条
+- `data/characters/narrator/tasks.md`：可选剧情种子文件；当前主流程主要由 `state_updater` 从角色 `打算` 同步 `待触发事件`
 - `data/characters/*/.history_window_state.json`：各 Agent 的对话历史高低水位窗口 sidecar
 - `data/characters/*/.consolidation_state.json`：角色记忆整理进度 sidecar
 - `data/characters/*/.memory_recall_state.json`：角色长期记忆 recall 快照（仅存档时从 DB 生成，运行期不维护）
@@ -108,17 +108,17 @@ server.py        ← shared/ + storage/ + engine/
 
 ### narrator 的职责
 
-- 分析玩家输入，输出 `targets` 数组
-- 描述时间、地点、在场信息与环境
-- 推进剧情、切换场景、安排纯 NPC 行为
+- 分析玩家输入，输出非空 `targets` 数组
+- 判断玩家是否仍有和角色互动的意愿：有则延续当前场景；分别、跳过时间或不再互动时，导向待触发事件或制造同等作用的即时张力
+- 每轮都必须让至少一个主要角色当轮可感知玩家并回应
+- 描述时间、地点、在场信息、环境、纯 NPC 行为和当前钩子
+- 不新增未来事件；未来事件由 `state_updater` 从角色 `打算` 维护
 - **绝不替角色说话或决定角色行动**
 
 ## 单轮对话流程
 
 ```text
 用户消息
-  ↓
-当待触发事件为空时，从 narrator/tasks.md 激活第一条任务
   ↓
 调用 narrator，得到 NarratorOutput（targets + content）
   ↓
@@ -133,6 +133,8 @@ server.py        ← shared/ + storage/ + engine/
 持久化最新选项到 last_choices.json（供续档恢复）
   ↓
 后台调用 state_updater，更新 narrator/status.md（场景、时间、待触发事件）
+  ↓
+state_updater 从各角色「打算」同步公共「待触发事件」（事件名保留角色名）
 ```
 
 ## Agent 输出与写回机制
@@ -197,7 +199,7 @@ server.py        ← shared/ + storage/ + engine/
 2. `status.md`
 3. 本轮玩家输入
 
-`narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点、待触发事件和 `tasks.md` 队列管理剧情推进。
+`narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点和待触发事件推进当前回合。待触发事件主要由 `state_updater` 从各角色 `打算` 同步，事件名保留角色名（如 `【美月：顺路的约定】`）。
 
 narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置时回退到主 LLM。
 
@@ -263,7 +265,6 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 - 角色 markdown 文件（`narrator` 不含 `memory.md`）
 - narrator 的 raw 历史
-- narrator 的 `tasks.md` 任务队列
 - 各 Agent `.history_window_state.json`
 - 角色 `.consolidation_state.json`
 - 角色 `.memory_recall_state.json`

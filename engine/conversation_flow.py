@@ -9,8 +9,9 @@ from engine.character import get_character, narrator
 from engine.prompt_builder import build_history_transcript
 from llm.providers import get_choices_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
-from shared.config import AGENT_RUN_TIMEOUT_SECONDS
-from shared.text_utils import clean_response, is_valid_response, process_character_response
+from memory.parser import extract_status_field
+from shared.config import AGENT_RUN_TIMEOUT_SECONDS, get_agent_names
+from shared.text_utils import clean_response, get_display_name, is_valid_response, process_character_response
 from storage.agent_files import read_agent_file
 from storage.history import load_conversation_history
 
@@ -59,15 +60,29 @@ def _build_state_updater_input(
         f"【{agent_name}】\n{response}" for agent_name, response in agent_responses if response
     ]
     responses_text = "\n\n".join(response_blocks) if response_blocks else "无"
+    character_intentions = _format_character_intentions()
 
     parts = [
         f"<current_narrator_status>\n{status_content}\n</current_narrator_status>",
+        f"<character_intentions>\n{character_intentions}\n</character_intentions>",
         f"<player_input>\n{user_input}\n</player_input>",
         f"<narrator_targets>\n{targets_text}\n</narrator_targets>",
         f"<narrator_content>\n{scene_description or '无'}\n</narrator_content>",
         f"<agent_responses>\n{responses_text}\n</agent_responses>",
     ]
     return "\n\n---\n\n".join(parts)
+
+
+def _format_character_intentions() -> str:
+    """提取所有角色的「打算」，供 state_updater 同步到公共待触发事件。"""
+    blocks: list[str] = []
+    for agent_name in get_agent_names(include_narrator=False):
+        status_content = read_agent_file(agent_name, "status.md")
+        intentions = extract_status_field(status_content, "打算").strip() or "（暂无）"
+        soul_content = read_agent_file(agent_name, "soul.md")
+        display_name = get_display_name(agent_name, soul_content)
+        blocks.append(f"【{agent_name} / {display_name}】\n{intentions}")
+    return "\n\n".join(blocks) if blocks else "无"
 
 
 async def run_state_updater(
