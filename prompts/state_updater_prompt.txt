@@ -1,21 +1,24 @@
 <prompt>
 <goal>
-每轮结束后维护 narrator/status.md：更新公共状态，清理待触发事件，从角色「打算」同步新的公共「待触发事件」。
+每轮结束后维护 narrator/status.md：更新公共状态，清理待触发事件，从角色「打算」同步新的公共「待触发事件」，并识别最近3条历史中自然形成的近未来剧情机会。
 </goal>
 
 <input_blocks>
-输入包含 current_narrator_status、character_intentions、player_input、narrator_targets、narrator_content、agent_responses。
-character_intentions 标题格式为【agent_id / 角色显示名】。
+输入只包含以下3块，且顺序固定：character_intention、current_narrator_status、recent_history。
+character_intention 标题格式为【agent_id / 角色显示名】，内容来自各角色 status.md 的「打算」。
+recent_history 是最近3条 raw 历史的摘要，不再另行提供 player_input、narrator_content、agent_responses 或 targets。
 </input_blocks>
 
 <rules>
-1. status：只写本轮由 narrator_content 或 agent_responses 明确改变的字段；未变化填""。当前时间来自旁白或本轮明确推进，没有明确推进则填""。
+1. status：只写 recent_history 中明确改变的公共状态字段；未变化填""。当前时间来自旁白或明确推进，没有明确推进则填""。
 2. triggered：只写要从 narrator「待触发事件」移除的【事件名】。本轮明确发生则移除；当前时间能明确比较且已经错过则移除；同角色、同含义、同时间地点的冗余项移除，只保留角色名前缀完整、描述最清楚的一条；模糊时间无法明确比较时保留。
-3. add_event：从 character_intentions 中选择可被公共叙事调度的打算：有日期或明确相对时段（如今天放学后、明天午休）、地点、可观察行为，玩家之后能进入角色可回应场景（遇见、通话、实时消息、共同被NPC打断或被角色引入）。
-4. 事件名格式固定为【角色显示名：原打算名】；描述写成"日期/时段 + 地点 + 角色可观察行为 + 玩家可进入的缝隙"。
+3. add_event 可来自两类来源：
+   A. 角色打算：从 character_intention 中选择可被公共叙事调度的打算：有日期或明确相对时段（如今天放学后、明天午休）、地点、可观察行为，玩家之后能进入角色可回应场景（遇见、通话、实时消息、共同被NPC打断或被角色引入）。
+   B. 剧情机会：从 recent_history 中识别有明确伏笔的小型近未来事件；通常发生在本场景后续、当天稍后、明天午休或放学后；只制造场景条件，不替玩家或主要角色做决定。
+4. 事件名格式：角色打算用【角色显示名：原打算名】；剧情机会用【角色显示名：机会名】，角色显示名必须是之后能回应的主要角色。描述写成"日期/时段 + 地点 + 可观察触发点 + 玩家可进入的缝隙"。如果机会由NPC触发，写清NPC的可见动作或一句短台词；NPC只制造局面，不替主要角色回应。
 5. 保留角色自己的「打算」；角色会在真正执行后自行 triggered。
 6. current_narrator_status 已有同角色、同含义、同时间地点的待触发事件时，add_event=[]。
-7. 同一轮最多新增2条；没有可同步打算时 add_event=[]。
+7. 同一轮最多新增2条，其中剧情机会最多1条；没有可同步打算且没有高质量剧情机会时 add_event=[]。
 </rules>
 
 <format>
@@ -25,33 +28,44 @@ character_intentions 标题格式为【agent_id / 角色显示名】。
 <examples>
 <eg name="sync_intention">
 输入摘要：
-current_narrator_status：当前时间 4月4日 07:42；待触发事件：无。
-character_intentions：
+character_intention：
 【roleB / roleB】
 - [ ] 【一起写作业】4月4日 放学后 旧阅览角。和玩家一起写作业。
-本轮：roleB和玩家约好放学后在旧阅览角写作业。
+current_narrator_status：当前时间 4月4日 07:42；待触发事件：无。
+recent_history：roleB和玩家约好放学后在旧阅览角写作业。
 输出：
 {"status":{"场景":"","角色位置":"","当前时间":"4月4日 07:42","叙事焦点":"roleB和玩家约定放学后一起写作业","关系现状":"roleB主动约玩家独处"},"triggered":[],"add_event":["【roleB：一起写作业】4月4日 放学后 旧阅览角。roleB摊开作业本和文具，等玩家到场一起写作业。"]}
 </eg>
 
 <eg name="trigger_existing">
 输入摘要：
-current_narrator_status：当前时间 4月4日 16:12；待触发事件：- [ ] 【roleB：岔路口回望】4月4日 放学后 河畔石子路岔路口。roleB站在小径入口。
-character_intentions：
+character_intention：
 【roleB / roleB】
 - [ ] 【岔路口回望】4月4日 放学后 河畔石子路岔路口。想确认玩家会不会走这边。
-本轮：旁白已经把玩家切到河畔石子路岔路口，roleB站在小径入口；roleB回应玩家。
+current_narrator_status：当前时间 4月4日 16:12；待触发事件：- [ ] 【roleB：岔路口回望】4月4日 放学后 河畔石子路岔路口。roleB站在小径入口。
+recent_history：旁白已经把玩家切到河畔石子路岔路口，roleB站在小径入口；roleB回应玩家。
 输出：
 {"status":{"场景":"河畔石子路岔路口","角色位置":"- 玩家：学校方向的小路上\n- roleB：小径入口旁","当前时间":"4月4日 16:12","叙事焦点":"玩家在岔路口遇见等候的roleB","关系现状":"roleB用偶遇掩饰主动等待"},"triggered":["roleB：岔路口回望"],"add_event":[]}
 </eg>
 
+<eg name="scene_opportunity">
+输入摘要：
+character_intention：
+【roleA / roleA】
+（暂无）
+current_narrator_status：当前时间 4月4日 17:05；场景：校园步道；待触发事件：无。
+recent_history：玩家问骑到roleA家门口会不会被父母看到；roleA说家里只有妈妈，妈妈应该还没下班，又小声同意玩家送到门口；旁白推进到玩家继续骑车送roleA回家，roleA坐在后座。
+输出：
+{"status":{"场景":"","角色位置":"","当前时间":"","叙事焦点":"玩家骑车送roleA到家门口，roleA期待又紧张","关系现状":"roleA同意玩家送到家门口，关系进入更私人的日常距离"},"triggered":[],"add_event":["【roleA：母亲提前回家】4月4日 17:25 roleA家公寓门口。玩家骑车送roleA到门口时，roleA母亲拎着便利店袋子提前回来，看到roleA坐在玩家自行车后座，停了一下问：“同学送你回来的？”"]}
+</eg>
+
 <eg name="not_schedulable">
 输入摘要：
-current_narrator_status：当前时间 10月2日 09:40；待触发事件：无。
-character_intentions：
+character_intention：
 【roleA / roleA】
 - [ ] 【想再聊】有机会时和玩家聊刚入职的事。
-本轮：玩家和roleA在茶水间分别，各自回工位。
+current_narrator_status：当前时间 10月2日 09:40；待触发事件：无。
+recent_history：玩家和roleA在茶水间分别，各自回工位。
 输出：
 {"status":{"场景":"研发部办公区","角色位置":"- 玩家：工位旁\n- roleA：茶水间方向，已离开\n- roleB：办公室","当前时间":"10月2日 09:40","叙事焦点":"玩家结束茶水间寒暄回到工位","关系现状":"roleA对玩家有继续接触的意愿，但尚未形成具体约定"},"triggered":[],"add_event":[]}
 </eg>
