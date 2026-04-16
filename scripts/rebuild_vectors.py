@@ -20,16 +20,20 @@ from dotenv import load_dotenv
 load_dotenv(project_root / ".env")
 
 from memory.indexer import rebuild_memory_index
+from storage.vector_store import vector_store
 
 
 async def main() -> None:
     agent_name = sys.argv[1] if len(sys.argv) > 1 else None
     if agent_name:
-        print(f"[向量重建] 重建角色: {agent_name}")
+        print(f"[向量重建] 重建角色: {agent_name}", flush=True)
     else:
-        print("[向量重建] 重建所有角色")
-    await rebuild_memory_index(agent_name)
-    print("[向量重建] 完成")
+        print("[向量重建] 重建所有角色", flush=True)
+    try:
+        await rebuild_memory_index(agent_name)
+        print("[向量重建] 完成", flush=True)
+    finally:
+        await vector_store.close()
 
 
 if __name__ == "__main__":

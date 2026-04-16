@@ -50,8 +50,7 @@ async def cmd_list():
             for d, c in rows:
                 print(f"  {d or '-'}: {c}")
     finally:
-        await db.close()
-        vector_store._db = None
+        await vector_store.close()
 
 
 async def cmd_show(limit: int, agent: str | None, date: str | None, order: str):
@@ -90,8 +89,7 @@ async def cmd_show(limit: int, agent: str | None, date: str | None, order: str):
             print(f"id={row_id}, memory_key={memory_key}, owner={owner}, game_date={game_date or '-'}, recalled_at={recalled_at or '-'}")
             print(f"{len(content)} chars: {preview}\n")
     finally:
-        await db.close()
-        vector_store._db = None
+        await vector_store.close()
 
 
 async def cmd_stats():
@@ -122,8 +120,7 @@ async def cmd_stats():
             for d, c in rows:
                 print(f"  {d or '-'}: {c}")
     finally:
-        await db.close()
-        vector_store._db = None
+        await vector_store.close()
 
 
 async def main():

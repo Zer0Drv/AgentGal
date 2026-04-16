@@ -259,6 +259,21 @@ class VectorStore:
             await self._load_sqlite_vec(self._db)
         return self._db
 
+    async def close(self) -> None:
+        """关闭当前异步 DB 连接。
+
+        aiosqlite 为每个连接维护后台 worker thread。命令行脚本如果不显式关闭，
+        主协程结束后进程仍可能等待该线程，表现为脚本打印完成但不退出。
+        """
+        if self._db is None:
+            return
+        await self._db.close()
+        self._db = None
+        self._tables_initialized = False
+        self._tables_initialized_loop = None
+        self._write_lock = None
+        self._write_lock_loop = None
+
     async def _has_legacy_schema(self, db: aiosqlite.Connection) -> bool:
         """检测是否存在旧版 chunks 表。"""
         row = await (await db.execute(
