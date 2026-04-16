@@ -12,6 +12,8 @@ __pycache__/
 *.log.*
 tmp/*
 saves/*
+docs/open_world_design_discussion.json
+docs/open_world_design_discussion.md
 
 # agents/ 下的动态文件（运行时生成，不入库）
 data/*
