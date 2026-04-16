@@ -374,6 +374,23 @@ async def test_run_state_updater_uses_state_updater_agent(monkeypatch):
         "get_state_updater_agent",
         lambda: fake_agent,
     )
+    history_limits: list[int | None] = []
+
+    def fake_load_conversation_history(limit=None):
+        history_limits.append(limit)
+        messages = [
+            {"role": "player", "content": "更早的问题"},
+            {"role": "narrator", "content": "手机在掌心震了一下。"},
+            {"role": "player", "content": "送到门口会被家人看到吗？"},
+            {"role": "role_b", "content": "应该不会，家里人还没回来。"},
+        ]
+        return messages if limit is None else messages[-limit:]
+
+    monkeypatch.setattr(
+        conversation_flow_module,
+        "load_conversation_history",
+        fake_load_conversation_history,
+    )
 
     async def fake_run_structured_agent(**kwargs):
         captured.update(kwargs)
@@ -387,21 +404,29 @@ async def test_run_state_updater_uses_state_updater_agent(monkeypatch):
     monkeypatch.setattr(conversation_flow_module, "run_structured_agent", fake_run_structured_agent)
     monkeypatch.setattr(character_module.Narrator, "apply_state_updates", fake_apply_state_updates)
 
-    await conversation_flow_module.run_state_updater(
-        "给角色B发消息",
-        "手机屏幕亮了一下。",
-        ["role_b"],
-        [("role_b", "我看到了。")],
-    )
+    await conversation_flow_module.run_state_updater()
 
     assert captured["agent"] is fake_agent
     assert captured["output_type"] is StateUpdaterOutput
     assert captured["usage_agent"] == "state_updater"
-    assert "<current_narrator_status>" in captured["user_input"]
-    assert "<character_intentions>" in captured["user_input"]
-    assert "【role_b / 角色B】" in captured["user_input"]
-    assert "【楼下碰面】10月24日 09:30 公寓楼下。去见玩家。" in captured["user_input"]
-    assert "<milestones>" not in captured["user_input"]
-    assert "手机屏幕亮了一下。" in captured["user_input"]
+    assert history_limits == [3]
+    user_input = captured["user_input"]
+    assert user_input.index("<character_intention>") < user_input.index("<current_narrator_status>")
+    assert user_input.index("<current_narrator_status>") < user_input.index("<recent_history>")
+    assert "玩家: 更早的问题" not in user_input
+    assert "旁白: 手机在掌心震了一下。" in user_input
+    assert "玩家: 送到门口会被家人看到吗？" in user_input
+    assert "role_b: 应该不会，家里人还没回来。" in user_input
+    assert "【role_b / 角色B】" in user_input
+    assert "【楼下碰面】10月24日 09:30 公寓楼下。去见玩家。" in user_input
+    assert "<character_intentions>" not in user_input
+    assert "<player_input>" not in user_input
+    assert "<narrator_targets>" not in user_input
+    assert "<narrator_content>" not in user_input
+    assert "<agent_responses>" not in user_input
+    assert "<milestones>" not in user_input
+    assert "给角色B发消息" not in user_input
+    assert "手机屏幕亮了一下。" not in user_input
+    assert "我看到了。" not in user_input
     assert applied[0][0] == "narrator"
     assert applied[0][1].status.叙事焦点 == "玩家私下联系角色B"

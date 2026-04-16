@@ -13,7 +13,7 @@ from shared.config import (
     character_path,
     get_agent_names,
 )
-from shared.text_utils import get_display_name
+from shared.text_utils import get_display_name, role_to_speaker
 from storage.agent_files import get_allowed_fields, read_agent_file
 from storage.agent_files import read_sidecar_json, write_sidecar_json
 from storage.history import load_conversation_history  # re-export for callers
@@ -116,8 +116,7 @@ def build_history_transcript(
         content = re.sub(r"\n+", "\n", msg.get("content", "").strip())
         if not content:
             continue
-        speaker = "玩家" if role == "player" else ("旁白" if role == "narrator" else role)
-        lines.append(f"{speaker}: {content}")
+        lines.append(f"{role_to_speaker(role)}: {content}")
 
     return "\n\n".join(lines), was_truncated
 

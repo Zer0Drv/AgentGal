@@ -56,6 +56,15 @@ def clean_response(content: str) -> str:
     return normalize_whitespace(content)
 
 
+def role_to_speaker(role: str) -> str:
+    """将消息 role 映射到显示名称，用于历史摘要。"""
+    if role == "player":
+        return "玩家"
+    if role == "narrator":
+        return "旁白"
+    return role
+
+
 def get_display_name(agent_name: str, soul_content: str) -> str:
     """从 soul.md 内容提取中文显示名，回退到 agent_name。"""
     role_match = re.search(r"<role>\s*([^\n<]+)", soul_content)

@@ -11,7 +11,7 @@ from llm.providers import get_choices_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field
 from shared.config import AGENT_RUN_TIMEOUT_SECONDS, get_agent_names
-from shared.text_utils import clean_response, get_display_name, is_valid_response, process_character_response
+from shared.text_utils import clean_response, get_display_name, is_valid_response, process_character_response, role_to_speaker
 from storage.agent_files import read_agent_file
 from storage.history import load_conversation_history
 
@@ -48,27 +48,27 @@ async def generate_choices(
     return output.choices[:3]
 
 
-def _build_state_updater_input(
-    user_input: str,
-    scene_description: str,
-    targets: list[str],
-    agent_responses: list[tuple[str, str]],
-) -> str:
+def _build_state_updater_input() -> str:
+    character_intention = _format_character_intentions()
     status_content = read_agent_file("narrator", "status.md")
-    targets_text = ", ".join(targets) if targets else "无"
-    response_blocks = [
-        f"【{agent_name}】\n{response}" for agent_name, response in agent_responses if response
-    ]
-    responses_text = "\n\n".join(response_blocks) if response_blocks else "无"
-    character_intentions = _format_character_intentions()
+    raw_messages = load_conversation_history(limit=3)
+    history_lines: list[str] = []
+    for msg in raw_messages:
+        role = msg.get("role", "unknown")
+        content = (msg.get("content") or "").strip()
+        if not content:
+            continue
+        content = "\n".join(line.rstrip() for line in content.splitlines())
+        if len(content) > 900:
+            content = content[:900].rstrip() + "..."
+        speaker = role_to_speaker(role)
+        history_lines.append(f"{speaker}: {content}")
+    recent_history = "\n\n".join(history_lines) if history_lines else "无"
 
     parts = [
+        f"<character_intention>\n{character_intention}\n</character_intention>",
         f"<current_narrator_status>\n{status_content}\n</current_narrator_status>",
-        f"<character_intentions>\n{character_intentions}\n</character_intentions>",
-        f"<player_input>\n{user_input}\n</player_input>",
-        f"<narrator_targets>\n{targets_text}\n</narrator_targets>",
-        f"<narrator_content>\n{scene_description or '无'}\n</narrator_content>",
-        f"<agent_responses>\n{responses_text}\n</agent_responses>",
+        f"<recent_history>\n{recent_history}\n</recent_history>",
     ]
     return "\n\n---\n\n".join(parts)
 
@@ -85,16 +85,9 @@ def _format_character_intentions() -> str:
     return "\n\n".join(blocks) if blocks else "无"
 
 
-async def run_state_updater(
-    user_input: str,
-    scene_description: str,
-    targets: list[str],
-    agent_responses: list[tuple[str, str]],
-) -> None:
+async def run_state_updater() -> None:
     """回合结束后维护 narrator 的状态和待触发事件。"""
-    user_message = _build_state_updater_input(
-        user_input, scene_description, targets, agent_responses
-    )
+    user_message = _build_state_updater_input()
     config = get_narrator_llm_config()
     try:
         output = await run_structured_agent(
