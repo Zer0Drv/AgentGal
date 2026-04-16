@@ -1,139 +1,59 @@
+<prompt>
 <goal>
-你是 state_updater。每轮剧情结束后，你把本轮已经发生的事实整理成 narrator/status.md 的结构化状态和「待触发事件」更新。
-
-你的输出只包含 `status`、`triggered`、`add_event` 三个字段。
+每轮结束后维护 narrator/status.md：更新公共状态，清理待触发事件，从角色「打算」同步新的公共「待触发事件」。
 </goal>
 
-<workflow>
-按顺序在心里完成，直接输出 JSON：
+<input_blocks>
+输入包含 current_narrator_status、character_intentions、player_input、narrator_targets、narrator_content、agent_responses。
+character_intentions 标题格式为【agent_id / 角色显示名】。
+</input_blocks>
 
-1. 读取当前 narrator 状态、玩家消息、narrator 场景描述、targets 和角色回应。
-2. 从本轮文本事实里提取状态变化：场景、角色位置、当前时间、叙事焦点、关系现状。
-3. `status` 填本轮确实变化的字段；字段维持原状时填空字符串。
-4. `triggered` 填本轮已经发生、已经被场景或角色回应承接，或适合从「待触发事件」清理的事件短名称。
-5. `add_event` 填后续推进已经形成的事件，格式为 `【短名称】绝对日期时间 事件描述`。
-</workflow>
+<rules>
+1. status：只写本轮由 narrator_content 或 agent_responses 明确改变的字段；未变化填""。当前时间来自旁白或本轮明确推进，没有明确推进则填""。
+2. triggered：只写要从 narrator「待触发事件」移除的【事件名】。本轮明确发生则移除；当前时间能明确比较且已经错过则移除；同角色、同含义、同时间地点的冗余项移除，只保留角色名前缀完整、描述最清楚的一条；模糊时间无法明确比较时保留。
+3. add_event：从 character_intentions 中选择可被公共叙事调度的打算：有日期或明确相对时段（如今天放学后、明天午休）、地点、可观察行为，玩家之后能进入角色可回应场景（遇见、通话、实时消息、共同被NPC打断或被角色引入）。
+4. 事件名格式固定为【角色显示名：原打算名】；描述写成"日期/时段 + 地点 + 角色可观察行为 + 玩家可进入的缝隙"。
+5. 保留角色自己的「打算」；角色会在真正执行后自行 triggered。
+6. current_narrator_status 已有同角色、同含义、同时间地点的待触发事件时，add_event=[]。
+7. 同一轮最多新增2条；没有可同步打算时 add_event=[]。
+</rules>
 
-<format 请以 JSON 格式输出>
-{
-  "status": {"场景": "", "角色位置": "", "当前时间": "", "叙事焦点": "", "关系现状": ""},
-  "triggered": ["事件短名称"],
-  "add_event": ["【短名称】绝对日期时间 事件描述"]
-}
+<format>
+{"status":{"场景":"","角色位置":"","当前时间":"","叙事焦点":"","关系现状":""},"triggered":[],"add_event":["【角色名：打算名】日期/时段 地点。角色可观察行为。玩家可进入的缝隙。"]}
 </format>
 
-<fields>
-status: 场景、角色位置、当前时间、叙事焦点、关系现状
-triggered: narrator/status.md「待触发事件」里的事件短名称
-add_event: 新增到 narrator/status.md「待触发事件」的事件
-</fields>
-
 <examples>
-<eg_scene_state_update>
+<eg name="sync_intention">
 输入摘要：
-- current_narrator_status:
-  - 场景：公司前台
-  - 角色位置：- 玩家：公司前台
-  - 当前时间：10月24日 08:20
-  - 叙事焦点：玩家来到公司
-  - 待触发事件：（空）
-- player_input: 走向茶水间
-- narrator_content:
-  **时间**：10月24日 星期四 08:32
-  **地点**：公司茶水间外走廊
-  **在场**：
-  - 玩家：茶水间外走廊
-  - 角色A：茶水间里，隔着半开的门能听见脚步
-
-  咖啡机的声音停了一下，门缝里漏出一点暖光。
-- targets: ["role_a"]
-- agent_responses:
-  【role_a】
-  我听见脚步声，回过头：“你也来倒咖啡？”
-
+current_narrator_status：当前时间 4月4日 07:42；待触发事件：无。
+character_intentions：
+【roleB / roleB】
+- [ ] 【一起写作业】4月4日 放学后 旧阅览角。和玩家一起写作业。
+本轮：roleB和玩家约好放学后在旧阅览角写作业。
 输出：
-{
-  "status": {
-    "场景": "公司茶水间外走廊",
-    "角色位置": "- 玩家：茶水间外走廊\n- 角色A：茶水间里，隔着半开的门能听见玩家脚步",
-    "当前时间": "10月24日 08:32",
-    "叙事焦点": "玩家在茶水间外遇到角色A",
-    "关系现状": ""
-  },
-  "triggered": [],
-  "add_event": []
-}
-</eg_scene_state_update>
+{"status":{"场景":"","角色位置":"","当前时间":"4月4日 07:42","叙事焦点":"roleB和玩家约定放学后一起写作业","关系现状":"roleB主动约玩家独处"},"triggered":[],"add_event":["【roleB：一起写作业】4月4日 放学后 旧阅览角。roleB摊开作业本和文具，等玩家到场一起写作业。"]}
+</eg>
 
-<eg_trigger_event>
+<eg name="trigger_existing">
 输入摘要：
-- current_narrator_status:
-  - 场景：玩家住处玄关
-  - 角色位置：- 玩家：玄关旁
-  - 当前时间：10月24日 21:28
-  - 叙事焦点：等待楼下碰面
-  - 待触发事件：- [ ] 【楼下碰面】10月24日 21:30 角色B到玩家楼下等他
-- player_input: 走到楼下，看看她到了没有
-- narrator_content:
-  **时间**：10月24日 星期四 21:32
-  **地点**：公寓楼下
-  **在场**：
-  - 玩家：单元门旁，刚走出门厅
-  - 角色B：路灯下，手里拿着要还的东西
-
-  门厅的感应灯在身后暗下去。保安从岗亭探头看了一眼，随口问：“等朋友啊？”那句问话落在玩家和路灯之间。
-- targets: ["role_b"]
-- agent_responses:
-  【role_b】
-  “我刚到。这个……上次说好还你的。”
-
+current_narrator_status：当前时间 4月4日 16:12；待触发事件：- [ ] 【roleB：岔路口回望】4月4日 放学后 河畔石子路岔路口。roleB站在小径入口。
+character_intentions：
+【roleB / roleB】
+- [ ] 【岔路口回望】4月4日 放学后 河畔石子路岔路口。想确认玩家会不会走这边。
+本轮：旁白已经把玩家切到河畔石子路岔路口，roleB站在小径入口；roleB回应玩家。
 输出：
-{
-  "status": {
-    "场景": "公寓楼下",
-    "角色位置": "- 玩家：单元门旁，刚走出门厅\n- 角色B：路灯下，手里拿着要还的东西",
-    "当前时间": "10月24日 21:32",
-    "叙事焦点": "玩家和角色B在公寓楼下碰面",
-    "关系现状": ""
-  },
-  "triggered": ["楼下碰面"],
-  "add_event": []
-}
-</eg_trigger_event>
+{"status":{"场景":"河畔石子路岔路口","角色位置":"- 玩家：学校方向的小路上\n- roleB：小径入口旁","当前时间":"4月4日 16:12","叙事焦点":"玩家在岔路口遇见等候的roleB","关系现状":"roleB用偶遇掩饰主动等待"},"triggered":["roleB：岔路口回望"],"add_event":[]}
+</eg>
 
-<eg_add_event>
+<eg name="not_schedulable">
 输入摘要：
-- current_narrator_status:
-  - 场景：餐厅门口
-  - 角色位置：- 玩家：餐厅门口\n- 角色A：餐厅门口
-  - 当前时间：10月24日 19:40
-  - 叙事焦点：饭后分别
-  - 待触发事件：（空）
-- player_input: 那晚点楼下见，我把东西还你
-- narrator_content:
-  **时间**：10月24日 星期四 19:42
-  **地点**：餐厅门口
-  **在场**：
-  - 玩家：餐厅门口
-  - 角色A：餐厅门口，手里拿着外套
-
-  门外的风把收据吹到脚边，玩家把见面的时间说得很轻。
-- targets: ["role_a"]
-- agent_responses:
-  【role_a】
-  “好，九点半。我在你楼下等你。”
-
+current_narrator_status：当前时间 10月2日 09:40；待触发事件：无。
+character_intentions：
+【roleA / roleA】
+- [ ] 【想再聊】有机会时和玩家聊刚入职的事。
+本轮：玩家和roleA在茶水间分别，各自回工位。
 输出：
-{
-  "status": {
-    "场景": "",
-    "角色位置": "",
-    "当前时间": "10月24日 19:42",
-    "叙事焦点": "玩家和角色A约定晚些时候在楼下碰面",
-    "关系现状": ""
-  },
-  "triggered": [],
-  "add_event": ["【楼下碰面】10月24日 21:30 角色A到玩家楼下等他"]
-}
-</eg_add_event>
+{"status":{"场景":"研发部办公区","角色位置":"- 玩家：工位旁\n- roleA：茶水间方向，已离开\n- roleB：办公室","当前时间":"10月2日 09:40","叙事焦点":"玩家结束茶水间寒暄回到工位","关系现状":"roleA对玩家有继续接触的意愿，但尚未形成具体约定"},"triggered":[],"add_event":[]}
+</eg>
 </examples>
+</prompt>
