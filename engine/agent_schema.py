@@ -1,6 +1,12 @@
 """所有 Agent 的结构化输出类型（对话 + 记忆整理）。"""
 
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from pydantic import BaseModel, Field, field_validator
+
+
+MAX_CHOICE_CHARS = 50
+ChoiceText = Annotated[str, Field(max_length=MAX_CHOICE_CHARS)]
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +45,17 @@ class StateUpdaterOutput(BaseModel):
 
 
 class ChoicesOutput(BaseModel):
-    choices: list[str]
+    choices: list[ChoiceText]
+
+    @field_validator("choices", mode="before")
+    @classmethod
+    def trim_choice_lengths(cls, choices: object) -> object:
+        if not isinstance(choices, list):
+            return choices
+        return [
+            choice.strip()[:MAX_CHOICE_CHARS] if isinstance(choice, str) else choice
+            for choice in choices
+        ]
 
 
 # ---------------------------------------------------------------------------
