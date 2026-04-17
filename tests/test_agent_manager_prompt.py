@@ -14,7 +14,7 @@ except ModuleNotFoundError as exc:
     pytest.skip(f"skip prompt builder tests: missing dependency ({exc})", allow_module_level=True)
 
 
-_TEMPLATE_VARS = "{agent_name} {display_name} {soul} {status_fields} {player_fields} {characters_scene_list} {valid_targets}"
+_TEMPLATE_VARS = "{agent_name} {display_name} {soul} {status_fields} {player_fields} {valid_targets}"
 
 
 def test_character_system_prompt_reads_character_template(tmp_path, monkeypatch):

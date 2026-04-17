@@ -183,11 +183,12 @@ world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.jso
 `user` 消息按以下顺序拼装为**单条大消息**：
 
 1. `growth.md`
-2. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断；历史中的旁白只保留最后一条）
-3. `user.md`（`tmp_user.md` 仅作为工作草稿参与整理，不直接注入 prompt）
-4. `status.md`
-5. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
-6. 本轮玩家输入
+2. `user.md`（`tmp_user.md` 仅作为工作草稿参与整理，不直接注入 prompt）
+3. `<my_schedule>`（渲染角色 `schedule.json`，让角色感知自己的惯常作息）
+4. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断；历史中的旁白只保留最后一条）
+5. `status.md`
+6. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
+7. 本轮玩家输入
 
 ### narrator Agent
 
@@ -199,8 +200,9 @@ world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.jso
 `user` 消息按以下顺序拼装为**单条大消息**：
 
 1. 最近对话历史（旁白只保留最后一条）
-2. `status.md`
-3. 本轮玩家输入
+2. `<world_now>`（当前时间 / 当前场景 / 各角色当前位置，合并 `status.md.当前位置` 与 schedule 默认值）
+3. `status.md`
+4. 本轮玩家输入
 
 `narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点和待触发事件推进当前回合。待触发事件主要由 `state_updater` 从各角色 `打算` 同步，事件名保留角色名（如 `【美月：顺路的约定】`）。
 
