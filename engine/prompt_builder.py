@@ -291,11 +291,11 @@ def build_user_message(
     my_schedule = build_my_schedule_block(agent_name) if not is_narrator else ""
     world_now = build_world_now_block() if is_narrator else ""
 
+    parts.append(my_schedule)
     parts.append(f"<growth>\n{growth_content.strip()}\n</growth>" if growth_content else "")
     parts.append(
         f"<user_profile>\n{user_content.strip()}\n</user_profile>" if user_content else ""
     )
-    parts.append(my_schedule)
     parts.append(f"最近对话历史:\n\n{history}" if history else "")
     parts.append(world_now)
     parts.append(f"<status>\n{status_content}\n</status>" if status_content else "")
