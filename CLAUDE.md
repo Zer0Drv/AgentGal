@@ -281,10 +281,12 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 存档会包含：
 
 - 角色 markdown 文件（`narrator` 不含 `memory.md`）
+- 角色 `schedule.json`（存在时）
 - narrator 的 raw 历史
 - 各 Agent `.history_window_state.json`
 - 角色 `.consolidation_state.json`
 - 角色 `.memory_recall_state.json`
+- 角色 `.last_seen.json`（存在时）
 - `last_choices.json`
 
 当前内置故事模板：
