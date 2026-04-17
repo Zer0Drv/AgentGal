@@ -8,7 +8,12 @@ from collections.abc import Callable
 
 from engine.agent_factory import get_conversation_agent
 from engine.agent_runner import run_structured_agent
-from engine.agent_schema import CharacterOutput, NarratorOutput, StateUpdaterOutput
+from engine.agent_schema import (
+    CharacterOutput,
+    NarratorOutput,
+    NewCharacterSpec,
+    StateUpdaterOutput,
+)
 from engine.prompt_builder import build_search_query, build_user_message
 from llm.providers import get_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
@@ -157,19 +162,26 @@ class Narrator:
 
     async def route(
         self, user_input: str, raw_messages: list[dict] | None = None
-    ) -> tuple[list[str], str, bool]:
-        """运行 narrator → 返回 (targets, scene_description, is_valid)。"""
+    ) -> tuple[list[str], str, list[NewCharacterSpec], bool]:
+        """运行 narrator → 返回 (targets, scene_description, new_characters, is_valid)。
+
+        new_characters 是 narrator 本轮请求孵化的新角色 spec 列表；
+        此处只做 schema 层过滤（保留名字非空且 relation_to 合法的项），
+        实际孵化与目录校验由 engine.character_factory.create_character 负责。
+        """
         valid_agents = get_agent_names(include_narrator=False)
         if raw_messages is None:
             raw_messages = load_conversation_history(limit=None)
 
-        async def _run(narrator_input: str) -> tuple[list[str], str]:
+        async def _run(narrator_input: str) -> tuple[list[str], str, list[NewCharacterSpec]]:
             output = await self._run_narrator(narrator_input, raw_messages)
-            valid_targets = [t for t in output.targets if t in valid_agents]
+            new_chars = self._filter_new_characters(output.new_characters, valid_agents)
+            announced = {spec.name for spec in new_chars}
+            valid_targets = [t for t in output.targets if t in valid_agents or t in announced]
             scene = self._sanitize_scene_description(output.content)
-            return valid_targets, scene
+            return valid_targets, scene, new_chars
 
-        async def _retry() -> tuple[list[str], str]:
+        async def _retry() -> tuple[list[str], str, list[NewCharacterSpec]]:
             correction = (
                 f"{user_input}\n\n"
                 "<routing_correction>"
@@ -181,29 +193,67 @@ class Narrator:
 
         retried = False
         try:
-            targets, scene = await _run(user_input)
+            targets, scene, new_chars = await _run(user_input)
         except Exception as e:
             self._log_failure("首次调用", e)
             retried = True
             try:
-                targets, scene = await _retry()
+                targets, scene, new_chars = await _retry()
             except Exception as e:
                 self._log_failure("重试调用", e)
-                return [], "", False
+                return [], "", [], False
 
         if not targets:
             if not retried:
                 routing_logger.warning("narrator 响应缺少有效 TARGETS，重试中...")
                 try:
-                    targets, scene = await _retry()
+                    targets, scene, new_chars = await _retry()
                 except Exception as e:
                     self._log_failure("重试调用", e)
-                    return [], "", False
+                    return [], "", [], False
             if not targets:
                 routing_logger.warning("narrator 重试后仍缺少有效 TARGETS")
-                return [], scene, False
+                return [], scene, new_chars, False
 
-        return targets, scene, is_valid_response(scene, "narrator")
+        return targets, scene, new_chars, is_valid_response(scene, "narrator")
+
+    @staticmethod
+    def _filter_new_characters(
+        specs: list[NewCharacterSpec],
+        existing_agents: list[str],
+    ) -> list[NewCharacterSpec]:
+        """过滤 narrator 提交的 new_characters：去空、去已存在、去非法 relation_to。"""
+        valid_anchors = set(existing_agents) | {"player"}
+        reserved = set(existing_agents) | {"narrator", "player"}
+        kept: list[NewCharacterSpec] = []
+        seen: set[str] = set()
+        for spec in specs:
+            name = spec.name.strip()
+            relation_to = spec.relation_to.strip()
+            description = spec.relation_description.strip()
+            if not name or name in reserved or name in seen:
+                continue
+            if relation_to not in valid_anchors:
+                routing_logger.warning(
+                    f"[narrator] new_characters 中 {name!r} 的 relation_to={relation_to!r} 不合法，跳过"
+                )
+                continue
+            if not description:
+                routing_logger.warning(
+                    f"[narrator] new_characters 中 {name!r} 缺 relation_description，跳过"
+                )
+                continue
+            kept.append(
+                NewCharacterSpec(
+                    name=name,
+                    relation_to=relation_to,
+                    relation_description=description,
+                    background_hint=spec.background_hint.strip(),
+                    initial_location=spec.initial_location.strip(),
+                )
+            )
+            seen.add(name)
+        return kept
 
     async def apply_state_updates(self, output: StateUpdaterOutput) -> None:
         """将 StateUpdaterOutput 写回 narrator 文件。"""

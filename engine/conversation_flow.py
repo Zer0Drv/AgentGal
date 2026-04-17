@@ -4,8 +4,9 @@ import asyncio
 
 from engine.agent_factory import get_choices_agent, get_state_updater_agent
 from engine.agent_runner import run_structured_agent
-from engine.agent_schema import ChoicesOutput, StateUpdaterOutput
+from engine.agent_schema import ChoicesOutput, NewCharacterSpec, StateUpdaterOutput
 from engine.character import get_character, narrator
+from engine.character_factory import create_character
 from engine.prompt_builder import build_history_transcript
 from engine.world_sync import post_turn_world_sync
 from llm.providers import get_choices_llm_config, get_narrator_llm_config
@@ -119,9 +120,32 @@ async def run_state_updater(targets: list[str]) -> None:
         routing_logger.error(f"[world_sync] 同步位置失败: {e}")
 
 
-async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool]:
-    """调用 narrator 获取路由决策和场景描述。"""
+async def call_narrator_and_route(
+    user_input: str,
+) -> tuple[list[str], str, list[NewCharacterSpec], bool]:
+    """调用 narrator 获取路由决策、场景描述和新角色请求。"""
     return await narrator.route(user_input)
+
+
+async def bootstrap_new_characters(
+    specs: list[NewCharacterSpec],
+    targets: list[str],
+) -> tuple[list[str], list[str]]:
+    """孵化 narrator 请求的新角色；成功者加入 targets 末尾。
+
+    返回 (最新 targets, 成功创建的 agent_id 列表)。失败的 spec 只记日志，不阻塞本轮。
+    """
+    if not specs:
+        return targets, []
+
+    created: list[str] = []
+    for spec in specs:
+        ok = await create_character(spec)
+        if ok:
+            created.append(spec.name)
+
+    merged = list(dict.fromkeys([*targets, *created]))
+    return merged, created
 
 
 async def run_agent_in_scene(

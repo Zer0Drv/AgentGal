@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from engine.agent_factory import initialize_conversation_agents, reload_conversation_agent
 from engine.consolidation_flow import memory_consolidation_flow
 from engine.conversation_flow import (
+    bootstrap_new_characters,
     call_narrator_and_route,
     generate_choices,
     run_agent_in_scene,
@@ -227,7 +228,20 @@ async def _chat_stream(user_input: str):
     await _settle_pending_state_update()
 
     # 1. narrator 路由
-    targets, scene_description, is_narrator_valid = await call_narrator_and_route(user_input)
+    targets, scene_description, new_character_specs, is_narrator_valid = (
+        await call_narrator_and_route(user_input)
+    )
+
+    # 1.5 处理 narrator 请求的新角色（孵化成功后加入 targets）
+    targets, created_new_characters = await bootstrap_new_characters(
+        new_character_specs, targets
+    )
+    if created_new_characters:
+        for agent_id in created_new_characters:
+            yield _sse_event(
+                "system",
+                {"content": f"[新角色 {agent_id} 已登场]", "author": "系统"},
+            )
 
     # 2. 广播玩家消息
     await message_router.broadcast_player_message(targets, user_input)

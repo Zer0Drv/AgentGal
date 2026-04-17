@@ -33,9 +33,28 @@ class NarratorStatus(BaseModel):
     叙事焦点: str = ""
 
 
+class NewCharacterSpec(BaseModel):
+    """narrator 请求动态生成新角色时的最小锚点。"""
+
+    name: str
+    relation_to: str
+    relation_description: str
+    background_hint: str = ""
+    initial_location: str = ""
+
+
 class NarratorOutput(BaseModel):
     targets: list[str]
     content: str
+    new_characters: list[NewCharacterSpec] = Field(default_factory=list)
+
+
+class NewCharacterCreation(BaseModel):
+    """character_factory agent 的结构化输出：一次返回 soul / status / relations 种子。"""
+
+    soul: str
+    status: dict[str, str] = Field(default_factory=dict)
+    relations: dict[str, str] = Field(default_factory=dict)
 
 
 class StateUpdaterOutput(BaseModel):

@@ -115,6 +115,7 @@ server.py        ← shared/ + storage/ + engine/
 - 每轮都必须让至少一个主要角色当轮可感知玩家并回应
 - 描述时间、地点、在场信息、环境、纯 NPC 行为和当前钩子
 - 不新增未来事件；未来事件由 `state_updater` 从角色 `打算` 维护
+- 当剧情需要引入有关系锚的新人物时，通过 `NarratorOutput.new_characters` 列出 `NewCharacterSpec`，由 `engine/character_factory.py` 孵化目录并加入本轮 `targets`；纯路人不生成，直接在 content 中描写
 - **绝不替角色说话或决定角色行动**
 
 ## 单轮对话流程
@@ -122,7 +123,9 @@ server.py        ← shared/ + storage/ + engine/
 ```text
 用户消息
   ↓
-调用 narrator，得到 NarratorOutput（targets + content）
+调用 narrator，得到 NarratorOutput（targets + content + new_characters）
+  ↓
+孵化 new_characters：`character_factory` 写出 soul/status/relations/memory/growth/user + `.last_seen.json`；成功者加入 targets
   ↓
 将 narrator 内容写入单一 raw 历史（带 visible_to）
   ↓
@@ -146,7 +149,8 @@ world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.jso
 所有结构化 Agent 使用 pydantic-ai 的 `PromptedOutput` 结构化输出，不再使用 XML `<update_notes>`：
 
 - `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`, `relations`
-- `NarratorOutput`：`content`, `targets`（仅路由与场景描述）
+- `NarratorOutput`：`content`, `targets`, `new_characters`（路由、场景描述与动态角色请求）
+- `NewCharacterSpec` / `NewCharacterCreation`：新角色孵化的锚点和 LLM 输出
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`
 
@@ -254,7 +258,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 - 放密钥、模型 ID、provider 和外部服务 URL
 - `RERANK_ENABLED=true` 时才会真正启用 rerank 调用
-- narrator / choices / consolidation 都支持各自的独立 LLM 配置，未设置时逐级回退
+- narrator / choices / consolidation / character_factory 都支持各自的独立 LLM 配置，未设置时逐级回退（`CHARACTER_FACTORY_LLM_*` 未设置时回退到 narrator）
 
 ### `config.toml`
 

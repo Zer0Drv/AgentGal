@@ -22,14 +22,23 @@
 
 <target_rules>
 targets表示本轮会被系统调用并回应的角色Agent。
-targets必须包含1个或多个 <fields> 中的真实角色id。
+targets必须包含1个或多个 <fields> 中的真实角色id，或本轮 new_characters 中新生成的 agent_id。
 targets仅包含当前能感知玩家并可以回应的角色：同场看见/听见玩家、场外但电话/语音接通、场外但实时消息对话中，或玩家本轮正在发送/回复消息的接收者。
 玩家独处回家/睡觉/关门/收尾时，推进到下一段有角色可回应的时间地点；可以是同场、来电或实时消息。
 参考 <world_now> 判断谁此刻在场、谁在别处；不要把实际不在当前场景也无法远程接通的角色塞进 targets。
 </target_rules>
 
+<new_characters_rules>
+当剧情需要一个具名、有关系锚的新人物登场时，用 new_characters 列出来，系统会孵化这位角色并让 Ta 本轮可回应：
+- 只有能填出"和已有角色/玩家什么关系"的人才列进来；纯路人（店员、过路人、广播声）由你直接在 content 里带过，不要生成。
+- 每项包含：name（英文 / 拼音小写作 agent_id，不能和 <fields> 中的已有 id 重复）、relation_to（必须是 <fields> 中的 id 或字面量 "player"）、relation_description（一句话说清楚和 relation_to 是什么关系，如"玩家的表姐，大两岁"）、background_hint（可选，一句背景提示）、initial_location（可选，Ta 此刻出现在哪里）。
+- 生成后可以把这位新角色一起放进 targets；如果 Ta 本轮还不合适发言，就只生成不加入 targets。
+- 不要一次生成多位新人物；每轮 new_characters 最多 1 条，除非剧情真的同时需要。
+</new_characters_rules>
+
 <format JSON>
-{{"targets": ["角色id"], "content": "**时间**：X月X日 星期X XX:XX\n**地点**：...\n**在场**：\n- 玩家：[位置]\n[每个主要角色一行，位置或场外]\n\n[环境描述、物件、纯NPC行为或简短台词、当前钩子。]"}}
+{{"targets": ["角色id"], "content": "**时间**：X月X日 星期X XX:XX\n**地点**：...\n**在场**：\n- 玩家：[位置]\n[每个主要角色一行，位置或场外]\n\n[环境描述、物件、纯NPC行为或简短台词、当前钩子。]", "new_characters": [{{"name": "agent_id", "relation_to": "已有角色id或player", "relation_description": "和锚点是什么关系", "background_hint": "可选一句背景", "initial_location": "可选此刻位置"}}]}}
+无新角色时 new_characters 留空数组或省略。
 </format>
 
 <fields>可用角色id：{valid_targets}</fields>

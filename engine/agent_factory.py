@@ -15,10 +15,12 @@ from engine.agent_schema import (
     MemoryMergeOutput,
     MemoryMetadataOutput,
     NarratorOutput,
+    NewCharacterCreation,
     StateUpdaterOutput,
 )
 from engine.prompt_builder import build_system_prompt
 from llm.providers import (
+    get_character_factory_llm_config,
     get_choices_llm_config,
     get_consolidation_llm_config,
     get_llm_config,
@@ -39,6 +41,7 @@ _GROWTH_DEDUP_PROMPT_PATH = PROJECT_ROOT / "prompts" / "growth_dedupe.txt"
 _PLAYER_PROFILE_PROMPT_PATH = PROJECT_ROOT / "prompts" / "player_profile_consolidation_prompt.txt"
 _CHOICES_PROMPT_PATH = PROJECT_ROOT / "prompts" / "choices_prompt.txt"
 _STATE_UPDATER_PROMPT_PATH = PROJECT_ROOT / "prompts" / "state_updater_prompt.txt"
+_CHARACTER_FACTORY_PROMPT_PATH = PROJECT_ROOT / "prompts" / "character_factory_prompt.txt"
 
 ConversationAgent = Agent[None, CharacterOutput | NarratorOutput]
 StructuredAgent = Agent[None, object]
@@ -47,6 +50,7 @@ TextAgent = Agent[None, str]
 _conversation_agents: dict[str, ConversationAgent] = {}
 _choices_agent: Agent[None, ChoicesOutput] | None = None
 _state_updater_agent: Agent[None, StateUpdaterOutput] | None = None
+_character_factory_agent: Agent[None, NewCharacterCreation] | None = None
 _consolidation_agents: dict[str, StructuredAgent | TextAgent] = {}
 
 
@@ -141,6 +145,21 @@ def get_state_updater_agent() -> Agent[None, StateUpdaterOutput]:
             output_type=StateUpdaterOutput,
         )
     return _state_updater_agent
+
+
+def get_character_factory_agent() -> Agent[None, NewCharacterCreation]:
+    global _character_factory_agent
+
+    if _character_factory_agent is None:
+        config = get_character_factory_llm_config()
+        instructions = _CHARACTER_FACTORY_PROMPT_PATH.read_text(encoding="utf-8")
+        _character_factory_agent = _build_agent(
+            name="character_factory",
+            instructions=instructions,
+            config=config,
+            output_type=NewCharacterCreation,
+        )
+    return _character_factory_agent
 
 
 def _ensure_consolidation_agents() -> None:

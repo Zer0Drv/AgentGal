@@ -47,12 +47,13 @@ async def test_call_narrator_and_route_returns_fallback_on_run_failure(monkeypat
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, is_valid = await conversation_flow_module.call_narrator_and_route(
+    targets, scene_description, new_characters, is_valid = await conversation_flow_module.call_narrator_and_route(
         "你好"
     )
 
     assert targets == []
     assert scene_description == ""
+    assert new_characters == []
     assert is_valid is False
 
 
@@ -75,7 +76,7 @@ async def test_call_narrator_and_route_filters_targets_and_sanitizes_scene(monke
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, is_valid = await conversation_flow_module.call_narrator_and_route(
+    targets, scene_description, new_characters, is_valid = await conversation_flow_module.call_narrator_and_route(
         "你好"
     )
 
@@ -103,7 +104,7 @@ async def test_call_narrator_and_route_retries_when_targets_filter_to_empty(monk
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, is_valid = await conversation_flow_module.call_narrator_and_route(
+    targets, scene_description, new_characters, is_valid = await conversation_flow_module.call_narrator_and_route(
         "回家睡觉"
     )
 
@@ -132,7 +133,7 @@ async def test_call_narrator_and_route_retries_when_targets_are_empty(monkeypatc
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, is_valid = await conversation_flow_module.call_narrator_and_route(
+    targets, scene_description, new_characters, is_valid = await conversation_flow_module.call_narrator_and_route(
         "回家睡觉"
     )
 
@@ -156,7 +157,7 @@ async def test_call_narrator_and_route_rejects_scene_without_valid_targets(monke
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, is_valid = await conversation_flow_module.call_narrator_and_route(
+    targets, scene_description, new_characters, is_valid = await conversation_flow_module.call_narrator_and_route(
         "回家睡觉"
     )
 

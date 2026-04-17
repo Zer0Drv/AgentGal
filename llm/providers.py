@@ -138,6 +138,14 @@ def get_choices_llm_config() -> dict:
     return _make_scoped_llm_config("CHOICES_LLM", get_narrator_llm_config)
 
 
+def get_character_factory_llm_config() -> dict:
+    """返回动态生成角色使用的 LLM 配置。
+
+    优先使用 CHARACTER_FACTORY_LLM_* 系列环境变量，未设置则复用 narrator LLM 配置。
+    """
+    return _make_scoped_llm_config("CHARACTER_FACTORY_LLM", get_narrator_llm_config)
+
+
 def get_consolidation_llm_config(temperature: float | None = None) -> dict:
     """返回记忆整理器使用的 LLM 配置。
 
