@@ -132,7 +132,7 @@ async def run_agent_in_scene(
     """在场景上下文中运行单个角色并广播响应。"""
     from storage.message_router import message_router
 
-    output = await get_character(agent_name).run(user_input)
+    output = await get_character(agent_name).run(user_input, scene_targets=targets)
     response = process_character_response(clean_response(output.content))
     if is_valid_response(response, agent_name):
         await message_router.broadcast_agent_response(agent_name, targets, response)

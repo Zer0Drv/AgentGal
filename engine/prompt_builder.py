@@ -19,8 +19,13 @@ from shared.config import (
     get_agent_names,
 )
 from shared.text_utils import get_display_name, role_to_speaker
-from storage.agent_files import get_allowed_fields, read_agent_file
-from storage.agent_files import read_sidecar_json, write_sidecar_json
+from storage.agent_files import (
+    get_allowed_fields,
+    read_agent_file,
+    read_relations,
+    read_sidecar_json,
+    write_sidecar_json,
+)
 from storage.history import load_conversation_history  # re-export for callers
 from log_config.routing import routing_logger
 
@@ -274,11 +279,96 @@ def build_my_schedule_block(agent_name: str) -> str:
     return f"<my_schedule>\n{body}\n</my_schedule>"
 
 
+def _collect_relation_candidates(
+    audience: str,
+    scene_targets: list[str] | None = None,
+) -> list[str]:
+    """本轮 relations 块会涉及到的角色 id（不含 audience 本人）。
+
+    - narrator：当前场景在场角色 ∪ {player}
+    - character：scene_targets ∪ {player}，去掉自己
+    """
+    if audience == "narrator":
+        real_locations = _collect_real_locations()
+        narrator_status = read_agent_file("narrator", "status.md")
+        scene = extract_status_field(narrator_status, "场景").strip()
+        current_time = extract_status_field(narrator_status, "当前时间").strip()
+        slot_key = parse_game_time(current_time)
+        if slot_key is not None:
+            loc_map = query_all_locations(slot_key, real_locations)
+        else:
+            loc_map = {}
+            for agent, loc in real_locations.items():
+                loc_map.setdefault(loc, []).append(agent)
+        here = sorted(loc_map.get(scene, [])) if scene else []
+        candidates = [c for c in here if c != audience]
+        if "player" not in candidates:
+            candidates.append("player")
+        return candidates
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for target in scene_targets or []:
+        if target and target != audience and target not in seen:
+            seen.add(target)
+            out.append(target)
+    if audience != "player" and "player" not in seen:
+        out.append("player")
+    return out
+
+
+def _relation_label(candidate: str) -> str:
+    if candidate == "player":
+        return "玩家"
+    return _format_agent(candidate)
+
+
+def build_relations_block(
+    audience: str,
+    scene_targets: list[str] | None = None,
+) -> str:
+    """聚合候选集内的关系视角，渲染 <relations> 块。
+
+    narrator: 列出场上每个实体角色对其他候选的看法
+    character: 自己对候选的看法 + 其他角色对自己的看法
+    """
+    candidates = _collect_relation_candidates(audience, scene_targets)
+    if not candidates:
+        return ""
+
+    if audience == "narrator":
+        sources = [c for c in candidates if c != "player"]
+        if not sources:
+            return ""
+        sections: list[str] = []
+        for source in sources:
+            view = read_relations(source)
+            lines = [f"## {_relation_label(source)} 对其他人的看法"]
+            for target in candidates:
+                if target == source:
+                    continue
+                body = view.get(target, "").strip() or "（暂无）"
+                lines.append(f"- {_relation_label(target)}：{body}")
+            sections.append("\n".join(lines))
+        body = "\n\n".join(sections)
+        return f"<relations>\n{body}\n</relations>"
+
+    own = read_relations(audience)
+    lines: list[str] = []
+    for target in candidates:
+        body = own.get(target, "").strip() or "（暂无）"
+        lines.append(f"- {_relation_label(target)}：{body}")
+
+    body = "\n".join(lines)
+    return f"<relations>\n{body}\n</relations>"
+
+
 def build_user_message(
     agent_name: str,
     latest_user_input: str,
     memory_prefix: str,
     raw_messages: list[dict] | None = None,
+    scene_targets: list[str] | None = None,
 ) -> tuple[str, bool]:
     """构建单条大 user message，按稳定度排序上下文。返回 (消息文本, 是否触发历史截断)。"""
     parts: list[str] = []
@@ -290,6 +380,7 @@ def build_user_message(
     status_content = read_agent_file(agent_name, "status.md")
     my_schedule = build_my_schedule_block(agent_name) if not is_narrator else ""
     world_now = build_world_now_block() if is_narrator else ""
+    relations = build_relations_block(agent_name, scene_targets=scene_targets)
 
     parts.append(my_schedule)
     parts.append(f"<growth>\n{growth_content.strip()}\n</growth>" if growth_content else "")
@@ -299,6 +390,7 @@ def build_user_message(
     parts.append(f"最近对话历史:\n\n{history}" if history else "")
     parts.append(world_now)
     parts.append(f"<status>\n{status_content}\n</status>" if status_content else "")
+    parts.append(relations)
     parts.append(memory_prefix if memory_prefix else "")
     parts.append(f"玩家新消息: {latest_user_input}")
 

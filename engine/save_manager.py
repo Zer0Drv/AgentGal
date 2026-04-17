@@ -279,7 +279,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
 
     core_files = ["soul.md", "status.md"]
     if agent_name != "narrator":
-        core_files.extend(["memory.md", "user.md", "tmp_user.md", "growth.md"])
+        core_files.extend(["memory.md", "user.md", "tmp_user.md", "growth.md", "relations.md"])
 
     for filename in core_files:
         filepath = f"{base}/{filename}"

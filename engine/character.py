@@ -22,6 +22,7 @@ from storage.agent_files import (
     read_agent_file,
     update_memory,
     update_player,
+    update_relations,
     update_status,
 )
 from storage.history import load_conversation_history
@@ -61,7 +62,12 @@ class Character:
     def _agent(self):
         return get_conversation_agent(self.name)
 
-    async def run(self, user_input: str, raw_messages: list[dict] | None = None) -> CharacterOutput:
+    async def run(
+        self,
+        user_input: str,
+        raw_messages: list[dict] | None = None,
+        scene_targets: list[str] | None = None,
+    ) -> CharacterOutput:
         """搜记忆 → 构建 prompt → 运行 agent → 写回文件，返回 CharacterOutput。"""
         if raw_messages is None:
             raw_messages = load_conversation_history(limit=None)
@@ -73,7 +79,11 @@ class Character:
             else ""
         )
         user_message, was_truncated = build_user_message(
-            self.name, user_input, memory_prefix, raw_messages=raw_messages
+            self.name,
+            user_input,
+            memory_prefix,
+            raw_messages=raw_messages,
+            scene_targets=scene_targets,
         )
         if was_truncated:
             routing_logger.info("[%s] 历史窗口截断，触发记忆整理", self.name)
@@ -117,6 +127,21 @@ class Character:
             if event_desc.strip() == "无":
                 continue
             ops.append(("add_event", lambda ec=event_desc: add_pending_event(self.name, ec, "打算")))
+
+        valid_relation_targets = set(get_agent_names(include_narrator=False)) | {"player"}
+        for target, content in output.relations.items():
+            target_clean = target.strip()
+            if not target_clean or target_clean == self.name:
+                continue
+            if target_clean not in valid_relation_targets:
+                routing_logger.warning(
+                    "[%s] 忽略 relations 中的未知目标: %s", self.name, target_clean
+                )
+                continue
+            ops.append((
+                f"relations[{target_clean}]",
+                lambda tg=target_clean, ct=content: update_relations(self.name, tg, str(ct)),
+            ))
 
         _apply_file_updates(self.name, ops)
 

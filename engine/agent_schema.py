@@ -21,6 +21,7 @@ class CharacterOutput(BaseModel):
     player: dict[str, str] = Field(default_factory=dict)
     triggered: list[str] = Field(default_factory=list)
     add_event: list[str] = Field(default_factory=list)
+    relations: dict[str, str] = Field(default_factory=dict)
 
 
 class NarratorStatus(BaseModel):
@@ -30,7 +31,6 @@ class NarratorStatus(BaseModel):
     角色位置: str = ""
     当前时间: str = ""
     叙事焦点: str = ""
-    关系现状: str = ""
 
 
 class NarratorOutput(BaseModel):
