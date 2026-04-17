@@ -53,3 +53,7 @@ temperature = 1.3
 max_actions = 3
 # 角色回复后处理：最多保留的省略号数
 max_ellipsis = 3
+
+[offstage]
+# 角色离场多少游戏内天数后，重新登场时触发离场追补
+catchup_threshold_days = 1

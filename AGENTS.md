@@ -131,6 +131,8 @@ server.py        ← shared/ + storage/ + engine/
   ↓
 顺序调用各 target Agent（每个 agent 响应写入 history 后，下一个才能看到）
   ↓
+每个 Agent 运行前：若 `.last_seen.json` 距当前游戏时间超过阈值（`OFFSTAGE_CATCHUP_THRESHOLD_DAYS`），调 `offstage_synthesizer` 合成一条压缩记忆追加到 memory.md
+  ↓
 每个 Agent 响应后：从 CharacterOutput typed 字段写回文件、广播到 history
   ↓
 调用选项生成（使用 narrator 模型），展示 2-3 个可选行动
@@ -151,6 +153,7 @@ world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.jso
 - `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`, `relations`
 - `NarratorOutput`：`content`, `targets`, `new_characters`（路由、场景描述与动态角色请求）
 - `NewCharacterSpec` / `NewCharacterCreation`：新角色孵化的锚点和 LLM 输出
+- `OffstageMemoryBlock`：离场追补的 `date` + `content`，由 `offstage_synthesizer` 输出并追加到角色 `memory.md`
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`
 
@@ -258,12 +261,13 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 - 放密钥、模型 ID、provider 和外部服务 URL
 - `RERANK_ENABLED=true` 时才会真正启用 rerank 调用
-- narrator / choices / consolidation / character_factory 都支持各自的独立 LLM 配置，未设置时逐级回退（`CHARACTER_FACTORY_LLM_*` 未设置时回退到 narrator）
+- narrator / choices / consolidation / character_factory / offstage_synthesizer 都支持各自的独立 LLM 配置，未设置时逐级回退（`CHARACTER_FACTORY_LLM_*` 未设置时回退到 narrator；`OFFSTAGE_SYNTH_LLM_*` 未设置时回退到 consolidation）
 
 ### `config.toml`
 
 - 放运行时策略参数，例如 Agent temperature、超时、向量检索权重
 - `[history]` 中的 `history_high` / `history_low` 控制多轮消息高低水位截断
+- `[offstage]` 中的 `catchup_threshold_days` 控制角色重新登场时触发离场追补的游戏内天数阈值
 
 ## 存档与重置
 

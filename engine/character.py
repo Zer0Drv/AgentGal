@@ -14,9 +14,11 @@ from engine.agent_schema import (
     NewCharacterSpec,
     StateUpdaterOutput,
 )
+from engine.offstage_flow import maybe_synthesize_offstage
 from engine.prompt_builder import build_search_query, build_user_message
 from llm.providers import get_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
+from memory.parser import extract_status_field
 from memory.retrieval import search_memories
 from shared.config import AGENT_RUN_TIMEOUT_SECONDS, get_agent_names
 from shared.text_utils import clean_response, get_display_name, is_valid_response
@@ -76,6 +78,10 @@ class Character:
         """搜记忆 → 构建 prompt → 运行 agent → 写回文件，返回 CharacterOutput。"""
         if raw_messages is None:
             raw_messages = load_conversation_history(limit=None)
+
+        narrator_status = read_agent_file("narrator", "status.md")
+        now_time = extract_status_field(narrator_status, "当前时间").strip()
+        await maybe_synthesize_offstage(self.name, now_time)
 
         relevant_memories = search_memories(self.name, build_search_query(self.name, user_input))
         memory_prefix = (

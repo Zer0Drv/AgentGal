@@ -49,6 +49,9 @@ MAX_ELLIPSIS: int = _cfg["text"]["max_ellipsis"]
 HISTORY_HIGH: int = _cfg["history"]["history_high"]
 HISTORY_LOW: int = _cfg["history"]["history_low"]
 
+# 离场追补
+OFFSTAGE_CATCHUP_THRESHOLD_DAYS: int = _cfg.get("offstage", {}).get("catchup_threshold_days", 1)
+
 
 def character_path(character_name: str, *subpaths: str) -> str:
     """构建角色数据路径

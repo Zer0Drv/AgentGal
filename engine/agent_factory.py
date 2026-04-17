@@ -16,6 +16,7 @@ from engine.agent_schema import (
     MemoryMetadataOutput,
     NarratorOutput,
     NewCharacterCreation,
+    OffstageMemoryBlock,
     StateUpdaterOutput,
 )
 from engine.prompt_builder import build_system_prompt
@@ -25,6 +26,7 @@ from llm.providers import (
     get_consolidation_llm_config,
     get_llm_config,
     get_narrator_llm_config,
+    get_offstage_synthesizer_llm_config,
 )
 from shared.config import (
     CONSOLIDATION_MAX_TOKENS,
@@ -42,6 +44,7 @@ _PLAYER_PROFILE_PROMPT_PATH = PROJECT_ROOT / "prompts" / "player_profile_consoli
 _CHOICES_PROMPT_PATH = PROJECT_ROOT / "prompts" / "choices_prompt.txt"
 _STATE_UPDATER_PROMPT_PATH = PROJECT_ROOT / "prompts" / "state_updater_prompt.txt"
 _CHARACTER_FACTORY_PROMPT_PATH = PROJECT_ROOT / "prompts" / "character_factory_prompt.txt"
+_OFFSTAGE_SYNTH_PROMPT_PATH = PROJECT_ROOT / "prompts" / "offstage_synth_prompt.txt"
 
 ConversationAgent = Agent[None, CharacterOutput | NarratorOutput]
 StructuredAgent = Agent[None, object]
@@ -51,6 +54,7 @@ _conversation_agents: dict[str, ConversationAgent] = {}
 _choices_agent: Agent[None, ChoicesOutput] | None = None
 _state_updater_agent: Agent[None, StateUpdaterOutput] | None = None
 _character_factory_agent: Agent[None, NewCharacterCreation] | None = None
+_offstage_synth_agent: Agent[None, OffstageMemoryBlock] | None = None
 _consolidation_agents: dict[str, StructuredAgent | TextAgent] = {}
 
 
@@ -160,6 +164,21 @@ def get_character_factory_agent() -> Agent[None, NewCharacterCreation]:
             output_type=NewCharacterCreation,
         )
     return _character_factory_agent
+
+
+def get_offstage_synthesizer_agent() -> Agent[None, OffstageMemoryBlock]:
+    global _offstage_synth_agent
+
+    if _offstage_synth_agent is None:
+        config = get_offstage_synthesizer_llm_config()
+        instructions = _OFFSTAGE_SYNTH_PROMPT_PATH.read_text(encoding="utf-8")
+        _offstage_synth_agent = _build_agent(
+            name="offstage_synthesizer",
+            instructions=instructions,
+            config=config,
+            output_type=OffstageMemoryBlock,
+        )
+    return _offstage_synth_agent
 
 
 def _ensure_consolidation_agents() -> None:
