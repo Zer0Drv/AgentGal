@@ -404,7 +404,7 @@ async def test_run_state_updater_uses_state_updater_agent(monkeypatch):
     monkeypatch.setattr(conversation_flow_module, "run_structured_agent", fake_run_structured_agent)
     monkeypatch.setattr(character_module.Narrator, "apply_state_updates", fake_apply_state_updates)
 
-    await conversation_flow_module.run_state_updater()
+    await conversation_flow_module.run_state_updater([])
 
     assert captured["agent"] is fake_agent
     assert captured["output_type"] is StateUpdaterOutput

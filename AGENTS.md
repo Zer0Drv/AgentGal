@@ -97,6 +97,7 @@ server.py        ← shared/ + storage/ + engine/
 - `data/characters/*/.history_window_state.json`：各 Agent 的对话历史高低水位窗口 sidecar
 - `data/characters/*/.consolidation_state.json`：角色记忆整理进度 sidecar
 - `data/characters/*/.memory_recall_state.json`：角色长期记忆 recall 快照（仅存档时从 DB 生成，运行期不维护）
+- `data/characters/*/.last_seen.json`：角色上次出场的游戏内时间，由 `world_sync` 在 targets 出场时写入
 
 ## 消息路由
 
@@ -135,6 +136,8 @@ server.py        ← shared/ + storage/ + engine/
 后台调用 state_updater，更新 narrator/status.md（场景、时间、待触发事件）
   ↓
 state_updater 从各角色「打算」同步公共「待触发事件」（事件名保留角色名）
+  ↓
+world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.json`；跨时段时按 schedule 刷新「无打算」角色的默认位置
 ```
 
 ## Agent 输出与写回机制

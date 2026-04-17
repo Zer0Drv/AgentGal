@@ -26,7 +26,7 @@ async def test_settle_pending_state_update_waits_for_background_task(monkeypatch
     monkeypatch.setattr(server_module, "run_state_updater", fake_run_state_updater)
     server_module._pending_state_update_task = None
 
-    server_module._start_state_update()
+    server_module._start_state_update([])
     assert server_module._pending_state_update_task is not None
 
     await server_module._settle_pending_state_update()
@@ -46,7 +46,7 @@ async def test_settle_pending_state_update_cancels_background_task(monkeypatch):
     monkeypatch.setattr(server_module, "run_state_updater", fake_run_state_updater)
     server_module._pending_state_update_task = None
 
-    server_module._start_state_update()
+    server_module._start_state_update([])
     task = server_module._pending_state_update_task
     assert task is not None
 
