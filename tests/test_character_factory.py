@@ -215,7 +215,9 @@ def test_new_character_creation_normalizes_identity_to_single_line():
     creation = NewCharacterCreation(
         role="桥本志津",
         identity="美月的妈妈，\n来学校接她放学的家长。",
-        soul="<anchor>x</anchor>",
+        dynamic="你牵挂着女儿的健康。\n\n每次去学校都忍不住多问几句。",
+        behavior=["被女儿嫌弃时，先退一步再绕回来"],
+        voice=["美月，你脸色怎么这么差？"],
         status={},
         relations={},
     )
@@ -267,12 +269,21 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
         return NewCharacterCreation(
             role="桥本志津",
             identity="美月的妈妈，来学校接她放学的家长。",
-            soul=(
-                "<anchor>美月的妈妈</anchor>\n"
-                "<flavor>- 语气温和</flavor>\n<examples><example>"
-                "<context>接美月放学</context><response>「今天辛苦了」</response>"
-                "</example></examples>"
+            dynamic=(
+                "你牵挂着女儿的每一次练习和每一场演出，可她越长大越不愿意让你看见她累。\n\n"
+                "你嘴上只问她冷不冷、累不累，心里其实想知道她是不是还撑得住——"
+                "但你知道追问只会让她躲得更远，所以总用『顺路接送』『顺手买点东西』这种借口守在她附近。"
             ),
+            behavior=[
+                "被美月嫌弃时先笑一下退一步，过会儿再绕回来",
+                "只要美月脸色不对就忍不住多问一句，问完又怕自己越界",
+                "见到和女儿走近的人时，先礼貌打量，再私下仔细留意这人靠不靠谱",
+            ],
+            voice=[
+                "美月，今天累不累？妈妈路过顺便来看看你。",
+                "吃口东西再走，就一口。",
+                "你别硬撑。撑不住的时候要跟妈妈说。",
+            ],
             status={
                 "身份": "全职主妇",
                 "心境": "挂念美月",
@@ -325,7 +336,9 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
     soul = (agent_dir / "soul.md").read_text(encoding="utf-8")
     assert soul.startswith("<role>桥本志津</role>")
     assert "<identity>\n美月的妈妈，来学校接她放学的家长。\n</identity>" in soul
-    assert "<anchor>美月的妈妈</anchor>" in soul
+    assert "<dynamic>" in soul and "</dynamic>" in soul
+    assert "<behavior>" in soul and "- 被美月嫌弃时先笑一下退一步" in soul
+    assert "<voice>" in soul and "美月，今天累不累？" in soul
     status = (agent_dir / "status.md").read_text(encoding="utf-8")
     assert status.startswith("# 桥本志津 的状态")
     assert "## 当前位置\n教室走廊" in status
@@ -354,7 +367,15 @@ async def test_create_character_validates_before_calling_llm(character_dir, monk
     async def fake_run_structured_agent(**_kwargs):
         nonlocal called
         called = True
-        return NewCharacterCreation(role="x", identity="x", soul="x", status={}, relations={})
+        return NewCharacterCreation(
+            role="x",
+            identity="x",
+            dynamic="x",
+            behavior=["x"],
+            voice=["x"],
+            status={},
+            relations={},
+        )
 
     monkeypatch.setattr(
         character_factory_module,
@@ -381,7 +402,9 @@ async def test_create_character_seeds_relation_to_when_llm_omits(character_dir, 
         return NewCharacterCreation(
             role="林晚",
             identity="美月的邻居。",
-            soul="<anchor>x</anchor>",
+            dynamic="你偶尔撞见美月从家里出来，会打个招呼，但没熟到能聊天。",
+            behavior=["撞见邻居时先点头笑一下，再决定要不要搭话"],
+            voice=["今天回得早呀。"],
             status={"身份": "x", "心境": "x", "和玩家的关系": "x"},
             relations={"player": "陌生人"},
         )

@@ -1,11 +1,10 @@
 """动态生成新角色：narrator 请求时给新人搭骨架。
 
-流程：校验锚点 → 调 character_factory agent 生成 role/identity/soul/status/relations → 写文件。
+流程：校验锚点 → 调 character_factory agent 生成 role/identity/dynamic/behavior/voice/status/relations → 写文件。
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,8 +39,6 @@ _USER_MD_SKELETON = (
     "## 对方是什么人\n\n\n"
     "## 我们怎么相处\n"
 )
-_ROLE_BLOCK_RE = re.compile(r"<role>\s*.*?\s*</role>\s*", re.DOTALL)
-_IDENTITY_BLOCK_RE = re.compile(r"<identity>\s*.*?\s*</identity>\s*", re.DOTALL)
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,10 +181,26 @@ def _write_relations_md(
     (agent_dir / "relations.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+def _format_bulleted_block(items: list[str]) -> str:
+    """渲染 behavior 列表：每条前缀 '- '；空条目跳过。"""
+    lines: list[str] = []
+    for item in items:
+        text = (item or "").strip()
+        if not text:
+            continue
+        lines.append(text if text.startswith("- ") else f"- {text}")
+    return "\n".join(lines)
+
+
+def _format_voice_block(items: list[str]) -> str:
+    """渲染 voice 样例：每句独立一行；空条目跳过。"""
+    return "\n".join(item.strip() for item in items if item and item.strip())
+
+
 def _build_soul_md(creation: NewCharacterCreation) -> str:
-    """统一拼接 soul.md，确保 role/identity 结构稳定。"""
-    soul_body = _ROLE_BLOCK_RE.sub("", creation.soul)
-    soul_body = _IDENTITY_BLOCK_RE.sub("", soul_body).strip()
+    """按美月模板结构拼装 soul.md：role / identity / dynamic / behavior / voice。"""
+    behavior_block = _format_bulleted_block(creation.behavior)
+    voice_block = _format_voice_block(creation.voice)
 
     parts = [
         f"<role>{creation.role}</role>",
@@ -195,9 +208,15 @@ def _build_soul_md(creation: NewCharacterCreation) -> str:
         "<identity>",
         creation.identity,
         "</identity>",
+        "",
+        "<dynamic>",
+        creation.dynamic,
+        "</dynamic>",
     ]
-    if soul_body:
-        parts.extend(["", soul_body])
+    if behavior_block:
+        parts.extend(["", "<behavior>", behavior_block, "</behavior>"])
+    if voice_block:
+        parts.extend(["", "<voice>", voice_block, "</voice>"])
     return "\n".join(parts).strip() + "\n"
 
 

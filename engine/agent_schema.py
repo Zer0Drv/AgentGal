@@ -51,20 +51,36 @@ class NarratorOutput(BaseModel):
 
 
 class NewCharacterCreation(BaseModel):
-    """character_factory agent 的结构化输出：一次返回 role/identity/soul/status/relations 种子。"""
+    """character_factory agent 的结构化输出：一次返回完整骨架种子。
+
+    soul 分成四段（identity / dynamic / behavior / voice），和美月模板对齐：
+    - identity：单行公开身份
+    - dynamic：长期关系循环 + 内外反差
+    - behavior：情境→反应模式
+    - voice：典型台词样例
+    """
 
     role: str
     identity: str
-    soul: str
+    dynamic: str
+    behavior: list[str] = Field(default_factory=list)
+    voice: list[str] = Field(default_factory=list)
     status: dict[str, str] = Field(default_factory=dict)
     relations: dict[str, str] = Field(default_factory=dict)
 
-    @field_validator("role", "identity", "soul", mode="before")
+    @field_validator("role", "identity", "dynamic", mode="before")
     @classmethod
     def trim_creation_fields(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
 
-    @field_validator("role", "identity")
+    @field_validator("behavior", "voice", mode="before")
+    @classmethod
+    def trim_list_items(cls, value: object) -> object:
+        if not isinstance(value, list):
+            return value
+        return [item.strip() if isinstance(item, str) else item for item in value]
+
+    @field_validator("role", "identity", "dynamic")
     @classmethod
     def ensure_creation_fields_not_empty(cls, value: str) -> str:
         if not value:
