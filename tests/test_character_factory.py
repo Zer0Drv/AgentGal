@@ -21,6 +21,7 @@ try:
         NewCharacterSpec,
     )
     from engine.character import Narrator
+    from engine.character_factory import CreatedCharacterInfo
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip character_factory tests: missing dependency ({exc})", allow_module_level=True)
 
@@ -313,8 +314,12 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
         relation_description="美月的妈妈",
         initial_location="教室走廊",
     )
-    ok = await character_factory_module.create_character(spec)
-    assert ok is True
+    created = await character_factory_module.create_character(spec)
+    assert created == CreatedCharacterInfo(
+        character_id="mitsuki_mom",
+        display_name="桥本志津",
+        identity="美月的妈妈，来学校接她放学的家长。",
+    )
 
     agent_dir = character_dir / "mitsuki_mom"
     soul = (agent_dir / "soul.md").read_text(encoding="utf-8")
@@ -362,8 +367,8 @@ async def test_create_character_validates_before_calling_llm(character_dir, monk
         relation_to="ghost",
         relation_description="x",
     )
-    ok = await character_factory_module.create_character(spec)
-    assert ok is False
+    created = await character_factory_module.create_character(spec)
+    assert created is None
     assert called is False
 
 
@@ -395,8 +400,12 @@ async def test_create_character_seeds_relation_to_when_llm_omits(character_dir, 
         relation_to="mitsuki",
         relation_description="美月的邻居",
     )
-    ok = await character_factory_module.create_character(spec)
-    assert ok is True
+    created = await character_factory_module.create_character(spec)
+    assert created == CreatedCharacterInfo(
+        character_id="fallback_char",
+        display_name="林晚",
+        identity="美月的邻居。",
+    )
 
     relations = (character_dir / "fallback_char" / "relations.md").read_text(encoding="utf-8")
     assert "## mitsuki" in relations
@@ -411,7 +420,13 @@ async def test_create_character_seeds_relation_to_when_llm_omits(character_dir, 
 @pytest.mark.asyncio
 async def test_bootstrap_new_characters_keeps_only_targeted_successes(monkeypatch):
     async def fake_create_character(spec):
-        return spec.character_id != "bad"
+        if spec.character_id == "bad":
+            return None
+        return CreatedCharacterInfo(
+            character_id=spec.character_id,
+            display_name=spec.character_id.upper(),
+            identity=f"{spec.character_id}-identity",
+        )
 
     monkeypatch.setattr(conversation_flow_module, "create_character", fake_create_character)
 
@@ -424,13 +439,18 @@ async def test_bootstrap_new_characters_keeps_only_targeted_successes(monkeypatc
         specs, ["mitsuki", "good1", "bad"]
     )
     assert targets == ["mitsuki", "good1", "good2"]
-    assert created == ["good1", "good2"]
+    assert [item.character_id for item in created] == ["good1", "good2"]
+    assert [item.identity for item in created] == ["good1-identity", "good2-identity"]
 
 
 @pytest.mark.asyncio
 async def test_bootstrap_new_characters_auto_targets_created(monkeypatch):
     async def fake_create_character(spec):
-        return True
+        return CreatedCharacterInfo(
+            character_id=spec.character_id,
+            display_name="Good One",
+            identity="新来的角色",
+        )
 
     monkeypatch.setattr(conversation_flow_module, "create_character", fake_create_character)
 
@@ -441,7 +461,7 @@ async def test_bootstrap_new_characters_auto_targets_created(monkeypatch):
         specs, ["mitsuki"]
     )
     assert targets == ["mitsuki", "good1"]
-    assert created == ["good1"]
+    assert [item.character_id for item in created] == ["good1"]
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -107,3 +108,59 @@ async def test_api_save_catches_unhandled_exception(monkeypatch):
     }
     assert len(logged) == 1
     assert logged[0].startswith("[save] /api/save 未捕获异常: RuntimeError: pending task 爆了")
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_emits_created_character_identity(monkeypatch):
+    async def fake_settle_pending_state_update(*, cancel=False):
+        return None
+
+    async def fake_call_narrator_and_route(_user_input):
+        return [], "", [], True
+
+    async def fake_bootstrap_new_characters(_specs, _targets):
+        return [], [
+            SimpleNamespace(
+                character_id="mitsuki_mom",
+                display_name="桥本志津",
+                identity="美月的妈妈，来学校接她放学的家长。",
+            )
+        ]
+
+    async def fake_broadcast_player_message(_targets, _user_input):
+        return None
+
+    monkeypatch.setattr(
+        server_module,
+        "_settle_pending_state_update",
+        fake_settle_pending_state_update,
+    )
+    monkeypatch.setattr(
+        server_module,
+        "call_narrator_and_route",
+        fake_call_narrator_and_route,
+    )
+    monkeypatch.setattr(
+        server_module,
+        "bootstrap_new_characters",
+        fake_bootstrap_new_characters,
+    )
+    monkeypatch.setattr(
+        server_module.message_router,
+        "broadcast_player_message",
+        fake_broadcast_player_message,
+    )
+
+    chunks = [chunk async for chunk in server_module._chat_stream("来个新角色")]
+
+    assert len(chunks) == 2
+    created_event = json.loads(chunks[0].removeprefix("data: ").strip())
+    assert created_event == {
+        "type": "system",
+        "title": "角色已创建",
+        "name": "桥本志津",
+        "identity": "美月的妈妈，来学校接她放学的家长。",
+        "character_id": "mitsuki_mom",
+    }
+    done_event = json.loads(chunks[1].removeprefix("data: ").strip())
+    assert done_event == {"type": "done"}

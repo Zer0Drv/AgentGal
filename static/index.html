@@ -397,8 +397,17 @@ svg {
   margin-inline: auto;
 }
 
+.message-row.system {
+  max-width: 560px;
+  margin-inline: auto;
+}
+
 .narrator-shell {
   padding: 6px 8px;
+}
+
+.system-shell {
+  padding: 4px 8px;
 }
 
 .message-kicker {
@@ -415,6 +424,30 @@ svg {
   font-family: "Noto Serif SC", "Songti SC", serif;
   font-size: 15px;
   line-height: 2;
+}
+
+.system-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid rgba(91, 125, 134, 0.18);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(248, 252, 252, 0.96), rgba(241, 247, 246, 0.92)),
+    rgba(255, 251, 247, 0.9);
+  box-shadow: var(--shadow-soft);
+}
+
+.system-name {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.system-identity {
+  color: var(--text-soft);
+  line-height: 1.72;
 }
 
 .message-row.agent,
@@ -1749,6 +1782,16 @@ svg {
                   </div>
                 </template>
 
+                <template x-if="message.kind === 'system'">
+                  <div class="system-shell">
+                    <div class="message-kicker" x-text="message.title || '系统'"></div>
+                    <div class="system-card">
+                      <div class="system-name" x-text="message.name"></div>
+                      <div class="system-identity" x-show="message.identity" x-text="message.identity"></div>
+                    </div>
+                  </div>
+                </template>
+
                 <template x-if="message.kind === 'agent'">
                   <div>
                     <div class="message-head">
@@ -2537,6 +2580,26 @@ document.addEventListener("alpine:init", () => {
       });
     },
 
+    addSystemMessage({ title = "系统", name = "", identity = "", characterId = "" } = {}) {
+      const displayName = String(name || characterId || "新角色").trim();
+      const identityText = String(identity || "").trim();
+
+      this.messages.push({
+        id: this.nextMessageId++,
+        kind: "system",
+        title: String(title || "系统").trim(),
+        name: displayName,
+        identity: identityText,
+        characterId: String(characterId || "").trim(),
+      });
+
+      this.$nextTick(() => {
+        if (this.$refs.messages) {
+          this.$refs.messages.scrollTop = this.$refs.messages.scrollHeight;
+        }
+      });
+    },
+
     addHistory(messages) {
       (messages || []).forEach(message => {
         const role = message.role || "";
@@ -2682,6 +2745,13 @@ document.addEventListener("alpine:init", () => {
         const event = JSON.parse(payload);
         if (event.type === "narrator") {
           this.addMessage("narrator", event.author || "旁白", event.content);
+        } else if (event.type === "system") {
+          this.addSystemMessage({
+            title: event.title || "系统",
+            name: event.name || "",
+            identity: event.identity || "",
+            characterId: event.character_id || "",
+          });
         } else if (event.type === "agent") {
           this.addMessage("agent", event.author, event.content);
         } else if (event.type === "choices") {

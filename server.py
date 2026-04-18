@@ -237,10 +237,15 @@ async def _chat_stream(user_input: str):
         new_character_specs, targets
     )
     if created_new_characters:
-        for agent_id in created_new_characters:
+        for character in created_new_characters:
             yield _sse_event(
                 "system",
-                {"content": f"[新角色 {agent_id} 已登场]", "author": "系统"},
+                {
+                    "title": "角色已创建",
+                    "name": character.display_name,
+                    "identity": character.identity,
+                    "character_id": character.character_id,
+                },
             )
 
     # 2. 广播玩家消息

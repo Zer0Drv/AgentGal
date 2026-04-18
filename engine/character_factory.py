@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from engine.agent_factory import get_character_factory_agent, reload_conversation_agent
@@ -41,6 +42,13 @@ _USER_MD_SKELETON = (
 )
 _ROLE_BLOCK_RE = re.compile(r"<role>\s*.*?\s*</role>\s*", re.DOTALL)
 _IDENTITY_BLOCK_RE = re.compile(r"<identity>\s*.*?\s*</identity>\s*", re.DOTALL)
+
+
+@dataclass(frozen=True, slots=True)
+class CreatedCharacterInfo:
+    character_id: str
+    display_name: str
+    identity: str
 
 
 def _is_valid_agent_name(name: str) -> bool:
@@ -196,11 +204,12 @@ def _build_soul_md(creation: NewCharacterCreation) -> str:
 def _write_bootstrap_files(
     spec: NewCharacterSpec,
     creation: NewCharacterCreation,
+    soul_content: str,
 ) -> None:
     agent_dir = CHARACTERS_DIR / spec.character_id
     agent_dir.mkdir(parents=True, exist_ok=True)
 
-    (agent_dir / "soul.md").write_text(_build_soul_md(creation), encoding="utf-8")
+    (agent_dir / "soul.md").write_text(soul_content, encoding="utf-8")
     (agent_dir / "memory.md").write_text("", encoding="utf-8")
     (agent_dir / "growth.md").write_text("# 心路历程\n\n", encoding="utf-8")
     (agent_dir / "user.md").write_text(_USER_MD_SKELETON, encoding="utf-8")
@@ -215,12 +224,12 @@ def _write_bootstrap_files(
         write_sidecar_json(spec.character_id, ".last_seen.json", {"last_seen": last_seen})
 
 
-async def create_character(spec: NewCharacterSpec) -> bool:
-    """孵化新角色；失败时只记 warning，不抛异常（让本轮对话继续）。"""
+async def create_character(spec: NewCharacterSpec) -> CreatedCharacterInfo | None:
+    """孵化新角色；成功返回 CreatedCharacterInfo，失败返回 None 并记录日志。"""
     error = _validate_spec(spec)
     if error:
         routing_logger.warning(f"[character_factory] 拒绝生成 {spec.character_id!r}：{error}")
-        return False
+        return None
 
     config = get_character_factory_llm_config()
     try:
@@ -237,13 +246,14 @@ async def create_character(spec: NewCharacterSpec) -> bool:
         )
     except Exception as e:
         routing_logger.error(f"[character_factory] 生成 {spec.character_id!r} 失败: {e}")
-        return False
+        return None
 
+    soul_content = _build_soul_md(creation)
     try:
-        _write_bootstrap_files(spec, creation)
+        _write_bootstrap_files(spec, creation, soul_content)
     except Exception as e:
         routing_logger.error(f"[character_factory] 写入 {spec.character_id!r} 文件失败: {e}")
-        return False
+        return None
 
     # 新角色进入目录后，narrator 的 system prompt 里的 valid_targets 需要刷新
     try:
@@ -254,4 +264,8 @@ async def create_character(spec: NewCharacterSpec) -> bool:
     routing_logger.info(
         f"[character_factory] 生成 {spec.character_id!r}（锚点 relation_to={spec.relation_to}）"
     )
-    return True
+    return CreatedCharacterInfo(
+        character_id=spec.character_id,
+        display_name=get_display_name(spec.character_id, soul_content),
+        identity=extract_identity(soul_content) or creation.identity.strip(),
+    )

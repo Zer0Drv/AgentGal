@@ -6,7 +6,7 @@ from engine.agent_factory import get_choices_agent, get_state_updater_agent
 from engine.agent_runner import run_structured_agent
 from engine.agent_schema import ChoicesOutput, NewCharacterSpec, StateUpdaterOutput
 from engine.character import get_character, narrator
-from engine.character_factory import create_character
+from engine.character_factory import CreatedCharacterInfo, create_character
 from engine.prompt_builder import build_history_transcript
 from engine.world_sync import post_turn_world_sync
 from llm.providers import get_choices_llm_config, get_narrator_llm_config
@@ -130,30 +130,31 @@ async def call_narrator_and_route(
 async def bootstrap_new_characters(
     specs: list[NewCharacterSpec],
     targets: list[str],
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[CreatedCharacterInfo]]:
     """孵化 narrator 请求的新角色，并清理 targets 里的新角色引用。
 
-    返回 (最新 targets, 成功创建的 agent_id 列表)。
+    返回 (最新 targets, 成功创建的角色信息列表)。
     如果 narrator 漏掉了某个已成功孵化的新角色，这里会做一次兜底补入，
     确保创建成功的新角色本轮可以回应。
     """
     if not specs:
         return targets, []
 
-    created: list[str] = []
+    created: list[CreatedCharacterInfo] = []
     requested = {spec.character_id for spec in specs}
     for spec in specs:
-        ok = await create_character(spec)
-        if ok:
-            created.append(spec.character_id)
+        created_info = await create_character(spec)
+        if created_info:
+            created.append(created_info)
 
-    created_set = set(created)
+    created_ids = [info.character_id for info in created]
+    created_set = set(created_ids)
     filtered_targets = [
         target
         for target in targets
         if target not in requested or target in created_set
     ]
-    missing_created = [agent_id for agent_id in created if agent_id not in filtered_targets]
+    missing_created = [agent_id for agent_id in created_ids if agent_id not in filtered_targets]
     for agent_id in missing_created:
         routing_logger.warning(
             "[bootstrap_new_characters] 新角色 %s 创建成功但未进入 targets，已自动补入",
