@@ -53,6 +53,7 @@ def _write_character(
     status_body: str,
     *,
     soul: str = "",
+    user: str = "",
     schedule: dict | None = None,
 ) -> None:
     agent_dir = root / name
@@ -63,6 +64,8 @@ def _write_character(
     )
     if soul:
         (agent_dir / "soul.md").write_text(soul, encoding="utf-8")
+    if user:
+        (agent_dir / "user.md").write_text(user, encoding="utf-8")
     if schedule is not None:
         (agent_dir / "schedule.json").write_text(json.dumps(schedule), encoding="utf-8")
 
@@ -201,6 +204,33 @@ def test_build_user_message_injects_world_now_for_narrator(character_dir, patche
 
     assert "<world_now>" in message
     assert "<my_schedule>" not in message
+
+
+def test_build_user_message_injects_player_views_for_narrator(character_dir, patched_agents):
+    narrator_status = "## 当前时间\n4月3日 星期一 8:23\n\n## 场景\n教室\n"
+    _write_character(character_dir, "narrator", narrator_status)
+    _write_character(
+        character_dir,
+        "mitsuki",
+        "## 当前位置\n教室\n\n## 和玩家的关系\n刚开始在意\n",
+        soul="# 美月\n",
+        user=(
+            "# 美月眼中的玩家\n\n"
+            "## 对方是什么人\n- 很会照顾气氛\n\n"
+            "## 我们怎么相处\n- 她会先用玩笑试探玩家的反应\n"
+        ),
+    )
+    patched_agents(["mitsuki"])
+
+    message, _ = prompt_builder.build_user_message(
+        "narrator", "玩家新消息内容", "", raw_messages=[]
+    )
+
+    assert "<player_views>" in message
+    assert "## mitsuki / 美月 对玩家" in message
+    assert "- 和玩家的关系：刚开始在意" in message
+    assert "很会照顾气氛" in message
+    assert "先用玩笑试探玩家的反应" in message
 
 
 def test_build_user_message_injects_my_schedule_for_character(character_dir, patched_agents):

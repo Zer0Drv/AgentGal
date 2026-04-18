@@ -290,7 +290,9 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
     relations = (agent_dir / "relations.md").read_text(encoding="utf-8")
     assert "## mitsuki" in relations
     assert "女儿，最近显得疲惫" in relations
-    assert "## player" in relations
+    # 对玩家的视角走 status."和玩家的关系"，不再出现在 relations.md
+    assert "## player" not in relations
+    assert "## 和玩家的关系\n听说过" in status
 
     assert (agent_dir / "memory.md").exists()
     assert (agent_dir / "growth.md").read_text(encoding="utf-8").startswith("# 心路历程")

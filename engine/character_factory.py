@@ -18,7 +18,7 @@ from shared.config import (
     CHARACTERS_DIR,
     get_agent_names,
 )
-from shared.text_utils import get_display_name
+from shared.text_utils import extract_identity, get_display_name
 from storage.agent_files import read_agent_file, write_sidecar_json
 
 
@@ -53,8 +53,10 @@ def _format_existing_agents() -> str:
     for agent in get_agent_names(include_narrator=False):
         soul = read_agent_file(agent, "soul.md")
         display = get_display_name(agent, soul) if soul else agent
-        rows.append(f"{agent} / {display}" if display and display != agent else agent)
-    return "、".join(rows) if rows else "（暂无）"
+        identity = extract_identity(soul) if soul else ""
+        label = f"{agent} / {display}" if display and display != agent else agent
+        rows.append(f"- {label}：{identity}" if identity else f"- {label}")
+    return "\n".join(rows) if rows else "（暂无）"
 
 
 def _build_relation_to_context(relation_to: str) -> str:
@@ -122,6 +124,8 @@ def _write_status_md(agent_dir: Path, status: dict[str, str], spec: NewCharacter
     fields = {k: (v or "").strip() for k, v in status.items()}
     if not fields.get("当前位置") and spec.initial_location:
         fields["当前位置"] = spec.initial_location
+    if not fields.get("和玩家的关系") and spec.relation_to == "player":
+        fields["和玩家的关系"] = spec.relation_description.strip()
     if not fields.get("打算"):
         target = "玩家" if spec.relation_to == "player" else spec.relation_to
         fields["打算"] = f"- [ ] 【见到{target}】找到合适的时机自然出现"
@@ -144,11 +148,13 @@ def _write_relations_md(
     relations: dict[str, str],
     spec: NewCharacterSpec,
 ) -> None:
-    sections = {k: v.strip() for k, v in relations.items() if k and v and v.strip()}
-    if spec.relation_to not in sections:
+    sections = {
+        k: v.strip()
+        for k, v in relations.items()
+        if k and v and v.strip() and k != "player"
+    }
+    if spec.relation_to != "player" and spec.relation_to not in sections:
         sections[spec.relation_to] = spec.relation_description.strip()
-    if "player" not in sections:
-        sections["player"] = "还没见过面，只是听说过。"
 
     lines = ["# 我眼中的其他人", ""]
     for target, body in sections.items():

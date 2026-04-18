@@ -139,10 +139,10 @@ class Character:
                 continue
             ops.append(("add_event", lambda ec=event_desc: add_pending_event(self.name, ec, "打算")))
 
-        valid_relation_targets = set(get_agent_names(include_narrator=False)) | {"player"}
+        valid_relation_targets = set(get_agent_names(include_narrator=False))
         for target, content in output.relations.items():
             target_clean = target.strip()
-            if not target_clean or target_clean == self.name:
+            if not target_clean or target_clean == self.name or target_clean == "player":
                 continue
             if target_clean not in valid_relation_targets:
                 routing_logger.warning(

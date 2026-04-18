@@ -283,10 +283,12 @@ def _collect_relation_candidates(
     audience: str,
     scene_targets: list[str] | None = None,
 ) -> list[str]:
-    """本轮 relations 块会涉及到的角色 id（不含 audience 本人）。
+    """本轮 relations 块会涉及到的角色 id（不含 audience 本人，也不含 player）。
 
-    - narrator：当前场景在场角色 ∪ {player}
-    - character：scene_targets ∪ {player}，去掉自己
+    player 视角由 user.md / status 承载，不走 relations。
+
+    - narrator：当前场景在场的其他角色
+    - character：scene_targets 去掉自己
     """
     if audience == "narrator":
         real_locations = _collect_real_locations()
@@ -301,19 +303,14 @@ def _collect_relation_candidates(
             for agent, loc in real_locations.items():
                 loc_map.setdefault(loc, []).append(agent)
         here = sorted(loc_map.get(scene, [])) if scene else []
-        candidates = [c for c in here if c != audience]
-        if "player" not in candidates:
-            candidates.append("player")
-        return candidates
+        return [c for c in here if c != audience]
 
     seen: set[str] = set()
     out: list[str] = []
     for target in scene_targets or []:
-        if target and target != audience and target not in seen:
+        if target and target != audience and target != "player" and target not in seen:
             seen.add(target)
             out.append(target)
-    if audience != "player" and "player" not in seen:
-        out.append("player")
     return out
 
 
@@ -321,6 +318,19 @@ def _relation_label(candidate: str) -> str:
     if candidate == "player":
         return "玩家"
     return _format_agent(candidate)
+
+
+def _compact_profile_section(text: str) -> str:
+    """将 user.md 区块压成单行摘要，避免 narrator prompt 过于冗长。"""
+    parts: list[str] = []
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("- "):
+            stripped = stripped[2:].strip()
+        parts.append(stripped)
+    return "；".join(parts)
 
 
 def build_relations_block(
@@ -337,11 +347,8 @@ def build_relations_block(
         return ""
 
     if audience == "narrator":
-        sources = [c for c in candidates if c != "player"]
-        if not sources:
-            return ""
         sections: list[str] = []
-        for source in sources:
+        for source in candidates:
             view = read_relations(source)
             lines = [f"## {_relation_label(source)} 对其他人的看法"]
             for target in candidates:
@@ -363,6 +370,49 @@ def build_relations_block(
     return f"<relations>\n{body}\n</relations>"
 
 
+def build_player_views_block(
+    audience: str,
+    scene_targets: list[str] | None = None,
+) -> str:
+    """narrator 专用：汇总当前在场角色对玩家的长期视角。"""
+    if audience != "narrator":
+        return ""
+
+    candidates = _collect_relation_candidates(audience, scene_targets)
+    if not candidates:
+        return ""
+
+    sections: list[str] = []
+    for source in candidates:
+        status_content = read_agent_file(source, "status.md")
+        user_content = read_agent_file(source, "user.md")
+
+        relation = extract_status_field(status_content, "和玩家的关系").strip()
+        player_identity = _compact_profile_section(
+            extract_status_field(user_content, "对方是什么人")
+        )
+        interaction_pattern = _compact_profile_section(
+            extract_status_field(user_content, "我们怎么相处")
+        )
+
+        if not relation and not player_identity and not interaction_pattern:
+            continue
+
+        lines = [f"## {_relation_label(source)} 对玩家"]
+        lines.append(f"- 和玩家的关系：{relation or '（暂无）'}")
+        if player_identity:
+            lines.append(f"- 对方是什么人：{player_identity}")
+        if interaction_pattern:
+            lines.append(f"- 我们怎么相处：{interaction_pattern}")
+        sections.append("\n".join(lines))
+
+    if not sections:
+        return ""
+
+    body = "\n\n".join(sections)
+    return f"<player_views>\n{body}\n</player_views>"
+
+
 def build_user_message(
     agent_name: str,
     latest_user_input: str,
@@ -381,6 +431,7 @@ def build_user_message(
     my_schedule = build_my_schedule_block(agent_name) if not is_narrator else ""
     world_now = build_world_now_block() if is_narrator else ""
     relations = build_relations_block(agent_name, scene_targets=scene_targets)
+    player_views = build_player_views_block(agent_name, scene_targets=scene_targets)
 
     parts.append(my_schedule)
     parts.append(f"<growth>\n{growth_content.strip()}\n</growth>" if growth_content else "")
@@ -391,6 +442,7 @@ def build_user_message(
     parts.append(world_now)
     parts.append(f"<status>\n{status_content}\n</status>" if status_content else "")
     parts.append(relations)
+    parts.append(player_views)
     parts.append(memory_prefix if memory_prefix else "")
     parts.append(f"玩家新消息: {latest_user_input}")
 

@@ -119,7 +119,6 @@ def test_build_relations_block_character_renders_first_person_only(
         soul="# 美月\n",
         relations=(
             "# 我眼中的其他人\n\n"
-            "## player\n刚认识，还在试探\n\n"
             "## lilith\n同班，关系平淡\n"
         ),
     )
@@ -135,19 +134,21 @@ def test_build_relations_block_character_renders_first_person_only(
 
     assert block.startswith("<relations>")
     assert "- lilith / 莉莉丝：同班，关系平淡" in block
-    assert "- 玩家：刚认识，还在试探" in block
+    # 对玩家的视角由 user.md / status 承载，不应出现在 relations 块中
+    assert "玩家" not in block
     # 不应泄露其他角色对自己的看法 —— 角色应保持第一人称视角
     assert "座位前后的同学" not in block
 
 
-def test_build_relations_block_character_falls_back_to_placeholder(
+def test_build_relations_block_character_empty_when_no_candidates(
     character_dir, patched_agents
 ):
     _write_character(character_dir, "mitsuki", soul="# 美月\n")
     patched_agents(["mitsuki"])
 
     block = prompt_builder.build_relations_block("mitsuki", scene_targets=[])
-    assert "- 玩家：（暂无）" in block
+    # 候选集为空（对玩家的视角不走 relations）→ 不渲染块
+    assert block == ""
 
 
 # ---------------------------------------------------------------------------
@@ -166,14 +167,14 @@ def test_build_relations_block_narrator_lists_each_source(character_dir, patched
         "mitsuki",
         soul="# 美月\n",
         status="## 当前位置\n教室\n",
-        relations="# 我眼中的其他人\n\n## player\nM 看 P\n\n## lilith\nM 看 L\n",
+        relations="# 我眼中的其他人\n\n## lilith\nM 看 L\n",
     )
     _write_character(
         character_dir,
         "lilith",
         soul="# 莉莉丝\n",
         status="## 当前位置\n教室\n",
-        relations="# 我眼中的其他人\n\n## player\nL 看 P\n\n## mitsuki\nL 看 M\n",
+        relations="# 我眼中的其他人\n\n## mitsuki\nL 看 M\n",
     )
     patched_agents(["mitsuki", "lilith"])
 
@@ -183,8 +184,8 @@ def test_build_relations_block_narrator_lists_each_source(character_dir, patched
     assert "## lilith / 莉莉丝 对其他人的看法" in block
     assert "- lilith / 莉莉丝：M 看 L" in block
     assert "- mitsuki / 美月：L 看 M" in block
-    assert "- 玩家：M 看 P" in block
-    assert "- 玩家：L 看 P" in block
+    # narrator 视角也不再关心每人对玩家的看法（那是 user.md / status 的事）
+    assert "玩家" not in block
 
 
 def test_build_relations_block_narrator_skips_offstage_agents(character_dir, patched_agents):
@@ -226,16 +227,17 @@ def test_build_user_message_injects_relations_for_character(character_dir, patch
         "mitsuki",
         soul="# 美月\n",
         status="## 当前位置\n教室\n",
-        relations="# 我眼中的其他人\n\n## player\n初印象\n",
+        relations="# 我眼中的其他人\n\n## lilith\n同班同学\n",
     )
-    patched_agents(["mitsuki"])
+    _write_character(character_dir, "lilith", soul="# 莉莉丝\n")
+    patched_agents(["mitsuki", "lilith"])
 
     message, _ = prompt_builder.build_user_message(
-        "mitsuki", "你好", "", raw_messages=[], scene_targets=[]
+        "mitsuki", "你好", "", raw_messages=[], scene_targets=["lilith"]
     )
 
     assert "<relations>" in message
-    assert "初印象" in message
+    assert "同班同学" in message
 
 
 def test_build_user_message_injects_relations_for_narrator(character_dir, patched_agents):
@@ -281,7 +283,7 @@ async def test_character_apply_updates_writes_valid_relations(character_dir, pat
         content="...",
         memory="",
         relations={
-            "player": "今天开始觉得他靠谱",
+            "player": "对玩家的视角应走 user.md / status，不写进 relations",
             "lilith": "同班好友",
             "ghost": "不应该被写入",
             "mitsuki": "不能对自己写关系",
@@ -291,7 +293,7 @@ async def test_character_apply_updates_writes_valid_relations(character_dir, pat
     await char._apply_updates(output)
 
     sections = read_relations("mitsuki")
-    assert sections["player"] == "今天开始觉得他靠谱"
     assert sections["lilith"] == "同班好友"
+    assert "player" not in sections
     assert "ghost" not in sections
     assert "mitsuki" not in sections

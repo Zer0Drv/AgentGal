@@ -83,7 +83,7 @@ server.py        ← shared/ + storage/ + engine/
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
 - `tmp_user.md`：`user.md` 的工作草稿；首次写入时复制正式档案，整理后删除
 - `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有）
-- `relations.md`：角色对其他角色（含 `player`）的当下视角；`## {target}` 一节一段；每轮 `output.relations[target]` 整段覆盖（仅角色有）
+- `relations.md`：角色对其他角色（不含 `player`）的当下视角；`## {target}` 一节一段；每轮 `output.relations[target]` 整段覆盖（仅角色有）。对玩家的长期视角走 `user.md` 与 `status.md` 的「和玩家的关系」
 
 ### 历史文件
 
@@ -166,7 +166,7 @@ world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.jso
 - `output.player` → 追加到 `tmp_user.md` 对应字段；首次写入时先复制 `user.md` 为工作草稿，整理后再回写 `user.md`
 - `output.triggered` → 从 `status.md` 中移除已执行条目
 - `output.add_event` → 向 `status.md` 中插入新条目
-- `output.relations` → 覆盖 `relations.md` 的 `## {target}` 节（target 必须是 `get_agent_names()` 中的角色或 `player`，不能是自己；非法 target 跳过并记录 warning）
+- `output.relations` → 覆盖 `relations.md` 的 `## {target}` 节（target 必须是 `get_agent_names()` 中的角色，不能是自己或 `player`；对玩家的长期视角走 `user.md` 与 `status.md` 的「和玩家的关系」，不写进 relations；非法 target 跳过并记录 warning）
 
 其中：
 
@@ -196,7 +196,7 @@ world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.jso
 3. `user.md`（`tmp_user.md` 仅作为工作草稿参与整理，不直接注入 prompt）
 4. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断；历史中的旁白只保留最后一条）
 5. `status.md`
-6. `<relations>`（候选集 = 本轮 `targets` 去掉自己后，再加 `player`；只包含自己对这些对象的当下看法）
+6. `<relations>`（候选集 = 本轮 `targets` 去掉自己；只包含自己对这些对象的当下看法。对玩家的视角不走 relations）
 7. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
 8. 本轮玩家输入
 
@@ -212,8 +212,9 @@ world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.jso
 1. 最近对话历史（旁白只保留最后一条）
 2. `<world_now>`（当前时间 / 当前场景 / 各角色当前位置，合并 `status.md.当前位置` 与 schedule 默认值）
 3. `status.md`
-4. `<relations>`（候选集 = `<world_now>` 在场角色 ∪ {player}；列出每个在场角色对其他候选的看法）
-5. 本轮玩家输入
+4. `<relations>`（候选集 = `<world_now>` 在场角色；列出每个在场角色对其他候选的看法。玩家不进候选）
+5. `<player_views>`（列出在场角色各自对玩家的视角，来源于各角色 `status.md` 的「和玩家的关系」与 `user.md` 的玩家画像）
+6. 本轮玩家输入
 
 `narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点和待触发事件推进当前回合。待触发事件主要由 `state_updater` 从各角色 `打算` 同步，事件名保留角色名（如 `【美月：顺路的约定】`）。
 
