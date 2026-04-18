@@ -1,10 +1,11 @@
 """动态生成新角色：narrator 请求时给新人搭骨架。
 
-流程：校验锚点 → 调 character_factory agent 生成 soul/status/relations → 写文件。
+流程：校验锚点 → 调 character_factory agent 生成 role/identity/soul/status/relations → 写文件。
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from engine.agent_factory import get_character_factory_agent, reload_conversation_agent
@@ -38,6 +39,8 @@ _USER_MD_SKELETON = (
     "## 对方是什么人\n\n\n"
     "## 我们怎么相处\n"
 )
+_ROLE_BLOCK_RE = re.compile(r"<role>\s*.*?\s*</role>\s*", re.DOTALL)
+_IDENTITY_BLOCK_RE = re.compile(r"<identity>\s*.*?\s*</identity>\s*", re.DOTALL)
 
 
 def _is_valid_agent_name(name: str) -> bool:
@@ -123,7 +126,12 @@ def _validate_spec(spec: NewCharacterSpec) -> str | None:
     return None
 
 
-def _write_status_md(agent_dir: Path, status: dict[str, str], spec: NewCharacterSpec) -> None:
+def _write_status_md(
+    agent_dir: Path,
+    status: dict[str, str],
+    spec: NewCharacterSpec,
+    display_name: str,
+) -> None:
     """按 _STATUS_ORDER 顺序写 status.md；缺失字段用合理默认补齐。"""
     fields = {k: (v or "").strip() for k, v in status.items()}
     if not fields.get("当前位置") and spec.initial_location:
@@ -139,8 +147,7 @@ def _write_status_md(agent_dir: Path, status: dict[str, str], spec: NewCharacter
         if key not in ordered_keys:
             ordered_keys.append(key)
 
-    title = spec.display_name.strip() or spec.character_id
-    lines = [f"# {title} 的状态", ""]
+    lines = [f"# {display_name} 的状态", ""]
     for key in ordered_keys:
         lines.append(f"## {key}")
         lines.append(fields.get(key, ""))
@@ -169,6 +176,23 @@ def _write_relations_md(
     (agent_dir / "relations.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+def _build_soul_md(creation: NewCharacterCreation) -> str:
+    """统一拼接 soul.md，确保 role/identity 结构稳定。"""
+    soul_body = _ROLE_BLOCK_RE.sub("", creation.soul)
+    soul_body = _IDENTITY_BLOCK_RE.sub("", soul_body).strip()
+
+    parts = [
+        f"<role>{creation.role}</role>",
+        "",
+        "<identity>",
+        creation.identity,
+        "</identity>",
+    ]
+    if soul_body:
+        parts.extend(["", soul_body])
+    return "\n".join(parts).strip() + "\n"
+
+
 def _write_bootstrap_files(
     spec: NewCharacterSpec,
     creation: NewCharacterCreation,
@@ -176,12 +200,12 @@ def _write_bootstrap_files(
     agent_dir = CHARACTERS_DIR / spec.character_id
     agent_dir.mkdir(parents=True, exist_ok=True)
 
-    (agent_dir / "soul.md").write_text(creation.soul.strip() + "\n", encoding="utf-8")
+    (agent_dir / "soul.md").write_text(_build_soul_md(creation), encoding="utf-8")
     (agent_dir / "memory.md").write_text("", encoding="utf-8")
     (agent_dir / "growth.md").write_text("# 心路历程\n\n", encoding="utf-8")
     (agent_dir / "user.md").write_text(_USER_MD_SKELETON, encoding="utf-8")
 
-    _write_status_md(agent_dir, creation.status, spec)
+    _write_status_md(agent_dir, creation.status, spec, creation.role)
     _write_relations_md(agent_dir, creation.relations, spec)
 
     last_seen = extract_status_field(
@@ -213,10 +237,6 @@ async def create_character(spec: NewCharacterSpec) -> bool:
         )
     except Exception as e:
         routing_logger.error(f"[character_factory] 生成 {spec.character_id!r} 失败: {e}")
-        return False
-
-    if not creation.soul.strip():
-        routing_logger.error(f"[character_factory] {spec.character_id!r} 返回空 soul，放弃")
         return False
 
     try:

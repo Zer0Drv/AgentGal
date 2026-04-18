@@ -51,11 +51,30 @@ class NarratorOutput(BaseModel):
 
 
 class NewCharacterCreation(BaseModel):
-    """character_factory agent 的结构化输出：一次返回 soul / status / relations 种子。"""
+    """character_factory agent 的结构化输出：一次返回 role/identity/soul/status/relations 种子。"""
 
+    role: str
+    identity: str
     soul: str
     status: dict[str, str] = Field(default_factory=dict)
     relations: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("role", "identity", "soul", mode="before")
+    @classmethod
+    def trim_creation_fields(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("role", "identity")
+    @classmethod
+    def ensure_creation_fields_not_empty(cls, value: str) -> str:
+        if not value:
+            raise ValueError("field cannot be empty")
+        return value
+
+    @field_validator("identity")
+    @classmethod
+    def normalize_identity_to_single_line(cls, value: str) -> str:
+        return " ".join(value.split())
 
 
 class OffstageMemoryBlock(BaseModel):

@@ -210,6 +210,17 @@ def test_validate_spec_rejects_non_ascii_name(character_dir):
     assert character_factory_module._validate_spec(spec) is not None
 
 
+def test_new_character_creation_normalizes_identity_to_single_line():
+    creation = NewCharacterCreation(
+        role="桥本志津",
+        identity="美月的妈妈，\n来学校接她放学的家长。",
+        soul="<anchor>x</anchor>",
+        status={},
+        relations={},
+    )
+    assert creation.identity == "美月的妈妈， 来学校接她放学的家长。"
+
+
 def test_build_factory_user_message_omits_empty_optional_fields(character_dir):
     _seed(character_dir, "mitsuki", soul="# 美月\n", status="## 当前位置\n教室\n")
     _seed(
@@ -253,8 +264,10 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
 
     async def fake_run_structured_agent(**_kwargs):
         return NewCharacterCreation(
+            role="桥本志津",
+            identity="美月的妈妈，来学校接她放学的家长。",
             soul=(
-                "<role>桥本志津</role>\n<anchor>美月的妈妈</anchor>\n"
+                "<anchor>美月的妈妈</anchor>\n"
                 "<flavor>- 语气温和</flavor>\n<examples><example>"
                 "<context>接美月放学</context><response>「今天辛苦了」</response>"
                 "</example></examples>"
@@ -304,8 +317,12 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
     assert ok is True
 
     agent_dir = character_dir / "mitsuki_mom"
-    assert (agent_dir / "soul.md").read_text(encoding="utf-8").startswith("<role>桥本志津</role>")
+    soul = (agent_dir / "soul.md").read_text(encoding="utf-8")
+    assert soul.startswith("<role>桥本志津</role>")
+    assert "<identity>\n美月的妈妈，来学校接她放学的家长。\n</identity>" in soul
+    assert "<anchor>美月的妈妈</anchor>" in soul
     status = (agent_dir / "status.md").read_text(encoding="utf-8")
+    assert status.startswith("# 桥本志津 的状态")
     assert "## 当前位置\n教室走廊" in status
     assert "## 打算\n- [ ] 【等美月】" in status
 
@@ -332,7 +349,7 @@ async def test_create_character_validates_before_calling_llm(character_dir, monk
     async def fake_run_structured_agent(**_kwargs):
         nonlocal called
         called = True
-        return NewCharacterCreation(soul="x", status={}, relations={})
+        return NewCharacterCreation(role="x", identity="x", soul="x", status={}, relations={})
 
     monkeypatch.setattr(
         character_factory_module,
@@ -357,7 +374,9 @@ async def test_create_character_seeds_relation_to_when_llm_omits(character_dir, 
 
     async def fake_run_structured_agent(**_kwargs):
         return NewCharacterCreation(
-            soul="<role>x</role>",
+            role="林晚",
+            identity="美月的邻居。",
+            soul="<anchor>x</anchor>",
             status={"身份": "x", "心境": "x", "和玩家的关系": "x"},
             relations={"player": "陌生人"},
         )
