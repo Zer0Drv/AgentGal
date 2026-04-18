@@ -4,9 +4,11 @@ import asyncio
 
 from engine.agent_factory import get_choices_agent, get_state_updater_agent
 from engine.agent_runner import run_structured_agent
-from engine.agent_schema import ChoicesOutput, StateUpdaterOutput
+from engine.agent_schema import ChoicesOutput, NewCharacterSpec, StateUpdaterOutput
 from engine.character import get_character, narrator
+from engine.character_factory import create_character
 from engine.prompt_builder import build_history_transcript
+from engine.world_sync import post_turn_world_sync
 from llm.providers import get_choices_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field
@@ -85,8 +87,12 @@ def _format_character_intentions() -> str:
     return "\n\n".join(blocks) if blocks else "无"
 
 
-async def run_state_updater() -> None:
-    """回合结束后维护 narrator 的状态和待触发事件。"""
+async def run_state_updater(targets: list[str]) -> None:
+    """回合结束后维护 narrator 的状态和待触发事件，并同步角色位置。"""
+    prev_status = read_agent_file("narrator", "status.md")
+    prev_time = extract_status_field(prev_status, "当前时间").strip()
+    prev_scene = extract_status_field(prev_status, "场景").strip()
+
     user_message = _build_state_updater_input()
     config = get_narrator_llm_config()
     try:
@@ -106,10 +112,48 @@ async def run_state_updater() -> None:
         return
     await narrator.apply_state_updates(output)
 
+    new_time = output.status.当前时间.strip() or prev_time
+    new_scene = output.status.场景.strip() or prev_scene
+    try:
+        post_turn_world_sync(new_scene, targets, prev_time, new_time)
+    except Exception as e:
+        routing_logger.error(f"[world_sync] 同步位置失败: {e}")
 
-async def call_narrator_and_route(user_input: str) -> tuple[list[str], str, bool]:
-    """调用 narrator 获取路由决策和场景描述。"""
+
+async def call_narrator_and_route(
+    user_input: str,
+) -> tuple[list[str], str, list[NewCharacterSpec], bool]:
+    """调用 narrator 获取路由决策、场景描述和新角色请求。"""
     return await narrator.route(user_input)
+
+
+async def bootstrap_new_characters(
+    specs: list[NewCharacterSpec],
+    targets: list[str],
+) -> tuple[list[str], list[str]]:
+    """孵化 narrator 请求的新角色，并清理 targets 里的新角色引用。
+
+    返回 (最新 targets, 成功创建的 agent_id 列表)。
+    只有「本来就在 targets 里」且「孵化成功」的新角色，才会保留在本轮回应名单中；
+    仅被创建但未被 narrator 点名的新角色，不会被强制拉进本轮发言。
+    """
+    if not specs:
+        return targets, []
+
+    created: list[str] = []
+    requested = {spec.name for spec in specs}
+    for spec in specs:
+        ok = await create_character(spec)
+        if ok:
+            created.append(spec.name)
+
+    created_set = set(created)
+    filtered_targets = [
+        target
+        for target in targets
+        if target not in requested or target in created_set
+    ]
+    return list(dict.fromkeys(filtered_targets)), created
 
 
 async def run_agent_in_scene(
@@ -120,7 +164,7 @@ async def run_agent_in_scene(
     """在场景上下文中运行单个角色并广播响应。"""
     from storage.message_router import message_router
 
-    output = await get_character(agent_name).run(user_input)
+    output = await get_character(agent_name).run(user_input, scene_targets=targets)
     response = process_character_response(clean_response(output.content))
     if is_valid_response(response, agent_name):
         await message_router.broadcast_agent_response(agent_name, targets, response)

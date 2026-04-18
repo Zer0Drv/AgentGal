@@ -12,7 +12,7 @@
 
 - Python 3.11+
 - FastAPI + SSE（服务端推送）
-- pydantic-ai（`pydantic-ai`）—— `Agent` / `PromptedOutput` / `OpenAIChatModel` / `OpenAIProvider`
+- pydantic-ai（`pydantic-ai`）—— `Agent` / `PromptedOutput` / `OpenAIChatModel` / provider-specific `Provider`
 - sqlite-vec + aiosqlite
 - asyncio
 
@@ -36,7 +36,7 @@ agentgal-memos/
 │   ├── prompt_builder.py       # prompt / 历史窗口 / 整理输入构造
 │   └── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 ├── llm/
-│   ├── providers.py            # Provider 配置与 URL 解析（返回 api_url/api_key/model/temperature）
+│   ├── providers.py            # Provider 配置与 URL 解析（返回 provider/api_url/api_key/model/temperature）
 │   ├── embedding.py            # Embeddings 客户端（embed_async / embed_sync）
 │   └── rerank.py               # Rerank API 客户端
 ├── log_config/                 # Logfire 与业务 logger 配置
@@ -83,6 +83,7 @@ server.py        ← shared/ + storage/ + engine/
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
 - `tmp_user.md`：`user.md` 的工作草稿；首次写入时复制正式档案，整理后删除
 - `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有）
+- `relations.md`：角色对其他角色（不含 `player`）的当下视角；`## {target}` 一节一段；每轮 `output.relations[target]` 整段覆盖（仅角色有）。对玩家的长期视角走 `user.md` 与 `status.md` 的「和玩家的关系」
 
 ### 历史文件
 
@@ -97,6 +98,7 @@ server.py        ← shared/ + storage/ + engine/
 - `data/characters/*/.history_window_state.json`：各 Agent 的对话历史高低水位窗口 sidecar
 - `data/characters/*/.consolidation_state.json`：角色记忆整理进度 sidecar
 - `data/characters/*/.memory_recall_state.json`：角色长期记忆 recall 快照（仅存档时从 DB 生成，运行期不维护）
+- `data/characters/*/.last_seen.json`：角色上次出场的游戏内时间，由 `world_sync` 在 targets 出场时写入
 
 ## 消息路由
 
@@ -113,6 +115,7 @@ server.py        ← shared/ + storage/ + engine/
 - 每轮都必须让至少一个主要角色当轮可感知玩家并回应
 - 描述时间、地点、在场信息、环境、纯 NPC 行为和当前钩子
 - 不新增未来事件；未来事件由 `state_updater` 从角色 `打算` 维护
+- 当剧情需要引入有关系锚的新人物时，通过 `NarratorOutput.new_characters` 列出 `NewCharacterSpec`，由 `engine/character_factory.py` 孵化目录；只有 narrator 同时把 Ta 放进 `targets` 且孵化成功时，Ta 才会在本轮回应。纯路人不生成，直接在 content 中描写
 - **绝不替角色说话或决定角色行动**
 
 ## 单轮对话流程
@@ -120,11 +123,15 @@ server.py        ← shared/ + storage/ + engine/
 ```text
 用户消息
   ↓
-调用 narrator，得到 NarratorOutput（targets + content）
+调用 narrator，得到 NarratorOutput（targets + content + new_characters）
+  ↓
+孵化 new_characters：`character_factory` 写出 soul/status/relations/memory/growth/user + `.last_seen.json`；仅保留“原本就在 targets 且孵化成功”的新角色进入本轮回应名单
   ↓
 将 narrator 内容写入单一 raw 历史（带 visible_to）
   ↓
 顺序调用各 target Agent（每个 agent 响应写入 history 后，下一个才能看到）
+  ↓
+每个 Agent 运行前：若 `.last_seen.json` 距当前游戏时间超过阈值（`OFFSTAGE_CATCHUP_THRESHOLD_DAYS`），调 `offstage_synthesizer` 合成一条压缩记忆追加到 memory.md
   ↓
 每个 Agent 响应后：从 CharacterOutput typed 字段写回文件、广播到 history
   ↓
@@ -135,14 +142,18 @@ server.py        ← shared/ + storage/ + engine/
 后台调用 state_updater，更新 narrator/status.md（场景、时间、待触发事件）
   ↓
 state_updater 从各角色「打算」同步公共「待触发事件」（事件名保留角色名）
+  ↓
+world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.json`；跨时段时按当前游戏时间匹配 schedule period，刷新「无打算」角色的默认位置
 ```
 
 ## Agent 输出与写回机制
 
 所有结构化 Agent 使用 pydantic-ai 的 `PromptedOutput` 结构化输出，不再使用 XML `<update_notes>`：
 
-- `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`
-- `NarratorOutput`：`content`, `targets`（仅路由与场景描述）
+- `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`, `relations`
+- `NarratorOutput`：`content`, `targets`, `new_characters`（路由、场景描述与动态角色请求）
+- `NewCharacterSpec` / `NewCharacterCreation`：新角色孵化的锚点和 LLM 输出
+- `OffstageMemoryBlock`：离场追补的 `date` + `content`，由 `offstage_synthesizer` 输出并追加到角色 `memory.md`
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`
 
@@ -155,6 +166,7 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 - `output.player` → 追加到 `tmp_user.md` 对应字段；首次写入时先复制 `user.md` 为工作草稿，整理后再回写 `user.md`
 - `output.triggered` → 从 `status.md` 中移除已执行条目
 - `output.add_event` → 向 `status.md` 中插入新条目
+- `output.relations` → 覆盖 `relations.md` 的 `## {target}` 节（target 必须是 `get_agent_names()` 中的角色，不能是自己或 `player`；对玩家的长期视角走 `user.md` 与 `status.md` 的「和玩家的关系」，不写进 relations；非法 target 跳过并记录 warning）
 
 其中：
 
@@ -179,12 +191,14 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 
 `user` 消息按以下顺序拼装为**单条大消息**：
 
-1. `growth.md`
-2. `user.md`（`tmp_user.md` 仅作为工作草稿参与整理，不直接注入 prompt）
-3. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断；历史中的旁白只保留最后一条）
-4. `status.md`
-5. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
-6. 本轮玩家输入
+1. `<my_schedule>`（渲染角色 `schedule.json`；整个故事期间最稳定，放最前锚定 prompt cache）
+2. `growth.md`
+3. `user.md`（`tmp_user.md` 仅作为工作草稿参与整理，不直接注入 prompt）
+4. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断；历史中的旁白只保留最后一条）
+5. `status.md`
+6. `<relations>`（候选集 = 本轮 `targets` 去掉自己；只包含自己对这些对象的当下看法。对玩家的视角不走 relations）
+7. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
+8. 本轮玩家输入
 
 ### narrator Agent
 
@@ -196,8 +210,11 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 `user` 消息按以下顺序拼装为**单条大消息**：
 
 1. 最近对话历史（旁白只保留最后一条）
-2. `status.md`
-3. 本轮玩家输入
+2. `<world_now>`（当前时间 / 当前场景 / 各角色当前位置，合并 `status.md.当前位置` 与 schedule 默认值）
+3. `status.md`
+4. `<relations>`（候选集 = `<world_now>` 在场角色；列出每个在场角色对其他候选的看法。玩家不进候选）
+5. `<player_views>`（列出在场角色各自的「和玩家的关系」，仅来源于各角色 `status.md`）
+6. 本轮玩家输入
 
 `narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点和待触发事件推进当前回合。待触发事件主要由 `state_updater` 从各角色 `打算` 同步，事件名保留角色名（如 `【美月：顺路的约定】`）。
 
@@ -245,12 +262,13 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 - 放密钥、模型 ID、provider 和外部服务 URL
 - `RERANK_ENABLED=true` 时才会真正启用 rerank 调用
-- narrator / choices / consolidation 都支持各自的独立 LLM 配置，未设置时逐级回退
+- narrator / choices / consolidation / character_factory / offstage_synthesizer 都支持各自的独立 LLM 配置，未设置时逐级回退（`CHARACTER_FACTORY_LLM_*` 未设置时回退到 narrator；`OFFSTAGE_SYNTH_LLM_*` 未设置时回退到 consolidation）
 
 ### `config.toml`
 
 - 放运行时策略参数，例如 Agent temperature、超时、向量检索权重
 - `[history]` 中的 `history_high` / `history_low` 控制多轮消息高低水位截断
+- `[offstage]` 中的 `catchup_threshold_days` 控制角色重新登场时触发离场追补的游戏内天数阈值
 
 ## 存档与重置
 
@@ -264,10 +282,12 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 存档会包含：
 
 - 角色 markdown 文件（`narrator` 不含 `memory.md`）
+- 角色 `schedule.json`（存在时）
 - narrator 的 raw 历史
 - 各 Agent `.history_window_state.json`
 - 角色 `.consolidation_state.json`
 - 角色 `.memory_recall_state.json`
+- 角色 `.last_seen.json`（存在时）
 - `last_choices.json`
 
 当前内置故事模板：

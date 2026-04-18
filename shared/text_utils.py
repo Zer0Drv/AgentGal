@@ -13,6 +13,8 @@ _THINKING_PATTERN = re.compile(
     re.DOTALL,
 )
 
+_IDENTITY_PATTERN = re.compile(r"<identity>\s*(.+?)\s*</identity>", re.DOTALL)
+
 
 # =============================================================================
 # 工具函数
@@ -63,6 +65,17 @@ def role_to_speaker(role: str) -> str:
     if role == "narrator":
         return "旁白"
     return role
+
+
+def extract_identity(soul_content: str) -> str:
+    """从 soul.md 的 <identity> 块提取一行公开身份标签；缺失或为空返回空字符串。"""
+    if not soul_content:
+        return ""
+    match = _IDENTITY_PATTERN.search(soul_content)
+    if not match:
+        return ""
+    text = match.group(1).strip()
+    return " ".join(text.split())
 
 
 def get_display_name(agent_name: str, soul_content: str) -> str:

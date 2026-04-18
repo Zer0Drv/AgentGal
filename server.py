@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from engine.agent_factory import initialize_conversation_agents, reload_conversation_agent
 from engine.consolidation_flow import memory_consolidation_flow
 from engine.conversation_flow import (
+    bootstrap_new_characters,
     call_narrator_and_route,
     generate_choices,
     run_agent_in_scene,
@@ -100,9 +101,9 @@ async def _settle_pending_state_update(*, cancel: bool = False) -> None:
         routing_logger.info("[state_updater] 后台任务已取消")
 
 
-def _start_state_update() -> None:
+def _start_state_update(targets: list[str]) -> None:
     global _pending_state_update_task
-    _pending_state_update_task = asyncio.create_task(run_state_updater())
+    _pending_state_update_task = asyncio.create_task(run_state_updater(targets))
 
 
 # =============================================================================
@@ -227,7 +228,20 @@ async def _chat_stream(user_input: str):
     await _settle_pending_state_update()
 
     # 1. narrator 路由
-    targets, scene_description, is_narrator_valid = await call_narrator_and_route(user_input)
+    targets, scene_description, new_character_specs, is_narrator_valid = (
+        await call_narrator_and_route(user_input)
+    )
+
+    # 1.5 处理 narrator 请求的新角色（孵化成功后加入 targets）
+    targets, created_new_characters = await bootstrap_new_characters(
+        new_character_specs, targets
+    )
+    if created_new_characters:
+        for agent_id in created_new_characters:
+            yield _sse_event(
+                "system",
+                {"content": f"[新角色 {agent_id} 已登场]", "author": "系统"},
+            )
 
     # 2. 广播玩家消息
     await message_router.broadcast_player_message(targets, user_input)
@@ -241,7 +255,7 @@ async def _chat_stream(user_input: str):
     if not targets:
         routing_logger.info("[导演] 无角色需要回应")
         if scene_description:
-            _start_state_update()
+            _start_state_update([])
         yield _sse_event("done", {})
         return
 
@@ -264,7 +278,7 @@ async def _chat_stream(user_input: str):
             )
 
     # 5. 生成选项，同时后台维护 narrator 状态
-    _start_state_update()
+    _start_state_update(targets)
     if agent_responses:
         choices = await generate_choices(scene_description, agent_responses)
         if choices:

@@ -29,6 +29,7 @@ def reset_agent_caches():
 
 def _fake_config():
     return {
+        "provider": "deepseek",
         "api_url": "https://example.com/v1",
         "api_key": "test-key",
         "model": "deepseek-chat",
@@ -92,3 +93,17 @@ def test_player_profile_agent_remains_text_output(monkeypatch):
 
     assert player_profile._output_schema.mode == "text"
     assert player_profile.model_settings["max_tokens"] == 1234
+
+
+def test_make_sdk_model_uses_provider_specific_provider():
+    model = agent_factory_module._make_sdk_model(
+        {
+            "provider": "openrouter",
+            "api_url": "https://openrouter.ai/api/v1",
+            "api_key": "test-key",
+            "model": "moonshotai/kimi-k2.5",
+            "temperature": 0.2,
+        }
+    )
+
+    assert model._provider.name == "openrouter"

@@ -543,6 +543,62 @@ def update_status(agent_name: str, field: str, content: str) -> FileUpdateResult
     return _update_section_file(status_path, field, content, allowed, _read_title(status_path, "# 我的状态"))
 
 
+_RELATIONS_TITLE = "# 我眼中的其他人"
+
+
+def read_relations(agent_name: str) -> dict[str, str]:
+    """读取 relations.md 为 {target: content}，保留原顺序；文件不存在返回空字典。"""
+    path = character_path(agent_name, "relations.md")
+    if not os.path.exists(path):
+        return {}
+    return _parse_section_file(path, [], fill_missing_sections=False)
+
+
+def read_relations_section(agent_name: str, target: str) -> str:
+    """读取 relations.md 中 `## {target}` section 的内容，缺失返回空字符串。"""
+    return read_relations(agent_name).get(target, "")
+
+
+def update_relations(agent_name: str, target: str, content: str) -> FileUpdateResult:
+    """覆盖或新增 relations.md 中的 `## {target}` section。
+
+    与 status/user 不同，relations 没有固定白名单 —— target 是动态角色名。
+    """
+    target_clean = target.strip()
+    if not target_clean:
+        return FileUpdateResult(
+            file="relations.md", target=target, operation="skip", reason="target 为空"
+        )
+    normalized = content.replace("\\n", "\n").strip()
+    if not normalized:
+        return FileUpdateResult(
+            file="relations.md", target=target_clean, operation="skip", reason="内容为空，跳过"
+        )
+
+    path = character_path(agent_name, "relations.md")
+    sections = read_relations(agent_name)
+    before = sections.get(target_clean, "")
+    sections[target_clean] = normalized
+
+    title = _read_title(path, _RELATIONS_TITLE)
+    _write_section_file(path, sections, list(sections.keys()), title)
+
+    if before:
+        return FileUpdateResult(
+            file="relations.md",
+            target=target_clean,
+            operation="replace",
+            before=before,
+            after=normalized,
+        )
+    return FileUpdateResult(
+        file="relations.md",
+        target=target_clean,
+        operation="append",
+        appended=normalized,
+    )
+
+
 def update_player(agent_name: str, field: str, content: str) -> FileUpdateResult:
     """追加更新 tmp_user.md 的指定字段。
 

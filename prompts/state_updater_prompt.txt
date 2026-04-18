@@ -22,7 +22,7 @@ recent_history 是最近3条 raw 历史的摘要，不再另行提供 player_inp
 </rules>
 
 <format>
-{"status":{"场景":"","角色位置":"","当前时间":"","叙事焦点":"","关系现状":""},"triggered":[],"add_event":["【角色名：打算名】日期/时段 地点。角色可观察行为。玩家可进入的缝隙。"]}
+{"status":{"场景":"","角色位置":"","当前时间":"","叙事焦点":""},"triggered":[],"add_event":["【角色名：打算名】日期/时段 地点。角色可观察行为。玩家可进入的缝隙。"]}
 </format>
 
 <examples>
@@ -34,7 +34,7 @@ character_intention：
 current_narrator_status：当前时间 4月4日 07:42；待触发事件：无。
 recent_history：roleB和玩家约好放学后在旧阅览角写作业。
 输出：
-{"status":{"场景":"","角色位置":"","当前时间":"4月4日 07:42","叙事焦点":"roleB和玩家约定放学后一起写作业","关系现状":"roleB主动约玩家独处"},"triggered":[],"add_event":["【roleB：一起写作业】4月4日 放学后 旧阅览角。roleB摊开作业本和文具，等玩家到场一起写作业。"]}
+{"status":{"场景":"","角色位置":"","当前时间":"4月4日 07:42","叙事焦点":"roleB和玩家约定放学后一起写作业"},"triggered":[],"add_event":["【roleB：一起写作业】4月4日 放学后 旧阅览角。roleB摊开作业本和文具，等玩家到场一起写作业。"]}
 </eg>
 
 <eg name="trigger_existing">
@@ -45,7 +45,7 @@ character_intention：
 current_narrator_status：当前时间 4月4日 16:12；待触发事件：- [ ] 【roleB：岔路口回望】4月4日 放学后 河畔石子路岔路口。roleB站在小径入口。
 recent_history：旁白已经把玩家切到河畔石子路岔路口，roleB站在小径入口；roleB回应玩家。
 输出：
-{"status":{"场景":"河畔石子路岔路口","角色位置":"- 玩家：学校方向的小路上\n- roleB：小径入口旁","当前时间":"4月4日 16:12","叙事焦点":"玩家在岔路口遇见等候的roleB","关系现状":"roleB用偶遇掩饰主动等待"},"triggered":["roleB：岔路口回望"],"add_event":[]}
+{"status":{"场景":"河畔石子路岔路口","角色位置":"- 玩家：学校方向的小路上\n- roleB：小径入口旁","当前时间":"4月4日 16:12","叙事焦点":"玩家在岔路口遇见等候的roleB"},"triggered":["roleB：岔路口回望"],"add_event":[]}
 </eg>
 
 <eg name="scene_opportunity">
@@ -56,7 +56,7 @@ character_intention：
 current_narrator_status：当前时间 4月4日 17:05；场景：校园步道；待触发事件：无。
 recent_history：玩家问骑到roleA家门口会不会被父母看到；roleA说家里只有妈妈，妈妈应该还没下班，又小声同意玩家送到门口；旁白推进到玩家继续骑车送roleA回家，roleA坐在后座。
 输出：
-{"status":{"场景":"","角色位置":"","当前时间":"","叙事焦点":"玩家骑车送roleA到家门口，roleA期待又紧张","关系现状":"roleA同意玩家送到家门口，关系进入更私人的日常距离"},"triggered":[],"add_event":["【roleA：母亲提前回家】4月4日 17:25 roleA家公寓门口。玩家骑车送roleA到门口时，roleA母亲拎着便利店袋子提前回来，看到roleA坐在玩家自行车后座，停了一下问：“同学送你回来的？”"]}
+{"status":{"场景":"","角色位置":"","当前时间":"","叙事焦点":"玩家骑车送roleA到家门口，roleA期待又紧张"},"triggered":[],"add_event":["【roleA：母亲提前回家】4月4日 17:25 roleA家公寓门口。玩家骑车送roleA到门口时，roleA母亲拎着便利店袋子提前回来，看到roleA坐在玩家自行车后座，停了一下问：“同学送你回来的？”"]}
 </eg>
 
 <eg name="not_schedulable">
@@ -67,7 +67,7 @@ character_intention：
 current_narrator_status：当前时间 10月2日 09:40；待触发事件：无。
 recent_history：玩家和roleA在茶水间分别，各自回工位。
 输出：
-{"status":{"场景":"研发部办公区","角色位置":"- 玩家：工位旁\n- roleA：茶水间方向，已离开\n- roleB：办公室","当前时间":"10月2日 09:40","叙事焦点":"玩家结束茶水间寒暄回到工位","关系现状":"roleA对玩家有继续接触的意愿，但尚未形成具体约定"},"triggered":[],"add_event":[]}
+{"status":{"场景":"研发部办公区","角色位置":"- 玩家：工位旁\n- roleA：茶水间方向，已离开\n- roleB：办公室","当前时间":"10月2日 09:40","叙事焦点":"玩家结束茶水间寒暄回到工位"},"triggered":[],"add_event":[]}
 </eg>
 </examples>
 </prompt>

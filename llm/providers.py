@@ -73,13 +73,25 @@ def get_llm_config(
     参数优先级：传入参数 > 环境变量 > 默认值
 
     Returns:
-        {"api_url": str, "api_key": str, "model": str, "temperature": float}
+        {
+            "provider": str,
+            "api_url": str,
+            "api_key": str,
+            "model": str,
+            "temperature": float,
+        }
     """
     provider = (provider or _get_default_provider()).lower()
     model_id = model_id or _get_default_model_id()
     api_key = api_key or _get_required_env("LLM_API_KEY")
     api_url = _resolve_api_url(provider, api_url or os.getenv("LLM_API_URL"))
-    return {"api_url": api_url, "api_key": api_key, "model": model_id, "temperature": AGENT_TEMPERATURE}
+    return {
+        "provider": provider,
+        "api_url": api_url,
+        "api_key": api_key,
+        "model": model_id,
+        "temperature": AGENT_TEMPERATURE,
+    }
 
 
 def _read_scoped_overrides(env_prefix: str) -> dict[str, str | None]:
@@ -138,6 +150,14 @@ def get_choices_llm_config() -> dict:
     return _make_scoped_llm_config("CHOICES_LLM", get_narrator_llm_config)
 
 
+def get_character_factory_llm_config() -> dict:
+    """返回动态生成角色使用的 LLM 配置。
+
+    优先使用 CHARACTER_FACTORY_LLM_* 系列环境变量，未设置则复用 narrator LLM 配置。
+    """
+    return _make_scoped_llm_config("CHARACTER_FACTORY_LLM", get_narrator_llm_config)
+
+
 def get_consolidation_llm_config(temperature: float | None = None) -> dict:
     """返回记忆整理器使用的 LLM 配置。
 
@@ -145,3 +165,11 @@ def get_consolidation_llm_config(temperature: float | None = None) -> dict:
     temperature 不为 None 时覆盖默认值。
     """
     return _make_scoped_llm_config("CONSOLIDATION_LLM", get_llm_config, temperature=temperature)
+
+
+def get_offstage_synthesizer_llm_config() -> dict:
+    """返回离场追补使用的 LLM 配置。
+
+    优先使用 OFFSTAGE_SYNTH_LLM_* 系列环境变量，未设置则复用整理 LLM 配置。
+    """
+    return _make_scoped_llm_config("OFFSTAGE_SYNTH_LLM", get_consolidation_llm_config)

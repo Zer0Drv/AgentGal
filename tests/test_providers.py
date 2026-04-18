@@ -50,6 +50,7 @@ def test_get_llm_config_normalizes_full_chat_completions_url(monkeypatch):
         api_url="https://example.com/v1/chat/completions",
     )
 
+    assert config["provider"] == "openai"
     assert config["api_url"] == "https://example.com/v1"
 
 
@@ -63,6 +64,7 @@ def test_get_choices_llm_config_falls_back_to_narrator_config(monkeypatch):
 
     config = providers_module.get_choices_llm_config()
 
+    assert config["provider"] == "openai"
     assert config["model"] == "gpt-narrator"
     assert config["api_key"] == "narrator-key"
     assert config["api_url"] == "https://narrator.example/v1"
@@ -81,6 +83,7 @@ def test_get_consolidation_llm_config_uses_factory_for_partial_override(monkeypa
 
     config = providers_module.get_consolidation_llm_config(temperature=0.42)
 
+    assert config["provider"] == "openai"
     assert config["model"] == "gpt-main"
     assert config["api_key"] == "main-key"
     assert config["api_url"] == "https://consolidation.example/v1"
