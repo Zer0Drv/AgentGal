@@ -87,10 +87,12 @@ def test_player_profile_agent_remains_text_output(monkeypatch):
         lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
     )
     monkeypatch.setattr(agent_factory_module, "load_text", lambda *_args: "prompt")
+    monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS", 1234)
 
     player_profile = agent_factory_module.get_player_profile_agent()
 
     assert player_profile._output_schema.mode == "text"
+    assert player_profile.model_settings["max_tokens"] == 1234
 
 
 def test_make_sdk_model_uses_provider_specific_provider():

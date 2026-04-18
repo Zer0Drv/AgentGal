@@ -31,6 +31,7 @@ from llm.providers import (
 )
 from shared.config import (
     CONSOLIDATION_MAX_TOKENS,
+    CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS,
     CONSOLIDATION_TEMPERATURE,
     PROJECT_ROOT,
     get_agent_names,
@@ -227,7 +228,7 @@ def _ensure_consolidation_agents() -> None:
         name="player_profile",
         instructions=load_text(_PLAYER_PROFILE_PROMPT_PATH),
         config=config,
-        max_tokens=CONSOLIDATION_MAX_TOKENS,
+        max_tokens=CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS,
     )
 
 

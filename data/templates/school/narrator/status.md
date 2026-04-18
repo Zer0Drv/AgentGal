@@ -1,11 +1,5 @@
 # 故事状态
 
-<<<<<<< HEAD
-## 关系现状
-- 美月：开学第一天刚被玩家撞见卸下偶像状态的一面，对玩家有了“也许可以在他面前偷懒三十秒”的第一印象
-
-=======
->>>>>>> 28ace5a (feat(engine): 新增角色关系网 relations.md / add per-character relations network)
 ## 当前时间
 4月3日 星期一 8:26
 

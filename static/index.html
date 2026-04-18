@@ -179,8 +179,7 @@ svg {
 .story-card,
 .resume-button,
 .save-card,
-.choice-chip,
-.mini-action-btn {
+.choice-chip {
   cursor: pointer;
   transition:
     transform 0.28s var(--easing),
@@ -222,8 +221,7 @@ svg {
 .resume-button:active,
 .save-card:active,
 .choice-chip:active,
-.story-card:active,
-.mini-action-btn:active {
+.story-card:active {
   transform: translateY(0) scale(0.985);
 }
 
@@ -238,8 +236,7 @@ svg {
 }
 
 .ghost-btn:disabled,
-.primary-btn:disabled,
-.mini-action-btn:disabled {
+.primary-btn:disabled {
   cursor: not-allowed;
   opacity: 0.46;
 }
@@ -303,74 +300,12 @@ svg {
   z-index: 0;
 }
 
-.scene-strip,
 .message-scroll,
 .feedback-strip,
 .choice-rail,
 .composer-shell {
   position: relative;
   z-index: 1;
-}
-
-.scene-strip {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  min-height: 58px;
-  padding: 9px 16px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(255, 250, 245, 0.8);
-  backdrop-filter: blur(16px);
-}
-
-.scene-main {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-}
-
-.scene-title {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 26px;
-  padding: 0 9px;
-  border: 1px solid rgba(113, 84, 74, 0.14);
-  border-radius: 999px;
-  background: rgba(255, 252, 248, 0.72);
-  color: var(--accent);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.scene-summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.35;
-  letter-spacing: 0;
-}
-
-.scene-meta {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-  min-width: 0;
-  max-width: min(44vw, 540px);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.scene-meta::-webkit-scrollbar {
-  display: none;
 }
 
 .meta-chip {
@@ -403,51 +338,6 @@ svg {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-}
-
-.scene-state {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.state-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  min-height: 32px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(255, 252, 248, 0.84);
-  color: var(--text-soft);
-  font-size: 12px;
-}
-
-.state-pill::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(148, 68, 78, 0.3);
-  transition: transform 0.28s var(--easing), background-color 0.28s var(--easing), opacity 0.28s var(--easing);
-}
-
-.state-pill.tone-idle::before {
-  background: rgba(91, 125, 134, 0.44);
-}
-
-.state-pill.tone-busy::before {
-  background: rgba(180, 90, 100, 0.86);
-  animation: pulseState 1.5s ease infinite;
-}
-
-.state-pill.tone-error::before {
-  background: rgba(162, 88, 88, 0.92);
-}
-
-@keyframes pulseState {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(0.72); opacity: 0.38; }
 }
 
 .message-scroll {
@@ -780,33 +670,6 @@ svg {
   min-width: 0;
 }
 
-.mobile-quick-actions {
-  display: none;
-  align-items: center;
-  gap: 8px;
-}
-
-.mini-action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 32px;
-  padding: 0 11px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(255, 252, 248, 0.82);
-  color: var(--text-soft);
-  font-size: 12px;
-  touch-action: manipulation;
-}
-
-.mini-action-btn:hover {
-  transform: translateY(-1px);
-  border-color: rgba(180, 90, 100, 0.28);
-  background: rgba(255, 250, 245, 0.96);
-  color: var(--text);
-}
-
 .composer-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -865,6 +728,17 @@ svg {
   margin-top: 10px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.drawer-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.drawer-shortcuts .ghost-btn {
+  width: 100%;
 }
 
 .archive-drawer {
@@ -1480,30 +1354,6 @@ svg {
     border-radius: 22px;
   }
 
-  .scene-strip {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
-    min-height: 50px;
-    padding: 8px 10px;
-  }
-
-  .scene-main {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 5px;
-  }
-
-  .scene-title {
-    display: none;
-  }
-
-  .scene-summary {
-    font-size: 14px;
-  }
-
-  .scene-meta {
-    max-width: 100%;
-  }
-
   .meta-chip {
     min-height: 24px;
     padding: 3px 7px;
@@ -1518,12 +1368,6 @@ svg {
     font-size: 11px;
   }
 
-  .state-pill {
-    min-height: 28px;
-    padding: 5px 8px;
-    font-size: 11px;
-  }
-
   .message-stage {
     width: calc(100% - 24px);
   }
@@ -1531,24 +1375,44 @@ svg {
   .feedback-strip,
   .choice-rail,
   .composer-shell {
-    padding-left: 18px;
-    padding-right: 18px;
+    padding-left: 14px;
+    padding-right: 14px;
   }
 
   .composer-body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
   }
 
   .composer-tools {
     flex-wrap: wrap;
   }
 
-  .mobile-quick-actions {
-    display: flex;
+  .topbar-actions .menu-btn {
+    width: 40px;
+    min-height: 40px;
+    padding: 0;
+  }
+
+  .topbar-actions .menu-btn .btn-label {
+    display: none;
+  }
+
+  .composer-shell {
+    padding-top: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
   }
 
   .composer-actions .primary-btn {
-    width: 100%;
+    width: 46px;
+    min-width: 46px;
+    min-height: 46px;
+    padding: 0;
+    border-radius: 16px;
+  }
+
+  .composer-actions .send-label {
+    display: none;
   }
 
   .archive-drawer {
@@ -1716,30 +1580,11 @@ svg {
     gap: 6px;
   }
 
-  .topbar-actions .ghost-btn {
-    width: 34px;
-    min-height: 34px;
-    padding: 0;
-  }
-
-  .topbar-actions .ghost-btn span:not(.btn-icon) {
-    display: none;
-  }
-
   .ghost-btn,
   .primary-btn,
   .resume-button {
     min-height: 38px;
     padding: 0 12px;
-  }
-
-  .scene-summary {
-    font-size: 13px;
-  }
-
-  .scene-strip {
-    min-height: 46px;
-    padding: 7px 9px;
   }
 
   .meta-chip {
@@ -1775,35 +1620,40 @@ svg {
     min-width: min(82vw, 320px);
   }
 
-  .composer-head,
-  .composer-foot,
   .choice-rail-head {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .composer-head {
-    flex-direction: row;
-    align-items: center;
-    margin-bottom: 8px;
-  }
-
-  .composer-tools {
-    gap: 8px;
-  }
-
-  .composer-hint {
-    display: none;
-  }
-
+  .composer-head,
   .composer-foot {
     display: none;
   }
 
+  .composer-shell {
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .composer-field {
+    gap: 0;
+  }
+
   #user-input {
-    min-height: 78px;
+    min-height: 46px;
+    max-height: 132px;
+    padding: 11px 14px;
+    border-radius: 16px;
+    line-height: 1.55;
+  }
+
+  .choice-chip {
+    min-width: min(72vw, 280px);
     padding: 12px 13px;
     border-radius: 16px;
+  }
+
+  .drawer-shortcuts {
+    grid-template-columns: 1fr;
   }
 
   .toast-stack {
@@ -1831,17 +1681,29 @@ svg {
     </div>
 
     <div class="topbar-actions">
-      <button type="button" class="ghost-btn" aria-label="打开档案室" :aria-expanded="drawerOpen" @click="toggleDrawer()">
+      <button
+        type="button"
+        class="ghost-btn menu-btn"
+        :aria-label="isCompact ? '打开菜单' : '打开档案室'"
+        :title="isCompact ? '打开菜单' : '打开档案室'"
+        :aria-expanded="drawerOpen"
+        @click="toggleDrawer()"
+      >
         <span class="btn-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <svg x-show="!isCompact" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 7.5h7l2 2H21v7.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
             <path d="M3 7.5v-1A2.5 2.5 0 0 1 5.5 4h4.8a2 2 0 0 1 1.4.58l1.3 1.32"/>
           </svg>
+          <svg x-show="isCompact" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 7h16"/>
+            <path d="M4 12h16"/>
+            <path d="M4 17h16"/>
+          </svg>
         </span>
-        <span>档案</span>
+        <span class="btn-label" x-text="isCompact ? '菜单' : '档案'"></span>
       </button>
 
-      <button type="button" class="ghost-btn" aria-label="保存当前进度" :disabled="busy" @click="saveGame()">
+      <button type="button" class="ghost-btn" x-show="!isCompact" aria-label="保存当前进度" :disabled="busy" @click="saveGame()">
         <span class="btn-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M5 4h11l3 3v12.5A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5Z"/>
@@ -1852,7 +1714,7 @@ svg {
         <span>存档</span>
       </button>
 
-      <button type="button" class="ghost-btn danger" aria-label="重新选择故事" :disabled="busy" @click="showResetConfirmation()">
+      <button type="button" class="ghost-btn danger" x-show="!isCompact" aria-label="重新选择故事" :disabled="busy" @click="showResetConfirmation()">
         <span class="btn-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 12a9 9 0 1 0 2.64-6.36"/>
@@ -1867,25 +1729,6 @@ svg {
   <div class="main-shell">
     <section class="chat-panel">
       <div class="chat-shell">
-        <section class="scene-strip">
-          <div class="scene-main">
-            <div class="scene-title">当前场景</div>
-            <div class="scene-summary" x-text="sceneSummary()"></div>
-            <div class="scene-meta">
-              <template x-for="chip in sceneChips()" :key="chip.label">
-                <div class="meta-chip">
-                  <span class="meta-chip-label" x-text="chip.label"></span>
-                  <span class="meta-chip-value" x-text="chip.value"></span>
-                </div>
-              </template>
-            </div>
-          </div>
-
-          <div class="scene-state" x-show="shouldShowSceneState()">
-            <div class="state-pill" :class="statusToneClass()" aria-live="polite" x-text="statusLabel()"></div>
-          </div>
-        </section>
-
         <div id="messages" class="message-scroll" x-ref="messages">
           <div class="message-stage">
             <template x-if="!messages.length && !busy">
@@ -1940,14 +1783,14 @@ svg {
           </div>
         </div>
 
-        <div class="feedback-strip" x-show="noticeText">
+        <div class="feedback-strip" x-show="shouldShowNotice()">
           <div class="notice-banner" :class="noticeTone ? `tone-${noticeTone}` : ''">
             <div class="notice-badge" x-text="noticeBadge()"></div>
             <div x-text="noticeText"></div>
           </div>
         </div>
 
-        <section class="choice-rail" x-show="choices.length">
+        <section class="choice-rail" x-show="shouldShowChoices()">
           <div class="choice-rail-head">
             <div class="choice-rail-title">建议行动</div>
             <div class="choice-rail-subtitle">选项只是建议，也可以直接输入你想说的话。</div>
@@ -1963,13 +1806,9 @@ svg {
         </section>
 
         <section class="composer-shell">
-          <div class="composer-head">
+          <div class="composer-head" x-show="!isCompact">
             <div class="composer-title">你的行动</div>
             <div class="composer-tools">
-              <div class="mobile-quick-actions" x-show="isCompact">
-                <button type="button" class="mini-action-btn" :aria-expanded="drawerOpen" @click="toggleDrawer()">档案</button>
-                <button type="button" class="mini-action-btn" :disabled="busy" @click="saveGame()">存档</button>
-              </div>
               <div class="composer-hint" x-text="isCompact ? '手机端使用发送按钮' : 'Enter 发送，Shift + Enter 换行'"></div>
             </div>
           </div>
@@ -1983,24 +1822,32 @@ svg {
                 :disabled="busy"
                 placeholder="输入台词、动作，或一段压低声音的心思。"
                 @input="handleComposerInput($event)"
+                @focus="handleComposerFocus()"
+                @blur="handleComposerBlur()"
                 @keydown="handleInputKeydown($event)"
               ></textarea>
             </div>
 
             <div class="composer-actions">
-              <button type="button" class="primary-btn" :disabled="busy || !trimmedInput()" @click="submitCurrentInput()">
+              <button
+                type="button"
+                class="primary-btn"
+                :aria-label="busy ? '处理中' : '发送'"
+                :disabled="busy || !trimmedInput()"
+                @click="submitCurrentInput()"
+              >
                 <span class="btn-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                     <path d="m4 12 15-7-3.8 14-4.4-5.1Z"/>
                     <path d="m19 5-7.8 8"/>
                   </svg>
                 </span>
-                <span x-text="busy ? '处理中' : '发送'"></span>
+                <span class="send-label" x-text="busy ? '处理中' : '发送'"></span>
               </button>
             </div>
           </div>
 
-          <div class="composer-foot">
+          <div class="composer-foot" x-show="!isCompact">
             <div>可以直接输入，也可以点击上方建议行动。</div>
           </div>
         </section>
@@ -2012,7 +1859,7 @@ svg {
     <aside class="archive-drawer" :class="{ open: drawerOpen }">
       <div class="drawer-head">
         <div class="drawer-title-wrap">
-          <div class="drawer-title">档案室</div>
+          <div class="drawer-title" x-text="isCompact ? '菜单' : '档案室'"></div>
         </div>
 
         <div class="drawer-actions">
@@ -2033,8 +1880,15 @@ svg {
       </div>
 
       <div class="drawer-body">
-        <div class="drawer-copy">
-          存档以最近焦点展示。读档前会覆盖当前运行时状态。
+        <div class="drawer-copy" x-text="isCompact ? '存档、重开和读档都收在这里。' : '存档以最近焦点展示。读档前会覆盖当前运行时状态。'"></div>
+
+        <div class="drawer-shortcuts" x-show="isCompact">
+          <button type="button" class="ghost-btn" :disabled="busy" @click="saveFromDrawer()">
+            <span>存档</span>
+          </button>
+          <button type="button" class="ghost-btn danger" :disabled="busy" @click="resetFromDrawer()">
+            <span>重开</span>
+          </button>
         </div>
 
         <template x-if="saveLoading">
@@ -2185,7 +2039,6 @@ marked.setOptions({ breaks: true, gfm: true });
 document.addEventListener("alpine:init", () => {
   Alpine.data("agentGalApp", () => ({
     busy: false,
-    statusText: "",
     noticeText: "",
     noticeTone: "",
     noticeTimer: null,
@@ -2214,13 +2067,12 @@ document.addEventListener("alpine:init", () => {
     toastTimers: new Map(),
     toasts: [],
     mediaQuery: null,
+    visualViewport: null,
+    viewportBaseline: 0,
+    keyboardVisible: false,
+    inputFocused: false,
     handleViewportChangeBound: null,
-    sceneMeta: {
-      summary: "",
-      time: "",
-      location: "",
-      present: "",
-    },
+    handleVisualViewportChangeBound: null,
     agentStyleByAuthor: {},
     agentPalette: [
       { color: "#b45a64", border: "rgba(180, 90, 100, 0.18)", background: "rgba(180, 90, 100, 0.08)" },
@@ -2231,6 +2083,7 @@ document.addEventListener("alpine:init", () => {
 
     async init() {
       this.setupViewportListener();
+      this.setupVisualViewportListener();
       this.storyModalOpen = true;
       this.resizeComposer();
 
@@ -2257,6 +2110,9 @@ document.addEventListener("alpine:init", () => {
       if (this.mediaQuery && this.handleViewportChangeBound) {
         this.mediaQuery.removeEventListener("change", this.handleViewportChangeBound);
       }
+      if (this.visualViewport && this.handleVisualViewportChangeBound) {
+        this.visualViewport.removeEventListener("resize", this.handleVisualViewportChangeBound);
+      }
       this.cancelActiveStream({ silent: true });
       if (this.noticeTimer) {
         window.clearTimeout(this.noticeTimer);
@@ -2270,9 +2126,35 @@ document.addEventListener("alpine:init", () => {
       this.handleViewportChangeBound = (event) => {
         this.isCompact = event.matches;
         this.drawerOpen = !event.matches;
+        if (!event.matches) {
+          this.inputFocused = false;
+        }
+        this.updateKeyboardState();
       };
       this.handleViewportChangeBound(this.mediaQuery);
       this.mediaQuery.addEventListener("change", this.handleViewportChangeBound);
+    },
+
+    setupVisualViewportListener() {
+      if (!window.visualViewport) return;
+      this.visualViewport = window.visualViewport;
+      this.handleVisualViewportChangeBound = () => this.updateKeyboardState();
+      this.updateKeyboardState();
+      this.visualViewport.addEventListener("resize", this.handleVisualViewportChangeBound);
+    },
+
+    updateKeyboardState() {
+      const viewportHeight = this.visualViewport ? this.visualViewport.height : window.innerHeight;
+      if (!viewportHeight) return;
+      if (!this.isCompact) {
+        this.viewportBaseline = viewportHeight;
+        this.keyboardVisible = false;
+        return;
+      }
+      if (!this.viewportBaseline || viewportHeight > this.viewportBaseline) {
+        this.viewportBaseline = viewportHeight;
+      }
+      this.keyboardVisible = this.inputFocused && (this.viewportBaseline - viewportHeight > 120);
     },
 
     handleEscape() {
@@ -2289,38 +2171,23 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    statusToneClass() {
-      if (this.statusText) return "tone-busy";
-      if (this.noticeTone === "error") return "tone-error";
-      return "tone-idle";
-    },
-
-    shouldShowSceneState() {
-      return Boolean(this.statusText || this.noticeTone === "error");
-    },
-
-    statusLabel() {
-      if (this.statusText) return this.statusText;
-      if (this.noticeTone === "error") return "需要处理";
-      return "就绪";
-    },
-
-    sceneSummary() {
-      return this.sceneMeta.summary || "等待你选定故事，场景概览会在这里持续更新。";
-    },
-
-    sceneChips() {
-      const chips = [];
-      if (this.sceneMeta.time) chips.push({ label: "时间", value: this.sceneMeta.time });
-      if (this.sceneMeta.location) chips.push({ label: "地点", value: this.sceneMeta.location });
-      if (this.sceneMeta.present) chips.push({ label: "在场", value: this.sceneMeta.present });
-      return chips;
-    },
-
     noticeBadge() {
       if (this.noticeTone === "error") return "!";
       if (this.noticeTone === "success") return "OK";
       return "i";
+    },
+
+    isInputMode() {
+      return this.isCompact && (this.inputFocused || this.keyboardVisible);
+    },
+
+    shouldShowNotice() {
+      if (!this.noticeText) return false;
+      return !this.isInputMode() || this.noticeTone === "error";
+    },
+
+    shouldShowChoices() {
+      return this.choices.length > 0 && !this.isInputMode();
     },
 
     trimmedInput() {
@@ -2341,11 +2208,24 @@ document.addEventListener("alpine:init", () => {
     },
 
     toggleDrawer() {
+      if (this.isCompact) {
+        this.blurComposer();
+      }
       this.drawerOpen = !this.drawerOpen;
     },
 
     closeDrawer() {
       this.drawerOpen = false;
+    },
+
+    async saveFromDrawer() {
+      this.closeDrawer();
+      await this.saveGame();
+    },
+
+    resetFromDrawer() {
+      this.closeDrawer();
+      this.showResetConfirmation();
     },
 
     async fetchJson(url, options = {}) {
@@ -2379,14 +2259,6 @@ document.addEventListener("alpine:init", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-    },
-
-    setBusyStatus(text) {
-      this.statusText = text;
-    },
-
-    clearBusyStatus() {
-      this.statusText = "";
     },
 
     clearNotice() {
@@ -2492,10 +2364,6 @@ document.addEventListener("alpine:init", () => {
       return `${plain.slice(0, maxLength - 1)}…`;
     },
 
-    uniqueStrings(values) {
-      return [...new Set(values.map(value => String(value || "").trim()).filter(Boolean))];
-    },
-
     stripMarkdown(value) {
       return String(value || "")
         .replace(/!\[[^\]]*]\([^)]*\)/g, "")
@@ -2508,11 +2376,29 @@ document.addEventListener("alpine:init", () => {
       this.resizeComposer(event.target);
     },
 
+    handleComposerFocus() {
+      this.inputFocused = true;
+      this.updateKeyboardState();
+    },
+
+    handleComposerBlur() {
+      this.inputFocused = false;
+      this.keyboardVisible = false;
+    },
+
+    blurComposer() {
+      const textarea = this.$refs?.composerInput;
+      if (textarea) {
+        textarea.blur();
+      }
+    },
+
     resizeComposer(target = null) {
       const textarea = target || this.$refs?.composerInput;
       if (!textarea) return;
       textarea.style.height = "auto";
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
+      const maxHeight = this.isCompact ? 132 : 240;
+      textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
     },
 
     resetComposer() {
@@ -2614,41 +2500,6 @@ document.addEventListener("alpine:init", () => {
       return this.sanitizeHtml(marked.parse(source));
     },
 
-    summarizeSceneLine(line) {
-      const plain = this.stripMarkdown(line).trim();
-      if (!plain) return "";
-
-      const sentenceMatch = plain.match(/^(.+?[。！？!?])/);
-      if (sentenceMatch && sentenceMatch[1].length <= 42) {
-        return sentenceMatch[1];
-      }
-
-      const clauseMatch = plain.match(/^(.+?[，；,;])/);
-      if (clauseMatch && clauseMatch[1].length >= 8) {
-        return this.excerptPlain(clauseMatch[1], 36);
-      }
-
-      return this.excerptPlain(plain, 36);
-    },
-
-    extractPresenceNames(text) {
-      const plain = this.stripMarkdown(text).trim();
-      if (!plain) return [];
-
-      const colonMatches = [...plain.matchAll(/(?:^|[，、；;]\s*)([^：:,，、；;]{1,12})\s*[：:]/g)]
-        .map(match => match[1].trim());
-      if (colonMatches.length) {
-        return this.uniqueStrings(colonMatches);
-      }
-
-      const simpleNames = plain
-        .split(/[、，,\/]/)
-        .map(item => item.trim())
-        .filter(item => item && item.length <= 12 && !/[。！？!?]/.test(item));
-
-      return this.uniqueStrings(simpleNames);
-    },
-
     getAgentStyle(author) {
       const key = author || "角色";
       if (!this.agentStyleByAuthor[key]) {
@@ -2656,87 +2507,6 @@ document.addEventListener("alpine:init", () => {
         this.agentStyleByAuthor[key] = this.agentPalette[index];
       }
       return this.agentStyleByAuthor[key];
-    },
-
-    extractNarratorMeta(content) {
-      const result = {
-        summary: "",
-        time: "",
-        location: "",
-        present: "",
-      };
-
-      const lines = String(content || "")
-        .split("\n")
-        .map(line => line.trim())
-        .filter(Boolean);
-
-      const presentItems = [];
-      let readingPresenceList = false;
-
-      const readField = (line, field) => {
-        const patterns = [
-          new RegExp(`^\\*\\*${field}\\*\\*[:：]\\s*(.*)$`),
-          new RegExp(`^\\*\\*${field}[:：]\\*\\*\\s*(.*)$`),
-          new RegExp(`^${field}[:：]\\s*(.*)$`),
-        ];
-        for (const pattern of patterns) {
-          const match = line.match(pattern);
-          if (match) return this.stripMarkdown(match[1]).trim();
-        }
-        return null;
-      };
-
-      for (const line of lines) {
-        const time = readField(line, "时间");
-        if (time !== null) {
-          result.time = time;
-          readingPresenceList = false;
-          continue;
-        }
-
-        const location = readField(line, "地点");
-        if (location !== null) {
-          result.location = location;
-          readingPresenceList = false;
-          continue;
-        }
-
-        const presence = readField(line, "在场");
-        if (presence !== null) {
-          if (presence) {
-            presentItems.push(...this.extractPresenceNames(presence));
-            readingPresenceList = false;
-          } else {
-            readingPresenceList = true;
-          }
-          continue;
-        }
-
-        if (readingPresenceList && /^\s*[-*+•]\s+/.test(line)) {
-          presentItems.push(...this.extractPresenceNames(line.replace(/^\s*[-*+•]\s+/, "")));
-          continue;
-        }
-
-        readingPresenceList = false;
-
-        if (!result.summary && !/^\s*[-*+•]\s+/.test(line)) {
-          result.summary = this.summarizeSceneLine(line);
-        }
-      }
-
-      result.present = this.uniqueStrings(presentItems).join("、");
-      return result;
-    },
-
-    updateSceneMeta(content) {
-      const extracted = this.extractNarratorMeta(content);
-      this.sceneMeta = {
-        summary: extracted.summary || this.sceneMeta.summary,
-        time: extracted.time || this.sceneMeta.time,
-        location: extracted.location || this.sceneMeta.location,
-        present: extracted.present || this.sceneMeta.present,
-      };
     },
 
     addMessage(kind, author, content) {
@@ -2760,9 +2530,6 @@ document.addEventListener("alpine:init", () => {
       };
 
       this.messages.push(message);
-      if (kind === "narrator") {
-        this.updateSceneMeta(text);
-      }
       this.$nextTick(() => {
         if (this.$refs.messages) {
           this.$refs.messages.scrollTop = this.$refs.messages.scrollHeight;
@@ -2783,12 +2550,6 @@ document.addEventListener("alpine:init", () => {
       this.messages = [];
       this.choices = [];
       this.nextMessageId = 1;
-      this.sceneMeta = {
-        summary: "",
-        time: "",
-        location: "",
-        present: "",
-      };
       this.agentStyleByAuthor = {};
       this.clearNotice();
       this.resetComposer();
@@ -2800,7 +2561,6 @@ document.addEventListener("alpine:init", () => {
       this.storyModalOpen = false;
       this.resetConversation();
       this.busy = true;
-      this.setBusyStatus("正在布置开场");
 
       try {
         const response = await this.postJson("/api/new_game", { story_id: storyId });
@@ -2817,7 +2577,6 @@ document.addEventListener("alpine:init", () => {
         this.setNotice("新故事启动失败，请稍后再试。", "error", true);
       } finally {
         this.busy = false;
-        this.clearBusyStatus();
       }
     },
 
@@ -2855,11 +2614,13 @@ document.addEventListener("alpine:init", () => {
       const message = String(text || "").trim();
       if (!message || this.busy) return;
 
+      if (this.isCompact) {
+        this.blurComposer();
+      }
       this.addMessage("player", "你", message);
       this.resetComposer();
       this.choices = [];
       this.busy = true;
-      this.setBusyStatus("旁白与角色正在回应");
 
       try {
         await this.streamChat(message);
@@ -2870,7 +2631,6 @@ document.addEventListener("alpine:init", () => {
         }
       } finally {
         this.busy = false;
-        this.clearBusyStatus();
         this.activeStreamController = null;
       }
     },
@@ -2922,10 +2682,8 @@ document.addEventListener("alpine:init", () => {
         const event = JSON.parse(payload);
         if (event.type === "narrator") {
           this.addMessage("narrator", event.author || "旁白", event.content);
-          this.setBusyStatus("角色开始接续这一轮");
         } else if (event.type === "agent") {
           this.addMessage("agent", event.author, event.content);
-          this.setBusyStatus(`已收到 ${event.author} 的回应`);
         } else if (event.type === "choices") {
           this.choices = event.choices || [];
           if (this.choices.length) {
@@ -2933,8 +2691,6 @@ document.addEventListener("alpine:init", () => {
           } else {
             this.setNotice("这一轮没有预设选项，你可以直接输入下一句。", "success");
           }
-        } else if (event.type === "done") {
-          this.clearBusyStatus();
         }
       } catch (error) {
         this.setNotice("实时消息解析失败，界面可能没有完整更新。", "error", true);
@@ -2984,7 +2740,6 @@ document.addEventListener("alpine:init", () => {
 
     async loadSave(filename) {
       this.busy = true;
-      this.setBusyStatus("正在加载存档");
 
       try {
         const response = await this.postJson("/api/load", { filename });
@@ -3002,7 +2757,6 @@ document.addEventListener("alpine:init", () => {
         this.pushToast("读档失败", "error");
       } finally {
         this.busy = false;
-        this.clearBusyStatus();
       }
     },
 
@@ -3013,7 +2767,6 @@ document.addEventListener("alpine:init", () => {
         return;
       }
 
-      this.setBusyStatus("正在打包存档");
       try {
         const response = await this.fetchJson("/api/save", { method: "POST" });
         this.hasSave = true;
@@ -3024,8 +2777,6 @@ document.addEventListener("alpine:init", () => {
         const message = error instanceof Error ? error.message : "存档失败，请稍后再试。";
         this.setNotice(`存档失败：${message}`, "error", true);
         this.pushToast("存档失败", "error");
-      } finally {
-        this.clearBusyStatus();
       }
     },
   }));
