@@ -80,15 +80,19 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
     existing_agents = _format_existing_agents()
     relation_to_context = _build_relation_to_context(spec.relation_to)
 
-    spec_block = (
-        "<spec>\n"
-        f"agent_id: {spec.name}\n"
-        f"relation_to: {spec.relation_to}\n"
-        f"relation_description: {spec.relation_description}\n"
-        f"background_hint: {spec.background_hint or '（无）'}\n"
-        f"initial_location: {spec.initial_location or '（未指定，可按场景推断）'}\n"
-        "</spec>"
-    )
+    spec_lines = [
+        "<spec>",
+        f"agent_id: {spec.character_id}",
+        f"relation_to: {spec.relation_to}",
+        f"relation_description: {spec.relation_description}",
+        f"background_hint: {spec.background_hint or '（无）'}",
+    ]
+    if spec.display_name.strip():
+        spec_lines.append(f"display_name: {spec.display_name.strip()}")
+    if spec.initial_location.strip():
+        spec_lines.append(f"initial_location: {spec.initial_location.strip()}")
+    spec_lines.append("</spec>")
+    spec_block = "\n".join(spec_lines)
     context_block = (
         "<world_now>\n"
         f"当前时间：{current_time}\n"
@@ -104,12 +108,12 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
 
 def _validate_spec(spec: NewCharacterSpec) -> str | None:
     """返回错误描述；None 表示校验通过。"""
-    name = spec.name.strip()
-    if not _is_valid_agent_name(name):
-        return f"非法 agent_id: {spec.name!r}"
+    character_id = spec.character_id.strip()
+    if not _is_valid_agent_name(character_id):
+        return f"非法 agent_id: {spec.character_id!r}"
     existing = set(get_agent_names(include_narrator=True))
-    if name in existing:
-        return f"agent_id 已存在: {name}"
+    if character_id in existing:
+        return f"agent_id 已存在: {character_id}"
     valid_anchors = set(get_agent_names(include_narrator=False)) | {"player"}
     anchor = spec.relation_to.strip()
     if anchor not in valid_anchors:
@@ -135,7 +139,8 @@ def _write_status_md(agent_dir: Path, status: dict[str, str], spec: NewCharacter
         if key not in ordered_keys:
             ordered_keys.append(key)
 
-    lines = [f"# {spec.name} 的状态", ""]
+    title = spec.display_name.strip() or spec.character_id
+    lines = [f"# {title} 的状态", ""]
     for key in ordered_keys:
         lines.append(f"## {key}")
         lines.append(fields.get(key, ""))
@@ -168,7 +173,7 @@ def _write_bootstrap_files(
     spec: NewCharacterSpec,
     creation: NewCharacterCreation,
 ) -> None:
-    agent_dir = CHARACTERS_DIR / spec.name
+    agent_dir = CHARACTERS_DIR / spec.character_id
     agent_dir.mkdir(parents=True, exist_ok=True)
 
     (agent_dir / "soul.md").write_text(creation.soul.strip() + "\n", encoding="utf-8")
@@ -183,14 +188,14 @@ def _write_bootstrap_files(
         read_agent_file("narrator", "status.md"), "当前时间"
     ).strip()
     if last_seen:
-        write_sidecar_json(spec.name, ".last_seen.json", {"last_seen": last_seen})
+        write_sidecar_json(spec.character_id, ".last_seen.json", {"last_seen": last_seen})
 
 
 async def create_character(spec: NewCharacterSpec) -> bool:
     """孵化新角色；失败时只记 warning，不抛异常（让本轮对话继续）。"""
     error = _validate_spec(spec)
     if error:
-        routing_logger.warning(f"[character_factory] 拒绝生成 {spec.name!r}：{error}")
+        routing_logger.warning(f"[character_factory] 拒绝生成 {spec.character_id!r}：{error}")
         return False
 
     config = get_character_factory_llm_config()
@@ -201,23 +206,23 @@ async def create_character(spec: NewCharacterSpec) -> bool:
             output_type=NewCharacterCreation,
             timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
             workflow_name="agentgal_character_factory",
-            trace_metadata={"agent_name": "character_factory", "target": spec.name},
+            trace_metadata={"agent_name": "character_factory", "target": spec.character_id},
             usage_agent="character_factory",
             usage_phase="agent_run",
             model_name=config["model"],
         )
     except Exception as e:
-        routing_logger.error(f"[character_factory] 生成 {spec.name!r} 失败: {e}")
+        routing_logger.error(f"[character_factory] 生成 {spec.character_id!r} 失败: {e}")
         return False
 
     if not creation.soul.strip():
-        routing_logger.error(f"[character_factory] {spec.name!r} 返回空 soul，放弃")
+        routing_logger.error(f"[character_factory] {spec.character_id!r} 返回空 soul，放弃")
         return False
 
     try:
         _write_bootstrap_files(spec, creation)
     except Exception as e:
-        routing_logger.error(f"[character_factory] 写入 {spec.name!r} 文件失败: {e}")
+        routing_logger.error(f"[character_factory] 写入 {spec.character_id!r} 文件失败: {e}")
         return False
 
     # 新角色进入目录后，narrator 的 system prompt 里的 valid_targets 需要刷新
@@ -227,6 +232,6 @@ async def create_character(spec: NewCharacterSpec) -> bool:
         routing_logger.warning(f"[character_factory] 刷新 narrator agent 失败: {e}")
 
     routing_logger.info(
-        f"[character_factory] 生成 {spec.name!r}（锚点 relation_to={spec.relation_to}）"
+        f"[character_factory] 生成 {spec.character_id!r}（锚点 relation_to={spec.relation_to}）"
     )
     return True

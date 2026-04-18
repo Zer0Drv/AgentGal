@@ -203,6 +203,7 @@ def test_build_user_message_injects_world_now_for_narrator(character_dir, patche
     )
 
     assert "<world_now>" in message
+    assert "<relations>" not in message
     assert "<my_schedule>" not in message
 
 
@@ -222,6 +223,7 @@ def test_build_user_message_injects_player_views_for_narrator(character_dir, pat
     )
 
     assert "<player_views>" in message
+    assert "<relations>" not in message
     assert "## mitsuki / 美月 对玩家" in message
     assert "- 和玩家的关系：刚开始在意" in message
     assert "对方是什么人" not in message

@@ -134,18 +134,18 @@ async def bootstrap_new_characters(
     """孵化 narrator 请求的新角色，并清理 targets 里的新角色引用。
 
     返回 (最新 targets, 成功创建的 agent_id 列表)。
-    只有「本来就在 targets 里」且「孵化成功」的新角色，才会保留在本轮回应名单中；
-    仅被创建但未被 narrator 点名的新角色，不会被强制拉进本轮发言。
+    如果 narrator 漏掉了某个已成功孵化的新角色，这里会做一次兜底补入，
+    确保创建成功的新角色本轮可以回应。
     """
     if not specs:
         return targets, []
 
     created: list[str] = []
-    requested = {spec.name for spec in specs}
+    requested = {spec.character_id for spec in specs}
     for spec in specs:
         ok = await create_character(spec)
         if ok:
-            created.append(spec.name)
+            created.append(spec.character_id)
 
     created_set = set(created)
     filtered_targets = [
@@ -153,7 +153,13 @@ async def bootstrap_new_characters(
         for target in targets
         if target not in requested or target in created_set
     ]
-    return list(dict.fromkeys(filtered_targets)), created
+    missing_created = [agent_id for agent_id in created if agent_id not in filtered_targets]
+    for agent_id in missing_created:
+        routing_logger.warning(
+            "[bootstrap_new_characters] 新角色 %s 创建成功但未进入 targets，已自动补入",
+            agent_id,
+        )
+    return list(dict.fromkeys(filtered_targets + missing_created)), created
 
 
 async def run_agent_in_scene(

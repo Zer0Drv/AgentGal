@@ -404,8 +404,16 @@ def build_user_message(
     status_content = read_agent_file(agent_name, "status.md")
     my_schedule = build_my_schedule_block(agent_name) if not is_narrator else ""
     world_now = build_world_now_block() if is_narrator else ""
-    relations = build_relations_block(agent_name, scene_targets=scene_targets)
-    player_views = build_player_views_block(agent_name, scene_targets=scene_targets)
+    relations = (
+        ""
+        if is_narrator
+        else build_relations_block(agent_name, scene_targets=scene_targets)
+    )
+    player_views = (
+        build_player_views_block(agent_name, scene_targets=scene_targets)
+        if is_narrator
+        else ""
+    )
 
     parts.append(my_schedule)
     parts.append(f"<growth>\n{growth_content.strip()}\n</growth>" if growth_content else "")

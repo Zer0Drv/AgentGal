@@ -182,7 +182,7 @@ class Narrator:
         async def _run(narrator_input: str) -> tuple[list[str], str, list[NewCharacterSpec]]:
             output = await self._run_narrator(narrator_input, raw_messages)
             new_chars = self._filter_new_characters(output.new_characters, valid_agents)
-            announced = {spec.name for spec in new_chars}
+            announced = {spec.character_id for spec in new_chars}
             valid_targets = [t for t in output.targets if t in valid_agents or t in announced]
             scene = self._sanitize_scene_description(output.content)
             return valid_targets, scene, new_chars
@@ -234,31 +234,33 @@ class Narrator:
         kept: list[NewCharacterSpec] = []
         seen: set[str] = set()
         for spec in specs:
-            name = spec.name.strip()
+            character_id = spec.character_id.strip()
+            display_name = spec.display_name.strip()
             relation_to = spec.relation_to.strip()
             description = spec.relation_description.strip()
-            if not name or name in reserved or name in seen:
+            if not character_id or character_id in reserved or character_id in seen:
                 continue
             if relation_to not in valid_anchors:
                 routing_logger.warning(
-                    f"[narrator] new_characters 中 {name!r} 的 relation_to={relation_to!r} 不合法，跳过"
+                    f"[narrator] new_characters 中 {character_id!r} 的 relation_to={relation_to!r} 不合法，跳过"
                 )
                 continue
             if not description:
                 routing_logger.warning(
-                    f"[narrator] new_characters 中 {name!r} 缺 relation_description，跳过"
+                    f"[narrator] new_characters 中 {character_id!r} 缺 relation_description，跳过"
                 )
                 continue
             kept.append(
                 NewCharacterSpec(
-                    name=name,
+                    character_id=character_id,
+                    display_name=display_name,
                     relation_to=relation_to,
                     relation_description=description,
                     background_hint=spec.background_hint.strip(),
                     initial_location=spec.initial_location.strip(),
                 )
             )
-            seen.add(name)
+            seen.add(character_id)
         return kept
 
     async def apply_state_updates(self, output: StateUpdaterOutput) -> None:

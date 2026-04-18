@@ -152,71 +152,6 @@ def test_build_relations_block_character_empty_when_no_candidates(
 
 
 # ---------------------------------------------------------------------------
-# build_relations_block: narrator audience
-# ---------------------------------------------------------------------------
-
-
-def test_build_relations_block_narrator_lists_each_source(character_dir, patched_agents):
-    _write_character(
-        character_dir,
-        "narrator",
-        status="## 当前时间\n4月3日 星期一 8:23\n\n## 场景\n教室\n",
-    )
-    _write_character(
-        character_dir,
-        "mitsuki",
-        soul="# 美月\n",
-        status="## 当前位置\n教室\n",
-        relations="# 我眼中的其他人\n\n## lilith\nM 看 L\n",
-    )
-    _write_character(
-        character_dir,
-        "lilith",
-        soul="# 莉莉丝\n",
-        status="## 当前位置\n教室\n",
-        relations="# 我眼中的其他人\n\n## mitsuki\nL 看 M\n",
-    )
-    patched_agents(["mitsuki", "lilith"])
-
-    block = prompt_builder.build_relations_block("narrator")
-
-    assert "## mitsuki / 美月 对其他人的看法" in block
-    assert "## lilith / 莉莉丝 对其他人的看法" in block
-    assert "- lilith / 莉莉丝：M 看 L" in block
-    assert "- mitsuki / 美月：L 看 M" in block
-    # narrator 视角也不再关心每人对玩家的看法（那是 user.md / status 的事）
-    assert "玩家" not in block
-
-
-def test_build_relations_block_narrator_skips_offstage_agents(character_dir, patched_agents):
-    _write_character(
-        character_dir,
-        "narrator",
-        status="## 当前时间\n4月3日 星期一 8:23\n\n## 场景\n教室\n",
-    )
-    _write_character(
-        character_dir,
-        "mitsuki",
-        soul="# 美月\n",
-        status="## 当前位置\n教室\n",
-        relations="# 我眼中的其他人\n\n## player\nM 看 P\n",
-    )
-    _write_character(
-        character_dir,
-        "lilith",
-        soul="# 莉莉丝\n",
-        status="## 当前位置\n图书馆\n",
-        relations="# 我眼中的其他人\n\n## player\n不该出现\n",
-    )
-    patched_agents(["mitsuki", "lilith"])
-
-    block = prompt_builder.build_relations_block("narrator")
-    assert "mitsuki" in block
-    assert "lilith" not in block
-    assert "不该出现" not in block
-
-
-# ---------------------------------------------------------------------------
 # build_user_message 注入位置
 # ---------------------------------------------------------------------------
 
@@ -240,7 +175,9 @@ def test_build_user_message_injects_relations_for_character(character_dir, patch
     assert "同班同学" in message
 
 
-def test_build_user_message_injects_relations_for_narrator(character_dir, patched_agents):
+def test_build_user_message_does_not_inject_relations_for_narrator(
+    character_dir, patched_agents
+):
     _write_character(
         character_dir,
         "narrator",
@@ -250,8 +187,8 @@ def test_build_user_message_injects_relations_for_narrator(character_dir, patche
         character_dir,
         "mitsuki",
         soul="# 美月\n",
-        status="## 当前位置\n教室\n",
-        relations="# 我眼中的其他人\n\n## player\nM 看 P\n",
+        status="## 当前位置\n教室\n\n## 和玩家的关系\n刚开始在意\n",
+        relations="# 我眼中的其他人\n\n## lilith\nM 看 L\n",
     )
     patched_agents(["mitsuki"])
 
@@ -259,8 +196,9 @@ def test_build_user_message_injects_relations_for_narrator(character_dir, patche
         "narrator", "玩家说话", "", raw_messages=[]
     )
 
-    assert "<relations>" in message
-    assert "## mitsuki / 美月 对其他人的看法" in message
+    assert "<relations>" not in message
+    assert "<player_views>" in message
+    assert "## mitsuki / 美月 对玩家" in message
 
 
 # ---------------------------------------------------------------------------

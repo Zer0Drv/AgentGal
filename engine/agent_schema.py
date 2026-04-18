@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 
 MAX_CHOICE_CHARS = 50
@@ -36,7 +36,8 @@ class NarratorStatus(BaseModel):
 class NewCharacterSpec(BaseModel):
     """narrator 请求动态生成新角色时的最小锚点。"""
 
-    name: str
+    character_id: str = Field(validation_alias=AliasChoices("character_id", "name"))
+    display_name: str = ""
     relation_to: str
     relation_description: str
     background_hint: str = ""
