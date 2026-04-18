@@ -212,6 +212,7 @@ uv run uvicorn server:app --reload
 |---|---|
 | `[consolidation].temperature` | 整理模型温度 |
 | `[consolidation].max_tokens` | 整理输出上限 |
+| `[consolidation].player_profile_max_tokens` | `user.md` 整理输出上限，默认用较小值避免高价模型因无限制输出直接失败 |
 | `[consolidation].growth_dedup_threshold` | `growth.md` 去重阈值 |
 | `[vector].search_limit` | 长期记忆召回条数 |
 | `[vector].rerank_candidate_multiplier` | rerank 前候选放大倍数 |
