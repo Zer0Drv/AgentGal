@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from openai import AsyncOpenAI
 from pydantic_ai import Agent, PromptedOutput
 from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.providers import infer_provider_class
 from pydantic_ai.settings import ModelSettings
 
 from engine.agent_schema import (
@@ -59,9 +60,17 @@ _consolidation_agents: dict[str, StructuredAgent | TextAgent] = {}
 
 
 def _make_sdk_model(config: dict) -> OpenAIChatModel:
+    provider_name = config.get("provider", "openai")
+    provider_class = infer_provider_class(provider_name)
+    provider = provider_class(
+        openai_client=AsyncOpenAI(
+            base_url=config["api_url"],
+            api_key=config["api_key"],
+        )
+    )
     return OpenAIChatModel(
         config["model"],
-        provider=OpenAIProvider(base_url=config["api_url"], api_key=config["api_key"]),
+        provider=provider,
     )
 
 

@@ -12,7 +12,7 @@
 
 - Python 3.11+
 - FastAPI + SSE（服务端推送）
-- pydantic-ai（`pydantic-ai`）—— `Agent` / `PromptedOutput` / `OpenAIChatModel` / `OpenAIProvider`
+- pydantic-ai（`pydantic-ai`）—— `Agent` / `PromptedOutput` / `OpenAIChatModel` / provider-specific `Provider`
 - sqlite-vec + aiosqlite
 - asyncio
 
@@ -36,7 +36,7 @@ agentgal-memos/
 │   ├── prompt_builder.py       # prompt / 历史窗口 / 整理输入构造
 │   └── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 ├── llm/
-│   ├── providers.py            # Provider 配置与 URL 解析（返回 api_url/api_key/model/temperature）
+│   ├── providers.py            # Provider 配置与 URL 解析（返回 provider/api_url/api_key/model/temperature）
 │   ├── embedding.py            # Embeddings 客户端（embed_async / embed_sync）
 │   └── rerank.py               # Rerank API 客户端
 ├── log_config/                 # Logfire 与业务 logger 配置

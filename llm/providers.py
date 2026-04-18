@@ -73,13 +73,25 @@ def get_llm_config(
     参数优先级：传入参数 > 环境变量 > 默认值
 
     Returns:
-        {"api_url": str, "api_key": str, "model": str, "temperature": float}
+        {
+            "provider": str,
+            "api_url": str,
+            "api_key": str,
+            "model": str,
+            "temperature": float,
+        }
     """
     provider = (provider or _get_default_provider()).lower()
     model_id = model_id or _get_default_model_id()
     api_key = api_key or _get_required_env("LLM_API_KEY")
     api_url = _resolve_api_url(provider, api_url or os.getenv("LLM_API_URL"))
-    return {"api_url": api_url, "api_key": api_key, "model": model_id, "temperature": AGENT_TEMPERATURE}
+    return {
+        "provider": provider,
+        "api_url": api_url,
+        "api_key": api_key,
+        "model": model_id,
+        "temperature": AGENT_TEMPERATURE,
+    }
 
 
 def _read_scoped_overrides(env_prefix: str) -> dict[str, str | None]:
