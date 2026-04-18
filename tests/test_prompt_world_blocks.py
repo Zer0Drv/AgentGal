@@ -214,11 +214,6 @@ def test_build_user_message_injects_player_views_for_narrator(character_dir, pat
         "mitsuki",
         "## 当前位置\n教室\n\n## 和玩家的关系\n刚开始在意\n",
         soul="# 美月\n",
-        user=(
-            "# 美月眼中的玩家\n\n"
-            "## 对方是什么人\n- 很会照顾气氛\n\n"
-            "## 我们怎么相处\n- 她会先用玩笑试探玩家的反应\n"
-        ),
     )
     patched_agents(["mitsuki"])
 
@@ -229,8 +224,8 @@ def test_build_user_message_injects_player_views_for_narrator(character_dir, pat
     assert "<player_views>" in message
     assert "## mitsuki / 美月 对玩家" in message
     assert "- 和玩家的关系：刚开始在意" in message
-    assert "很会照顾气氛" in message
-    assert "先用玩笑试探玩家的反应" in message
+    assert "对方是什么人" not in message
+    assert "我们怎么相处" not in message
 
 
 def test_build_user_message_injects_my_schedule_for_character(character_dir, patched_agents):

@@ -213,7 +213,7 @@ world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.jso
 2. `<world_now>`（当前时间 / 当前场景 / 各角色当前位置，合并 `status.md.当前位置` 与 schedule 默认值）
 3. `status.md`
 4. `<relations>`（候选集 = `<world_now>` 在场角色；列出每个在场角色对其他候选的看法。玩家不进候选）
-5. `<player_views>`（列出在场角色各自对玩家的视角，来源于各角色 `status.md` 的「和玩家的关系」与 `user.md` 的玩家画像）
+5. `<player_views>`（列出在场角色各自的「和玩家的关系」，仅来源于各角色 `status.md`）
 6. 本轮玩家输入
 
 `narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点和待触发事件推进当前回合。待触发事件主要由 `state_updater` 从各角色 `打算` 同步，事件名保留角色名（如 `【美月：顺路的约定】`）。

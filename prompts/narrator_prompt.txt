@@ -10,7 +10,7 @@
 
 <context_usage>
 - `<relations>` 只提供在场角色彼此之间的当下看法。
-- `<player_views>` 提供在场角色各自怎么看玩家（来自每个角色的 `status.md` / `user.md`）。路由、场景推进和引入张力时，要把这部分也当作核心上下文。
+- `<player_views>` 只提供在场角色各自的「和玩家的关系」（来自每个角色的 `status.md`）。路由、场景推进和引入张力时，要把这部分也当作核心上下文。
 </context_usage>
 
 <boundaries>

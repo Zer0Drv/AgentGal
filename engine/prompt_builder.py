@@ -320,19 +320,6 @@ def _relation_label(candidate: str) -> str:
     return _format_agent(candidate)
 
 
-def _compact_profile_section(text: str) -> str:
-    """将 user.md 区块压成单行摘要，避免 narrator prompt 过于冗长。"""
-    parts: list[str] = []
-    for line in (text or "").splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("- "):
-            stripped = stripped[2:].strip()
-        parts.append(stripped)
-    return "；".join(parts)
-
-
 def build_relations_block(
     audience: str,
     scene_targets: list[str] | None = None,
@@ -374,7 +361,7 @@ def build_player_views_block(
     audience: str,
     scene_targets: list[str] | None = None,
 ) -> str:
-    """narrator 专用：汇总当前在场角色对玩家的长期视角。"""
+    """narrator 专用：汇总当前在场角色对玩家的关系站位。"""
     if audience != "narrator":
         return ""
 
@@ -385,25 +372,12 @@ def build_player_views_block(
     sections: list[str] = []
     for source in candidates:
         status_content = read_agent_file(source, "status.md")
-        user_content = read_agent_file(source, "user.md")
-
         relation = extract_status_field(status_content, "和玩家的关系").strip()
-        player_identity = _compact_profile_section(
-            extract_status_field(user_content, "对方是什么人")
-        )
-        interaction_pattern = _compact_profile_section(
-            extract_status_field(user_content, "我们怎么相处")
-        )
-
-        if not relation and not player_identity and not interaction_pattern:
+        if not relation:
             continue
 
         lines = [f"## {_relation_label(source)} 对玩家"]
-        lines.append(f"- 和玩家的关系：{relation or '（暂无）'}")
-        if player_identity:
-            lines.append(f"- 对方是什么人：{player_identity}")
-        if interaction_pattern:
-            lines.append(f"- 我们怎么相处：{interaction_pattern}")
+        lines.append(f"- 和玩家的关系：{relation}")
         sections.append("\n".join(lines))
 
     if not sections:
