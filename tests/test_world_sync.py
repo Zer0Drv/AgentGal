@@ -22,6 +22,27 @@ MITSUKI_SCHEDULE = {
     ]
 }
 
+MULTI_PERIOD_SCHEDULE = {
+    "periods": [
+        {
+            "start": "2026-04-01",
+            "end": "2026-07-31",
+            "name": "春学期",
+            "slots": [
+                {"days": ["mon"], "time": "下午", "location": "社团室"},
+            ],
+        },
+        {
+            "start": "2026-09-01",
+            "end": "2026-12-31",
+            "name": "秋学期",
+            "slots": [
+                {"days": ["mon"], "time": "下午", "location": "图书馆"},
+            ],
+        },
+    ]
+}
+
 
 def _write_character(root: Path, name: str, status_body: str, schedule: dict | None = None) -> None:
     agent_dir = root / name
@@ -178,3 +199,23 @@ def test_empty_scene_does_not_clobber_location(character_dir, patched_agents):
 
     loc = _read_status_field(character_dir / "mitsuki" / "status.md", "当前位置")
     assert loc == "教室"
+
+
+def test_slot_change_uses_date_bounded_period(character_dir, patched_agents):
+    _write_character(
+        character_dir,
+        "mitsuki",
+        "## 当前位置\n教室\n\n## 打算\n",
+        schedule=MULTI_PERIOD_SCHEDULE,
+    )
+    patched_agents(["mitsuki"])
+
+    world_sync_module.post_turn_world_sync(
+        scene="天台",
+        targets=[],
+        prev_time="9月1日 星期一 8:23",
+        now_time="9月1日 星期一 14:00",
+    )
+
+    loc = _read_status_field(character_dir / "mitsuki" / "status.md", "当前位置")
+    assert loc == "图书馆"

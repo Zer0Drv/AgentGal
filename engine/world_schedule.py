@@ -8,6 +8,7 @@ status.md.当前位置 始终是现时真相。
 from __future__ import annotations
 
 import re
+from datetime import date as calendar_date
 
 from engine.agent_schema import (
     CharacterSchedule,
@@ -30,6 +31,32 @@ WEEKDAY_CN_TO_EN = {
 }
 
 TIME_BUCKETS = ("上午", "下午", "晚上", "全天")
+
+
+def _parse_month_day(date_text: str) -> tuple[int, int] | None:
+    """解析 ISO 或中文日期为 (month, day)。"""
+    if not date_text:
+        return None
+
+    iso_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", date_text)
+    if iso_match:
+        month, day = int(iso_match.group(2)), int(iso_match.group(3))
+        try:
+            calendar_date(2000, month, day)
+        except ValueError:
+            return None
+        return month, day
+
+    cn_match = re.search(r"(\d{1,2})月(\d{1,2})日", date_text)
+    if cn_match:
+        month, day = int(cn_match.group(1)), int(cn_match.group(2))
+        try:
+            calendar_date(2000, month, day)
+        except ValueError:
+            return None
+        return month, day
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +141,15 @@ def detect_slot_change(prev_time: str, now_time: str) -> bool:
 def _period_covers_date(period: CharacterSchedulePeriod, date: str) -> bool:
     if not date:
         return True
+
+    target_md = _parse_month_day(date)
+    start_md = _parse_month_day(period.start)
+    end_md = _parse_month_day(period.end)
+    if target_md is not None and start_md is not None and end_md is not None:
+        if start_md <= end_md:
+            return start_md <= target_md <= end_md
+        return target_md >= start_md or target_md <= end_md
+
     return period.start <= date <= period.end
 
 

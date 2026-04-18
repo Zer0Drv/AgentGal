@@ -42,7 +42,7 @@ def post_turn_world_sync(
         status_text = read_agent_file(agent, "status.md")
         if extract_status_field(status_text, "打算").strip():
             continue
-        default_loc = get_default_location(agent, now_slot)
+        default_loc = get_default_location(agent, now_slot, now_time)
         if not default_loc:
             continue
         update_status(agent, "当前位置", default_loc)

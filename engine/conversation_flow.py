@@ -131,21 +131,29 @@ async def bootstrap_new_characters(
     specs: list[NewCharacterSpec],
     targets: list[str],
 ) -> tuple[list[str], list[str]]:
-    """孵化 narrator 请求的新角色；成功者加入 targets 末尾。
+    """孵化 narrator 请求的新角色，并清理 targets 里的新角色引用。
 
-    返回 (最新 targets, 成功创建的 agent_id 列表)。失败的 spec 只记日志，不阻塞本轮。
+    返回 (最新 targets, 成功创建的 agent_id 列表)。
+    只有「本来就在 targets 里」且「孵化成功」的新角色，才会保留在本轮回应名单中；
+    仅被创建但未被 narrator 点名的新角色，不会被强制拉进本轮发言。
     """
     if not specs:
         return targets, []
 
     created: list[str] = []
+    requested = {spec.name for spec in specs}
     for spec in specs:
         ok = await create_character(spec)
         if ok:
             created.append(spec.name)
 
-    merged = list(dict.fromkeys([*targets, *created]))
-    return merged, created
+    created_set = set(created)
+    filtered_targets = [
+        target
+        for target in targets
+        if target not in requested or target in created_set
+    ]
+    return list(dict.fromkeys(filtered_targets)), created
 
 
 async def run_agent_in_scene(

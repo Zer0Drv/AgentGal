@@ -115,7 +115,7 @@ server.py        ← shared/ + storage/ + engine/
 - 每轮都必须让至少一个主要角色当轮可感知玩家并回应
 - 描述时间、地点、在场信息、环境、纯 NPC 行为和当前钩子
 - 不新增未来事件；未来事件由 `state_updater` 从角色 `打算` 维护
-- 当剧情需要引入有关系锚的新人物时，通过 `NarratorOutput.new_characters` 列出 `NewCharacterSpec`，由 `engine/character_factory.py` 孵化目录并加入本轮 `targets`；纯路人不生成，直接在 content 中描写
+- 当剧情需要引入有关系锚的新人物时，通过 `NarratorOutput.new_characters` 列出 `NewCharacterSpec`，由 `engine/character_factory.py` 孵化目录；只有 narrator 同时把 Ta 放进 `targets` 且孵化成功时，Ta 才会在本轮回应。纯路人不生成，直接在 content 中描写
 - **绝不替角色说话或决定角色行动**
 
 ## 单轮对话流程
@@ -125,7 +125,7 @@ server.py        ← shared/ + storage/ + engine/
   ↓
 调用 narrator，得到 NarratorOutput（targets + content + new_characters）
   ↓
-孵化 new_characters：`character_factory` 写出 soul/status/relations/memory/growth/user + `.last_seen.json`；成功者加入 targets
+孵化 new_characters：`character_factory` 写出 soul/status/relations/memory/growth/user + `.last_seen.json`；仅保留“原本就在 targets 且孵化成功”的新角色进入本轮回应名单
   ↓
 将 narrator 内容写入单一 raw 历史（带 visible_to）
   ↓
@@ -143,7 +143,7 @@ server.py        ← shared/ + storage/ + engine/
   ↓
 state_updater 从各角色「打算」同步公共「待触发事件」（事件名保留角色名）
   ↓
-world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.json`；跨时段时按 schedule 刷新「无打算」角色的默认位置
+world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.json`；跨时段时按当前游戏时间匹配 schedule period，刷新「无打算」角色的默认位置
 ```
 
 ## Agent 输出与写回机制

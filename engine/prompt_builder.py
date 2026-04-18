@@ -227,7 +227,7 @@ def build_world_now_block() -> str:
     real_locations = _collect_real_locations()
     slot_key = parse_game_time(current_time)
     if slot_key is not None:
-        inverted = query_all_locations(slot_key, real_locations)
+        inverted = query_all_locations(slot_key, real_locations, current_time)
     else:
         inverted = {}
         for agent, loc in real_locations.items():
@@ -297,7 +297,7 @@ def _collect_relation_candidates(
         current_time = extract_status_field(narrator_status, "当前时间").strip()
         slot_key = parse_game_time(current_time)
         if slot_key is not None:
-            loc_map = query_all_locations(slot_key, real_locations)
+            loc_map = query_all_locations(slot_key, real_locations, current_time)
         else:
             loc_map = {}
             for agent, loc in real_locations.items():

@@ -368,7 +368,7 @@ async def test_create_character_seeds_relation_to_when_llm_omits(character_dir, 
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_new_characters_merges_created_into_targets(monkeypatch):
+async def test_bootstrap_new_characters_keeps_only_targeted_successes(monkeypatch):
     async def fake_create_character(spec):
         return spec.name != "bad"
 
@@ -380,10 +380,27 @@ async def test_bootstrap_new_characters_merges_created_into_targets(monkeypatch)
         NewCharacterSpec(name="good2", relation_to="mitsuki", relation_description="x"),
     ]
     targets, created = await conversation_flow_module.bootstrap_new_characters(
+        specs, ["mitsuki", "good1", "bad"]
+    )
+    assert targets == ["mitsuki", "good1"]
+    assert created == ["good1", "good2"]
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_new_characters_does_not_auto_target_created(monkeypatch):
+    async def fake_create_character(spec):
+        return True
+
+    monkeypatch.setattr(conversation_flow_module, "create_character", fake_create_character)
+
+    specs = [
+        NewCharacterSpec(name="good1", relation_to="mitsuki", relation_description="x"),
+    ]
+    targets, created = await conversation_flow_module.bootstrap_new_characters(
         specs, ["mitsuki"]
     )
-    assert targets == ["mitsuki", "good1", "good2"]
-    assert created == ["good1", "good2"]
+    assert targets == ["mitsuki"]
+    assert created == ["good1"]
 
 
 @pytest.mark.asyncio

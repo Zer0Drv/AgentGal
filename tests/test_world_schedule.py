@@ -114,6 +114,12 @@ def test_find_slot_outside_period_returns_none(mitsuki):
     assert find_slot(mitsuki, ("mon", "上午"), date="2026-01-01") is None
 
 
+def test_find_slot_accepts_cn_game_date(mitsuki):
+    slot = find_slot(mitsuki, ("mon", "上午"), date="4月15日 星期一 08:20")
+    assert slot is not None
+    assert slot.location == "教室"
+
+
 def test_find_slot_prefers_explicit_bucket_over_fallback():
     schedule = CharacterSchedule.model_validate(
         {
