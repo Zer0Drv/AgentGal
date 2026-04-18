@@ -9,9 +9,31 @@
 - 不要抢戏：新人角色不是剧情主角，人设服务于 relation_to 和当前场景。
 </goal>
 
+<depth>
+在下面 5 个维度里至少踩到 2-3 个，融进 `<anchor>` 和 `<flavor>` 的具体描写里：
+1. 内外张力：Ta 的表面表现和内在驱动之间存在落差。
+2. 此刻自己的一件小麻烦：Ta 身上有件「不为玩家存在」的事正在运转。
+3. 小 flaw 或反常偏好：一个不完美或反常的点。
+4. 身体语言或口头禅：一个可以被文字还原的具体动作或语气习惯。
+5. 对 relation_to 的情绪分层：对同一个人同时存在多种方向的情绪。
+</depth>
+
+<example rule="depth_reference">
+<role>林小远</role>
+<anchor>
+中文系研三，离答辩还有两周，论文改到凌晨三点。笑起来像没什么心事，对谁都能接两句闲话；对玩家是好奇多过好感——想看看这个人能不能不把她当「学姐」看。
+</anchor>
+<flavor>
+- 说话前先「嗯……」半秒，像每句话都要在心里过一遍
+- 嗜冰美式，三十度的天也点冰美式而不是冰拿铁
+- 被戳中心事会低头整理袖口
+- 记不住人脸，第二次见面常叫错名字，叫错后自己先笑
+</flavor>
+</example>
+
 <format JSON>
 {
-  "soul": "<role>中文显示名</role>\n\n<anchor>\n（2-4 行，写清楚 Ta 是谁、和 relation_to 是什么关系、此刻的内在驱动）\n</anchor>\n\n<flavor>\n（3-5 条，说话 / 动作 / 情绪切换的鲜明细节，避免通用形容词）\n</flavor>\n\n<examples>\n<example>\n<context>（一个典型场景）</context>\n<response>（Ta 的一段典型回应，带动作和语气）</response>\n</example>\n</examples>",
+  "soul": "<role>中文显示名</role>\n\n<anchor>\n（3-5 行。写清楚 Ta 是谁、和 relation_to 是什么关系、此刻手上自己的一件小麻烦，以及一条内外反差——表面 vs 内里不完全一致的那一点）\n</anchor>\n\n<flavor>\n（4-5 条说话 / 动作 / 情绪切换的具体细节。至少 1 条是 flaw 或反常偏好，至少 1 条是独有的身体语言或口头禅。用具体动作 / 场景代替形容词）\n</flavor>\n\n<examples>\n<example>\n<context>（一个典型场景）</context>\n<response>（Ta 的一段典型回应，带动作和语气）</response>\n</example>\n</examples>",
   "status": {
     "身份": "一句话说清社会身份 / 职业 / 在故事里的位置",
     "心境": "当下的长期心理底色，一两句",
