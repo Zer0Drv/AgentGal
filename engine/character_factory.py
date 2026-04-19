@@ -20,7 +20,12 @@ from shared.config import (
     get_agent_names,
 )
 from shared.text_utils import extract_identity, get_display_name
-from storage.agent_files import read_agent_file, resolve_agent_display_name, write_sidecar_json
+from storage.agent_files import (
+    read_agent_file,
+    resolve_agent_display_name,
+    update_status,
+    write_sidecar_json,
+)
 
 
 _RESERVED_NAMES = {"player", "narrator", ""}
@@ -28,7 +33,6 @@ _AGENT_NAME_MAX_LEN = 32
 _STATUS_ORDER = [
     "身份",
     "心境",
-    "当前位置",
     "和玩家的关系",
     "在意的事",
     "打算",
@@ -56,14 +60,9 @@ def _is_valid_agent_name(name: str) -> bool:
     return all((c.isascii() and c.isalnum()) or c in "_-" for c in name)
 
 
-def _format_in_scene_agents(current_scene: str) -> str:
+def _format_existing_agents() -> str:
     rows: list[str] = []
     for agent in get_agent_names(include_narrator=False):
-        status = read_agent_file(agent, "status.md")
-        location = extract_status_field(status, "当前位置").strip() if status else ""
-        if current_scene and location:
-            if current_scene not in location and location not in current_scene:
-                continue
         soul = read_agent_file(agent, "soul.md")
         display = get_display_name(agent, soul) if soul else agent
         identity = extract_identity(soul) if soul else ""
@@ -76,7 +75,7 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
     narrator_status = read_agent_file("narrator", "status.md")
     current_time = extract_status_field(narrator_status, "当前时间").strip() or "（未知）"
     scene = extract_status_field(narrator_status, "场景").strip() or "（未知）"
-    existing_agents = _format_in_scene_agents(scene)
+    existing_agents = _format_existing_agents()
     story_setting = read_agent_file("narrator", "soul.md").strip()
 
     spec_lines = [
@@ -131,8 +130,7 @@ def _write_status_md(
 ) -> None:
     """按 _STATUS_ORDER 顺序写 status.md；缺失字段用合理默认补齐。"""
     fields = {k: (v or "").strip() for k, v in status.items()}
-    if not fields.get("当前位置") and spec.initial_location:
-        fields["当前位置"] = spec.initial_location
+    fields.pop("当前位置", None)
     if not fields.get("和玩家的关系") and spec.relation_to == "player":
         fields["和玩家的关系"] = spec.relation_description.strip()
     if not fields.get("打算"):
@@ -216,6 +214,15 @@ def _build_soul_md(creation: NewCharacterCreation) -> str:
     return "\n".join(parts).strip() + "\n"
 
 
+def _append_to_narrator_locations(display_name: str, location: str) -> None:
+    """把新角色的初始位置追加到 narrator/status.md 的「角色位置」列表。"""
+    narrator_status = read_agent_file("narrator", "status.md")
+    current = extract_status_field(narrator_status, "角色位置").strip()
+    new_entry = f"- {display_name}：{location}"
+    new_value = f"{current}\n{new_entry}" if current else new_entry
+    update_status("narrator", "角色位置", new_value)
+
+
 def _write_bootstrap_files(
     spec: NewCharacterSpec,
     creation: NewCharacterCreation,
@@ -232,11 +239,13 @@ def _write_bootstrap_files(
     _write_status_md(agent_dir, creation.status, spec, creation.role)
     _write_relations_md(agent_dir, creation.relations, spec)
 
-    last_seen = extract_status_field(
-        read_agent_file("narrator", "status.md"), "当前时间"
-    ).strip()
+    narrator_status = read_agent_file("narrator", "status.md")
+    last_seen = extract_status_field(narrator_status, "当前时间").strip()
     if last_seen:
         write_sidecar_json(spec.character_id, ".last_seen.json", {"last_seen": last_seen})
+
+    if spec.initial_location.strip():
+        _append_to_narrator_locations(creation.role, spec.initial_location.strip())
 
 
 async def create_character(spec: NewCharacterSpec) -> CreatedCharacterInfo | None:

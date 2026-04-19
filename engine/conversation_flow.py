@@ -88,10 +88,9 @@ def _format_character_intentions() -> str:
 
 
 async def run_state_updater(targets: list[str]) -> None:
-    """回合结束后维护 narrator 的状态和待触发事件，并同步角色位置。"""
+    """回合结束后维护 narrator 的状态和待触发事件，并同步 .last_seen.json。"""
     prev_status = read_agent_file("narrator", "status.md")
     prev_time = extract_status_field(prev_status, "当前时间").strip()
-    prev_scene = extract_status_field(prev_status, "场景").strip()
 
     user_message = _build_state_updater_input()
     config = get_narrator_llm_config()
@@ -113,11 +112,10 @@ async def run_state_updater(targets: list[str]) -> None:
     await narrator.apply_state_updates(output)
 
     new_time = output.status.当前时间.strip() or prev_time
-    new_scene = output.status.场景.strip() or prev_scene
     try:
-        post_turn_world_sync(new_scene, targets, prev_time, new_time)
+        post_turn_world_sync(targets, new_time)
     except Exception as e:
-        routing_logger.error(f"[world_sync] 同步位置失败: {e}")
+        routing_logger.error(f"[world_sync] 同步 .last_seen.json 失败: {e}")
 
 
 async def call_narrator_and_route(

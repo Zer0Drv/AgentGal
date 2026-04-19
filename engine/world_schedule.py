@@ -1,8 +1,8 @@
 """每个角色的 schedule.json 解析与查询（纯函数，便于单测）。
 
 每个角色在 data/characters/{name}/schedule.json 自维护一份作息。
-系统只在时段切换时用 schedule 的默认值刷新"无打算"角色的 status.md.当前位置；
-status.md.当前位置 始终是现时真相。
+schedule 只提供"此时段默认在哪"的参考值，供 state_updater 综合判断后写入
+`narrator/status.md` 的「角色位置」字段；narrator/status.md 始终是现时真相。
 """
 
 from __future__ import annotations

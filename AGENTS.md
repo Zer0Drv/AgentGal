@@ -79,7 +79,7 @@ server.py        ← shared/ + storage/ + engine/
 
 - `soul.md`：手写角色定义，只读
 - `memory.md`：角色长期记忆，记录事件与情绪变化（仅角色有）
-- `status.md`：当前状态；角色包含“打算”，旁白包含“待触发事件”
+- `status.md`：当前状态；角色包含「打算」，旁白包含「待触发事件」和「角色位置」（所有主要角色的当前位置快照，由 `state_updater` 每轮维护，角色端不再自维护「当前位置」）
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
 - `tmp_user.md`：`user.md` 的工作草稿；首次写入时复制正式档案，整理后删除
 - `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有）
@@ -143,7 +143,7 @@ server.py        ← shared/ + storage/ + engine/
   ↓
 state_updater 从各角色「打算」同步公共「待触发事件」（事件名保留角色名）
   ↓
-world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.json`；跨时段时按当前游戏时间匹配 schedule period，刷新「无打算」角色的默认位置
+world_sync 为出场 targets 写入 `.last_seen.json`；角色位置统一由 state_updater 维护到 narrator/status.md 的「角色位置」字段
 ```
 
 ## Agent 输出与写回机制

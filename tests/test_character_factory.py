@@ -257,12 +257,11 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
         character_dir,
         "mitsuki",
         soul="# 美月\n",
-        status="## 当前位置\n教室\n",
     )
     _seed(
         character_dir,
         "narrator",
-        status="## 当前时间\n4月3日 星期一 8:23\n\n## 场景\n教室\n",
+        status="## 当前时间\n4月3日 星期一 8:23\n\n## 场景\n教室\n\n## 角色位置\n- 美月：教室\n",
     )
 
     async def fake_run_structured_agent(**_kwargs):
@@ -287,7 +286,6 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
             status={
                 "身份": "全职主妇",
                 "心境": "挂念美月",
-                "当前位置": "教室走廊",
                 "和玩家的关系": "听说过",
                 "在意的事": "女儿练习太累",
                 "打算": "- [ ] 【等美月】在教室外等她下课",
@@ -341,11 +339,16 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
     assert "<voice>" in soul and "美月，今天累不累？" in soul
     status = (agent_dir / "status.md").read_text(encoding="utf-8")
     assert status.startswith("# 桥本志津 的状态")
-    assert "## 当前位置\n教室走廊" in status
+    assert "## 当前位置" not in status
     assert "## 打算\n- [ ] 【等美月】" in status
 
+    narrator_status = (character_dir / "narrator" / "status.md").read_text(encoding="utf-8")
+    assert "- 美月：教室" in narrator_status
+    assert "- 桥本志津：教室走廊" in narrator_status
+
     relations = (agent_dir / "relations.md").read_text(encoding="utf-8")
-    assert "## mitsuki" in relations
+    # relations.md 按 display_name 作为 section 标题（soul 首行 `# 美月` → "美月"）
+    assert "## 美月" in relations
     assert "女儿，最近显得疲惫" in relations
     # 对玩家的视角走 status."和玩家的关系"，不再出现在 relations.md
     assert "## player" not in relations
