@@ -288,23 +288,15 @@ def _collect_relation_candidates(
 
     player 视角由 user.md / status 承载，不走 relations。
 
-    - narrator：当前场景在场的其他角色
+    - narrator：全部主要角色（用于 player_views 全局站位，避免因位置滞后漏人）
     - character：scene_targets 去掉自己
     """
     if audience == "narrator":
-        real_locations = _collect_real_locations()
-        narrator_status = read_agent_file("narrator", "status.md")
-        scene = extract_status_field(narrator_status, "场景").strip()
-        current_time = extract_status_field(narrator_status, "当前时间").strip()
-        slot_key = parse_game_time(current_time)
-        if slot_key is not None:
-            loc_map = query_all_locations(slot_key, real_locations, current_time)
-        else:
-            loc_map = {}
-            for agent, loc in real_locations.items():
-                loc_map.setdefault(loc, []).append(agent)
-        here = sorted(loc_map.get(scene, [])) if scene else []
-        return [c for c in here if c != audience]
+        return [
+            name
+            for name in get_agent_names(include_narrator=False)
+            if name != audience and name != "player"
+        ]
 
     seen: set[str] = set()
     out: list[str] = []
