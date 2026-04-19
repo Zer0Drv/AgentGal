@@ -56,8 +56,7 @@
     "打算": "- [ ] 【事件名】具体做什么"
   },
   "relations": {
-    "<relation_to 的 agent_id，relation_to 非 player 时必须>": "Ta 此刻怎么看 relation_to，一两句",
-    "<其他 existing_agents 的 agent_id>": "可选，只在 identity 能支持推断时写"
+    "<当前在场角色的 agent_id>": "Ta 此刻怎么看该角色，一两句（只写 world_now 中列出的在场角色，不写 player）"
   }
 }
 </format>
@@ -68,6 +67,6 @@
 - dynamic 必须写循环模式（反复上演），不是一次性事件；必须同时包含反差与长期驱动。
 - behavior ≥ 4 条；voice ≥ 3 句。
 - status 除"在意的事"外其余字段必填；"打算"至少写一条短期合理动作。
-- relations 不写对 player 的视角（走 status."和玩家的关系"）；推不出的关系直接省略，不要写"未知/暂无"。
+- relations 只写 world_now 中列出的在场角色，不写 player（对玩家的视角走 status."和玩家的关系"）；推不出的关系直接省略，不要写"未知/暂无"。
 - 长度：identity ≤ 60 字，dynamic ≤ 400 字，behavior 每条 ≤ 50 字，voice 每句 ≤ 40 字，status/relations 每段 ≤ 80 字。
 </rules>

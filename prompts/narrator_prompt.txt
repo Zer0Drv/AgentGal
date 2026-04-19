@@ -39,7 +39,7 @@
 <new_characters>
 对于人物维度筛出的“应当出现”的人，凡是不在 `<fields>` 里的，都必须用 `new_characters` 生成。`relation-bearing` 的关系锚包括：亲属、同事、朋友、恋人、老师、邻居、经纪人，或共同活动的长期同伴（球友、社团组员、常聚同学、通勤搭子）。
 - 不满足 `touchable` 或 `relation-bearing` 的人，不生成角色，只在 content 里带过。
-- 每项：character_id（英文/拼音小写作 agent_id，必须使用与 `<fields>` 中不重复的唯一 id）、display_name（可直接写进 `<role>` 的中文姓名；若当前已显示完整姓名，直接使用，若无，则创建一个符合设定的中文姓名）、relation_to（`<fields>` 中的 id 或字面量 "player"）、relation_description（一句话说清楚和 relation_to 是什么关系，如"玩家常一起打球的同班球友"）、background_hint（可选，一句背景）、initial_location（可选，此刻位置）。
+- 每项：character_id（基于角色姓名的拼音或英文，如 `liming`、`shinji`；与 `<fields>` 中已有 id 不重复）、display_name（中文名称，如 李明、桥本慎司；若角色尚无已知姓名，自行创建一个符合设定背景的姓名）、relation_to（`<fields>` 中的 id 或字面量 "player"）、relation_description（一句话说清楚和 relation_to 是什么关系，如"玩家常一起打球的同班球友"）、background_hint（可选，一句背景）、initial_location（可选，此刻位置）。
 - 生成后把新角色放进本轮 targets。
 - 每轮 new_characters 最多 1 条，除非剧情真的同时需要。
 </new_characters>
@@ -57,8 +57,8 @@ Return the result in this exact JSON format:
   "content": "**时间**：X月X日 星期X XX:XX\n**地点**：...\n**在场**：\n- 玩家：[位置]\n[每个主要角色一行，位置或场外]\n\n[一两句气氛烘托]",
   "new_characters": [
     {{
-      "character_id": "agent_id",
-      "display_name": "中文姓名",
+      "character_id": "姓名拼音如liming（禁止用关系词如classmate）",
+      "display_name": "中文名称如李明（禁止写称谓如同学）",
       "relation_to": "已有角色id或player",
       "relation_description": "和锚点是什么关系",
       "background_hint": "可选一句背景",

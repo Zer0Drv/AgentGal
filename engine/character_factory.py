@@ -20,7 +20,7 @@ from shared.config import (
     get_agent_names,
 )
 from shared.text_utils import extract_identity, get_display_name
-from storage.agent_files import read_agent_file, write_sidecar_json
+from storage.agent_files import read_agent_file, resolve_agent_display_name, write_sidecar_json
 
 
 _RESERVED_NAMES = {"player", "narrator", ""}
@@ -56,9 +56,14 @@ def _is_valid_agent_name(name: str) -> bool:
     return all((c.isascii() and c.isalnum()) or c in "_-" for c in name)
 
 
-def _format_existing_agents() -> str:
+def _format_in_scene_agents(current_scene: str) -> str:
     rows: list[str] = []
     for agent in get_agent_names(include_narrator=False):
+        status = read_agent_file(agent, "status.md")
+        location = extract_status_field(status, "当前位置").strip() if status else ""
+        if current_scene and location:
+            if current_scene not in location and location not in current_scene:
+                continue
         soul = read_agent_file(agent, "soul.md")
         display = get_display_name(agent, soul) if soul else agent
         identity = extract_identity(soul) if soul else ""
@@ -67,26 +72,11 @@ def _format_existing_agents() -> str:
     return "\n".join(rows) if rows else "（暂无）"
 
 
-def _build_relation_to_context(relation_to: str) -> str:
-    if relation_to == "player":
-        return "relation_to 是玩家（player）；参考已有角色对玩家的既有描写推断。"
-
-    soul = read_agent_file(relation_to, "soul.md")
-    status = read_agent_file(relation_to, "status.md")
-    parts: list[str] = []
-    if soul:
-        parts.append(f"<soul>\n{soul.strip()}\n</soul>")
-    if status:
-        parts.append(f"<status>\n{status.strip()}\n</status>")
-    return "\n\n".join(parts) if parts else "（relation_to 无 soul / status 资料）"
-
-
 def _build_factory_user_message(spec: NewCharacterSpec) -> str:
     narrator_status = read_agent_file("narrator", "status.md")
     current_time = extract_status_field(narrator_status, "当前时间").strip() or "（未知）"
     scene = extract_status_field(narrator_status, "场景").strip() or "（未知）"
-    existing_agents = _format_existing_agents()
-    relation_to_context = _build_relation_to_context(spec.relation_to)
+    existing_agents = _format_in_scene_agents(scene)
     story_setting = read_agent_file("narrator", "soul.md").strip()
 
     spec_lines = [
@@ -112,11 +102,6 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
         f"当前场景：{scene}\n"
         f"已有角色（agent_id / 显示名）：{existing_agents}\n"
         "</world_now>"
-    )
-    blocks.append(
-        "<relation_to_context>\n"
-        f"{relation_to_context}\n"
-        "</relation_to_context>"
     )
     return "\n\n".join(blocks)
 
@@ -172,13 +157,17 @@ def _write_relations_md(
     relations: dict[str, str],
     spec: NewCharacterSpec,
 ) -> None:
-    sections = {
-        k: v.strip()
-        for k, v in relations.items()
-        if k and v and v.strip() and k != "player"
-    }
-    if spec.relation_to != "player" and spec.relation_to not in sections:
-        sections[spec.relation_to] = spec.relation_description.strip()
+    relation_to_display = (
+        resolve_agent_display_name(spec.relation_to) if spec.relation_to != "player" else None
+    )
+    sections: dict[str, str] = {}
+    for k, v in relations.items():
+        if not k or not v or not v.strip() or k == "player":
+            continue
+        sections[resolve_agent_display_name(k)] = v.strip()
+
+    if relation_to_display and relation_to_display not in sections:
+        sections[relation_to_display] = spec.relation_description.strip()
 
     lines = ["# 我眼中的其他人", ""]
     for target, body in sections.items():
