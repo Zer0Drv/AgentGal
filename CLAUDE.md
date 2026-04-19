@@ -139,11 +139,15 @@ server.py        ← shared/ + storage/ + engine/
   ↓
 持久化最新选项到 last_choices.json（供续档恢复）
   ↓
-后台调用 state_updater，更新 narrator/status.md（场景、时间、待触发事件）
+后台调用 state_updater，更新 narrator/status.md（场景、时间、角色位置、叙事焦点、待触发事件）
+  ↓
+state_updater 输入按顺序为：`schedule_snapshot`（按当前 game_time 渲染各角色 schedule 默认位置，缺日程标「（无日程）」）、character_intention、current_narrator_status、recent_history
+  ↓
+state_updater 每轮输出全量「角色位置」快照；优先级：recent_history 事实 > character_intention 中带地点的打算 > 旧快照 > schedule_snapshot 默认值
   ↓
 state_updater 从各角色「打算」同步公共「待触发事件」（事件名保留角色名）
   ↓
-world_sync 为出场 targets 写入 `.last_seen.json`；角色位置统一由 state_updater 维护到 narrator/status.md 的「角色位置」字段
+world_sync 为出场 targets 写入 `.last_seen.json`
 ```
 
 ## Agent 输出与写回机制

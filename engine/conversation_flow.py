@@ -7,7 +7,7 @@ from engine.agent_runner import run_structured_agent
 from engine.agent_schema import ChoicesOutput, NewCharacterSpec, StateUpdaterOutput
 from engine.character import get_character, narrator
 from engine.character_factory import CreatedCharacterInfo, create_character
-from engine.prompt_builder import build_history_transcript
+from engine.prompt_builder import build_history_transcript, build_schedule_snapshot
 from engine.world_sync import post_turn_world_sync
 from llm.providers import get_choices_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
@@ -51,8 +51,11 @@ async def generate_choices(
 
 
 def _build_state_updater_input() -> str:
+    narrator_status = read_agent_file("narrator", "status.md")
+    game_time = extract_status_field(narrator_status, "当前时间").strip()
+    schedule_snapshot = build_schedule_snapshot(game_time)
+
     character_intention = _format_character_intentions()
-    status_content = read_agent_file("narrator", "status.md")
     raw_messages = load_conversation_history(limit=3)
     history_lines: list[str] = []
     for msg in raw_messages:
@@ -67,11 +70,12 @@ def _build_state_updater_input() -> str:
         history_lines.append(f"{speaker}: {content}")
     recent_history = "\n\n".join(history_lines) if history_lines else "无"
 
-    parts = [
-        f"<character_intention>\n{character_intention}\n</character_intention>",
-        f"<current_narrator_status>\n{status_content}\n</current_narrator_status>",
-        f"<recent_history>\n{recent_history}\n</recent_history>",
-    ]
+    parts: list[str] = []
+    if schedule_snapshot:
+        parts.append(schedule_snapshot)
+    parts.append(f"<character_intention>\n{character_intention}\n</character_intention>")
+    parts.append(f"<current_narrator_status>\n{narrator_status}\n</current_narrator_status>")
+    parts.append(f"<recent_history>\n{recent_history}\n</recent_history>")
     return "\n\n---\n\n".join(parts)
 
 

@@ -162,3 +162,46 @@ def test_build_user_message_injects_my_schedule_for_character(character_dir, pat
 
     assert "<my_schedule>" in message
     assert "<world_now>" not in message
+
+
+# ---------------------------------------------------------------------------
+# build_schedule_snapshot（供 state_updater 作为位置基线）
+# ---------------------------------------------------------------------------
+
+
+def test_schedule_snapshot_renders_all_agents(character_dir, patched_agents):
+    _write_character(character_dir, "mitsuki", "", soul="# 美月\n", schedule=MITSUKI_SCHEDULE)
+    _write_character(character_dir, "lilith", "", soul="# 莉莉丝\n", schedule=LILITH_SCHEDULE)
+    patched_agents(["mitsuki", "lilith"])
+
+    block = prompt_builder.build_schedule_snapshot("4月6日 星期一 14:00")
+
+    assert block.startswith('<schedule_snapshot game_time="4月6日 星期一 14:00">')
+    assert block.endswith("</schedule_snapshot>")
+    assert "- 美月：社团室" in block
+    assert "- 莉莉丝：图书馆" in block
+
+
+def test_schedule_snapshot_marks_agent_without_schedule(character_dir, patched_agents):
+    _write_character(character_dir, "mitsuki", "", soul="# 美月\n", schedule=MITSUKI_SCHEDULE)
+    _write_character(character_dir, "yuki", "", soul="# 雪乃\n")
+    patched_agents(["mitsuki", "yuki"])
+
+    block = prompt_builder.build_schedule_snapshot("4月6日 星期一 14:00")
+
+    assert "- 美月：社团室" in block
+    assert "- 雪乃：（无日程）" in block
+
+
+def test_schedule_snapshot_marks_all_when_game_time_unparseable(character_dir, patched_agents):
+    _write_character(character_dir, "mitsuki", "", soul="# 美月\n", schedule=MITSUKI_SCHEDULE)
+    patched_agents(["mitsuki"])
+
+    block = prompt_builder.build_schedule_snapshot("开学当天")
+
+    assert "- 美月：（无日程）" in block
+
+
+def test_schedule_snapshot_empty_when_no_agents(character_dir, patched_agents):
+    patched_agents([])
+    assert prompt_builder.build_schedule_snapshot("4月6日 星期一 14:00") == ""

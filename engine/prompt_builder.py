@@ -5,7 +5,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from engine.world_schedule import load_character_schedule
+from engine.world_schedule import (
+    get_default_location,
+    load_character_schedule,
+    parse_game_time,
+)
 from memory.parser import extract_status_field
 from shared.config import (
     HISTORY_HIGH,
@@ -213,6 +217,29 @@ def build_my_schedule_block(agent_name: str) -> str:
 
     body = "\n\n".join(blocks)
     return f"<my_schedule>\n{body}\n</my_schedule>"
+
+
+def build_schedule_snapshot(game_time: str) -> str:
+    """渲染 state_updater 输入的 <schedule_snapshot>：当前时段各角色按 schedule 的默认位置。
+
+    未配置 schedule 或 game_time 解析不出 slot 的角色标注为「（无日程）」，供 LLM 判断。
+    无任何主要角色时返回空字符串。
+    """
+    slot_key = parse_game_time(game_time) if game_time else None
+    rows: list[str] = []
+    for agent in get_agent_names(include_narrator=False):
+        soul = read_agent_file(agent, "soul.md")
+        display = get_display_name(agent, soul) if soul else agent
+        location = ""
+        if slot_key is not None:
+            location = (get_default_location(agent, slot_key, game_time) or "").strip()
+        rows.append(f"- {display}：{location}" if location else f"- {display}：（无日程）")
+    if not rows:
+        return ""
+    header = (
+        f'<schedule_snapshot game_time="{game_time}">' if game_time else "<schedule_snapshot>"
+    )
+    return f"{header}\n" + "\n".join(rows) + "\n</schedule_snapshot>"
 
 
 def build_relations_block(audience: str) -> str:
