@@ -210,11 +210,12 @@ world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.jso
 `user` 消息按以下顺序拼装为**单条大消息**：
 
 1. 最近对话历史（旁白只保留最后一条）
-2. `<world_now>`（当前时间 / 当前场景 / 各角色当前位置，合并 `status.md.当前位置` 与 schedule 默认值）
-3. `status.md`
-4. 本轮玩家输入
+2. `status.md`
+3. 本轮玩家输入
 
 `narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点和待触发事件推进当前回合。待触发事件主要由 `state_updater` 从各角色 `打算` 同步，事件名保留角色名（如 `【美月：顺路的约定】`）。
+
+> 注：`<world_now>`（当前时间 / 各角色实时位置的派生投影）目前已停用，待 schedule 机制完善后再恢复。期间 narrator 只读 `status.md` 中作者/state_updater 维护的字段。
 
 narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置时回退到主 LLM。
 

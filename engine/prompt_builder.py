@@ -5,11 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from engine.world_schedule import (
-    load_character_schedule,
-    parse_game_time,
-    query_all_locations,
-)
+from engine.world_schedule import load_character_schedule
 from memory.parser import extract_status_field
 from shared.config import (
     HISTORY_HIGH,
@@ -199,65 +195,6 @@ def _format_days(days: list[str]) -> str:
     return "、".join(f"周{_WEEKDAY_EN_TO_CN[d]}" for d in ordered if d in unique)
 
 
-def _format_agent(agent: str) -> str:
-    """agent_name / 显示名；两者一致时只展示一次。"""
-    soul = read_agent_file(agent, "soul.md")
-    display = get_display_name(agent, soul) if soul else agent
-    return f"{agent} / {display}" if display and display != agent else agent
-
-
-def _collect_real_locations() -> dict[str, str]:
-    """扫每个 character 的 status.md，收集非空 当前位置。"""
-    out: dict[str, str] = {}
-    for agent in get_agent_names(include_narrator=False):
-        status = read_agent_file(agent, "status.md")
-        loc = extract_status_field(status, "当前位置").strip()
-        if loc:
-            out[agent] = loc
-    return out
-
-
-def build_world_now_block() -> str:
-    """<world_now>：narrator 专用，当前时间 / 场景 / 各角色所在位置。"""
-    narrator_status = read_agent_file("narrator", "status.md")
-    current_time = extract_status_field(narrator_status, "当前时间").strip()
-    scene = extract_status_field(narrator_status, "场景").strip()
-
-    real_locations = _collect_real_locations()
-    slot_key = parse_game_time(current_time)
-    if slot_key is not None:
-        inverted = query_all_locations(slot_key, real_locations, current_time)
-    else:
-        inverted = {}
-        for agent, loc in real_locations.items():
-            inverted.setdefault(loc, []).append(agent)
-        for names in inverted.values():
-            names.sort()
-
-    lines: list[str] = []
-    if current_time:
-        lines.append(f"当前时间：{current_time}")
-    if scene:
-        lines.append(f"当前场景：{scene}")
-
-    scene_agents = inverted.pop(scene, None) if scene else None
-    if scene_agents or inverted:
-        lines.append("")
-        lines.append("角色位置：")
-        if scene_agents:
-            rendered = "、".join(_format_agent(a) for a in scene_agents)
-            lines.append(f"- {scene}（当前场景）：{rendered}")
-        for loc in sorted(inverted):
-            agents = inverted[loc]
-            if not agents:
-                continue
-            rendered = "、".join(_format_agent(a) for a in agents)
-            lines.append(f"- {loc}：{rendered}")
-
-    body = "\n".join(lines).strip()
-    return f"<world_now>\n{body}\n</world_now>" if body else ""
-
-
 def build_my_schedule_block(agent_name: str) -> str:
     """<my_schedule>：character 专用，渲染自己的 schedule.json。"""
     if agent_name == "narrator":
@@ -303,7 +240,6 @@ def build_user_message(
     history, was_truncated = build_history_transcript(agent_name, raw_messages or [])
     status_content = read_agent_file(agent_name, "status.md")
     my_schedule = build_my_schedule_block(agent_name) if not is_narrator else ""
-    world_now = build_world_now_block() if is_narrator else ""
     relations = "" if is_narrator else build_relations_block(agent_name)
 
     parts.append(my_schedule)
@@ -312,7 +248,6 @@ def build_user_message(
         f"<user_profile>\n{user_content.strip()}\n</user_profile>" if user_content else ""
     )
     parts.append(f"最近对话历史:\n\n{history}" if history else "")
-    parts.append(world_now)
     parts.append(f"<status>\n{status_content}\n</status>" if status_content else "")
     parts.append(relations)
     parts.append(memory_prefix if memory_prefix else "")

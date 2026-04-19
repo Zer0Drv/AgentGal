@@ -1,4 +1,4 @@
-"""测试 prompt_builder 的 <world_now> 与 <my_schedule> 块渲染。"""
+"""测试 prompt_builder 的 <my_schedule> 块渲染与 build_user_message 拼装。"""
 
 import json
 import os
@@ -94,67 +94,6 @@ def patched_agents(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# <world_now>
-# ---------------------------------------------------------------------------
-
-
-def test_world_now_empty_when_no_narrator_status(character_dir, patched_agents):
-    patched_agents([])
-    assert prompt_builder.build_world_now_block() == ""
-
-
-def test_world_now_merges_real_and_schedule_locations(character_dir, patched_agents):
-    narrator_status = (
-        "## 当前时间\n4月3日 星期一 8:23\n\n## 场景\n图书馆旧阅览角\n"
-    )
-    _write_character(character_dir, "narrator", narrator_status)
-    _write_character(
-        character_dir,
-        "mitsuki",
-        "## 当前位置\n图书馆旧阅览角\n",
-        soul="# 美月\n",
-        schedule=MITSUKI_SCHEDULE,
-    )
-    _write_character(
-        character_dir,
-        "lilith",
-        "## 当前位置\n\n",
-        soul="# 莉莉丝\n",
-        schedule=LILITH_SCHEDULE,
-    )
-    patched_agents(["mitsuki", "lilith"])
-
-    block = prompt_builder.build_world_now_block()
-
-    assert block.startswith("<world_now>")
-    assert block.endswith("</world_now>")
-    assert "当前时间：4月3日 星期一 8:23" in block
-    assert "当前场景：图书馆旧阅览角" in block
-    assert "图书馆旧阅览角（当前场景）" in block
-    assert "mitsuki / 美月" in block
-    assert "- 教室：lilith / 莉莉丝" in block
-
-
-def test_world_now_without_parseable_time_still_lists_real_locations(
-    character_dir, patched_agents
-):
-    narrator_status = "## 当前时间\n\n## 场景\n天台\n"
-    _write_character(character_dir, "narrator", narrator_status)
-    _write_character(
-        character_dir, "mitsuki", "## 当前位置\n天台\n", soul="# 美月\n"
-    )
-    _write_character(
-        character_dir, "lilith", "## 当前位置\n教室\n", soul="# 莉莉丝\n"
-    )
-    patched_agents(["mitsuki", "lilith"])
-
-    block = prompt_builder.build_world_now_block()
-
-    assert "天台（当前场景）：mitsuki / 美月" in block
-    assert "- 教室：lilith / 莉莉丝" in block
-
-
-# ---------------------------------------------------------------------------
 # <my_schedule>
 # ---------------------------------------------------------------------------
 
@@ -190,7 +129,9 @@ def test_my_schedule_empty_when_no_schedule_file(character_dir, patched_agents):
 # ---------------------------------------------------------------------------
 
 
-def test_build_user_message_injects_world_now_for_narrator(character_dir, patched_agents):
+def test_build_user_message_does_not_inject_world_now_for_narrator(
+    character_dir, patched_agents
+):
     narrator_status = "## 当前时间\n4月3日 星期一 8:23\n\n## 场景\n教室\n"
     _write_character(character_dir, "narrator", narrator_status)
     _write_character(
@@ -202,7 +143,8 @@ def test_build_user_message_injects_world_now_for_narrator(character_dir, patche
         "narrator", "玩家新消息内容", "", raw_messages=[]
     )
 
-    assert "<world_now>" in message
+    assert "<world_now>" not in message
+    assert "<status>" in message
     assert "<relations>" not in message
     assert "<my_schedule>" not in message
 
