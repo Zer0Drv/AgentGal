@@ -87,6 +87,7 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
     scene = extract_status_field(narrator_status, "场景").strip() or "（未知）"
     existing_agents = _format_existing_agents()
     relation_to_context = _build_relation_to_context(spec.relation_to)
+    story_setting = read_agent_file("narrator", "soul.md").strip()
 
     spec_lines = [
         "<spec>",
@@ -101,17 +102,23 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
         spec_lines.append(f"initial_location: {spec.initial_location.strip()}")
     spec_lines.append("</spec>")
     spec_block = "\n".join(spec_lines)
-    context_block = (
+
+    blocks: list[str] = [spec_block]
+    if story_setting:
+        blocks.append(f"<story_setting>\n{story_setting}\n</story_setting>")
+    blocks.append(
         "<world_now>\n"
         f"当前时间：{current_time}\n"
         f"当前场景：{scene}\n"
         f"已有角色（agent_id / 显示名）：{existing_agents}\n"
-        "</world_now>\n\n"
+        "</world_now>"
+    )
+    blocks.append(
         "<relation_to_context>\n"
         f"{relation_to_context}\n"
         "</relation_to_context>"
     )
-    return f"{spec_block}\n\n{context_block}"
+    return "\n\n".join(blocks)
 
 
 def _validate_spec(spec: NewCharacterSpec) -> str | None:
