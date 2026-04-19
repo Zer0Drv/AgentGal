@@ -22,9 +22,7 @@ from shared.text_utils import get_display_name, role_to_speaker
 from storage.agent_files import (
     get_allowed_fields,
     read_agent_file,
-    read_relations,
     read_sidecar_json,
-    resolve_agent_display_name,
     write_sidecar_json,
 )
 from storage.history import load_conversation_history  # re-export for callers
@@ -280,105 +278,14 @@ def build_my_schedule_block(agent_name: str) -> str:
     return f"<my_schedule>\n{body}\n</my_schedule>"
 
 
-def _collect_relation_candidates(
-    audience: str,
-    scene_targets: list[str] | None = None,
-) -> list[str]:
-    """本轮 relations 块会涉及到的角色 id（不含 audience 本人，也不含 player）。
-
-    player 视角由 user.md / status 承载，不走 relations。
-
-    - narrator：全部主要角色（用于 player_views 全局站位，避免因位置滞后漏人）
-    - character：scene_targets 去掉自己
-    """
+def build_relations_block(audience: str) -> str:
+    """character 专用：直接把 audience 的 relations.md 整块注入 <relations>。"""
     if audience == "narrator":
-        return [
-            name
-            for name in get_agent_names(include_narrator=False)
-            if name != audience and name != "player"
-        ]
-
-    seen: set[str] = set()
-    out: list[str] = []
-    for target in scene_targets or []:
-        if target and target != audience and target != "player" and target not in seen:
-            seen.add(target)
-            out.append(target)
-    return out
-
-
-def _relation_label(candidate: str) -> str:
-    if candidate == "player":
-        return "玩家"
-    return _format_agent(candidate)
-
-
-
-def build_relations_block(
-    audience: str,
-    scene_targets: list[str] | None = None,
-) -> str:
-    """聚合候选集内的关系视角，渲染 <relations> 块。
-
-    narrator: 列出场上每个实体角色对其他候选的看法
-    character: 自己对候选的看法 + 其他角色对自己的看法
-    """
-    candidates = _collect_relation_candidates(audience, scene_targets)
-    if not candidates:
         return ""
-
-    if audience == "narrator":
-        sections: list[str] = []
-        for source in candidates:
-            view = read_relations(source)
-            lines = [f"## {_relation_label(source)} 对其他人的看法"]
-            for target in candidates:
-                if target == source:
-                    continue
-                body = view.get(resolve_agent_display_name(target), "").strip() or "（暂无）"
-                lines.append(f"- {_relation_label(target)}：{body}")
-            sections.append("\n".join(lines))
-        body = "\n\n".join(sections)
-        return f"<relations>\n{body}\n</relations>"
-
-    own = read_relations(audience)
-    lines: list[str] = []
-    for target in candidates:
-        body = own.get(resolve_agent_display_name(target), "").strip() or "（暂无）"
-        lines.append(f"- {_relation_label(target)}：{body}")
-
-    body = "\n".join(lines)
-    return f"<relations>\n{body}\n</relations>"
-
-
-def build_player_views_block(
-    audience: str,
-    scene_targets: list[str] | None = None,
-) -> str:
-    """narrator 专用：汇总当前在场角色对玩家的关系站位。"""
-    if audience != "narrator":
+    content = read_agent_file(audience, "relations.md").strip()
+    if not content:
         return ""
-
-    candidates = _collect_relation_candidates(audience, scene_targets)
-    if not candidates:
-        return ""
-
-    sections: list[str] = []
-    for source in candidates:
-        status_content = read_agent_file(source, "status.md")
-        relation = extract_status_field(status_content, "和玩家的关系").strip()
-        if not relation:
-            continue
-
-        lines = [f"## {_relation_label(source)} 对玩家"]
-        lines.append(f"- 和玩家的关系：{relation}")
-        sections.append("\n".join(lines))
-
-    if not sections:
-        return ""
-
-    body = "\n\n".join(sections)
-    return f"<player_views>\n{body}\n</player_views>"
+    return f"<relations>\n{content}\n</relations>"
 
 
 def build_user_message(
@@ -386,7 +293,6 @@ def build_user_message(
     latest_user_input: str,
     memory_prefix: str,
     raw_messages: list[dict] | None = None,
-    scene_targets: list[str] | None = None,
 ) -> tuple[str, bool]:
     """构建单条大 user message，按稳定度排序上下文。返回 (消息文本, 是否触发历史截断)。"""
     parts: list[str] = []
@@ -398,16 +304,7 @@ def build_user_message(
     status_content = read_agent_file(agent_name, "status.md")
     my_schedule = build_my_schedule_block(agent_name) if not is_narrator else ""
     world_now = build_world_now_block() if is_narrator else ""
-    relations = (
-        ""
-        if is_narrator
-        else build_relations_block(agent_name, scene_targets=scene_targets)
-    )
-    player_views = (
-        build_player_views_block(agent_name, scene_targets=scene_targets)
-        if is_narrator
-        else ""
-    )
+    relations = "" if is_narrator else build_relations_block(agent_name)
 
     parts.append(my_schedule)
     parts.append(f"<growth>\n{growth_content.strip()}\n</growth>" if growth_content else "")
@@ -418,7 +315,6 @@ def build_user_message(
     parts.append(world_now)
     parts.append(f"<status>\n{status_content}\n</status>" if status_content else "")
     parts.append(relations)
-    parts.append(player_views)
     parts.append(memory_prefix if memory_prefix else "")
     parts.append(f"玩家新消息: {latest_user_input}")
 

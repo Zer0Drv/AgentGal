@@ -207,29 +207,6 @@ def test_build_user_message_injects_world_now_for_narrator(character_dir, patche
     assert "<my_schedule>" not in message
 
 
-def test_build_user_message_injects_player_views_for_narrator(character_dir, patched_agents):
-    narrator_status = "## 当前时间\n4月3日 星期一 8:23\n\n## 场景\n教室\n"
-    _write_character(character_dir, "narrator", narrator_status)
-    _write_character(
-        character_dir,
-        "mitsuki",
-        "## 当前位置\n教室\n\n## 和玩家的关系\n刚开始在意\n",
-        soul="# 美月\n",
-    )
-    patched_agents(["mitsuki"])
-
-    message, _ = prompt_builder.build_user_message(
-        "narrator", "玩家新消息内容", "", raw_messages=[]
-    )
-
-    assert "<player_views>" in message
-    assert "<relations>" not in message
-    assert "## mitsuki / 美月 对玩家" in message
-    assert "- 和玩家的关系：刚开始在意" in message
-    assert "对方是什么人" not in message
-    assert "我们怎么相处" not in message
-
-
 def test_build_user_message_injects_my_schedule_for_character(character_dir, patched_agents):
     _write_character(character_dir, "narrator", "## 当前时间\n\n## 场景\n\n")
     _write_character(

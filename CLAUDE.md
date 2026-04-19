@@ -196,7 +196,7 @@ world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.jso
 3. `user.md`（`tmp_user.md` 仅作为工作草稿参与整理，不直接注入 prompt）
 4. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断；历史中的旁白只保留最后一条）
 5. `status.md`
-6. `<relations>`（候选集 = 本轮 `targets` 去掉自己；只包含自己对这些对象的当下看法。对玩家的视角不走 relations）
+6. `<relations>`（直接注入角色自己的 `relations.md`，涵盖所有已知主要角色，不分在场与否。对玩家的视角不走 relations）
 7. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
 8. 本轮玩家输入
 
@@ -212,8 +212,7 @@ world_sync 同步 targets 的「当前位置」= 场景 + 写入 `.last_seen.jso
 1. 最近对话历史（旁白只保留最后一条）
 2. `<world_now>`（当前时间 / 当前场景 / 各角色当前位置，合并 `status.md.当前位置` 与 schedule 默认值）
 3. `status.md`
-4. `<player_views>`（列出在场角色各自的「和玩家的关系」，仅来源于各角色 `status.md`）
-5. 本轮玩家输入
+4. 本轮玩家输入
 
 `narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点和待触发事件推进当前回合。待触发事件主要由 `state_updater` 从各角色 `打算` 同步，事件名保留角色名（如 `【美月：顺路的约定】`）。
 

@@ -204,6 +204,7 @@ class TestBuildUserMessage:
                 "growth.md": "成长内容",
                 "user.md": "玩家画像",
                 "status.md": "当前状态",
+                "relations.md": "",
             }
             return data[filename]
 
@@ -230,6 +231,7 @@ class TestBuildUserMessage:
                 "growth.md": "",
                 "user.md": "玩家画像",
                 "status.md": "当前状态",
+                "relations.md": "",
             }
             return data[filename]
 

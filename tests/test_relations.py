@@ -20,6 +20,7 @@ try:
     from storage.agent_files import (
         read_relations,
         read_relations_section,
+        resolve_agent_display_name,
         update_relations,
     )
 except ModuleNotFoundError as exc:
@@ -110,7 +111,7 @@ def test_update_relations_skips_empty_target(character_dir):
 # ---------------------------------------------------------------------------
 
 
-def test_build_relations_block_character_renders_first_person_only(
+def test_build_relations_block_character_injects_own_relations_file(
     character_dir, patched_agents
 ):
     _write_character(
@@ -130,25 +131,34 @@ def test_build_relations_block_character_renders_first_person_only(
     )
     patched_agents(["mitsuki", "lilith"])
 
-    block = prompt_builder.build_relations_block("mitsuki", scene_targets=["lilith"])
+    block = prompt_builder.build_relations_block("mitsuki")
 
     assert block.startswith("<relations>")
-    assert "- lilith / 莉莉丝：同班，关系平淡" in block
-    # 对玩家的视角由 user.md / status 承载，不应出现在 relations 块中
-    assert "玩家" not in block
-    # 不应泄露其他角色对自己的看法 —— 角色应保持第一人称视角
+    assert block.endswith("</relations>")
+    assert "## lilith\n同班，关系平淡" in block
+    # 不应泄露其他角色对自己的看法 —— 只注入自己的 relations.md
     assert "座位前后的同学" not in block
 
 
-def test_build_relations_block_character_empty_when_no_candidates(
+def test_build_relations_block_character_empty_when_file_missing(
     character_dir, patched_agents
 ):
     _write_character(character_dir, "mitsuki", soul="# 美月\n")
     patched_agents(["mitsuki"])
 
-    block = prompt_builder.build_relations_block("mitsuki", scene_targets=[])
-    # 候选集为空（对玩家的视角不走 relations）→ 不渲染块
+    block = prompt_builder.build_relations_block("mitsuki")
     assert block == ""
+
+
+def test_build_relations_block_narrator_returns_empty(character_dir, patched_agents):
+    _write_character(
+        character_dir,
+        "narrator",
+        relations="# 理论上 narrator 不该有 relations\n",
+    )
+    patched_agents(["mitsuki"])
+
+    assert prompt_builder.build_relations_block("narrator") == ""
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +178,7 @@ def test_build_user_message_injects_relations_for_character(character_dir, patch
     patched_agents(["mitsuki", "lilith"])
 
     message, _ = prompt_builder.build_user_message(
-        "mitsuki", "你好", "", raw_messages=[], scene_targets=["lilith"]
+        "mitsuki", "你好", "", raw_messages=[]
     )
 
     assert "<relations>" in message
@@ -197,8 +207,7 @@ def test_build_user_message_does_not_inject_relations_for_narrator(
     )
 
     assert "<relations>" not in message
-    assert "<player_views>" in message
-    assert "## mitsuki / 美月 对玩家" in message
+    assert "<player_views>" not in message
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +240,7 @@ async def test_character_apply_updates_writes_valid_relations(character_dir, pat
     await char._apply_updates(output)
 
     sections = read_relations("mitsuki")
-    assert sections["lilith"] == "同班好友"
+    assert sections[resolve_agent_display_name("lilith")] == "同班好友"
     assert "player" not in sections
     assert "ghost" not in sections
-    assert "mitsuki" not in sections
+    assert resolve_agent_display_name("mitsuki") not in sections

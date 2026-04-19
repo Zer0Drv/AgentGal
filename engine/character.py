@@ -74,7 +74,6 @@ class Character:
         self,
         user_input: str,
         raw_messages: list[dict] | None = None,
-        scene_targets: list[str] | None = None,
     ) -> CharacterOutput:
         """搜记忆 → 构建 prompt → 运行 agent → 写回文件，返回 CharacterOutput。"""
         if raw_messages is None:
@@ -95,7 +94,6 @@ class Character:
             user_input,
             memory_prefix,
             raw_messages=raw_messages,
-            scene_targets=scene_targets,
         )
         if was_truncated:
             routing_logger.info("[%s] 历史窗口截断，触发记忆整理", self.name)
