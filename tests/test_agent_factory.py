@@ -95,6 +95,30 @@ def test_player_profile_agent_remains_text_output(monkeypatch):
     assert player_profile.model_settings["max_tokens"] == 1234
 
 
+def test_openrouter_consolidation_agents_clamp_unbounded_max_tokens(monkeypatch):
+    monkeypatch.setattr(
+        agent_factory_module,
+        "get_consolidation_llm_config",
+        lambda temperature=None: {
+            **_fake_config(),
+            "provider": "openrouter",
+            "temperature": temperature or 0.2,
+        },
+    )
+    monkeypatch.setattr(agent_factory_module, "load_text", lambda *_args: "prompt")
+    monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_MAX_TOKENS", None)
+    monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS", 2048)
+
+    memory_merge = agent_factory_module.get_memory_merge_agent()
+    player_profile = agent_factory_module.get_player_profile_agent()
+
+    assert (
+        memory_merge.model_settings["max_tokens"]
+        == agent_factory_module._OPENROUTER_SAFE_DEFAULT_MAX_TOKENS
+    )
+    assert player_profile.model_settings["max_tokens"] == 2048
+
+
 def test_make_sdk_model_uses_provider_specific_provider():
     model = agent_factory_module._make_sdk_model(
         {

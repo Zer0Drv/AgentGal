@@ -213,7 +213,7 @@ uv run uvicorn server:app --reload
 | 键 | 说明 |
 |---|---|
 | `[consolidation].temperature` | 整理模型温度 |
-| `[consolidation].max_tokens` | 整理输出上限 |
+| `[consolidation].max_tokens` | 整理输出上限；设为 `0` 时不显式传入，但 OpenRouter 整理器会自动回落到 `4096`，避免默认申请超大输出 |
 | `[consolidation].player_profile_max_tokens` | `user.md` 整理输出上限，默认用较小值避免高价模型因无限制输出直接失败 |
 | `[consolidation].growth_dedup_threshold` | `growth.md` 去重阈值 |
 | `[vector].search_limit` | 长期记忆召回条数 |

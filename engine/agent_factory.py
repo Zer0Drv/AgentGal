@@ -58,6 +58,7 @@ _state_updater_agent: Agent[None, StateUpdaterOutput] | None = None
 _character_factory_agent: Agent[None, NewCharacterCreation] | None = None
 _offstage_synth_agent: Agent[None, OffstageMemoryBlock] | None = None
 _consolidation_agents: dict[str, StructuredAgent | TextAgent] = {}
+_OPENROUTER_SAFE_DEFAULT_MAX_TOKENS = 4096
 
 
 def _make_sdk_model(config: dict) -> OpenAIChatModel:
@@ -102,6 +103,18 @@ def _build_agent(
         model_settings=_build_model_settings(config, max_tokens=max_tokens),
         output_type=agent_output,
     )
+
+
+def _resolve_openrouter_safe_max_tokens(
+    config: dict,
+    requested_max_tokens: int | None,
+) -> int | None:
+    """避免 OpenRouter 在未显式限制时默认申请超大输出。"""
+    if requested_max_tokens is not None:
+        return requested_max_tokens
+    if config.get("provider") == "openrouter":
+        return _OPENROUTER_SAFE_DEFAULT_MAX_TOKENS
+    return None
 
 
 def initialize_conversation_agents() -> None:
@@ -196,39 +209,47 @@ def _ensure_consolidation_agents() -> None:
         return
 
     config = get_consolidation_llm_config(temperature=CONSOLIDATION_TEMPERATURE)
+    consolidation_max_tokens = _resolve_openrouter_safe_max_tokens(
+        config,
+        CONSOLIDATION_MAX_TOKENS,
+    )
+    player_profile_max_tokens = _resolve_openrouter_safe_max_tokens(
+        config,
+        CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS,
+    )
     _consolidation_agents["memory_merge"] = _build_agent(
         name="memory_merge",
         instructions=load_text(_MEMORY_MERGE_PROMPT_PATH),
         config=config,
         output_type=MemoryMergeOutput,
-        max_tokens=CONSOLIDATION_MAX_TOKENS,
+        max_tokens=consolidation_max_tokens,
     )
     _consolidation_agents["memory_metadata"] = _build_agent(
         name="memory_metadata",
         instructions=load_text(_MEMORY_METADATA_PROMPT_PATH),
         config=config,
         output_type=MemoryMetadataOutput,
-        max_tokens=CONSOLIDATION_MAX_TOKENS,
+        max_tokens=consolidation_max_tokens,
     )
     _consolidation_agents["growth_extract"] = _build_agent(
         name="growth_extract",
         instructions=load_text(_GROWTH_EXTRACT_PROMPT_PATH),
         config=config,
         output_type=GrowthExtractOutput,
-        max_tokens=CONSOLIDATION_MAX_TOKENS,
+        max_tokens=consolidation_max_tokens,
     )
     _consolidation_agents["growth_dedup"] = _build_agent(
         name="growth_dedup",
         instructions=load_text(_GROWTH_DEDUP_PROMPT_PATH),
         config=config,
         output_type=GrowthDedupOutput,
-        max_tokens=CONSOLIDATION_MAX_TOKENS,
+        max_tokens=consolidation_max_tokens,
     )
     _consolidation_agents["player_profile"] = _build_agent(
         name="player_profile",
         instructions=load_text(_PLAYER_PROFILE_PROMPT_PATH),
         config=config,
-        max_tokens=CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS,
+        max_tokens=player_profile_max_tokens,
     )
 
 

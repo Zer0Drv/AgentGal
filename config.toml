@@ -6,7 +6,7 @@
 [consolidation]
 # 整理 LLM 的温度：较低值保证输出稳定
 temperature = 0.7
-# 整理 LLM 最大 token 数：0 表示不限制
+# 整理 LLM 最大 token 数：0 表示不显式传入；OpenRouter 整理器会自动回落到 4096，避免默认申请超大输出
 max_tokens = 0
 # user.md 整理默认输出上限：避免沿用无限制配置导致高价模型直接报 402
 player_profile_max_tokens = 2048
