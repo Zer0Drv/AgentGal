@@ -16,6 +16,9 @@ try:
     import engine.character_factory as character_factory_module
     import engine.conversation_flow as conversation_flow_module
     from engine.agent_schema import (
+        CharacterSchedule,
+        CharacterSchedulePeriod,
+        CharacterScheduleSlot,
         NarratorOutput,
         NewCharacterCreation,
         NewCharacterSpec,
@@ -294,6 +297,25 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
                 "mitsuki": "女儿，最近显得疲惫",
                 "player": "女儿同班同学，还没正式认识",
             },
+            schedule=CharacterSchedule(
+                periods=[
+                    CharacterSchedulePeriod(
+                        start="2026-04-01",
+                        end="2026-07-31",
+                        name="春学期",
+                        slots=[
+                            CharacterScheduleSlot(
+                                days=["mon", "tue", "wed", "thu", "fri"],
+                                time="上午",
+                                location="家",
+                            ),
+                            CharacterScheduleSlot(
+                                days=["sat", "sun"], time="全天", location="家"
+                            ),
+                        ],
+                    )
+                ]
+            ),
         )
 
     monkeypatch.setattr(
@@ -360,6 +382,88 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
 
     last_seen = (agent_dir / ".last_seen.json").read_text(encoding="utf-8")
     assert "4月3日 星期一 8:23" in last_seen
+
+    import json as _json
+
+    schedule_path = agent_dir / "schedule.json"
+    assert schedule_path.exists()
+    schedule_data = _json.loads(schedule_path.read_text(encoding="utf-8"))
+    assert schedule_data["periods"][0]["name"] == "春学期"
+    assert schedule_data["periods"][0]["slots"][0]["location"] == "家"
+
+
+@pytest.mark.asyncio
+async def test_create_character_skips_schedule_when_llm_omits(character_dir, monkeypatch):
+    """LLM 没产出 schedule 时不写 schedule.json，但其他文件依然落盘。"""
+    _seed(character_dir, "mitsuki", soul="# 美月\n")
+    _seed(character_dir, "narrator", status="## 当前时间\n4月3日 星期一 8:23\n")
+
+    async def fake_run_structured_agent(**_kwargs):
+        return NewCharacterCreation(
+            role="林晚",
+            identity="美月的邻居。",
+            dynamic="你偶尔撞见美月，会打招呼但没熟到能聊天。",
+            behavior=["撞见邻居时先点头笑一下"],
+            voice=["今天回得早呀。"],
+            status={"身份": "邻居", "心境": "随和", "和玩家的关系": "陌生人"},
+            relations={},
+            schedule=None,
+        )
+
+    monkeypatch.setattr(character_factory_module, "run_structured_agent", fake_run_structured_agent)
+    monkeypatch.setattr(character_factory_module, "get_character_factory_agent", lambda: object())
+    monkeypatch.setattr(
+        character_factory_module,
+        "get_character_factory_llm_config",
+        lambda: {"model": "test"},
+    )
+    monkeypatch.setattr(character_factory_module, "reload_conversation_agent", lambda _name: None)
+
+    spec = NewCharacterSpec(
+        character_id="neighbor",
+        relation_to="mitsuki",
+        relation_description="美月的邻居",
+    )
+    created = await character_factory_module.create_character(spec)
+    assert created is not None
+
+    agent_dir = character_dir / "neighbor"
+    assert not (agent_dir / "schedule.json").exists()
+    assert (agent_dir / "soul.md").exists()
+    assert (agent_dir / "status.md").exists()
+
+
+def test_build_schedule_template_block_uses_first_existing_schedule(character_dir, monkeypatch):
+    """已有角色带 schedule 时，template block 应包含其 period 元数据，不暴露具体 slots。"""
+    import json as _json
+
+    _seed(character_dir, "mitsuki", soul="# 美月\n")
+    (character_dir / "mitsuki" / "schedule.json").write_text(
+        _json.dumps(
+            {
+                "periods": [
+                    {
+                        "start": "2026-04-01",
+                        "end": "2026-07-31",
+                        "name": "春学期",
+                        "slots": [{"days": ["mon"], "time": "上午", "location": "教室"}],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    block = character_factory_module._build_schedule_template_block()
+    assert block.startswith("<schedule_template>")
+    assert "春学期（2026-04-01 至 2026-07-31）" in block
+    assert "教室" not in block  # 不暴露已有角色的具体地点
+
+
+def test_build_schedule_template_block_empty_when_no_existing_schedule(character_dir):
+    """没有任何已有 schedule 时返回空串。"""
+    _seed(character_dir, "mitsuki", soul="# 美月\n")
+    assert character_factory_module._build_schedule_template_block() == ""
 
 
 @pytest.mark.asyncio

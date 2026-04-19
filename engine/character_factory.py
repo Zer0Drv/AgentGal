@@ -5,12 +5,13 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from engine.agent_factory import get_character_factory_agent, reload_conversation_agent
 from engine.agent_runner import run_structured_agent
-from engine.agent_schema import NewCharacterCreation, NewCharacterSpec
+from engine.agent_schema import CharacterSchedule, NewCharacterCreation, NewCharacterSpec
 from llm.providers import get_character_factory_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field
@@ -71,6 +72,37 @@ def _format_existing_agents() -> str:
     return "\n".join(rows) if rows else "（暂无）"
 
 
+def _build_schedule_template_block() -> str:
+    """从首个已有角色 schedule.json 取 period start/end/name，给 LLM 一个可参照的时间范围模板。
+
+    只暴露 period 元数据（不暴露其他角色的具体地点），LLM 自己根据新角色身份填 slots。
+    没有任何已有 schedule 时返回空串，由 LLM 自行决定起止日期。
+    """
+    for agent in get_agent_names(include_narrator=False):
+        sched_path = CHARACTERS_DIR / agent / "schedule.json"
+        if not sched_path.exists():
+            continue
+        try:
+            data = json.loads(sched_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        periods = data.get("periods") or []
+        if not periods:
+            continue
+        rows = []
+        for p in periods:
+            start = (p.get("start") or "").strip()
+            end = (p.get("end") or "").strip()
+            name = (p.get("name") or "").strip()
+            if not start or not end:
+                continue
+            label = f"{name}（{start} 至 {end}）" if name else f"{start} 至 {end}"
+            rows.append(f"- {label}")
+        if rows:
+            return "<schedule_template>\n" + "\n".join(rows) + "\n</schedule_template>"
+    return ""
+
+
 def _build_factory_user_message(spec: NewCharacterSpec) -> str:
     narrator_status = read_agent_file("narrator", "status.md")
     current_time = extract_status_field(narrator_status, "当前时间").strip() or "（未知）"
@@ -102,6 +134,9 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
         f"已有角色（agent_id / 显示名）：{existing_agents}\n"
         "</world_now>"
     )
+    schedule_template = _build_schedule_template_block()
+    if schedule_template:
+        blocks.append(schedule_template)
     return "\n\n".join(blocks)
 
 
@@ -223,6 +258,20 @@ def _append_to_narrator_locations(display_name: str, location: str) -> None:
     update_status("narrator", "角色位置", new_value)
 
 
+def _write_schedule_json(agent_dir: Path, schedule: CharacterSchedule | None) -> bool:
+    """写新角色 schedule.json；schedule 为空或所有 period 都没有 slots 时跳过并返回 False。"""
+    if schedule is None or not schedule.periods:
+        return False
+    if not any(p.slots for p in schedule.periods):
+        return False
+    payload = schedule.model_dump(mode="json")
+    (agent_dir / "schedule.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return True
+
+
 def _write_bootstrap_files(
     spec: NewCharacterSpec,
     creation: NewCharacterCreation,
@@ -238,6 +287,12 @@ def _write_bootstrap_files(
 
     _write_status_md(agent_dir, creation.status, spec, creation.role)
     _write_relations_md(agent_dir, creation.relations, spec)
+
+    if not _write_schedule_json(agent_dir, creation.schedule):
+        routing_logger.warning(
+            f"[character_factory] {spec.character_id!r} 未生成 schedule.json，"
+            "schedule_snapshot 将显示「（无日程）」"
+        )
 
     narrator_status = read_agent_file("narrator", "status.md")
     last_seen = extract_status_field(narrator_status, "当前时间").strip()

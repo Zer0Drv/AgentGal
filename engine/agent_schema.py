@@ -58,6 +58,8 @@ class NewCharacterCreation(BaseModel):
     - dynamic：长期关系循环 + 内外反差
     - behavior：情境→反应模式
     - voice：典型台词样例
+
+    schedule 是新角色的默认日程（可空），用于 state_updater 的 schedule_snapshot 兜底。
     """
 
     role: str
@@ -67,6 +69,7 @@ class NewCharacterCreation(BaseModel):
     voice: list[str] = Field(default_factory=list)
     status: dict[str, str] = Field(default_factory=dict)
     relations: dict[str, str] = Field(default_factory=dict)
+    schedule: "CharacterSchedule | None" = None
 
     @field_validator("role", "identity", "dynamic", mode="before")
     @classmethod
@@ -183,3 +186,7 @@ class CharacterSchedulePeriod(BaseModel):
 
 class CharacterSchedule(BaseModel):
     periods: list[CharacterSchedulePeriod] = Field(default_factory=list)
+
+
+# 解析 NewCharacterCreation 中对 CharacterSchedule 的前向引用
+NewCharacterCreation.model_rebuild()

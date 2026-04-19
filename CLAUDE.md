@@ -125,7 +125,7 @@ server.py        ← shared/ + storage/ + engine/
   ↓
 调用 narrator，得到 NarratorOutput（targets + content + new_characters）
   ↓
-孵化 new_characters：`character_factory` 写出 soul/status/relations/memory/growth/user + `.last_seen.json`；孵化成功的新角色会进入本轮回应名单，若 narrator 漏写 `targets`，编排层会自动补入
+孵化 new_characters：`character_factory` 写出 soul/status/relations/memory/growth/user + `schedule.json`（LLM 未产出时跳过）+ `.last_seen.json`；孵化成功的新角色会进入本轮回应名单，若 narrator 漏写 `targets`，编排层会自动补入
   ↓
 将 narrator 内容写入单一 raw 历史（带 visible_to）
   ↓
