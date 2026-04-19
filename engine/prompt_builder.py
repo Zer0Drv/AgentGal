@@ -275,7 +275,9 @@ def build_user_message(
         f"<user_profile>\n{user_content.strip()}\n</user_profile>" if user_content else ""
     )
     parts.append(f"最近对话历史:\n\n{history}" if history else "")
-    parts.append(f"<status>\n{status_content}\n</status>" if status_content else "")
+    parts.append(
+        f"<status>\n{status_content.strip()}\n</status>" if status_content.strip() else ""
+    )
     parts.append(relations)
     parts.append(memory_prefix if memory_prefix else "")
     parts.append(f"玩家新消息: {latest_user_input}")
