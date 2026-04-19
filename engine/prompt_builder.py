@@ -24,6 +24,7 @@ from storage.agent_files import (
     read_agent_file,
     read_relations,
     read_sidecar_json,
+    resolve_agent_display_name,
     write_sidecar_json,
 )
 from storage.history import load_conversation_history  # re-export for callers
@@ -320,6 +321,7 @@ def _relation_label(candidate: str) -> str:
     return _format_agent(candidate)
 
 
+
 def build_relations_block(
     audience: str,
     scene_targets: list[str] | None = None,
@@ -341,7 +343,7 @@ def build_relations_block(
             for target in candidates:
                 if target == source:
                     continue
-                body = view.get(target, "").strip() or "（暂无）"
+                body = view.get(resolve_agent_display_name(target), "").strip() or "（暂无）"
                 lines.append(f"- {_relation_label(target)}：{body}")
             sections.append("\n".join(lines))
         body = "\n\n".join(sections)
@@ -350,7 +352,7 @@ def build_relations_block(
     own = read_relations(audience)
     lines: list[str] = []
     for target in candidates:
-        body = own.get(target, "").strip() or "（暂无）"
+        body = own.get(resolve_agent_display_name(target), "").strip() or "（暂无）"
         lines.append(f"- {_relation_label(target)}：{body}")
 
     body = "\n".join(lines)

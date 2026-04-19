@@ -27,6 +27,7 @@ from storage.agent_files import (
     add_pending_event,
     mark_event_triggered,
     read_agent_file,
+    resolve_agent_display_name,
     update_memory,
     update_player,
     update_relations,
@@ -149,9 +150,10 @@ class Character:
                     "[%s] 忽略 relations 中的未知目标: %s", self.name, target_clean
                 )
                 continue
+            display = resolve_agent_display_name(target_clean)
             ops.append((
-                f"relations[{target_clean}]",
-                lambda tg=target_clean, ct=content: update_relations(self.name, tg, str(ct)),
+                f"relations[{display}]",
+                lambda dn=display, ct=content: update_relations(self.name, dn, str(ct)),
             ))
 
         _apply_file_updates(self.name, ops)
