@@ -15,7 +15,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 from storage.agent_files import cleanup_old_backups
 from shared.config import character_path
-from engine.consolidation_flow import MemoryConsolidationFlow
+from consolidation.flow import MemoryConsolidationFlow
 
 
 async def main(agent: str, *, auto_write: bool = False) -> None:

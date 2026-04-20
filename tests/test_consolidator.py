@@ -14,10 +14,10 @@ sys.path.insert(0, str(project_root))
 
 try:
     import storage.agent_files as agent_files_module
-    import engine.consolidation_flow as consolidator_module
+    import consolidation.flow as consolidator_module
     import memory.parser as file_ops_module
-    from engine.consolidation_flow import MemoryConsolidationFlow
-    from engine.agent_schema import (
+    from consolidation.flow import MemoryConsolidationFlow
+    from agents.schema import (
         MemoryMergeEvent,
         MemoryMergeOutput,
     )

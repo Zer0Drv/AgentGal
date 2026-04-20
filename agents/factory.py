@@ -8,7 +8,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers import infer_provider_class
 from pydantic_ai.settings import ModelSettings
 
-from engine.agent_schema import (
+from agents.schema import (
     CharacterOutput,
     ChoicesOutput,
     GrowthDedupOutput,

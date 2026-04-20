@@ -15,8 +15,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from engine.agent_factory import initialize_conversation_agents, reload_conversation_agent
-from engine.consolidation_flow import memory_consolidation_flow
+from agents.factory import initialize_conversation_agents, reload_conversation_agent
+from consolidation.flow import memory_consolidation_flow
 from engine.conversation_flow import (
     bootstrap_new_characters,
     call_narrator_and_route,
@@ -24,7 +24,7 @@ from engine.conversation_flow import (
     run_agent_in_scene,
     run_state_updater,
 )
-from engine.save_manager import (
+from storage.save_manager import (
     export_save_archive_with_detail,
     has_existing_save,
     import_save_archive,

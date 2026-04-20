@@ -7,14 +7,14 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from engine.agent_factory import (
+from agents.factory import (
     get_growth_dedup_agent,
     get_growth_extract_agent,
     get_memory_merge_agent,
     get_memory_metadata_agent,
     get_player_profile_agent,
 )
-from engine.agent_runner import run_structured_agent, run_text_agent
+from agents.runner import run_structured_agent, run_text_agent
 from log_config.memory import memory_logger
 from llm.providers import get_consolidation_llm_config
 from shared.config import (
@@ -23,7 +23,7 @@ from shared.config import (
     HISTORY_HIGH,
     character_path,
 )
-from engine.prompt_builder import (
+from consolidation.inputs import (
     build_memory_merge_payload,
     format_raw_dialogue_for_owner,
 )
@@ -48,7 +48,7 @@ from memory.parser import (
     split_into_events,
 )
 from storage.vector_store import vector_store
-from engine.agent_schema import (
+from agents.schema import (
     GrowthDedupOutput,
     GrowthExtractOutput,
     MemoryMergeEvent,

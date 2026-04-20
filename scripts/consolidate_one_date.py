@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from engine.consolidation_flow import MemoryConsolidationFlow
+from consolidation.flow import MemoryConsolidationFlow
 from memory.parser import normalize, split_by_date
 
 

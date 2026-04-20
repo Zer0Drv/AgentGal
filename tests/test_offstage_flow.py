@@ -1,4 +1,4 @@
-"""测试 engine.offstage_flow.maybe_synthesize_offstage。"""
+"""测试 world.offstage.maybe_synthesize_offstage。"""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from engine import offstage_flow as offstage_flow_module
-from engine.agent_schema import OffstageMemoryBlock
+from world import offstage as offstage_flow_module
+from agents.schema import OffstageMemoryBlock
 
 
 def _write_character(

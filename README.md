@@ -112,9 +112,9 @@ uv run uvicorn server:app --reload
 
 ### 5. 记忆整理
 
-`engine/consolidation_flow.py` 负责角色后台记忆整理：
+`consolidation/flow.py` 负责角色后台记忆整理：
 
-- 通过 `engine/prompt_builder.py` 组装整理输入，并把 raw 对话对齐到当前角色视角
+- 通过 `consolidation/inputs.py` 组装整理输入，并把 raw 对话对齐到当前角色视角
 - 归并 `memory.md`
 - 提炼、更新并去重压缩 `growth.md`（仅角色）
 - 顺带精炼 `user.md`（仅角色）
@@ -141,6 +141,9 @@ uv run uvicorn server:app --reload
 │   ├── characters/
 │   └── templates/
 ├── engine/
+├── agents/
+├── world/
+├── consolidation/
 ├── llm/
 ├── log_config/
 ├── memory/

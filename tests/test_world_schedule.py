@@ -1,4 +1,4 @@
-"""测试 engine.world_schedule：解析、查询、时段切换。"""
+"""测试 world.schedule：解析、查询、时段切换。"""
 
 import json
 from pathlib import Path
@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from engine.agent_schema import CharacterSchedule
-from engine.world_schedule import (
+from agents.schema import CharacterSchedule
+from world.schedule import (
     collect_default_locations,
     detect_slot_change,
     find_slot,
@@ -179,7 +179,7 @@ def test_get_default_location(character_dir):
 
 
 def _patch_agents(names: list[str]):
-    return patch("engine.world_schedule.get_agent_names", return_value=names)
+    return patch("world.schedule.get_agent_names", return_value=names)
 
 
 def test_collect_default_locations(character_dir):

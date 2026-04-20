@@ -13,8 +13,8 @@ os.chdir(project_root)
 
 try:
     import engine.prompt_builder as prompt_builder
-    from engine import world_schedule as world_schedule_module
-    from engine.agent_schema import CharacterOutput
+    from world import schedule as world_schedule_module
+    from agents.schema import CharacterOutput
     from engine.character import Character
     from storage import agent_files
     from storage.agent_files import (

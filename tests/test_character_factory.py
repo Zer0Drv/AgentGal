@@ -15,7 +15,7 @@ try:
     import engine.character as character_module
     import engine.character_factory as character_factory_module
     import engine.conversation_flow as conversation_flow_module
-    from engine.agent_schema import (
+    from agents.schema import (
         CharacterSchedule,
         CharacterSchedulePeriod,
         CharacterScheduleSlot,

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from datetime import date as calendar_date
 
-from engine.agent_schema import (
+from agents.schema import (
     CharacterSchedule,
     CharacterSchedulePeriod,
     CharacterScheduleSlot,

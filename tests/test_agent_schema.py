@@ -1,6 +1,6 @@
 """测试 Agent 结构化输出模型。"""
 
-from engine.agent_schema import MAX_CHOICE_CHARS, ChoicesOutput
+from agents.schema import MAX_CHOICE_CHARS, ChoicesOutput
 
 
 def test_choices_output_trims_each_choice_to_50_chars():

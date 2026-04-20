@@ -2,13 +2,13 @@
 
 import asyncio
 
-from engine.agent_factory import get_choices_agent, get_state_updater_agent
-from engine.agent_runner import run_structured_agent
-from engine.agent_schema import ChoicesOutput, NewCharacterSpec, StateUpdaterOutput
+from agents.factory import get_choices_agent, get_state_updater_agent
+from agents.runner import run_structured_agent
+from agents.schema import ChoicesOutput, NewCharacterSpec, StateUpdaterOutput
 from engine.character import get_character, narrator
 from engine.character_factory import CreatedCharacterInfo, create_character
 from engine.prompt_builder import build_history_transcript, build_schedule_snapshot
-from engine.world_sync import post_turn_world_sync
+from world.sync import post_turn_world_sync
 from llm.providers import get_choices_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field

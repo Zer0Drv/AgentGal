@@ -26,15 +26,22 @@ agentgal-memos/
 │   ├── characters/             # 运行时角色数据
 │   ├── templates/              # 故事模板（school / modern）
 │   └── vectors.sqlite          # 向量库
-├── engine/                     # 应用层编排
-│   ├── agent_factory.py        # Agent 创建、注册表与 SDK model 配置
-│   ├── agent_runner.py         # SDK Runner 调用、Logfire trace 与 typed parse
-│   ├── agent_schema.py         # Pydantic 结构化输出类型
+├── engine/                     # 对话运行时编排
 │   ├── character.py            # Character / Narrator 运行封装与 typed 输出写回
+│   ├── character_factory.py    # 新角色孵化
 │   ├── conversation_flow.py    # 单轮对话编排与 UI 适配函数
-│   ├── consolidation_flow.py   # 记忆整理编排
-│   ├── prompt_builder.py       # prompt / 历史窗口 / 整理输入构造
-│   └── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
+│   └── prompt_builder.py       # 对话 prompt / 历史窗口 / schedule 快照构造
+├── agents/                     # SDK 基础设施（技术支撑层）
+│   ├── factory.py              # Agent 创建、注册表与 SDK model 配置
+│   ├── runner.py               # SDK Runner 调用、Logfire trace 与 typed parse
+│   └── schema.py               # Pydantic 结构化输出类型
+├── world/                      # 世界模型（时间 / 位置 / 离场）
+│   ├── schedule.py             # 角色 schedule 查询、游戏时间解析、时段匹配
+│   ├── sync.py                 # 回合后位置 / last_seen 同步
+│   └── offstage.py             # 离场追补（offstage_synthesizer）
+├── consolidation/              # 后台记忆整理（独立流程）
+│   ├── flow.py                 # 整理编排：memory 归并 / growth / user 精炼
+│   └── inputs.py               # 整理 prompt 组装（memory_owner / raw_dialogue）
 ├── llm/
 │   ├── providers.py            # Provider 配置与 URL 解析（返回 provider/api_url/api_key/model/temperature）
 │   ├── embedding.py            # Embeddings 客户端（embed_async / embed_sync）
@@ -47,10 +54,11 @@ agentgal-memos/
 ├── shared/                     # 纯配置与无副作用工具函数
 │   ├── config.py               # 路径、运行参数、character_path、get_agent_names
 │   └── text_utils.py           # 文本清理、get_display_name
-├── storage/                    # 持久化基础设施（文件 / JSONL / sqlite-vec）
+├── storage/                    # 持久化基础设施（文件 / JSONL / sqlite-vec / 存档）
 │   ├── agent_files.py          # 角色目录文件操作（read/write soul/memory/status/user/growth/sidecar）
 │   ├── history.py              # narrator raw JSONL 对话历史读取
 │   ├── message_router.py       # 对话写入 / 可见性过滤
+│   ├── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 │   └── vector_store.py         # sqlite-vec 向量存储（write/delete + 原始候选检索）
 ├── prompts/                    # narrator / character / consolidation prompts
 ├── scripts/                    # 维护脚本
@@ -68,9 +76,12 @@ agentgal-memos/
 shared/          ← 无内部依赖
 storage/         ← shared/
 llm/             ← shared/
+agents/          ← shared/                            # SDK 基础层
 memory/          ← shared/ + storage/ + llm/
-engine/          ← shared/ + storage/ + memory/ + llm/
-server.py        ← shared/ + storage/ + engine/
+world/           ← shared/ + storage/ + agents/
+consolidation/   ← shared/ + storage/ + agents/ + memory/ + llm/
+engine/          ← shared/ + storage/ + agents/ + memory/ + world/ + consolidation/
+server.py        ← 全部
 ```
 
 ## 运行时文件职责
@@ -246,9 +257,9 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ## 记忆整理
 
-`engine/consolidation_flow.py` 负责角色后台整理：
+`consolidation/flow.py` 负责角色后台整理：
 
-- 组装整理流程，并调用 `engine/prompt_builder.py` 准备整理输入
+- 组装整理流程，并调用 `consolidation/inputs.py` 准备整理输入
 - 归并 `memory.md`
 - 提炼 / 更新 `growth.md`（仅角色）
 - 去重压缩 `growth.md`（仅角色）
@@ -275,7 +286,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ## 存档与重置
 
-由 `engine/save_manager.py` 负责，通过 FastAPI 接口暴露：
+由 `storage/save_manager.py` 负责，通过 FastAPI 接口暴露：
 
 - `POST /api/save`：导出 zip 到 `saves/`
 - `GET /api/saves`：列出存档

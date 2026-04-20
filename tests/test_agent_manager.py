@@ -13,7 +13,7 @@ try:
     import engine.conversation_flow as conversation_flow_module
     import engine.character as character_module
     from engine.character import Character, Narrator
-    from engine.agent_schema import CharacterOutput, NarratorOutput, NarratorStatus, StateUpdaterOutput
+    from agents.schema import CharacterOutput, NarratorOutput, NarratorStatus, StateUpdaterOutput
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip conversation flow tests: missing dependency ({exc})", allow_module_level=True)
 

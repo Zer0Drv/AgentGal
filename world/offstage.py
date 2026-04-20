@@ -7,10 +7,10 @@
 
 from __future__ import annotations
 
-from engine.agent_factory import get_offstage_synthesizer_agent
-from engine.agent_runner import run_structured_agent
-from engine.agent_schema import OffstageMemoryBlock
-from engine.world_schedule import load_character_schedule
+from agents.factory import get_offstage_synthesizer_agent
+from agents.runner import run_structured_agent
+from agents.schema import OffstageMemoryBlock
+from world.schedule import load_character_schedule
 from llm.providers import get_offstage_synthesizer_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field, game_day_diff

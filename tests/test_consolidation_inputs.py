@@ -9,7 +9,7 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
-from engine.prompt_builder import (
+from consolidation.inputs import (
     build_memory_owner_block,
     build_memory_merge_payload,
     format_raw_dialogue_for_owner,
@@ -49,7 +49,7 @@ def test_format_raw_dialogue_for_character_owner(monkeypatch):
             },
         ]
 
-    monkeypatch.setattr("engine.prompt_builder.load_conversation_history", mock_history)
+    monkeypatch.setattr("consolidation.inputs.load_conversation_history", mock_history)
 
     formatted = format_raw_dialogue_for_owner("chenxiao", 20)
 
@@ -66,7 +66,7 @@ def test_build_memory_merge_payload_includes_owner_before_memory(monkeypatch):
     """memory merge payload 应先注入记忆主体，再附带 memory 与 raw 对话。"""
 
     monkeypatch.setattr(
-        "engine.prompt_builder.read_agent_file",
+        "consolidation.inputs.read_agent_file",
         lambda agent_name, filename: "<role>陈晓</role>" if filename == "soul.md" else "",
     )
 

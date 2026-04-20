@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from engine.consolidation_flow import memory_consolidation_flow
+from consolidation.flow import memory_consolidation_flow
 
 
 def _parse_args() -> argparse.Namespace:

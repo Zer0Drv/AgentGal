@@ -12,7 +12,7 @@ os.chdir(project_root)
 
 try:
     import engine.prompt_builder as prompt_builder
-    from engine import world_schedule as world_schedule_module
+    from world import schedule as world_schedule_module
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip prompt world block tests: missing dependency ({exc})", allow_module_level=True)
 

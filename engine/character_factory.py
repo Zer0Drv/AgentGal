@@ -9,9 +9,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from engine.agent_factory import get_character_factory_agent, reload_conversation_agent
-from engine.agent_runner import run_structured_agent
-from engine.agent_schema import CharacterSchedule, NewCharacterCreation, NewCharacterSpec
+from agents.factory import get_character_factory_agent, reload_conversation_agent
+from agents.runner import run_structured_agent
+from agents.schema import CharacterSchedule, NewCharacterCreation, NewCharacterSpec
 from llm.providers import get_character_factory_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field

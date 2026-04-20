@@ -1,4 +1,4 @@
-"""测试 engine.world_sync.post_turn_world_sync。
+"""测试 world.sync.post_turn_world_sync。
 
 当前职责：为出场 targets 写入 `.last_seen.json`；位置不再由 world_sync 维护。
 """
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from engine import world_sync as world_sync_module
+from world import sync as world_sync_module
 
 
 @pytest.fixture

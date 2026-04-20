@@ -37,7 +37,7 @@ try:
     vector_store_module = importlib.import_module("storage.vector_store")
     retrieval_module = importlib.import_module("memory.retrieval")
     from storage.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
-    from engine.save_manager import export_save_archive, import_save_archive
+    from storage.save_manager import export_save_archive, import_save_archive
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip save_load tests: missing dependency ({exc})", allow_module_level=True)
 

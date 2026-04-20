@@ -6,15 +6,15 @@ import asyncio
 import re
 from collections.abc import Callable
 
-from engine.agent_factory import get_conversation_agent
-from engine.agent_runner import run_structured_agent
-from engine.agent_schema import (
+from agents.factory import get_conversation_agent
+from agents.runner import run_structured_agent
+from agents.schema import (
     CharacterOutput,
     NarratorOutput,
     NewCharacterSpec,
     StateUpdaterOutput,
 )
-from engine.offstage_flow import maybe_synthesize_offstage
+from world.offstage import maybe_synthesize_offstage
 from engine.prompt_builder import build_search_query, build_user_message
 from llm.providers import get_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
@@ -97,7 +97,7 @@ class Character:
         )
         if was_truncated:
             routing_logger.info("[%s] 历史窗口截断，触发记忆整理", self.name)
-            from engine.consolidation_flow import memory_consolidation_flow
+            from consolidation.flow import memory_consolidation_flow
             asyncio.create_task(memory_consolidation_flow.consolidate_agent(self.name))
 
         config = get_llm_config()
