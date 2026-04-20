@@ -1,6 +1,7 @@
 """动态生成新角色：narrator 请求时给新人搭骨架。
 
-流程：校验锚点 → 调 character_factory agent 生成 role/identity/dynamic/behavior/voice/status/relations → 写文件。
+流程：校验锚点 → 调 character_factory agent 生成
+role/identity/goal/dynamic/behavior/voice/status/relations/schedule → 写文件。
 """
 
 from __future__ import annotations
@@ -72,37 +73,6 @@ def _format_existing_agents() -> str:
     return "\n".join(rows) if rows else "（暂无）"
 
 
-def _build_schedule_template_block() -> str:
-    """从首个已有角色 schedule.json 取 period start/end/name，给 LLM 一个可参照的时间范围模板。
-
-    只暴露 period 元数据（不暴露其他角色的具体地点），LLM 自己根据新角色身份填 slots。
-    没有任何已有 schedule 时返回空串，由 LLM 自行决定起止日期。
-    """
-    for agent in get_agent_names(include_narrator=False):
-        sched_path = CHARACTERS_DIR / agent / "schedule.json"
-        if not sched_path.exists():
-            continue
-        try:
-            data = json.loads(sched_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        periods = data.get("periods") or []
-        if not periods:
-            continue
-        rows = []
-        for p in periods:
-            start = (p.get("start") or "").strip()
-            end = (p.get("end") or "").strip()
-            name = (p.get("name") or "").strip()
-            if not start or not end:
-                continue
-            label = f"{name}（{start} 至 {end}）" if name else f"{start} 至 {end}"
-            rows.append(f"- {label}")
-        if rows:
-            return "<schedule_template>\n" + "\n".join(rows) + "\n</schedule_template>"
-    return ""
-
-
 def _build_factory_user_message(spec: NewCharacterSpec) -> str:
     narrator_status = read_agent_file("narrator", "status.md")
     current_time = extract_status_field(narrator_status, "当前时间").strip() or "（未知）"
@@ -134,9 +104,6 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
         f"已有角色（agent_id / 显示名）：{existing_agents}\n"
         "</world_now>"
     )
-    schedule_template = _build_schedule_template_block()
-    if schedule_template:
-        blocks.append(schedule_template)
     return "\n\n".join(blocks)
 
 
@@ -227,7 +194,7 @@ def _format_voice_block(items: list[str]) -> str:
 
 
 def _build_soul_md(creation: NewCharacterCreation) -> str:
-    """按美月模板结构拼装 soul.md：role / identity / dynamic / behavior / voice。"""
+    """按模板结构拼装 soul.md：role / identity / goal / dynamic / behavior / voice。"""
     behavior_block = _format_bulleted_block(creation.behavior)
     voice_block = _format_voice_block(creation.voice)
 
@@ -237,6 +204,10 @@ def _build_soul_md(creation: NewCharacterCreation) -> str:
         "<identity>",
         creation.identity,
         "</identity>",
+        "",
+        "<goal>",
+        creation.goal.strip(),
+        "</goal>",
         "",
         "<dynamic>",
         creation.dynamic,

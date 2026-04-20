@@ -218,6 +218,7 @@ def test_new_character_creation_normalizes_identity_to_single_line():
     creation = NewCharacterCreation(
         role="桥本志津",
         identity="美月的妈妈，\n来学校接她放学的家长。",
+        goal="你想守住女儿——不抢她的光，但也不想从她的生活里淡出。",
         dynamic="你牵挂着女儿的健康。\n\n每次去学校都忍不住多问几句。",
         behavior=["被女儿嫌弃时，先退一步再绕回来"],
         voice=["美月，你脸色怎么这么差？"],
@@ -225,6 +226,20 @@ def test_new_character_creation_normalizes_identity_to_single_line():
         relations={},
     )
     assert creation.identity == "美月的妈妈， 来学校接她放学的家长。"
+
+
+def test_new_character_creation_rejects_blank_goal():
+    with pytest.raises(ValueError, match="field cannot be empty"):
+        NewCharacterCreation(
+            role="桥本志津",
+            identity="美月的妈妈，来学校接她放学的家长。",
+            goal="   ",
+            dynamic="你牵挂着女儿的健康。\n\n每次去学校都忍不住多问几句。",
+            behavior=["被女儿嫌弃时，先退一步再绕回来"],
+            voice=["美月，你脸色怎么这么差？"],
+            status={},
+            relations={},
+        )
 
 
 def test_build_factory_user_message_omits_empty_optional_fields(character_dir):
@@ -271,6 +286,10 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
         return NewCharacterCreation(
             role="桥本志津",
             identity="美月的妈妈，来学校接她放学的家长。",
+            goal=(
+                "你想一直留在女儿能找到你的位置——她不说累，你就装没看见；"
+                "她一松口，你就第一个在。你怕的是有一天她连找你都懒了。"
+            ),
             dynamic=(
                 "你牵挂着女儿的每一次练习和每一场演出，可她越长大越不愿意让你看见她累。\n\n"
                 "你嘴上只问她冷不冷、累不累，心里其实想知道她是不是还撑得住——"
@@ -356,6 +375,7 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
     soul = (agent_dir / "soul.md").read_text(encoding="utf-8")
     assert soul.startswith("<role>桥本志津</role>")
     assert "<identity>\n美月的妈妈，来学校接她放学的家长。\n</identity>" in soul
+    assert "<goal>" in soul and "</goal>" in soul and "找到你的位置" in soul
     assert "<dynamic>" in soul and "</dynamic>" in soul
     assert "<behavior>" in soul and "- 被美月嫌弃时先笑一下退一步" in soul
     assert "<voice>" in soul and "美月，今天累不累？" in soul
@@ -402,6 +422,7 @@ async def test_create_character_skips_schedule_when_llm_omits(character_dir, mon
         return NewCharacterCreation(
             role="林晚",
             identity="美月的邻居。",
+            goal="你希望邻里相处轻松，不被卷进别家的事；有礼貌就够了。",
             dynamic="你偶尔撞见美月，会打招呼但没熟到能聊天。",
             behavior=["撞见邻居时先点头笑一下"],
             voice=["今天回得早呀。"],
@@ -432,40 +453,6 @@ async def test_create_character_skips_schedule_when_llm_omits(character_dir, mon
     assert (agent_dir / "soul.md").exists()
     assert (agent_dir / "status.md").exists()
 
-
-def test_build_schedule_template_block_uses_first_existing_schedule(character_dir, monkeypatch):
-    """已有角色带 schedule 时，template block 应包含其 period 元数据，不暴露具体 slots。"""
-    import json as _json
-
-    _seed(character_dir, "mitsuki", soul="# 美月\n")
-    (character_dir / "mitsuki" / "schedule.json").write_text(
-        _json.dumps(
-            {
-                "periods": [
-                    {
-                        "start": "2026-04-01",
-                        "end": "2026-07-31",
-                        "name": "春学期",
-                        "slots": [{"days": ["mon"], "time": "上午", "location": "教室"}],
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    block = character_factory_module._build_schedule_template_block()
-    assert block.startswith("<schedule_template>")
-    assert "春学期（2026-04-01 至 2026-07-31）" in block
-    assert "教室" not in block  # 不暴露已有角色的具体地点
-
-
-def test_build_schedule_template_block_empty_when_no_existing_schedule(character_dir):
-    """没有任何已有 schedule 时返回空串。"""
-    _seed(character_dir, "mitsuki", soul="# 美月\n")
-    assert character_factory_module._build_schedule_template_block() == ""
-
-
 @pytest.mark.asyncio
 async def test_create_character_validates_before_calling_llm(character_dir, monkeypatch):
     _seed(character_dir, "mitsuki")
@@ -477,6 +464,7 @@ async def test_create_character_validates_before_calling_llm(character_dir, monk
         return NewCharacterCreation(
             role="x",
             identity="x",
+            goal="x",
             dynamic="x",
             behavior=["x"],
             voice=["x"],
@@ -509,6 +497,7 @@ async def test_create_character_seeds_relation_to_when_llm_omits(character_dir, 
         return NewCharacterCreation(
             role="林晚",
             identity="美月的邻居。",
+            goal="你希望邻里日子安静，谁都不欠谁。",
             dynamic="你偶尔撞见美月从家里出来，会打个招呼，但没熟到能聊天。",
             behavior=["撞见邻居时先点头笑一下，再决定要不要搭话"],
             voice=["今天回得早呀。"],

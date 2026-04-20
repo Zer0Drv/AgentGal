@@ -165,7 +165,7 @@ uv run uvicorn server:app --reload
 
 ### 角色文件职责
 
-- `soul.md`：角色定义，只读
+- `soul.md`：角色定义，只读；分 `<identity>` / `<goal>` / `<dynamic>` / `<behavior>` / `<voice>` 五段，其中 `<goal>` 用来写角色在故事期内要拿到的具体长期目标
 - `memory.md`：角色长期记忆（仅角色有）
 - `status.md`：当前状态 / 打算 / 待触发事件
 - `user.md`：角色对玩家的认知（仅角色有）
