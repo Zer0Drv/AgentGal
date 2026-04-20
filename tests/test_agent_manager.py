@@ -10,7 +10,6 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
-    import engine.conversation_flow as conversation_flow_module
     import engine.character as character_module
     from engine.character import Character, Narrator
     from agents.schema import CharacterOutput, NarratorOutput, NarratorStatus, StateUpdaterOutput
@@ -34,7 +33,7 @@ def test_sanitize_narrator_scene_description_truncates_character_dialogue(monkey
 
 
 @pytest.mark.asyncio
-async def test_call_narrator_and_route_returns_fallback_on_run_failure(monkeypatch):
+async def test_narrator_route_returns_fallback_on_run_failure(monkeypatch):
     monkeypatch.setattr(
         character_module,
         "get_agent_names",
@@ -47,9 +46,7 @@ async def test_call_narrator_and_route_returns_fallback_on_run_failure(monkeypat
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, new_characters, is_valid = await conversation_flow_module.call_narrator_and_route(
-        "你好"
-    )
+    targets, scene_description, new_characters, is_valid = await Narrator().route("你好")
 
     assert targets == []
     assert scene_description == ""
@@ -58,7 +55,7 @@ async def test_call_narrator_and_route_returns_fallback_on_run_failure(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_call_narrator_and_route_filters_targets_and_sanitizes_scene(monkeypatch):
+async def test_narrator_route_filters_targets_and_sanitizes_scene(monkeypatch):
     monkeypatch.setattr(
         character_module,
         "get_agent_names",
@@ -76,9 +73,7 @@ async def test_call_narrator_and_route_filters_targets_and_sanitizes_scene(monke
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, new_characters, is_valid = await conversation_flow_module.call_narrator_and_route(
-        "你好"
-    )
+    targets, scene_description, new_characters, is_valid = await Narrator().route("你好")
 
     assert targets == ["mitsuki"]
     assert scene_description == "场景铺垫。"
@@ -86,7 +81,7 @@ async def test_call_narrator_and_route_filters_targets_and_sanitizes_scene(monke
 
 
 @pytest.mark.asyncio
-async def test_call_narrator_and_route_retries_when_targets_filter_to_empty(monkeypatch):
+async def test_narrator_route_retries_when_targets_filter_to_empty(monkeypatch):
     monkeypatch.setattr(
         character_module,
         "get_agent_names",
@@ -104,9 +99,7 @@ async def test_call_narrator_and_route_retries_when_targets_filter_to_empty(monk
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, new_characters, is_valid = await conversation_flow_module.call_narrator_and_route(
-        "回家睡觉"
-    )
+    targets, scene_description, new_characters, is_valid = await Narrator().route("回家睡觉")
 
     assert calls == 2
     assert targets == ["mitsuki"]
@@ -115,7 +108,7 @@ async def test_call_narrator_and_route_retries_when_targets_filter_to_empty(monk
 
 
 @pytest.mark.asyncio
-async def test_call_narrator_and_route_retries_when_targets_are_empty(monkeypatch):
+async def test_narrator_route_retries_when_targets_are_empty(monkeypatch):
     monkeypatch.setattr(
         character_module,
         "get_agent_names",
@@ -133,9 +126,7 @@ async def test_call_narrator_and_route_retries_when_targets_are_empty(monkeypatc
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, new_characters, is_valid = await conversation_flow_module.call_narrator_and_route(
-        "回家睡觉"
-    )
+    targets, scene_description, new_characters, is_valid = await Narrator().route("回家睡觉")
 
     assert calls == 2
     assert targets == ["mitsuki"]
@@ -144,7 +135,7 @@ async def test_call_narrator_and_route_retries_when_targets_are_empty(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_call_narrator_and_route_rejects_scene_without_valid_targets(monkeypatch):
+async def test_narrator_route_rejects_scene_without_valid_targets(monkeypatch):
     monkeypatch.setattr(
         character_module,
         "get_agent_names",
@@ -157,17 +148,14 @@ async def test_call_narrator_and_route_rejects_scene_without_valid_targets(monke
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, new_characters, is_valid = await conversation_flow_module.call_narrator_and_route(
-        "回家睡觉"
-    )
+    targets, scene_description, new_characters, is_valid = await Narrator().route("回家睡觉")
 
     assert targets == []
     assert scene_description == "走廊里传来广播声。"
     assert is_valid is False
 
 
-@pytest.mark.asyncio
-async def test_state_updater_output_writes_narrator_status_and_events(monkeypatch):
+def test_state_updater_output_writes_narrator_status_and_events(monkeypatch):
     calls: list[tuple[str, str, str, str | None]] = []
 
     monkeypatch.setattr(
@@ -196,7 +184,7 @@ async def test_state_updater_output_writes_narrator_status_and_events(monkeypatc
         add_event=["【楼下碰面】10月24日 09:30 角色B到达公寓楼下"],
     )
 
-    await Narrator().apply_state_updates(output)
+    Narrator()._apply_state_updates(output)
 
     assert ("status", "narrator", "场景", "餐厅") in calls
     assert ("status", "narrator", "角色位置", "- 玩家：餐桌旁") in calls
@@ -345,7 +333,7 @@ async def test_apply_response_updates_logs_structured_file_updates(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_state_updater_uses_state_updater_agent(monkeypatch):
+async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     captured: dict = {}
     applied: list[tuple] = []
     fake_agent = object()
@@ -358,23 +346,25 @@ async def test_run_state_updater_uses_state_updater_agent(monkeypatch):
         }
         return files.get((agent, filename), "")
 
-    monkeypatch.setattr(conversation_flow_module, "read_agent_file", fake_read_agent_file)
+    monkeypatch.setattr(character_module, "read_agent_file", fake_read_agent_file)
     monkeypatch.setattr(
-        conversation_flow_module,
+        character_module,
         "get_agent_names",
         lambda include_narrator=False: ["role_b"],
     )
-    monkeypatch.setattr(conversation_flow_module, "get_display_name", lambda *_args: "角色B")
+    monkeypatch.setattr(character_module, "get_display_name", lambda *_args: "角色B")
     monkeypatch.setattr(
-        conversation_flow_module,
+        character_module,
         "get_narrator_llm_config",
         lambda: {"model": "test-model"},
     )
     monkeypatch.setattr(
-        conversation_flow_module,
+        character_module,
         "get_state_updater_agent",
         lambda: fake_agent,
     )
+    monkeypatch.setattr(character_module, "build_schedule_snapshot", lambda _t: "")
+    monkeypatch.setattr(character_module, "post_turn_world_sync", lambda *_a, **_k: None)
     history_limits: list[int | None] = []
 
     def fake_load_conversation_history(limit=None):
@@ -388,7 +378,7 @@ async def test_run_state_updater_uses_state_updater_agent(monkeypatch):
         return messages if limit is None else messages[-limit:]
 
     monkeypatch.setattr(
-        conversation_flow_module,
+        character_module,
         "load_conversation_history",
         fake_load_conversation_history,
     )
@@ -399,13 +389,13 @@ async def test_run_state_updater_uses_state_updater_agent(monkeypatch):
             status=NarratorStatus(叙事焦点="玩家私下联系角色B")
         )
 
-    async def fake_apply_state_updates(self, output):
+    def fake_apply_state_updates(self, output):
         applied.append((self.name, output))
 
-    monkeypatch.setattr(conversation_flow_module, "run_structured_agent", fake_run_structured_agent)
-    monkeypatch.setattr(character_module.Narrator, "apply_state_updates", fake_apply_state_updates)
+    monkeypatch.setattr(character_module, "run_structured_agent", fake_run_structured_agent)
+    monkeypatch.setattr(character_module.Narrator, "_apply_state_updates", fake_apply_state_updates)
 
-    await conversation_flow_module.run_state_updater([])
+    await Narrator().update_state([])
 
     assert captured["agent"] is fake_agent
     assert captured["output_type"] is StateUpdaterOutput

@@ -1,20 +1,18 @@
-"""对话编排流程。"""
+"""对话编排流程。
 
-import asyncio
+职责：UI 适配 + 一次性编排。具体的路由 / 状态更新 / 记忆写回都封装在
+Narrator / Character 实体方法里，这里只负责把编排串起来。
+"""
 
-from agents.factory import get_choices_agent, get_state_updater_agent
+from agents.factory import get_choices_agent
 from agents.runner import run_structured_agent
-from agents.schema import ChoicesOutput, NewCharacterSpec, StateUpdaterOutput
+from agents.schema import ChoicesOutput, NewCharacterSpec
 from engine.character import get_character, narrator
 from engine.character_factory import CreatedCharacterInfo, create_character
-from engine.prompt_builder import build_history_transcript, build_schedule_snapshot
-from world.sync import post_turn_world_sync
-from llm.providers import get_choices_llm_config, get_narrator_llm_config
+from engine.prompt_builder import build_history_transcript
+from llm.providers import get_choices_llm_config
 from log_config.routing import routing_logger
-from memory.parser import extract_status_field
-from shared.config import AGENT_RUN_TIMEOUT_SECONDS, get_agent_names
-from shared.text_utils import clean_response, get_display_name, is_valid_response, process_character_response, role_to_speaker
-from storage.agent_files import read_agent_file
+from shared.text_utils import clean_response, is_valid_response, process_character_response
 from storage.history import load_conversation_history
 
 
@@ -48,85 +46,6 @@ async def generate_choices(
     except Exception:
         return []
     return output.choices[:3]
-
-
-def _build_state_updater_input() -> str:
-    narrator_status = read_agent_file("narrator", "status.md")
-    game_time = extract_status_field(narrator_status, "当前时间").strip()
-    schedule_snapshot = build_schedule_snapshot(game_time)
-
-    character_intention = _format_character_intentions()
-    raw_messages = load_conversation_history(limit=3)
-    history_lines: list[str] = []
-    for msg in raw_messages:
-        role = msg.get("role", "unknown")
-        content = (msg.get("content") or "").strip()
-        if not content:
-            continue
-        content = "\n".join(line.rstrip() for line in content.splitlines())
-        if len(content) > 900:
-            content = content[:900].rstrip() + "..."
-        speaker = role_to_speaker(role)
-        history_lines.append(f"{speaker}: {content}")
-    recent_history = "\n\n".join(history_lines) if history_lines else "无"
-
-    parts: list[str] = []
-    if schedule_snapshot:
-        parts.append(schedule_snapshot)
-    parts.append(f"<character_intention>\n{character_intention}\n</character_intention>")
-    parts.append(f"<current_narrator_status>\n{narrator_status}\n</current_narrator_status>")
-    parts.append(f"<recent_history>\n{recent_history}\n</recent_history>")
-    return "\n\n---\n\n".join(parts)
-
-
-def _format_character_intentions() -> str:
-    """提取所有角色的「打算」，供 state_updater 同步到公共待触发事件。"""
-    blocks: list[str] = []
-    for agent_name in get_agent_names(include_narrator=False):
-        status_content = read_agent_file(agent_name, "status.md")
-        intentions = extract_status_field(status_content, "打算").strip() or "（暂无）"
-        soul_content = read_agent_file(agent_name, "soul.md")
-        display_name = get_display_name(agent_name, soul_content)
-        blocks.append(f"【{agent_name} / {display_name}】\n{intentions}")
-    return "\n\n".join(blocks) if blocks else "无"
-
-
-async def run_state_updater(targets: list[str]) -> None:
-    """回合结束后维护 narrator 的状态和待触发事件，并同步 .last_seen.json。"""
-    prev_status = read_agent_file("narrator", "status.md")
-    prev_time = extract_status_field(prev_status, "当前时间").strip()
-
-    user_message = _build_state_updater_input()
-    config = get_narrator_llm_config()
-    try:
-        output = await run_structured_agent(
-            agent=get_state_updater_agent(),
-            user_input=user_message,
-            output_type=StateUpdaterOutput,
-            timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
-            workflow_name="agentgal_state_update",
-            trace_metadata={"agent_name": "state_updater"},
-            usage_agent="state_updater",
-            usage_phase="agent_run",
-            model_name=config["model"],
-        )
-    except Exception as e:
-        routing_logger.error(f"[state_updater] 运行失败: {e}")
-        return
-    await narrator.apply_state_updates(output)
-
-    new_time = output.status.当前时间.strip() or prev_time
-    try:
-        post_turn_world_sync(targets, new_time)
-    except Exception as e:
-        routing_logger.error(f"[world_sync] 同步 .last_seen.json 失败: {e}")
-
-
-async def call_narrator_and_route(
-    user_input: str,
-) -> tuple[list[str], str, list[NewCharacterSpec], bool]:
-    """调用 narrator 获取路由决策、场景描述和新角色请求。"""
-    return await narrator.route(user_input)
 
 
 async def bootstrap_new_characters(

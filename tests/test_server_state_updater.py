@@ -20,11 +20,11 @@ except ModuleNotFoundError as exc:
 async def test_settle_pending_state_update_waits_for_background_task(monkeypatch):
     started = False
 
-    async def fake_run_state_updater(*_args):
+    async def fake_update_state(_self, *_args):
         nonlocal started
         started = True
 
-    monkeypatch.setattr(server_module, "run_state_updater", fake_run_state_updater)
+    monkeypatch.setattr(server_module.narrator.__class__, "update_state", fake_update_state)
     server_module._pending_state_update_task = None
 
     server_module._start_state_update([])
@@ -40,11 +40,11 @@ async def test_settle_pending_state_update_waits_for_background_task(monkeypatch
 async def test_settle_pending_state_update_cancels_background_task(monkeypatch):
     release = False
 
-    async def fake_run_state_updater(*_args):
+    async def fake_update_state(_self, *_args):
         while not release:
             await server_module.asyncio.sleep(0)
 
-    monkeypatch.setattr(server_module, "run_state_updater", fake_run_state_updater)
+    monkeypatch.setattr(server_module.narrator.__class__, "update_state", fake_update_state)
     server_module._pending_state_update_task = None
 
     server_module._start_state_update([])
@@ -115,7 +115,7 @@ async def test_chat_stream_emits_created_character_identity(monkeypatch):
     async def fake_settle_pending_state_update(*, cancel=False):
         return None
 
-    async def fake_call_narrator_and_route(_user_input):
+    async def fake_route(_self, _user_input):
         return [], "", [], True
 
     async def fake_bootstrap_new_characters(_specs, _targets):
@@ -135,11 +135,7 @@ async def test_chat_stream_emits_created_character_identity(monkeypatch):
         "_settle_pending_state_update",
         fake_settle_pending_state_update,
     )
-    monkeypatch.setattr(
-        server_module,
-        "call_narrator_and_route",
-        fake_call_narrator_and_route,
-    )
+    monkeypatch.setattr(server_module.narrator.__class__, "route", fake_route)
     monkeypatch.setattr(
         server_module,
         "bootstrap_new_characters",

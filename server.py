@@ -17,12 +17,11 @@ from pydantic import BaseModel
 
 from agents.factory import initialize_conversation_agents, reload_conversation_agent
 from consolidation.flow import memory_consolidation_flow
+from engine.character import narrator, reset_entities
 from engine.conversation_flow import (
     bootstrap_new_characters,
-    call_narrator_and_route,
     generate_choices,
     run_agent_in_scene,
-    run_state_updater,
 )
 from storage.save_manager import (
     export_save_archive_with_detail,
@@ -103,7 +102,7 @@ async def _settle_pending_state_update(*, cancel: bool = False) -> None:
 
 def _start_state_update(targets: list[str]) -> None:
     global _pending_state_update_task
-    _pending_state_update_task = asyncio.create_task(run_state_updater(targets))
+    _pending_state_update_task = asyncio.create_task(narrator.update_state(targets))
 
 
 # =============================================================================
@@ -203,6 +202,7 @@ async def api_new_game(req: NewGameRequest) -> JSONResponse:
     await _settle_pending_state_update(cancel=True)
     _clear_last_choices()
     intro_text, opening_text = await reset_game(req.story_id)
+    reset_entities()
     for name in get_agent_names(include_narrator=True):
         reload_conversation_agent(name)
 
@@ -229,7 +229,7 @@ async def _chat_stream(user_input: str):
 
     # 1. narrator 路由
     targets, scene_description, new_character_specs, is_narrator_valid = (
-        await call_narrator_and_route(user_input)
+        await narrator.route(user_input)
     )
 
     # 1.5 处理 narrator 请求的新角色（孵化成功后加入 targets）
@@ -351,6 +351,7 @@ async def api_load(req: LoadRequest) -> JSONResponse:
     await _settle_pending_state_update(cancel=True)
     success = await import_save_archive(req.filename)
     if success:
+        reset_entities()
         for name in get_agent_names(include_narrator=True):
             reload_conversation_agent(name)
         raw = load_conversation_history(limit=_RECENT_HISTORY_LIMIT)
@@ -383,6 +384,7 @@ async def api_reset(req: ResetRequest) -> JSONResponse:
     await _settle_pending_state_update(cancel=True)
     _clear_last_choices()
     intro_text, opening_text = await reset_game(req.story_id)
+    reset_entities()
     for name in get_agent_names(include_narrator=True):
         reload_conversation_agent(name)
 

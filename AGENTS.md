@@ -172,7 +172,7 @@ world_sync 为出场 targets 写入 `.last_seen.json`
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`
 
-`engine/character.py` 的 `Character` / `Narrator` 运行封装读取 typed 字段写回文件。
+`engine/character.py` 的 `Character` / `Narrator` 均继承自 `BaseEntity`，封装 soul / status 的读写与 SDK 调用；写入统一走实体方法（`set_status_fields` / `append_memory` / `add_event` / `mark_triggered` / `set_relation` / `set_user_profile_fields`），不再让外部直接调用底层 `update_xxx`。`Narrator.route()` 负责路由与场景描述，`Narrator.update_state()` 在回合末调 `state_updater` 并同步 `.last_seen.json`。
 
 ### 写回规则
 
