@@ -510,6 +510,52 @@ async def test_merge_memory_blocks_uses_factory_agent_getter(monkeypatch):
     assert "一起吃饭。" in merged_markdown
 
 
+@pytest.mark.asyncio
+async def test_merge_memory_blocks_repairs_time_bucket_in_date_field(monkeypatch):
+    consolidator = MemoryConsolidationFlow()
+    sentinel_agent = object()
+
+    monkeypatch.setattr(consolidator_module, "get_memory_merge_agent", lambda: sentinel_agent)
+
+    async def fake_run_consolidation_agent(
+        self_inner,
+        *,
+        agent,
+        output_type,
+        agent_name,
+        function_name,
+        user,
+    ):
+        return MemoryMergeOutput(
+            events=[
+                MemoryMergeEvent(
+                    date="深夜",
+                    time="深夜",
+                    location="餐厅门口",
+                    participants="我、他",
+                    content="我们在分别前又确认了一次心意。",
+                )
+            ]
+        )
+
+    monkeypatch.setattr(
+        consolidator_module.MemoryConsolidationFlow,
+        "_run_consolidation_agent",
+        fake_run_consolidation_agent,
+    )
+
+    blocks, merged_markdown = await consolidator._merge_memory_blocks(
+        "chenxiao",
+        "payload",
+        "raw",
+        ["10月19日"],
+    )
+
+    assert len(blocks) == 1
+    assert blocks[0]["date"] == "10月19日"
+    assert "- **时间**：10月19日 深夜" in merged_markdown
+
+
 def test_enforce_user_section_limits_trims_to_configured_caps():
     content = "\n".join(
         [

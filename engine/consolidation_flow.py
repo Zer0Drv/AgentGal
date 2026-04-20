@@ -35,6 +35,7 @@ from storage.agent_files import (
     write_growth_entries,
 )
 from memory.parser import (
+    canonical_cn_date,
     extract_event_field,
     flatten_sections,
     group_blocks,
@@ -256,22 +257,62 @@ def _validate_memory_merge_output(
         if not all([event.date, event.time, event.location, event.participants, event.content]):
             return f"{event.date} 输出块结构不完整（存在空字段）"
 
-    output_dates = {event.date for event in events}
+    normalized_window_dates = [canonical_cn_date(date) or date for date in window_dates]
+    output_dates = {canonical_cn_date(event.date) or event.date for event in events}
 
-    if window_dates:
-        missing = [d for d in window_dates if d not in output_dates]
+    if normalized_window_dates:
+        missing = [d for d in normalized_window_dates if d not in output_dates]
         if missing:
             preview = "、".join(missing[:5])
             suffix = f" 等{len(missing)}天" if len(missing) > 5 else ""
             return f"输出缺少日期：{preview}{suffix}"
 
-        unexpected = [d for d in output_dates if d not in window_dates]
+        unexpected = [d for d in output_dates if d not in normalized_window_dates]
         if unexpected:
             preview = "、".join(unexpected[:5])
             suffix = f" 等{len(unexpected)}天" if len(unexpected) > 5 else ""
             return f"输出包含窗口外日期：{preview}{suffix}"
 
     return None
+
+
+def _normalize_memory_merge_time(time_text: str, date_text: str | None) -> str:
+    stripped_time = (time_text or "").strip()
+    if not stripped_time:
+        return stripped_time
+
+    explicit_date = canonical_cn_date(stripped_time)
+    if explicit_date:
+        if not date_text:
+            return stripped_time
+        remainder = re.sub(r"\d{1,2}月\d{1,2}日", "", stripped_time, count=1).strip()
+        return f"{date_text} {remainder}".strip()
+
+    if date_text:
+        return f"{date_text} {stripped_time}".strip()
+    return stripped_time
+
+
+def _normalize_memory_merge_events(
+    events: list[MemoryMergeEvent],
+    window_dates: list[str],
+) -> list[MemoryMergeEvent]:
+    normalized_window_dates = [canonical_cn_date(date) or date for date in window_dates]
+    fallback_date = normalized_window_dates[0] if len(normalized_window_dates) == 1 else None
+
+    normalized_events: list[MemoryMergeEvent] = []
+    for event in events:
+        normalized_date = canonical_cn_date(event.date) or canonical_cn_date(event.time) or fallback_date
+        normalized_events.append(
+            MemoryMergeEvent(
+                date=normalized_date or event.date.strip(),
+                time=_normalize_memory_merge_time(event.time, normalized_date),
+                location=event.location.strip(),
+                participants=event.participants.strip(),
+                content=event.content.strip(),
+            )
+        )
+    return normalized_events
 
 
 
@@ -375,7 +416,8 @@ class MemoryConsolidationFlow:
         if not output.events:
             raise ValueError("memory merge 返回事件列表为空")
 
-        validation_error = _validate_memory_merge_output(output.events, window_dates)
+        normalized_events = _normalize_memory_merge_events(output.events, window_dates)
+        validation_error = _validate_memory_merge_output(normalized_events, window_dates)
         if validation_error:
             raise ValueError(validation_error)
 
@@ -389,7 +431,7 @@ class MemoryConsolidationFlow:
                     f"- **内容**：{event.content}"
                 ),
             )
-            for event in output.events
+            for event in normalized_events
         ]
         merged_markdown = render_sections(group_blocks(blocks))
         return blocks, merged_markdown
