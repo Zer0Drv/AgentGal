@@ -95,7 +95,7 @@ Return the result in this exact JSON format:
 <example scene="touchable + relation-bearing spawn：远程联系">
 <input>玩家接起电话，发现是 roleA 的经纪人打来的，立刻把手机递给 roleA。当前场景：玩家房间。当前时间：4月24日 08:40。待触发事件：无。</input>
 <output>
-{{"targets": ["roleA", "roleA_manager"], "content": "**时间**：4月24日 星期六 08:40\n**地点**：玩家房间\n**在场**：\n- 玩家：床边，刚接起电话又把手机递给 roleA\n- roleA：玩家身边，听到来电内容后身体微微绷紧\n- roleA_manager：电话另一头，正在等待 roleA 回应\n\n电话那头没有挂断，梁敏直接追问：‘roleA在吗？上午时间提前了。’ roleA接过手机后，房间里短暂安静下来。", "new_characters": [{{"character_id": "roleA_manager", "display_name": "梁敏", "relation_to": "roleA", "relation_description": "roleA 的经纪人，长期负责工作安排", "background_hint": "说话利落，习惯直接推进日程", "initial_location": "电话另一头"}}]}}
+{{"targets": ["roleA", "roleA_manager"], "content": "**时间**：4月24日 星期六 08:40\n**地点**：玩家房间\n**在场**：\n- 玩家：床边，刚接起电话又把手机递给 roleA\n- roleA：玩家身边，听到来电内容后身体微微绷紧\n- roleA_manager：电话另一头，正在等待 roleA 回应\n\n电话那头没有挂断，早川凛直接追问：‘roleA在吗？上午时间提前了。’ roleA接过手机后，房间里短暂安静下来。", "new_characters": [{{"character_id": "roleA_manager", "display_name": "早川凛", "relation_to": "roleA", "relation_description": "roleA 的经纪人，长期负责工作安排", "background_hint": "说话利落，习惯直接推进日程", "initial_location": "电话另一头"}}]}}
 </output>
 </example>
 
