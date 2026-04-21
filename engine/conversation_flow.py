@@ -52,38 +52,27 @@ async def bootstrap_new_characters(
     specs: list[NewCharacterSpec],
     targets: list[str],
 ) -> tuple[list[str], list[CreatedCharacterInfo]]:
-    """孵化 narrator 请求的新角色，并清理 targets 里的新角色引用。
+    """孵化 narrator 请求的新角色，并把成功创建的角色补入最终 targets。
 
     返回 (最新 targets, 成功创建的角色信息列表)。
-    如果 narrator 漏掉了某个已成功孵化的新角色，这里会做一次兜底补入，
-    确保创建成功的新角色本轮可以回应。
     """
     if not specs:
         return targets, []
 
     created: list[CreatedCharacterInfo] = []
-    requested = {spec.character_id for spec in specs}
     for spec in specs:
         created_info = await create_character(spec)
         if created_info:
             created.append(created_info)
 
     created_ids = [info.character_id for info in created]
-    created_set = set(created_ids)
-    filtered_targets = [
-        target
-        for target in targets
-        if target not in requested or target in created_set
-    ]
-    missing_created = [
-        character_id for character_id in created_ids if character_id not in filtered_targets
-    ]
+    missing_created = [character_id for character_id in created_ids if character_id not in targets]
     for character_id in missing_created:
-        routing_logger.warning(
-            "[bootstrap_new_characters] 新角色 %s 创建成功但未进入 targets，已自动补入",
+        routing_logger.info(
+            "[bootstrap_new_characters] 新角色 %s 创建成功，已补入最终 targets",
             character_id,
         )
-    return list(dict.fromkeys(filtered_targets + missing_created)), created
+    return list(dict.fromkeys(targets + created_ids)), created
 
 
 async def run_agent_in_scene(

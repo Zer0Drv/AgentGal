@@ -1,7 +1,7 @@
 """动态生成新角色：narrator 请求时给新人搭骨架。
 
 流程：校验锚点 → 调 character_factory agent 生成
-role/identity/goal/dynamic/behavior/voice/status/relations/schedule → 写文件。
+character_id/role/identity/goal/dynamic/behavior/voice/status/relations/schedule → 写文件。
 """
 
 from __future__ import annotations
@@ -54,14 +54,6 @@ class CreatedCharacterInfo:
     identity: str
 
 
-def _is_valid_agent_name(name: str) -> bool:
-    if not name or len(name) > _AGENT_NAME_MAX_LEN:
-        return False
-    if name in _RESERVED_NAMES:
-        return False
-    return all((c.isascii() and c.isalnum()) or c in "_-" for c in name)
-
-
 def _format_existing_agents() -> str:
     rows: list[str] = []
     for agent in get_agent_names(include_narrator=False):
@@ -82,7 +74,6 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
 
     spec_lines = [
         "<spec>",
-        f"character_id: {spec.character_id}",
         f"relation_to: {spec.relation_to}",
         f"relation_description: {spec.relation_description}",
         f"background_hint: {spec.background_hint or '（无）'}",
@@ -108,19 +99,27 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
 
 
 def _validate_spec(spec: NewCharacterSpec) -> str | None:
-    """返回错误描述；None 表示校验通过。"""
-    character_id = spec.character_id.strip()
-    if not _is_valid_agent_name(character_id):
-        return f"非法 character_id: {spec.character_id!r}"
-    existing = set(get_agent_names(include_narrator=True))
-    if character_id in existing:
-        return f"character_id 已存在: {character_id}"
+    """返回错误描述；None 表示锚点校验通过。"""
     valid_anchors = set(get_agent_names(include_narrator=False)) | {"player"}
     anchor = spec.relation_to.strip()
     if anchor not in valid_anchors:
         return f"relation_to 不在已有角色中: {anchor!r}"
     if not spec.relation_description.strip():
         return "relation_description 为空"
+    return None
+
+
+def _validate_creation_character_id(character_id: str) -> str | None:
+    """返回错误描述；None 表示 character_factory 生成的 character_id 通过运行时校验。"""
+    if not character_id:
+        return f"非法 character_id: {character_id!r}"
+    if len(character_id) > _AGENT_NAME_MAX_LEN:
+        return f"character_id 过长: {character_id!r}"
+    if character_id in _RESERVED_NAMES:
+        return f"character_id 为保留名: {character_id!r}"
+    existing = set(get_agent_names(include_narrator=True))
+    if character_id in existing:
+        return f"character_id 已存在: {character_id}"
     return None
 
 
@@ -248,7 +247,7 @@ def _write_bootstrap_files(
     creation: NewCharacterCreation,
     soul_content: str,
 ) -> None:
-    agent_dir = CHARACTERS_DIR / spec.character_id
+    agent_dir = CHARACTERS_DIR / creation.character_id
     agent_dir.mkdir(parents=True, exist_ok=True)
 
     (agent_dir / "soul.md").write_text(soul_content, encoding="utf-8")
@@ -261,14 +260,14 @@ def _write_bootstrap_files(
 
     if not _write_schedule_json(agent_dir, creation.schedule):
         routing_logger.warning(
-            f"[character_factory] {spec.character_id!r} 未生成 schedule.json，"
+            f"[character_factory] {creation.character_id!r} 未生成 schedule.json，"
             "schedule_snapshot 将显示「（无日程）」"
         )
 
     narrator_status = read_agent_file("narrator", "status.md")
     last_seen = extract_status_field(narrator_status, "当前时间").strip()
     if last_seen:
-        write_sidecar_json(spec.character_id, ".last_seen.json", {"last_seen": last_seen})
+        write_sidecar_json(creation.character_id, ".last_seen.json", {"last_seen": last_seen})
 
     if spec.initial_location.strip():
         _append_to_narrator_locations(creation.role, spec.initial_location.strip())
@@ -278,7 +277,8 @@ async def create_character(spec: NewCharacterSpec) -> CreatedCharacterInfo | Non
     """孵化新角色；成功返回 CreatedCharacterInfo，失败返回 None 并记录日志。"""
     error = _validate_spec(spec)
     if error:
-        routing_logger.warning(f"[character_factory] 拒绝生成 {spec.character_id!r}：{error}")
+        label = spec.display_name.strip() or spec.relation_description.strip() or "（未命名新角色）"
+        routing_logger.warning(f"[character_factory] 拒绝生成 {label!r}：{error}")
         return None
 
     config = get_character_factory_llm_config()
@@ -289,20 +289,33 @@ async def create_character(spec: NewCharacterSpec) -> CreatedCharacterInfo | Non
             output_type=NewCharacterCreation,
             timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
             workflow_name="agentgal_character_factory",
-            trace_metadata={"agent_name": "character_factory", "target": spec.character_id},
+            trace_metadata={
+                "agent_name": "character_factory",
+                "target": spec.display_name.strip() or spec.relation_to,
+            },
             usage_agent="character_factory",
             usage_phase="agent_run",
             model_name=config["model"],
         )
     except Exception as e:
-        routing_logger.error(f"[character_factory] 生成 {spec.character_id!r} 失败: {e}")
+        label = spec.display_name.strip() or spec.relation_description.strip() or "（未命名新角色）"
+        routing_logger.error(f"[character_factory] 生成 {label!r} 失败: {e}")
+        return None
+
+    creation_id_error = _validate_creation_character_id(creation.character_id)
+    if creation_id_error:
+        routing_logger.error(
+            "[character_factory] 生成 %r 失败：%s",
+            creation.character_id,
+            creation_id_error,
+        )
         return None
 
     soul_content = _build_soul_md(creation)
     try:
         _write_bootstrap_files(spec, creation, soul_content)
     except Exception as e:
-        routing_logger.error(f"[character_factory] 写入 {spec.character_id!r} 文件失败: {e}")
+        routing_logger.error(f"[character_factory] 写入 {creation.character_id!r} 文件失败: {e}")
         return None
 
     # 新角色进入目录后，narrator 的 system prompt 里的 valid_targets 需要刷新
@@ -312,10 +325,10 @@ async def create_character(spec: NewCharacterSpec) -> CreatedCharacterInfo | Non
         routing_logger.warning(f"[character_factory] 刷新 narrator agent 失败: {e}")
 
     routing_logger.info(
-        f"[character_factory] 生成 {spec.character_id!r}（锚点 relation_to={spec.relation_to}）"
+        f"[character_factory] 生成 {creation.character_id!r}（锚点 relation_to={spec.relation_to}）"
     )
     return CreatedCharacterInfo(
-        character_id=spec.character_id,
-        display_name=get_display_name(spec.character_id, soul_content),
+        character_id=creation.character_id,
+        display_name=get_display_name(creation.character_id, soul_content),
         identity=extract_identity(soul_content) or creation.identity.strip(),
     )

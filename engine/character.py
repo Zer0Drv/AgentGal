@@ -360,8 +360,8 @@ class Narrator(BaseEntity):
         """运行 narrator → 返回 (targets, scene_description, new_characters, is_valid)。
 
         new_characters 是 narrator 本轮请求孵化的新角色 spec 列表；
-        此处只做 schema 层过滤（保留名字非空且 relation_to 合法的项），
-        实际孵化与目录校验由 engine.character_factory.create_character 负责。
+        此处只做 schema 层过滤（保留 relation_to 合法且描述非空的锚点），
+        实际命名、孵化与目录校验由 engine.character_factory.create_character 负责。
         """
         valid_agents = get_agent_names(include_narrator=False)
         if raw_messages is None:
@@ -370,8 +370,7 @@ class Narrator(BaseEntity):
         async def _run(narrator_input: str) -> tuple[list[str], str, list[NewCharacterSpec]]:
             output = await self._run_narrator(narrator_input, raw_messages)
             new_chars = self._filter_new_characters(output.new_characters, valid_agents)
-            announced = {spec.character_id for spec in new_chars}
-            valid_targets = [t for t in output.targets if t in valid_agents or t in announced]
+            valid_targets = [t for t in output.targets if t in valid_agents]
             scene = self._sanitize_scene_description(output.content)
             return valid_targets, scene, new_chars
 
@@ -379,8 +378,9 @@ class Narrator(BaseEntity):
             correction = (
                 f"{user_input}\n\n"
                 "<routing_correction>"
-                "上一轮没有返回有效 targets。请保留玩家原意，重新输出 JSON；"
-                "targets 必须包含至少 1 个 <fields> 中可回应的角色id。"
+                "上一轮没有返回可用路由。请保留玩家原意，重新输出 JSON；"
+                "如果本轮已有现成主要角色可回应，targets 必须包含至少 1 个 <fields> 中的角色id；"
+                "如果本轮要引入新角色，targets 可以暂时为空，但必须提供合法的 new_characters 锚点。"
                 "</routing_correction>"
             )
             return await _run(correction)
@@ -397,50 +397,51 @@ class Narrator(BaseEntity):
                 self._log_failure("重试调用", e)
                 return [], "", [], False
 
-        if not targets:
+        if not targets and not new_chars:
             if not retried:
-                routing_logger.warning("narrator 响应缺少有效 TARGETS，重试中...")
+                routing_logger.warning("narrator 响应缺少可用路由，重试中...")
                 try:
                     targets, scene, new_chars = await _retry()
                 except Exception as e:
                     self._log_failure("重试调用", e)
                     return [], "", [], False
-            if not targets:
-                routing_logger.warning("narrator 重试后仍缺少有效 TARGETS")
+            if not targets and not new_chars:
+                routing_logger.warning("narrator 重试后仍缺少可用路由")
                 return [], scene, new_chars, False
 
-        return targets, scene, new_chars, is_valid_response(scene, "narrator")
+        return targets, scene, new_chars, is_valid_response(scene, "narrator") and bool(
+            targets or new_chars
+        )
 
     @staticmethod
     def _filter_new_characters(
         specs: list[NewCharacterSpec],
         existing_agents: list[str],
     ) -> list[NewCharacterSpec]:
-        """过滤 narrator 提交的 new_characters：去空、去已存在、去非法 relation_to。"""
+        """过滤 narrator 提交的 new_characters：去重、去空、去非法 relation_to。"""
         valid_anchors = set(existing_agents) | {"player"}
-        reserved = set(existing_agents) | {"narrator", "player"}
         kept: list[NewCharacterSpec] = []
-        seen: set[str] = set()
+        seen: set[tuple[str, str, str]] = set()
         for spec in specs:
-            character_id = spec.character_id.strip()
             display_name = spec.display_name.strip()
             relation_to = spec.relation_to.strip()
             description = spec.relation_description.strip()
-            if not character_id or character_id in reserved or character_id in seen:
+            dedupe_key = (display_name, relation_to, description)
+            label = display_name or description or "（未命名新角色）"
+            if dedupe_key in seen:
                 continue
             if relation_to not in valid_anchors:
                 routing_logger.warning(
-                    f"[narrator] new_characters 中 {character_id!r} 的 relation_to={relation_to!r} 不合法，跳过"
+                    f"[narrator] new_characters 中 {label!r} 的 relation_to={relation_to!r} 不合法，跳过"
                 )
                 continue
             if not description:
                 routing_logger.warning(
-                    f"[narrator] new_characters 中 {character_id!r} 缺 relation_description，跳过"
+                    f"[narrator] new_characters 中 {label!r} 缺 relation_description，跳过"
                 )
                 continue
             kept.append(
                 NewCharacterSpec(
-                    character_id=character_id,
                     display_name=display_name,
                     relation_to=relation_to,
                     relation_description=description,
@@ -448,7 +449,7 @@ class Narrator(BaseEntity):
                     initial_location=spec.initial_location.strip(),
                 )
             )
-            seen.add(character_id)
+            seen.add(dedupe_key)
         return kept
 
     # ── 回合结束后维护世界状态（原 conversation_flow.run_state_updater）──

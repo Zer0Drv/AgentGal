@@ -236,6 +236,7 @@ async def _chat_stream(user_input: str):
     targets, created_new_characters = await bootstrap_new_characters(
         new_character_specs, targets
     )
+    is_narrator_valid = is_narrator_valid and bool(targets)
     if created_new_characters:
         for character in created_new_characters:
             yield _sse_event(

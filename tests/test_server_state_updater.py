@@ -121,7 +121,7 @@ async def test_chat_stream_emits_created_character_identity(monkeypatch):
     async def fake_bootstrap_new_characters(_specs, _targets):
         return [], [
             SimpleNamespace(
-                character_id="mitsuki_mom",
+                character_id="mitsukimom",
                 display_name="桥本志津",
                 identity="美月的妈妈，来学校接她放学的家长。",
             )
@@ -156,7 +156,7 @@ async def test_chat_stream_emits_created_character_identity(monkeypatch):
         "title": "角色已创建",
         "name": "桥本志津",
         "identity": "美月的妈妈，来学校接她放学的家长。",
-        "character_id": "mitsuki_mom",
+        "character_id": "mitsukimom",
     }
     done_event = json.loads(chunks[1].removeprefix("data: ").strip())
     assert done_event == {"type": "done"}

@@ -135,6 +135,43 @@ async def test_narrator_route_retries_when_targets_are_empty(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_narrator_route_allows_spawn_without_existing_targets(monkeypatch):
+    monkeypatch.setattr(
+        character_module,
+        "get_agent_names",
+        lambda include_narrator=False: ["mitsuki"],
+    )
+    monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
+    calls = 0
+
+    async def fake_run_narrator(self, *_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return NarratorOutput(
+            targets=[],
+            content="门外有人停下脚步。",
+            new_characters=[
+                {
+                    "display_name": "桥本志津",
+                    "relation_to": "mitsuki",
+                    "relation_description": "美月的妈妈",
+                }
+            ],
+        )
+
+    monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
+
+    targets, scene_description, new_characters, is_valid = await Narrator().route("回家睡觉")
+
+    assert calls == 1
+    assert targets == []
+    assert len(new_characters) == 1
+    assert new_characters[0].display_name == "桥本志津"
+    assert scene_description == "门外有人停下脚步。"
+    assert is_valid is True
+
+
+@pytest.mark.asyncio
 async def test_narrator_route_rejects_scene_without_valid_targets(monkeypatch):
     monkeypatch.setattr(
         character_module,

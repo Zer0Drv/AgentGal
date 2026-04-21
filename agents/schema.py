@@ -36,7 +36,6 @@ class NarratorStatus(BaseModel):
 class NewCharacterSpec(BaseModel):
     """narrator 请求动态生成新角色时的最小锚点。"""
 
-    character_id: str = Field(validation_alias=AliasChoices("character_id", "name"))
     display_name: str = ""
     relation_to: str
     relation_description: str
@@ -53,6 +52,7 @@ class NarratorOutput(BaseModel):
 class NewCharacterCreation(BaseModel):
     """character_factory agent 的结构化输出：一次返回完整骨架种子。
 
+    character_id 由 character_factory 生成，是最终目录名 / agent 标识。
     soul 分成五段（identity / goal / dynamic / behavior / voice），和模板对齐：
     - identity：单行公开身份
     - goal：长期追求
@@ -63,6 +63,7 @@ class NewCharacterCreation(BaseModel):
     schedule 是新角色的默认日程（可空），用于 state_updater 的 schedule_snapshot 兜底。
     """
 
+    character_id: str = Field(validation_alias=AliasChoices("character_id", "agent_id", "name"))
     role: str
     identity: str
     goal: str
@@ -73,7 +74,7 @@ class NewCharacterCreation(BaseModel):
     relations: dict[str, str] = Field(default_factory=dict)
     schedule: "CharacterSchedule | None" = None
 
-    @field_validator("role", "identity", "goal", "dynamic", mode="before")
+    @field_validator("character_id", "role", "identity", "goal", "dynamic", mode="before")
     @classmethod
     def trim_creation_fields(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
@@ -85,11 +86,18 @@ class NewCharacterCreation(BaseModel):
             return value
         return [item.strip() if isinstance(item, str) else item for item in value]
 
-    @field_validator("role", "identity", "goal", "dynamic")
+    @field_validator("character_id", "role", "identity", "goal", "dynamic")
     @classmethod
     def ensure_creation_fields_not_empty(cls, value: str) -> str:
         if not value:
             raise ValueError("field cannot be empty")
+        return value
+
+    @field_validator("character_id")
+    @classmethod
+    def ensure_character_id_is_lower_ascii_letters(cls, value: str) -> str:
+        if not value.isascii() or not value.isalpha() or value != value.lower():
+            raise ValueError("character_id must contain only lowercase ASCII letters")
         return value
 
     @field_validator("identity")

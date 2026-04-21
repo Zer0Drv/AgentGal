@@ -116,17 +116,17 @@ server.py        ← 全部
 由 `narrator` 负责决定谁参与当前回合。
 
 ```text
-用户输入 → narrator → targets: [“角色名”, ...]（NarratorOutput.targets）
+用户输入 → narrator → targets: [“现有角色名”, ...]（NarratorOutput.targets；若本轮只引入新角色，可暂时为空）
 ```
 
 ### narrator 的职责
 
-- 分析玩家输入，输出非空 `targets` 数组
+- 分析玩家输入，输出当前已存在且本轮可回应的 `targets`；若本轮只引入新角色，可暂时为空，编排层会在孵化成功后补入
 - 判断玩家是否仍有和角色互动的意愿：有则延续当前场景；分别、跳过时间或不再互动时，导向待触发事件或制造同等作用的即时张力
 - 每轮都必须让至少一个主要角色当轮可感知玩家并回应
 - 描述时间、地点、在场信息、环境、纯 NPC 行为和当前钩子
 - 不新增未来事件；未来事件由 `state_updater` 从角色 `打算` 维护
-- 当剧情需要引入有关系锚的新人物时，通过 `NarratorOutput.new_characters` 列出 `NewCharacterSpec`，由 `engine/character_factory.py` 孵化目录；narrator 应把 Ta 放进 `targets`，若遗漏但孵化成功，编排层会防御性补入本轮回应名单。纯路人不生成，直接在 content 中描写
+- 当剧情需要引入有关系锚的新人物时，通过 `NarratorOutput.new_characters` 列出 `NewCharacterSpec` 锚点，由 `engine/character_factory.py` 生成 `character_id` 并孵化目录；编排层会在孵化成功后自动补入本轮回应名单。纯路人不生成，直接在 content 中描写
 - **绝不替角色说话或决定角色行动**
 
 ## 单轮对话流程
@@ -136,7 +136,7 @@ server.py        ← 全部
   ↓
 调用 narrator，得到 NarratorOutput（targets + content + new_characters）
   ↓
-孵化 new_characters：`character_factory` 写出 soul/status/relations/memory/growth/user + `schedule.json`（LLM 未产出时跳过）+ `.last_seen.json`；孵化成功的新角色会进入本轮回应名单，若 narrator 漏写 `targets`，编排层会自动补入
+孵化 new_characters：`character_factory` 生成 `character_id`，并写出 soul/status/relations/memory/growth/user + `schedule.json`（LLM 未产出时跳过）+ `.last_seen.json`；孵化成功的新角色会进入本轮最终回应名单
   ↓
 将 narrator 内容写入单一 raw 历史（带 visible_to）
   ↓
@@ -167,7 +167,7 @@ world_sync 为出场 targets 写入 `.last_seen.json`
 
 - `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`, `relations`
 - `NarratorOutput`：`content`, `targets`, `new_characters`（路由、场景描述与动态角色请求）
-- `NewCharacterSpec` / `NewCharacterCreation`：新角色孵化的锚点和 LLM 输出
+- `NewCharacterSpec` / `NewCharacterCreation`：新角色孵化锚点（不含 `character_id`）与 character_factory 的完整输出（包含 `character_id`）
 - `OffstageMemoryBlock`：离场追补的 `date` + `content`，由 `offstage_synthesizer` 输出并追加到角色 `memory.md`
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`

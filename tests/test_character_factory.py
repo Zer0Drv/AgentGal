@@ -37,24 +37,24 @@ except ModuleNotFoundError as exc:
 def test_filter_new_characters_keeps_valid_anchors():
     specs = [
         NewCharacterSpec(
-            character_id="mitsuki_mom",
+            display_name="桥本志津",
             relation_to="mitsuki",
             relation_description="美月的妈妈，温柔但严厉",
         ),
         NewCharacterSpec(
-            character_id="player_cousin",
+            display_name="林清荷",
             relation_to="player",
             relation_description="玩家的表姐，大两岁",
         ),
     ]
     kept = Narrator._filter_new_characters(specs, ["mitsuki"])
-    assert [s.character_id for s in kept] == ["mitsuki_mom", "player_cousin"]
+    assert [s.display_name for s in kept] == ["桥本志津", "林清荷"]
 
 
 def test_filter_new_characters_rejects_unknown_anchor(caplog):
     specs = [
         NewCharacterSpec(
-            character_id="ghost",
+            display_name="路人",
             relation_to="not_exist",
             relation_description="无名路人",
         ),
@@ -63,20 +63,19 @@ def test_filter_new_characters_rejects_unknown_anchor(caplog):
     assert kept == []
 
 
-def test_filter_new_characters_rejects_reserved_and_existing_names():
+def test_filter_new_characters_dedupes_specs():
     specs = [
-        NewCharacterSpec(character_id="player", relation_to="mitsuki", relation_description="x"),
-        NewCharacterSpec(character_id="narrator", relation_to="mitsuki", relation_description="x"),
-        NewCharacterSpec(character_id="mitsuki", relation_to="mitsuki", relation_description="x"),
+        NewCharacterSpec(display_name="桥本志津", relation_to="mitsuki", relation_description="x"),
+        NewCharacterSpec(display_name="桥本志津", relation_to="mitsuki", relation_description="x"),
     ]
     kept = Narrator._filter_new_characters(specs, ["mitsuki"])
-    assert kept == []
+    assert len(kept) == 1
 
 
 def test_filter_new_characters_rejects_empty_description():
     specs = [
         NewCharacterSpec(
-            character_id="mitsuki_mom",
+            display_name="桥本志津",
             relation_to="mitsuki",
             relation_description="   ",
         ),
@@ -88,14 +87,14 @@ def test_filter_new_characters_rejects_empty_description():
 def test_filter_new_characters_dedupes_names():
     specs = [
         NewCharacterSpec(
-            character_id="twin",
+            display_name="双胞胎哥哥",
             relation_to="mitsuki",
             relation_description="美月的哥哥",
         ),
         NewCharacterSpec(
-            character_id="twin",
-            relation_to="player",
-            relation_description="重复项",
+            display_name="双胞胎哥哥",
+            relation_to="mitsuki",
+            relation_description="美月的哥哥",
         ),
     ]
     kept = Narrator._filter_new_characters(specs, ["mitsuki"])
@@ -104,7 +103,7 @@ def test_filter_new_characters_dedupes_names():
 
 
 # ---------------------------------------------------------------------------
-# Narrator.route 透传 new_characters 并把新名加入 targets
+# Narrator.route 透传 new_characters，并允许本轮先只申请孵化
 # ---------------------------------------------------------------------------
 
 
@@ -121,11 +120,11 @@ async def test_narrator_route_passes_new_characters(monkeypatch):
 
     async def fake_run_narrator(self, *_args, **_kwargs):
         return NarratorOutput(
-            targets=["mitsuki", "mitsuki_mom"],
+            targets=[],
             content="场景",
             new_characters=[
                 NewCharacterSpec(
-                    character_id="mitsuki_mom",
+                    display_name="桥本志津",
                     relation_to="mitsuki",
                     relation_description="美月的妈妈",
                 )
@@ -136,8 +135,8 @@ async def test_narrator_route_passes_new_characters(monkeypatch):
 
     targets, _scene, new_chars, is_valid = await Narrator().route("来一个妈妈")
 
-    assert targets == ["mitsuki", "mitsuki_mom"]
-    assert [s.character_id for s in new_chars] == ["mitsuki_mom"]
+    assert targets == []
+    assert [s.display_name for s in new_chars] == ["桥本志津"]
     assert is_valid is True
 
 
@@ -167,7 +166,7 @@ def _seed(root: Path, name: str, soul: str = "", status: str = "") -> None:
 def test_validate_spec_accepts_anchor_in_existing_agents(character_dir):
     _seed(character_dir, "mitsuki", soul="# 美月")
     spec = NewCharacterSpec(
-        character_id="mitsuki_mom",
+        display_name="桥本志津",
         relation_to="mitsuki",
         relation_description="妈妈",
     )
@@ -177,7 +176,7 @@ def test_validate_spec_accepts_anchor_in_existing_agents(character_dir):
 def test_validate_spec_rejects_unknown_anchor(character_dir):
     _seed(character_dir, "mitsuki")
     spec = NewCharacterSpec(
-        character_id="ghost",
+        display_name="路人",
         relation_to="not_exist",
         relation_description="x",
     )
@@ -186,36 +185,48 @@ def test_validate_spec_rejects_unknown_anchor(character_dir):
 
 def test_validate_spec_allows_player_anchor(character_dir):
     spec = NewCharacterSpec(
-        character_id="player_cousin",
+        display_name="林清荷",
         relation_to="player",
         relation_description="表姐",
     )
     assert character_factory_module._validate_spec(spec) is None
 
 
-def test_validate_spec_rejects_duplicate_name(character_dir):
+def test_validate_creation_character_id_rejects_duplicate_name(character_dir):
     _seed(character_dir, "mitsuki")
     _seed(character_dir, "dup")
-    spec = NewCharacterSpec(
-        character_id="dup",
-        relation_to="mitsuki",
-        relation_description="x",
-    )
-    assert character_factory_module._validate_spec(spec) is not None
+    assert character_factory_module._validate_creation_character_id("dup") is not None
 
 
-def test_validate_spec_rejects_non_ascii_name(character_dir):
+def test_validate_creation_character_id_rejects_reserved_name(character_dir):
     _seed(character_dir, "mitsuki")
-    spec = NewCharacterSpec(
-        character_id="美月妈妈",
-        relation_to="mitsuki",
-        relation_description="妈妈",
-    )
-    assert character_factory_module._validate_spec(spec) is not None
+    assert character_factory_module._validate_creation_character_id("player") is not None
+
+
+def test_validate_creation_character_id_accepts_ascii_name(character_dir):
+    _seed(character_dir, "mitsuki")
+    assert character_factory_module._validate_creation_character_id("mitsukimom") is None
+
+
+@pytest.mark.parametrize("character_id", ["MitsukiMom", "mitsuki2", "mitsuki_mom", "美月妈妈"])
+def test_new_character_creation_rejects_invalid_character_id_format(character_id: str):
+    with pytest.raises(ValueError, match="lowercase ASCII letters"):
+        NewCharacterCreation(
+            character_id=character_id,
+            role="桥本志津",
+            identity="美月的妈妈，来学校接她放学的家长。",
+            goal="你想守住女儿——不抢她的光，但也不想从她的生活里淡出。",
+            dynamic="你牵挂着女儿的健康。\n\n每次去学校都忍不住多问几句。",
+            behavior=["被女儿嫌弃时，先退一步再绕回来"],
+            voice=["美月，你脸色怎么这么差？"],
+            status={},
+            relations={},
+        )
 
 
 def test_new_character_creation_normalizes_identity_to_single_line():
     creation = NewCharacterCreation(
+        character_id="mitsukimom",
         role="桥本志津",
         identity="美月的妈妈，\n来学校接她放学的家长。",
         goal="你想守住女儿——不抢她的光，但也不想从她的生活里淡出。",
@@ -231,6 +242,7 @@ def test_new_character_creation_normalizes_identity_to_single_line():
 def test_new_character_creation_rejects_blank_goal():
     with pytest.raises(ValueError, match="field cannot be empty"):
         NewCharacterCreation(
+            character_id="mitsukimom",
             role="桥本志津",
             identity="美月的妈妈，来学校接她放学的家长。",
             goal="   ",
@@ -252,13 +264,12 @@ def test_build_factory_user_message_omits_empty_optional_fields(character_dir):
 
     message = character_factory_module._build_factory_user_message(
         NewCharacterSpec(
-            character_id="mitsuki_mom",
             relation_to="mitsuki",
             relation_description="美月的妈妈",
         )
     )
 
-    assert "character_id: mitsuki_mom" in message
+    assert "character_id:" not in message
     assert "display_name:" not in message
     assert "initial_location:" not in message
     assert "relation_to: mitsuki" in message
@@ -284,6 +295,7 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
 
     async def fake_run_structured_agent(**_kwargs):
         return NewCharacterCreation(
+            character_id="mitsukimom",
             role="桥本志津",
             identity="美月的妈妈，来学校接她放学的家长。",
             goal=(
@@ -359,19 +371,18 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
     )
 
     spec = NewCharacterSpec(
-        character_id="mitsuki_mom",
         relation_to="mitsuki",
         relation_description="美月的妈妈",
         initial_location="教室走廊",
     )
     created = await character_factory_module.create_character(spec)
     assert created == CreatedCharacterInfo(
-        character_id="mitsuki_mom",
+        character_id="mitsukimom",
         display_name="桥本志津",
         identity="美月的妈妈，来学校接她放学的家长。",
     )
 
-    agent_dir = character_dir / "mitsuki_mom"
+    agent_dir = character_dir / "mitsukimom"
     soul = (agent_dir / "soul.md").read_text(encoding="utf-8")
     assert soul.startswith("<role>桥本志津</role>")
     assert "<identity>\n美月的妈妈，来学校接她放学的家长。\n</identity>" in soul
@@ -420,6 +431,7 @@ async def test_create_character_skips_schedule_when_llm_omits(character_dir, mon
 
     async def fake_run_structured_agent(**_kwargs):
         return NewCharacterCreation(
+            character_id="neighbor",
             role="林晚",
             identity="美月的邻居。",
             goal="你希望邻里相处轻松，不被卷进别家的事；有礼貌就够了。",
@@ -441,7 +453,6 @@ async def test_create_character_skips_schedule_when_llm_omits(character_dir, mon
     monkeypatch.setattr(character_factory_module, "reload_conversation_agent", lambda _name: None)
 
     spec = NewCharacterSpec(
-        character_id="neighbor",
         relation_to="mitsuki",
         relation_description="美月的邻居",
     )
@@ -462,6 +473,7 @@ async def test_create_character_validates_before_calling_llm(character_dir, monk
         nonlocal called
         called = True
         return NewCharacterCreation(
+            character_id="x",
             role="x",
             identity="x",
             goal="x",
@@ -479,7 +491,6 @@ async def test_create_character_validates_before_calling_llm(character_dir, monk
     )
 
     spec = NewCharacterSpec(
-        character_id="mitsuki_mom",
         relation_to="ghost",
         relation_description="x",
     )
@@ -495,6 +506,7 @@ async def test_create_character_seeds_relation_to_when_llm_omits(character_dir, 
 
     async def fake_run_structured_agent(**_kwargs):
         return NewCharacterCreation(
+            character_id="fallbackchar",
             role="林晚",
             identity="美月的邻居。",
             goal="你希望邻里日子安静，谁都不欠谁。",
@@ -515,20 +527,52 @@ async def test_create_character_seeds_relation_to_when_llm_omits(character_dir, 
     monkeypatch.setattr(character_factory_module, "reload_conversation_agent", lambda _name: None)
 
     spec = NewCharacterSpec(
-        character_id="fallback_char",
         relation_to="mitsuki",
         relation_description="美月的邻居",
     )
     created = await character_factory_module.create_character(spec)
     assert created == CreatedCharacterInfo(
-        character_id="fallback_char",
+        character_id="fallbackchar",
         display_name="林晚",
         identity="美月的邻居。",
     )
 
-    relations = (character_dir / "fallback_char" / "relations.md").read_text(encoding="utf-8")
+    relations = (character_dir / "fallbackchar" / "relations.md").read_text(encoding="utf-8")
     assert "## mitsuki" in relations
     assert "美月的邻居" in relations  # fallback 描述进入 relations.md
+
+
+@pytest.mark.asyncio
+async def test_create_character_rejects_invalid_generated_character_id(character_dir, monkeypatch):
+    _seed(character_dir, "mitsuki")
+
+    async def fake_run_structured_agent(**_kwargs):
+        return NewCharacterCreation(
+            character_id="美月妈妈",
+            role="桥本志津",
+            identity="美月的妈妈。",
+            goal="你想照顾好女儿。",
+            dynamic="你总会多看女儿一眼。",
+            behavior=["见到女儿就会停下脚步"],
+            voice=["路上小心。"],
+            status={},
+            relations={},
+        )
+
+    monkeypatch.setattr(character_factory_module, "run_structured_agent", fake_run_structured_agent)
+    monkeypatch.setattr(character_factory_module, "get_character_factory_agent", lambda: object())
+    monkeypatch.setattr(
+        character_factory_module,
+        "get_character_factory_llm_config",
+        lambda: {"model": "test"},
+    )
+
+    spec = NewCharacterSpec(
+        relation_to="mitsuki",
+        relation_description="美月的妈妈",
+    )
+    created = await character_factory_module.create_character(spec)
+    assert created is None
 
 
 # ---------------------------------------------------------------------------
@@ -539,34 +583,35 @@ async def test_create_character_seeds_relation_to_when_llm_omits(character_dir, 
 @pytest.mark.asyncio
 async def test_bootstrap_new_characters_keeps_only_targeted_successes(monkeypatch):
     async def fake_create_character(spec):
-        if spec.character_id == "bad":
+        if spec.display_name == "坏角色":
             return None
+        character_id = "goodone" if spec.display_name == "好角色1" else "goodtwo"
         return CreatedCharacterInfo(
-            character_id=spec.character_id,
-            display_name=spec.character_id.upper(),
-            identity=f"{spec.character_id}-identity",
+            character_id=character_id,
+            display_name=spec.display_name,
+            identity=f"{character_id}-identity",
         )
 
     monkeypatch.setattr(conversation_flow_module, "create_character", fake_create_character)
 
     specs = [
-        NewCharacterSpec(character_id="good1", relation_to="mitsuki", relation_description="x"),
-        NewCharacterSpec(character_id="bad", relation_to="mitsuki", relation_description="x"),
-        NewCharacterSpec(character_id="good2", relation_to="mitsuki", relation_description="x"),
+        NewCharacterSpec(display_name="好角色1", relation_to="mitsuki", relation_description="x"),
+        NewCharacterSpec(display_name="坏角色", relation_to="mitsuki", relation_description="x"),
+        NewCharacterSpec(display_name="好角色2", relation_to="mitsuki", relation_description="x"),
     ]
     targets, created = await conversation_flow_module.bootstrap_new_characters(
-        specs, ["mitsuki", "good1", "bad"]
+        specs, ["mitsuki"]
     )
-    assert targets == ["mitsuki", "good1", "good2"]
-    assert [item.character_id for item in created] == ["good1", "good2"]
-    assert [item.identity for item in created] == ["good1-identity", "good2-identity"]
+    assert targets == ["mitsuki", "goodone", "goodtwo"]
+    assert [item.character_id for item in created] == ["goodone", "goodtwo"]
+    assert [item.identity for item in created] == ["goodone-identity", "goodtwo-identity"]
 
 
 @pytest.mark.asyncio
 async def test_bootstrap_new_characters_auto_targets_created(monkeypatch):
     async def fake_create_character(spec):
         return CreatedCharacterInfo(
-            character_id=spec.character_id,
+            character_id="goodone",
             display_name="Good One",
             identity="新来的角色",
         )
@@ -574,13 +619,13 @@ async def test_bootstrap_new_characters_auto_targets_created(monkeypatch):
     monkeypatch.setattr(conversation_flow_module, "create_character", fake_create_character)
 
     specs = [
-        NewCharacterSpec(character_id="good1", relation_to="mitsuki", relation_description="x"),
+        NewCharacterSpec(display_name="Good One", relation_to="mitsuki", relation_description="x"),
     ]
     targets, created = await conversation_flow_module.bootstrap_new_characters(
         specs, ["mitsuki"]
     )
-    assert targets == ["mitsuki", "good1"]
-    assert [item.character_id for item in created] == ["good1"]
+    assert targets == ["mitsuki", "goodone"]
+    assert [item.character_id for item in created] == ["goodone"]
 
 
 @pytest.mark.asyncio
