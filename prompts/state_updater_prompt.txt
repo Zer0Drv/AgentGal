@@ -6,7 +6,7 @@
 <input_blocks>
 输入按顺序包含以下 4 块：schedule_snapshot、character_intention、current_narrator_status、recent_history。
 schedule_snapshot 是当前 game_time 下各角色按自身 schedule 的默认位置，仅作为未被叙事覆盖时的基线；未配置日程或时段匹配不到的角色会显示「（无日程）」。
-character_intention 标题格式为【agent_id / 角色显示名】，内容来自各角色 status.md 的「打算」。
+character_intention 标题格式为【character_id / 角色显示名】，内容来自各角色 status.md 的「打算」。
 recent_history 是最近3条 raw 历史的摘要，不再另行提供 player_input、narrator_content、agent_responses 或 targets。
 </input_blocks>
 

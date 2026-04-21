@@ -50,9 +50,9 @@ def read_agent_file(agent_name: str, filename: str) -> str:
     return load_text(Path(path))
 
 
-def resolve_agent_display_name(agent_id: str) -> str:
-    """读取 soul.md 提取显示名，回退到 agent_id。"""
-    return get_display_name(agent_id, read_agent_file(agent_id, "soul.md"))
+def resolve_agent_display_name(character_id: str) -> str:
+    """读取 soul.md 提取显示名，回退到 character_id。"""
+    return get_display_name(character_id, read_agent_file(character_id, "soul.md"))
 
 
 # ===== JSON sidecar =====

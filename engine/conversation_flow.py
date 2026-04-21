@@ -75,11 +75,13 @@ async def bootstrap_new_characters(
         for target in targets
         if target not in requested or target in created_set
     ]
-    missing_created = [agent_id for agent_id in created_ids if agent_id not in filtered_targets]
-    for agent_id in missing_created:
+    missing_created = [
+        character_id for character_id in created_ids if character_id not in filtered_targets
+    ]
+    for character_id in missing_created:
         routing_logger.warning(
             "[bootstrap_new_characters] 新角色 %s 创建成功但未进入 targets，已自动补入",
-            agent_id,
+            character_id,
         )
     return list(dict.fromkeys(filtered_targets + missing_created)), created
 

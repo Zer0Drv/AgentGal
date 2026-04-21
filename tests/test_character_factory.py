@@ -258,7 +258,7 @@ def test_build_factory_user_message_omits_empty_optional_fields(character_dir):
         )
     )
 
-    assert "agent_id: mitsuki_mom" in message
+    assert "character_id: mitsuki_mom" in message
     assert "display_name:" not in message
     assert "initial_location:" not in message
     assert "relation_to: mitsuki" in message

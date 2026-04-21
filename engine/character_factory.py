@@ -82,7 +82,7 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
 
     spec_lines = [
         "<spec>",
-        f"agent_id: {spec.character_id}",
+        f"character_id: {spec.character_id}",
         f"relation_to: {spec.relation_to}",
         f"relation_description: {spec.relation_description}",
         f"background_hint: {spec.background_hint or '（无）'}",
@@ -101,7 +101,7 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
         "<world_now>\n"
         f"当前时间：{current_time}\n"
         f"当前场景：{scene}\n"
-        f"已有角色（agent_id / 显示名）：{existing_agents}\n"
+        f"已有角色（character_id / 显示名）：{existing_agents}\n"
         "</world_now>"
     )
     return "\n\n".join(blocks)
@@ -111,10 +111,10 @@ def _validate_spec(spec: NewCharacterSpec) -> str | None:
     """返回错误描述；None 表示校验通过。"""
     character_id = spec.character_id.strip()
     if not _is_valid_agent_name(character_id):
-        return f"非法 agent_id: {spec.character_id!r}"
+        return f"非法 character_id: {spec.character_id!r}"
     existing = set(get_agent_names(include_narrator=True))
     if character_id in existing:
-        return f"agent_id 已存在: {character_id}"
+        return f"character_id 已存在: {character_id}"
     valid_anchors = set(get_agent_names(include_narrator=False)) | {"player"}
     anchor = spec.relation_to.strip()
     if anchor not in valid_anchors:
