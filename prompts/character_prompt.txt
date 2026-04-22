@@ -62,7 +62,7 @@
 <fields>
 status: {status_fields}
 player: {player_fields}
-valid_targets: {valid_targets}
+relations: {valid_targets}
 </fields>
 
 <example>
@@ -74,6 +74,6 @@ valid_targets: {valid_targets}
   "player": {{"对方是什么人": "愿意主动帮我"}},
   "triggered": ["收拾料理教室"],
   "add_event": ["【还便当盒】2月21日把洗好的便当盒带去学校还给玩家"],
-  "relations": {{"生田有希": "同班好友，今天意外帮了一把——她大概看出我对玩家的偏心了，但没点破，反而留出空间。"}}
+  "relations": {{"yuki": "同班好友，今天意外帮了一把——她大概看出我对玩家的偏心了，但没点破，反而留出空间。"}}
 }}
 </example>
