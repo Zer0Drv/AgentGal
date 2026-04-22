@@ -12,7 +12,7 @@ from pathlib import Path
 
 from agents.factory import get_character_factory_agent, reload_conversation_agent
 from agents.runner import run_structured_agent
-from agents.schema import CharacterSchedule, NewCharacterCreation, NewCharacterSpec
+from agents.schema import CharacterSchedule, NewCharacterProfile, NewCharacterRequest
 from llm.providers import get_character_factory_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field
@@ -65,7 +65,7 @@ def _format_existing_agents() -> str:
     return "\n".join(rows) if rows else "（暂无）"
 
 
-def _build_factory_user_message(spec: NewCharacterSpec) -> str:
+def _build_factory_user_message(spec: NewCharacterRequest) -> str:
     narrator_status = read_agent_file("narrator", "status.md")
     current_time = extract_status_field(narrator_status, "当前时间").strip() or "（未知）"
     scene = extract_status_field(narrator_status, "场景").strip() or "（未知）"
@@ -78,8 +78,8 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
         f"relation_description: {spec.relation_description}",
         f"background_hint: {spec.background_hint or '（无）'}",
     ]
-    if spec.display_name.strip():
-        spec_lines.append(f"display_name: {spec.display_name.strip()}")
+    if spec.name_hint.strip():
+        spec_lines.append(f"name_hint: {spec.name_hint.strip()}")
     if spec.initial_location.strip():
         spec_lines.append(f"initial_location: {spec.initial_location.strip()}")
     spec_lines.append("</spec>")
@@ -98,7 +98,7 @@ def _build_factory_user_message(spec: NewCharacterSpec) -> str:
     return "\n\n".join(blocks)
 
 
-def _validate_spec(spec: NewCharacterSpec) -> str | None:
+def _validate_spec(spec: NewCharacterRequest) -> str | None:
     """返回错误描述；None 表示锚点校验通过。"""
     valid_anchors = set(get_agent_names(include_narrator=False)) | {"player"}
     anchor = spec.relation_to.strip()
@@ -126,7 +126,7 @@ def _validate_creation_character_id(character_id: str) -> str | None:
 def _write_status_md(
     agent_dir: Path,
     status: dict[str, str],
-    spec: NewCharacterSpec,
+    spec: NewCharacterRequest,
     display_name: str,
 ) -> None:
     """按 _STATUS_ORDER 顺序写 status.md；缺失字段用合理默认补齐。"""
@@ -154,7 +154,7 @@ def _write_status_md(
 def _write_relations_md(
     agent_dir: Path,
     relations: dict[str, str],
-    spec: NewCharacterSpec,
+    spec: NewCharacterRequest,
 ) -> None:
     relation_to_display = (
         resolve_agent_display_name(spec.relation_to) if spec.relation_to != "player" else None
@@ -192,13 +192,13 @@ def _format_voice_block(items: list[str]) -> str:
     return "\n".join(item.strip() for item in items if item and item.strip())
 
 
-def _build_soul_md(creation: NewCharacterCreation) -> str:
+def _build_soul_md(creation: NewCharacterProfile) -> str:
     """按模板结构拼装 soul.md：role / identity / goal / dynamic / behavior / voice。"""
     behavior_block = _format_bulleted_block(creation.behavior)
     voice_block = _format_voice_block(creation.voice)
 
     parts = [
-        f"<role>{creation.role}</role>",
+        f"<role>{creation.display_name}</role>",
         "",
         "<identity>",
         creation.identity,
@@ -243,8 +243,8 @@ def _write_schedule_json(agent_dir: Path, schedule: CharacterSchedule | None) ->
 
 
 def _write_bootstrap_files(
-    spec: NewCharacterSpec,
-    creation: NewCharacterCreation,
+    spec: NewCharacterRequest,
+    creation: NewCharacterProfile,
     soul_content: str,
 ) -> None:
     agent_dir = CHARACTERS_DIR / creation.character_id
@@ -255,8 +255,8 @@ def _write_bootstrap_files(
     (agent_dir / "growth.md").write_text("# 心路历程\n\n", encoding="utf-8")
     (agent_dir / "user.md").write_text(_USER_MD_SKELETON, encoding="utf-8")
 
-    _write_status_md(agent_dir, creation.status, spec, creation.role)
-    _write_relations_md(agent_dir, creation.relations, spec)
+    _write_status_md(agent_dir, creation.initial_status, spec, creation.display_name)
+    _write_relations_md(agent_dir, creation.initial_relations, spec)
 
     if not _write_schedule_json(agent_dir, creation.schedule):
         routing_logger.warning(
@@ -270,14 +270,14 @@ def _write_bootstrap_files(
         write_sidecar_json(creation.character_id, ".last_seen.json", {"last_seen": last_seen})
 
     if spec.initial_location.strip():
-        _append_to_narrator_locations(creation.role, spec.initial_location.strip())
+        _append_to_narrator_locations(creation.display_name, spec.initial_location.strip())
 
 
-async def create_character(spec: NewCharacterSpec) -> CreatedCharacterInfo | None:
+async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | None:
     """孵化新角色；成功返回 CreatedCharacterInfo，失败返回 None 并记录日志。"""
     error = _validate_spec(spec)
     if error:
-        label = spec.display_name.strip() or spec.relation_description.strip() or "（未命名新角色）"
+        label = spec.name_hint.strip() or spec.relation_description.strip() or "（未命名新角色）"
         routing_logger.warning(f"[character_factory] 拒绝生成 {label!r}：{error}")
         return None
 
@@ -286,19 +286,19 @@ async def create_character(spec: NewCharacterSpec) -> CreatedCharacterInfo | Non
         creation = await run_structured_agent(
             agent=get_character_factory_agent(),
             user_input=_build_factory_user_message(spec),
-            output_type=NewCharacterCreation,
+            output_type=NewCharacterProfile,
             timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
             workflow_name="agentgal_character_factory",
             trace_metadata={
                 "agent_name": "character_factory",
-                "target": spec.display_name.strip() or spec.relation_to,
+                "target": spec.name_hint.strip() or spec.relation_to,
             },
             usage_agent="character_factory",
             usage_phase="agent_run",
             model_name=config["model"],
         )
     except Exception as e:
-        label = spec.display_name.strip() or spec.relation_description.strip() or "（未命名新角色）"
+        label = spec.name_hint.strip() or spec.relation_description.strip() or "（未命名新角色）"
         routing_logger.error(f"[character_factory] 生成 {label!r} 失败: {e}")
         return None
 

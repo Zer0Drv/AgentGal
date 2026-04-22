@@ -126,7 +126,7 @@ server.py        ← 全部
 - 每轮都必须让至少一个主要角色当轮可感知玩家并回应
 - 描述时间、地点、在场信息、环境、纯 NPC 行为和当前钩子
 - 不新增未来事件；未来事件由 `state_updater` 从角色 `打算` 维护
-- 当剧情需要引入有关系锚的新人物时，通过 `NarratorOutput.new_characters` 列出 `NewCharacterSpec` 锚点，由 `engine/character_factory.py` 生成 `character_id` 并孵化目录；编排层会在孵化成功后自动补入本轮回应名单。纯路人不生成，直接在 content 中描写
+- 当剧情需要引入有关系锚的新人物时，通过 `NarratorOutput.new_characters` 列出 `NewCharacterRequest` 锚点（`name_hint` 只是可选姓名提示），由 `engine/character_factory.py` 生成 `character_id` 并孵化目录；编排层会在孵化成功后自动补入本轮回应名单。纯路人不生成，直接在 content 中描写
 - **绝不替角色说话或决定角色行动**
 
 ## 单轮对话流程
@@ -167,7 +167,7 @@ world_sync 为出场 targets 写入 `.last_seen.json`
 
 - `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`, `relations`
 - `NarratorOutput`：`content`, `targets`, `new_characters`（路由、场景描述与动态角色请求）
-- `NewCharacterSpec` / `NewCharacterCreation`：新角色孵化锚点（不含 `character_id`）与 character_factory 的完整输出（包含 `character_id`）
+- `NewCharacterRequest` / `NewCharacterProfile`：新角色孵化锚点（可选 `name_hint`，不含 `character_id`）与 character_factory 的完整输出（包含 `character_id`、最终 `display_name`、`initial_status`、`initial_relations`）
 - `OffstageMemoryBlock`：离场追补的 `date` + `content`，由 `offstage_synthesizer` 输出并追加到角色 `memory.md`
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`

@@ -152,7 +152,7 @@ async def test_narrator_route_allows_spawn_without_existing_targets(monkeypatch)
             content="门外有人停下脚步。",
             new_characters=[
                 {
-                    "display_name": "桥本志津",
+                    "name_hint": "桥本志津",
                     "relation_to": "mitsuki",
                     "relation_description": "美月的妈妈",
                 }
@@ -166,7 +166,7 @@ async def test_narrator_route_allows_spawn_without_existing_targets(monkeypatch)
     assert calls == 1
     assert targets == []
     assert len(new_characters) == 1
-    assert new_characters[0].display_name == "桥本志津"
+    assert new_characters[0].name_hint == "桥本志津"
     assert scene_description == "门外有人停下脚步。"
     assert is_valid is True
 

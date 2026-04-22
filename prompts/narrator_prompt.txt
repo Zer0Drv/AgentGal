@@ -35,7 +35,7 @@
 
 <new_characters>
 需生成的新角色字段说明：
-- display_name：中文名称（如 李明、桥本慎司）；无已知姓名时自行创建符合设定的姓名
+- name_hint：可选中文名称提示（如 李明、桥本慎司）；没有稳定姓名时可以留空，由下游决定最终展示名
 - relation_to：`<fields>` 中的 id 或字面量 “player”
 - relation_description：一句话说清与 relation_to 的关系（如”玩家常一起打球的同班球友”）
 - background_hint：可选，一句背景
@@ -55,7 +55,7 @@ Return the result in this exact JSON format:
   "content": "**时间**：X月X日 星期X XX:XX\n**地点**：...\n**在场**：\n- 玩家：[位置]\n[每个主要角色一行，位置或场外]\n\n[一两句气氛烘托]",
   "new_characters": [
     {{
-      "display_name": "中文名称如李明（禁止写称谓如同学）",
+      "name_hint": "可选中文名称提示，如李明（禁止写称谓如同学）",
       "relation_to": "已有角色id或player",
       "relation_description": "和锚点是什么关系",
       "background_hint": "可选一句背景",
@@ -87,14 +87,14 @@ Return the result in this exact JSON format:
 <example scene="touchable + relation-bearing spawn">
 <input>玩家：（转身走回家，隔壁青梅竹马的邻居姐姐走了过来） 当前场景：玩家家门口走廊。当前时间：4月24日 09:18。待触发事件：无。</input>
 <output>
-{{"targets": [], "content": "**时间**：4月24日 星期六 09:18\n**地点**：玩家家门口走廊\n**在场**：\n- 玩家：家门口，刚转身准备回屋\n- 邻居姐姐：隔壁房门前，拿着垃圾袋，正朝玩家走来\n\n她提着垃圾袋停住脚，看清是玩家后抬了下手。她没有立刻回屋。", "new_characters": [{{"display_name": "沈知夏", "relation_to": "player", "relation_description": "住在隔壁的青梅竹马邻居姐姐", "background_hint": "熟悉玩家生活节奏，说话自然亲近", "initial_location": "玩家家门口走廊"}}]}}
+{{"targets": [], "content": "**时间**：4月24日 星期六 09:18\n**地点**：玩家家门口走廊\n**在场**：\n- 玩家：家门口，刚转身准备回屋\n- 邻居姐姐：隔壁房门前，拿着垃圾袋，正朝玩家走来\n\n她提着垃圾袋停住脚，看清是玩家后抬了下手。她没有立刻回屋。", "new_characters": [{{"name_hint": "沈知夏", "relation_to": "player", "relation_description": "住在隔壁的青梅竹马邻居姐姐", "background_hint": "熟悉玩家生活节奏，说话自然亲近", "initial_location": "玩家家门口走廊"}}]}}
 </output>
 </example>
 
 <example scene="touchable + relation-bearing spawn：远程联系">
 <input>玩家接起电话，发现是 roleA 的经纪人打来的，立刻把手机递给 roleA。当前场景：玩家房间。当前时间：4月24日 08:40。待触发事件：无。</input>
 <output>
-{{"targets": ["roleA"], "content": "**时间**：4月24日 星期六 08:40\n**地点**：玩家房间\n**在场**：\n- 玩家：床边，刚接起电话又把手机递给 roleA\n- roleA：玩家身边，听到来电内容后身体微微绷紧\n- 电话那头的经纪人：正在等待 roleA 回应\n\n电话那头没有挂断，女人直接追问：‘roleA在吗？上午时间提前了。’ roleA接过手机后，房间里短暂安静下来。", "new_characters": [{{"display_name": "早川凛", "relation_to": "roleA", "relation_description": "roleA 的经纪人，长期负责工作安排", "background_hint": "说话利落，习惯直接推进日程", "initial_location": "电话另一头"}}]}}
+{{"targets": ["roleA"], "content": "**时间**：4月24日 星期六 08:40\n**地点**：玩家房间\n**在场**：\n- 玩家：床边，刚接起电话又把手机递给 roleA\n- roleA：玩家身边，听到来电内容后身体微微绷紧\n- 电话那头的经纪人：正在等待 roleA 回应\n\n电话那头没有挂断，女人直接追问：‘roleA在吗？上午时间提前了。’ roleA接过手机后，房间里短暂安静下来。", "new_characters": [{{"name_hint": "早川凛", "relation_to": "roleA", "relation_description": "roleA 的经纪人，长期负责工作安排", "background_hint": "说话利落，习惯直接推进日程", "initial_location": "电话另一头"}}]}}
 </output>
 </example>
 

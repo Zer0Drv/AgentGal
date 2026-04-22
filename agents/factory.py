@@ -16,7 +16,7 @@ from agents.schema import (
     MemoryMergeOutput,
     MemoryMetadataOutput,
     NarratorOutput,
-    NewCharacterCreation,
+    NewCharacterProfile,
     OffstageMemoryBlock,
     StateUpdaterOutput,
 )
@@ -55,7 +55,7 @@ TextAgent = Agent[None, str]
 _conversation_agents: dict[str, ConversationAgent] = {}
 _choices_agent: Agent[None, ChoicesOutput] | None = None
 _state_updater_agent: Agent[None, StateUpdaterOutput] | None = None
-_character_factory_agent: Agent[None, NewCharacterCreation] | None = None
+_character_factory_agent: Agent[None, NewCharacterProfile] | None = None
 _offstage_synth_agent: Agent[None, OffstageMemoryBlock] | None = None
 _consolidation_agents: dict[str, StructuredAgent | TextAgent] = {}
 _OPENROUTER_SAFE_DEFAULT_MAX_TOKENS = 4096
@@ -174,7 +174,7 @@ def get_state_updater_agent() -> Agent[None, StateUpdaterOutput]:
     return _state_updater_agent
 
 
-def get_character_factory_agent() -> Agent[None, NewCharacterCreation]:
+def get_character_factory_agent() -> Agent[None, NewCharacterProfile]:
     global _character_factory_agent
 
     if _character_factory_agent is None:
@@ -184,7 +184,7 @@ def get_character_factory_agent() -> Agent[None, NewCharacterCreation]:
             name="character_factory",
             instructions=instructions,
             config=config,
-            output_type=NewCharacterCreation,
+            output_type=NewCharacterProfile,
         )
     return _character_factory_agent
 

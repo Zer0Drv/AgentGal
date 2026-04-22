@@ -20,7 +20,7 @@ from agents.schema import (
     CharacterOutput,
     CharacterSchedule,
     NarratorOutput,
-    NewCharacterSpec,
+    NewCharacterRequest,
     StateUpdaterOutput,
 )
 from engine.prompt_builder import (
@@ -356,7 +356,7 @@ class Narrator(BaseEntity):
 
     async def route(
         self, user_input: str, raw_messages: list[dict] | None = None
-    ) -> tuple[list[str], str, list[NewCharacterSpec], bool]:
+    ) -> tuple[list[str], str, list[NewCharacterRequest], bool]:
         """运行 narrator → 返回 (targets, scene_description, new_characters, is_valid)。
 
         new_characters 是 narrator 本轮请求孵化的新角色 spec 列表；
@@ -367,14 +367,16 @@ class Narrator(BaseEntity):
         if raw_messages is None:
             raw_messages = load_conversation_history(limit=None)
 
-        async def _run(narrator_input: str) -> tuple[list[str], str, list[NewCharacterSpec]]:
+        async def _run(
+            narrator_input: str,
+        ) -> tuple[list[str], str, list[NewCharacterRequest]]:
             output = await self._run_narrator(narrator_input, raw_messages)
             new_chars = self._filter_new_characters(output.new_characters, valid_agents)
             valid_targets = [t for t in output.targets if t in valid_agents]
             scene = self._sanitize_scene_description(output.content)
             return valid_targets, scene, new_chars
 
-        async def _retry() -> tuple[list[str], str, list[NewCharacterSpec]]:
+        async def _retry() -> tuple[list[str], str, list[NewCharacterRequest]]:
             correction = (
                 f"{user_input}\n\n"
                 "<routing_correction>"
@@ -415,19 +417,19 @@ class Narrator(BaseEntity):
 
     @staticmethod
     def _filter_new_characters(
-        specs: list[NewCharacterSpec],
+        specs: list[NewCharacterRequest],
         existing_agents: list[str],
-    ) -> list[NewCharacterSpec]:
+    ) -> list[NewCharacterRequest]:
         """过滤 narrator 提交的 new_characters：去重、去空、去非法 relation_to。"""
         valid_anchors = set(existing_agents) | {"player"}
-        kept: list[NewCharacterSpec] = []
+        kept: list[NewCharacterRequest] = []
         seen: set[tuple[str, str, str]] = set()
         for spec in specs:
-            display_name = spec.display_name.strip()
+            name_hint = spec.name_hint.strip()
             relation_to = spec.relation_to.strip()
             description = spec.relation_description.strip()
-            dedupe_key = (display_name, relation_to, description)
-            label = display_name or description or "（未命名新角色）"
+            dedupe_key = (name_hint, relation_to, description)
+            label = name_hint or description or "（未命名新角色）"
             if dedupe_key in seen:
                 continue
             if relation_to not in valid_anchors:
@@ -441,8 +443,8 @@ class Narrator(BaseEntity):
                 )
                 continue
             kept.append(
-                NewCharacterSpec(
-                    display_name=display_name,
+                NewCharacterRequest(
+                    name_hint=name_hint,
                     relation_to=relation_to,
                     relation_description=description,
                     background_hint=spec.background_hint.strip(),

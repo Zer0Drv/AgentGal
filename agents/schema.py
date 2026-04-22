@@ -33,10 +33,10 @@ class NarratorStatus(BaseModel):
     叙事焦点: str = ""
 
 
-class NewCharacterSpec(BaseModel):
-    """narrator 请求动态生成新角色时的最小锚点。"""
+class NewCharacterRequest(BaseModel):
+    """上游请求动态生成新角色时的最小锚点。"""
 
-    display_name: str = ""
+    name_hint: str = ""
     relation_to: str
     relation_description: str
     background_hint: str = ""
@@ -46,35 +46,38 @@ class NewCharacterSpec(BaseModel):
 class NarratorOutput(BaseModel):
     targets: list[str]
     content: str
-    new_characters: list[NewCharacterSpec] = Field(default_factory=list)
+    new_characters: list[NewCharacterRequest] = Field(default_factory=list)
 
 
-class NewCharacterCreation(BaseModel):
+class NewCharacterProfile(BaseModel):
     """character_factory agent 的结构化输出：一次返回完整骨架种子。
 
     character_id 由 character_factory 生成，是最终目录名 / agent 标识。
-    soul 分成五段（identity / goal / dynamic / behavior / voice），和模板对齐：
-    - identity：单行公开身份
-    - goal：长期追求
-    - dynamic：长期关系循环 + 内外反差
-    - behavior：情境→反应模式
-    - voice：典型台词样例
+    display_name 是最终展示名，会写入 soul.md / status.md / relations.md。
+    soul 分成五段（identity / goal / dynamic / behavior / voice），和模板对齐。
 
     schedule 是新角色的默认日程（可空），用于 state_updater 的 schedule_snapshot 兜底。
     """
 
-    character_id: str = Field(validation_alias=AliasChoices("character_id", "agent_id", "name"))
-    role: str
+    character_id: str = Field(validation_alias=AliasChoices("character_id", "agent_id"))
+    display_name: str
     identity: str
     goal: str
     dynamic: str
     behavior: list[str] = Field(default_factory=list)
     voice: list[str] = Field(default_factory=list)
-    status: dict[str, str] = Field(default_factory=dict)
-    relations: dict[str, str] = Field(default_factory=dict)
+    initial_status: dict[str, str] = Field(default_factory=dict)
+    initial_relations: dict[str, str] = Field(default_factory=dict)
     schedule: "CharacterSchedule | None" = None
 
-    @field_validator("character_id", "role", "identity", "goal", "dynamic", mode="before")
+    @field_validator(
+        "character_id",
+        "display_name",
+        "identity",
+        "goal",
+        "dynamic",
+        mode="before",
+    )
     @classmethod
     def trim_creation_fields(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
@@ -86,7 +89,7 @@ class NewCharacterCreation(BaseModel):
             return value
         return [item.strip() if isinstance(item, str) else item for item in value]
 
-    @field_validator("character_id", "role", "identity", "goal", "dynamic")
+    @field_validator("character_id", "display_name", "identity", "goal", "dynamic")
     @classmethod
     def ensure_creation_fields_not_empty(cls, value: str) -> str:
         if not value:
@@ -198,5 +201,5 @@ class CharacterSchedule(BaseModel):
     periods: list[CharacterSchedulePeriod] = Field(default_factory=list)
 
 
-# 解析 NewCharacterCreation 中对 CharacterSchedule 的前向引用
-NewCharacterCreation.model_rebuild()
+# 解析 NewCharacterProfile 中对 CharacterSchedule 的前向引用
+NewCharacterProfile.model_rebuild()

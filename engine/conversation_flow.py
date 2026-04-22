@@ -6,7 +6,7 @@ Narrator / Character 实体方法里，这里只负责把编排串起来。
 
 from agents.factory import get_choices_agent
 from agents.runner import run_structured_agent
-from agents.schema import ChoicesOutput, NewCharacterSpec
+from agents.schema import ChoicesOutput, NewCharacterRequest
 from engine.character import get_character, narrator
 from engine.character_factory import CreatedCharacterInfo, create_character
 from engine.prompt_builder import build_history_transcript
@@ -49,7 +49,7 @@ async def generate_choices(
 
 
 async def bootstrap_new_characters(
-    specs: list[NewCharacterSpec],
+    specs: list[NewCharacterRequest],
     targets: list[str],
 ) -> tuple[list[str], list[CreatedCharacterInfo]]:
     """孵化 narrator 请求的新角色，并把成功创建的角色补入最终 targets。
