@@ -7,6 +7,7 @@ from shared.config import AGENT_TEMPERATURE
 
 
 SUPPORTED_PROVIDERS = ("openai", "deepseek", "openrouter")
+_OPENAI_COMPATIBLE_PROVIDER = "openai"
 _DEFAULT_PROVIDER = "deepseek"
 _DEFAULT_MODEL_ID = "deepseek-chat"
 _CHAT_COMPLETIONS_SUFFIX = "/chat/completions"
@@ -24,18 +25,58 @@ _PROVIDER_DEFAULT_API_URLS = {
 
 def _get_required_env(key: str) -> str:
     """获取必需的环境变量，不存在则抛出错误"""
-    value = os.getenv(key)
+    value = _get_optional_env(key)
     if not value:
         raise ValueError(f"{key} not set in environment")
     return value
 
 
-def _get_default_provider() -> str:
-    return os.getenv("LLM_PROVIDER", _DEFAULT_PROVIDER).lower()
+def _get_optional_env(key: str) -> str | None:
+    value = os.getenv(key)
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def _normalize_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def _unsupported_provider_error(provider: str) -> ValueError:
+    return ValueError(
+        f"Unsupported LLM provider: '{provider}'. "
+        f"Supported: {', '.join(SUPPORTED_PROVIDERS)}. "
+        "For any OpenAI-compatible endpoint, set LLM_API_URL and leave LLM_PROVIDER empty "
+        f"or use '{_OPENAI_COMPATIBLE_PROVIDER}'. "
+        "To use Anthropic models, route them via OpenRouter (e.g. model: anthropic/claude-3-5-sonnet)."
+    )
+
+
+def _resolve_provider(provider: str | None, api_url: str | None) -> str:
+    configured_provider = _normalize_optional(provider)
+    if configured_provider is None:
+        configured_provider = _get_optional_env("LLM_PROVIDER")
+
+    if configured_provider:
+        provider_name = configured_provider.lower()
+        if provider_name in SUPPORTED_PROVIDERS:
+            return provider_name
+        if api_url:
+            return _OPENAI_COMPATIBLE_PROVIDER
+        raise _unsupported_provider_error(provider_name)
+
+    if api_url:
+        return _OPENAI_COMPATIBLE_PROVIDER
+
+    return _DEFAULT_PROVIDER
 
 
 def _get_default_model_id() -> str:
-    return os.getenv("LLM_MODEL_ID", _DEFAULT_MODEL_ID)
+    return _get_optional_env("LLM_MODEL_ID") or _DEFAULT_MODEL_ID
 
 
 def _normalize_api_url(api_url: str) -> str:
@@ -54,12 +95,7 @@ def _resolve_api_url(provider: str, api_url: str | None) -> str:
     if default_api_url:
         return default_api_url
     # 未知 provider 但没有 api_url
-    raise ValueError(
-        f"Unsupported LLM provider: '{provider}'. "
-        f"Supported: {', '.join(SUPPORTED_PROVIDERS)}. "
-        "Or set LLM_API_URL for any OpenAI-compatible endpoint. "
-        "To use Anthropic models, route them via OpenRouter (e.g. model: anthropic/claude-3-5-sonnet)."
-    )
+    raise _unsupported_provider_error(provider)
 
 
 def get_llm_config(
@@ -81,10 +117,11 @@ def get_llm_config(
             "temperature": float,
         }
     """
-    provider = (provider or _get_default_provider()).lower()
-    model_id = model_id or _get_default_model_id()
-    api_key = api_key or _get_required_env("LLM_API_KEY")
-    api_url = _resolve_api_url(provider, api_url or os.getenv("LLM_API_URL"))
+    api_url = _normalize_optional(api_url) or _get_optional_env("LLM_API_URL")
+    provider = _resolve_provider(provider, api_url)
+    model_id = _normalize_optional(model_id) or _get_default_model_id()
+    api_key = _normalize_optional(api_key) or _get_required_env("LLM_API_KEY")
+    api_url = _resolve_api_url(provider, api_url)
     return {
         "provider": provider,
         "api_url": api_url,
@@ -96,10 +133,10 @@ def get_llm_config(
 
 def _read_scoped_overrides(env_prefix: str) -> dict[str, str | None]:
     return {
-        "provider": os.getenv(f"{env_prefix}_PROVIDER"),
-        "model_id": os.getenv(f"{env_prefix}_MODEL_ID"),
-        "api_key": os.getenv(f"{env_prefix}_API_KEY"),
-        "api_url": os.getenv(f"{env_prefix}_API_URL"),
+        "provider": _get_optional_env(f"{env_prefix}_PROVIDER"),
+        "model_id": _get_optional_env(f"{env_prefix}_MODEL_ID"),
+        "api_key": _get_optional_env(f"{env_prefix}_API_KEY"),
+        "api_url": _get_optional_env(f"{env_prefix}_API_URL"),
     }
 
 
@@ -114,10 +151,12 @@ def _make_scoped_llm_config(
     if not any(overrides.values()):
         config = fallback_getter().copy()
     else:
-        provider = (overrides["provider"] or _get_default_provider()).lower()
+        provider = overrides["provider"]
+        if provider is None and overrides["api_url"]:
+            provider = _OPENAI_COMPATIBLE_PROVIDER
         model_id = overrides["model_id"] or _get_default_model_id()
-        api_key = overrides["api_key"] or os.getenv("LLM_API_KEY")
-        api_url = overrides["api_url"] or os.getenv("LLM_API_URL")
+        api_key = overrides["api_key"] or _get_optional_env("LLM_API_KEY")
+        api_url = overrides["api_url"] or _get_optional_env("LLM_API_URL")
 
         if not api_key:
             raise ValueError(f"{env_prefix}_API_KEY or LLM_API_KEY must be set")

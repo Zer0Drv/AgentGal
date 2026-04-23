@@ -36,9 +36,9 @@ cp .env.example .env
 
 至少需要检查 / 配置以下变量：
 
-- `LLM_PROVIDER`：当前代码支持 `openai` / `deepseek` / `openrouter`
 - `LLM_API_KEY`
 - `LLM_MODEL_ID`
+- `LLM_PROVIDER`：可选；内置支持 `openai` / `deepseek` / `openrouter`。如果设置了 `LLM_API_URL` 指向 OpenAI-compatible endpoint，可留空。
 
 如果需要向量记忆检索，还应配置：
 
@@ -185,7 +185,7 @@ uv run uvicorn server:app --reload
 
 | 变量 | 必需 | 说明 |
 |---|---|---|
-| `LLM_PROVIDER` | 是 | `openai` / `deepseek` / `openrouter` |
+| `LLM_PROVIDER` | 否 | `openai` / `deepseek` / `openrouter`；设置 `LLM_API_URL` 时可留空并按 OpenAI-compatible endpoint 调用 |
 | `LLM_API_KEY` | 是 | 主模型 API Key |
 | `LLM_MODEL_ID` | 是 | 主模型 ID |
 | `LLM_API_URL` | 否 | 自定义 OpenAI 兼容端点，已知 provider 可留空自动解析 |

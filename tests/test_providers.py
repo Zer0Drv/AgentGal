@@ -54,6 +54,20 @@ def test_get_llm_config_normalizes_full_chat_completions_url(monkeypatch):
     assert config["api_url"] == "https://example.com/v1"
 
 
+def test_get_llm_config_allows_empty_provider_with_custom_url(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.setenv("LLM_API_KEY", "main-key")
+    monkeypatch.setenv("LLM_MODEL_ID", "custom-model")
+    monkeypatch.setenv("LLM_API_URL", "https://custom.example/v1/chat/completions")
+
+    config = providers_module.get_llm_config()
+
+    assert config["provider"] == "openai"
+    assert config["model"] == "custom-model"
+    assert config["api_url"] == "https://custom.example/v1"
+
+
 def test_get_choices_llm_config_falls_back_to_narrator_config(monkeypatch):
     _clear_llm_env(monkeypatch)
     monkeypatch.setenv("LLM_API_KEY", "main-key")
@@ -68,6 +82,21 @@ def test_get_choices_llm_config_falls_back_to_narrator_config(monkeypatch):
     assert config["model"] == "gpt-narrator"
     assert config["api_key"] == "narrator-key"
     assert config["api_url"] == "https://narrator.example/v1"
+
+
+def test_scoped_config_allows_custom_url_without_scoped_provider(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("LLM_MODEL_ID", "deepseek-main")
+    monkeypatch.setenv("LLM_API_KEY", "main-key")
+    monkeypatch.setenv("CONSOLIDATION_LLM_API_URL", "https://scoped.example/v1")
+
+    config = providers_module.get_consolidation_llm_config()
+
+    assert config["provider"] == "openai"
+    assert config["model"] == "deepseek-main"
+    assert config["api_key"] == "main-key"
+    assert config["api_url"] == "https://scoped.example/v1"
 
 
 def test_get_consolidation_llm_config_uses_factory_for_partial_override(monkeypatch):
