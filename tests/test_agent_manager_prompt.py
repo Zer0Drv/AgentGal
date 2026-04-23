@@ -17,13 +17,13 @@ except ModuleNotFoundError as exc:
 _TEMPLATE_VARS = "{agent_name} {display_name} {soul} {status_fields} {player_fields} {valid_targets}"
 
 
-def test_character_system_prompt_reads_character_template(tmp_path, monkeypatch):
-    prompts_dir = tmp_path / "prompts"
-    prompts_dir.mkdir()
-    (prompts_dir / "character_prompt.txt").write_text("CHARACTER " + _TEMPLATE_VARS, encoding="utf-8")
-    (prompts_dir / "narrator_prompt.txt").write_text("NARRATOR " + _TEMPLATE_VARS, encoding="utf-8")
+def _patch_templates(monkeypatch, character: str, narrator: str) -> None:
+    monkeypatch.setattr(prompt_builder_module, "CHARACTER", character)
+    monkeypatch.setattr(prompt_builder_module, "NARRATOR", narrator)
 
-    monkeypatch.setattr(prompt_builder_module, "PROJECT_ROOT", tmp_path)
+
+def test_character_system_prompt_reads_character_template(monkeypatch):
+    _patch_templates(monkeypatch, "CHARACTER " + _TEMPLATE_VARS, "NARRATOR " + _TEMPLATE_VARS)
     monkeypatch.setattr(prompt_builder_module, "get_allowed_fields", lambda agent_name, field: [])
     monkeypatch.setattr(
         prompt_builder_module,
@@ -41,13 +41,8 @@ def test_character_system_prompt_reads_character_template(tmp_path, monkeypatch)
     assert result.startswith("CHARACTER mitsuki")
 
 
-def test_narrator_system_prompt_reads_narrator_template(tmp_path, monkeypatch):
-    prompts_dir = tmp_path / "prompts"
-    prompts_dir.mkdir()
-    (prompts_dir / "character_prompt.txt").write_text("CHARACTER " + _TEMPLATE_VARS, encoding="utf-8")
-    (prompts_dir / "narrator_prompt.txt").write_text("NARRATOR " + _TEMPLATE_VARS, encoding="utf-8")
-
-    monkeypatch.setattr(prompt_builder_module, "PROJECT_ROOT", tmp_path)
+def test_narrator_system_prompt_reads_narrator_template(monkeypatch):
+    _patch_templates(monkeypatch, "CHARACTER " + _TEMPLATE_VARS, "NARRATOR " + _TEMPLATE_VARS)
     monkeypatch.setattr(prompt_builder_module, "get_allowed_fields", lambda agent_name, field: [])
     monkeypatch.setattr(
         prompt_builder_module,
@@ -65,15 +60,8 @@ def test_narrator_system_prompt_reads_narrator_template(tmp_path, monkeypatch):
     assert result.startswith("NARRATOR narrator")
 
 
-def test_character_system_prompt_uses_other_character_display_names_for_relations(
-    tmp_path, monkeypatch
-):
-    prompts_dir = tmp_path / "prompts"
-    prompts_dir.mkdir()
-    (prompts_dir / "character_prompt.txt").write_text("{valid_targets}", encoding="utf-8")
-    (prompts_dir / "narrator_prompt.txt").write_text("{valid_targets}", encoding="utf-8")
-
-    monkeypatch.setattr(prompt_builder_module, "PROJECT_ROOT", tmp_path)
+def test_character_system_prompt_uses_other_character_display_names_for_relations(monkeypatch):
+    _patch_templates(monkeypatch, "{valid_targets}", "{valid_targets}")
     monkeypatch.setattr(prompt_builder_module, "get_allowed_fields", lambda agent_name, field: [])
     monkeypatch.setattr(
         prompt_builder_module,
@@ -93,13 +81,8 @@ def test_character_system_prompt_uses_other_character_display_names_for_relation
     assert result == "莉莉丝"
 
 
-def test_narrator_system_prompt_keeps_character_ids_in_valid_targets(tmp_path, monkeypatch):
-    prompts_dir = tmp_path / "prompts"
-    prompts_dir.mkdir()
-    (prompts_dir / "character_prompt.txt").write_text("{valid_targets}", encoding="utf-8")
-    (prompts_dir / "narrator_prompt.txt").write_text("{valid_targets}", encoding="utf-8")
-
-    monkeypatch.setattr(prompt_builder_module, "PROJECT_ROOT", tmp_path)
+def test_narrator_system_prompt_keeps_character_ids_in_valid_targets(monkeypatch):
+    _patch_templates(monkeypatch, "{valid_targets}", "{valid_targets}")
     monkeypatch.setattr(prompt_builder_module, "get_allowed_fields", lambda agent_name, field: [])
     monkeypatch.setattr(
         prompt_builder_module,

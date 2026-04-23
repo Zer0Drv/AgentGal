@@ -60,7 +60,11 @@ agentgal-memos/
 │   ├── message_router.py       # 对话写入 / 可见性过滤
 │   ├── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 │   └── vector_store.py         # sqlite-vec 向量存储（write/delete + 原始候选检索）
-├── prompts/                    # narrator / character / consolidation prompts
+├── prompts/                    # 按生命周期分组的 prompt 常量模块
+│   ├── consolidation_prompts.py  # 后台整理：memory / growth / user
+│   ├── runtime_prompts.py        # 对话主线：character / narrator / choices / state_updater
+│   ├── worldgen_prompts.py       # 角色孵化与离场追补
+│   └── opening_intro.txt         # 玩法介绍开场文案（面向玩家）
 ├── scripts/                    # 维护脚本
 ├── static/                     # Alpine.js + HTML/JS 前端
 ├── tests/                      # pytest 测试
@@ -201,7 +205,7 @@ world_sync 为出场 targets 写入 `.last_seen.json`
 `system` 消息包含：
 
 1. `soul.md`
-2. `prompts/character_prompt.txt`
+2. `prompts.runtime_prompts.CHARACTER`
 3. 允许写回的字段白名单
 
 `user` 消息按以下顺序拼装为**单条大消息**：
@@ -220,7 +224,7 @@ world_sync 为出场 targets 写入 `.last_seen.json`
 `system` 消息包含：
 
 1. `soul.md`
-2. `prompts/narrator_prompt.txt`
+2. `prompts.runtime_prompts.NARRATOR`
 
 `user` 消息按以下顺序拼装为**单条大消息**：
 
@@ -238,7 +242,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 每轮角色回应后，调用 `generate_choices()` 生成 2-3 个玩家可选行动：
 
-- prompt 来源：`prompts/choices_prompt.txt`
+- prompt 来源：`prompts.runtime_prompts.CHOICES`
 - 使用 narrator 的 LLM 配置
 - 输出风格为玩家台词（可含括号动作描写），非行动指令
 - 选项同时以文本和按钮形式展示，持久化到 `last_choices.json`

@@ -11,10 +11,10 @@ from world.schedule import (
     parse_game_time,
 )
 from memory.parser import extract_status_field
+from prompts.runtime_prompts import CHARACTER, NARRATOR
 from shared.config import (
     HISTORY_HIGH,
     HISTORY_LOW,
-    PROJECT_ROOT,
     character_path,
     get_agent_names,
 )
@@ -161,8 +161,7 @@ def build_search_query(agent_name: str, user_input: str) -> str:
 
 def build_system_prompt(agent_name: str, soul_content: str) -> str:
     """构建 system prompt（仅包含稳定的身份与规则部分）。"""
-    prompt_name = "narrator_prompt.txt" if agent_name == "narrator" else "character_prompt.txt"
-    prompt_template = (PROJECT_ROOT / "prompts" / prompt_name).read_text(encoding="utf-8")
+    prompt_template = NARRATOR if agent_name == "narrator" else CHARACTER
     excluded_status_fields = {"打算"} if agent_name != "narrator" else set()
     status_fields = "、".join(
         field

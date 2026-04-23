@@ -50,10 +50,7 @@ def test_conversation_agents_use_prompted_output(monkeypatch):
     assert character._output_schema.mode == "prompted"
 
 
-def test_auxiliary_structured_agents_use_prompted_output(monkeypatch, tmp_path):
-    prompt_file = tmp_path / "prompt.txt"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
+def test_auxiliary_structured_agents_use_prompted_output(monkeypatch):
     monkeypatch.setattr(agent_factory_module, "get_choices_llm_config", _fake_config)
     monkeypatch.setattr(agent_factory_module, "get_narrator_llm_config", _fake_config)
     monkeypatch.setattr(
@@ -61,9 +58,6 @@ def test_auxiliary_structured_agents_use_prompted_output(monkeypatch, tmp_path):
         "get_consolidation_llm_config",
         lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
     )
-    monkeypatch.setattr(agent_factory_module, "_CHOICES_PROMPT_PATH", prompt_file)
-    monkeypatch.setattr(agent_factory_module, "_STATE_UPDATER_PROMPT_PATH", prompt_file)
-    monkeypatch.setattr(agent_factory_module, "load_text", lambda *_args: "prompt")
 
     choices = agent_factory_module.get_choices_agent()
     state_updater = agent_factory_module.get_state_updater_agent()
@@ -86,7 +80,6 @@ def test_player_profile_agent_remains_text_output(monkeypatch):
         "get_consolidation_llm_config",
         lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
     )
-    monkeypatch.setattr(agent_factory_module, "load_text", lambda *_args: "prompt")
     monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS", 1234)
 
     player_profile = agent_factory_module.get_player_profile_agent()
@@ -105,7 +98,6 @@ def test_openrouter_consolidation_agents_clamp_unbounded_max_tokens(monkeypatch)
             "temperature": temperature or 0.2,
         },
     )
-    monkeypatch.setattr(agent_factory_module, "load_text", lambda *_args: "prompt")
     monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_MAX_TOKENS", None)
     monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS", 2048)
 

@@ -29,24 +29,22 @@ from llm.providers import (
     get_narrator_llm_config,
     get_offstage_synthesizer_llm_config,
 )
+from prompts.consolidation_prompts import (
+    GROWTH_DEDUPE,
+    GROWTH_EXTRACT,
+    MEMORY_CHUNK_METADATA,
+    MEMORY_SCENE_MERGE,
+    PLAYER_PROFILE,
+)
+from prompts.runtime_prompts import CHOICES, STATE_UPDATER
+from prompts.worldgen_prompts import CHARACTER_FACTORY, OFFSTAGE_SYNTH
 from shared.config import (
     CONSOLIDATION_MAX_TOKENS,
     CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS,
     CONSOLIDATION_TEMPERATURE,
-    PROJECT_ROOT,
     get_agent_names,
 )
-from storage.agent_files import load_text, read_agent_file
-
-_MEMORY_MERGE_PROMPT_PATH = PROJECT_ROOT / "prompts" / "memory_scene_merge.txt"
-_MEMORY_METADATA_PROMPT_PATH = PROJECT_ROOT / "prompts" / "memory_chunk_metadata.txt"
-_GROWTH_EXTRACT_PROMPT_PATH = PROJECT_ROOT / "prompts" / "growth_extract.txt"
-_GROWTH_DEDUP_PROMPT_PATH = PROJECT_ROOT / "prompts" / "growth_dedupe.txt"
-_PLAYER_PROFILE_PROMPT_PATH = PROJECT_ROOT / "prompts" / "player_profile_consolidation_prompt.txt"
-_CHOICES_PROMPT_PATH = PROJECT_ROOT / "prompts" / "choices_prompt.txt"
-_STATE_UPDATER_PROMPT_PATH = PROJECT_ROOT / "prompts" / "state_updater_prompt.txt"
-_CHARACTER_FACTORY_PROMPT_PATH = PROJECT_ROOT / "prompts" / "character_factory_prompt.txt"
-_OFFSTAGE_SYNTH_PROMPT_PATH = PROJECT_ROOT / "prompts" / "offstage_synth_prompt.txt"
+from storage.agent_files import read_agent_file
 
 ConversationAgent = Agent[None, CharacterOutput | NarratorOutput]
 StructuredAgent = Agent[None, object]
@@ -149,10 +147,9 @@ def get_choices_agent() -> Agent[None, ChoicesOutput]:
 
     if _choices_agent is None:
         config = get_choices_llm_config()
-        instructions = _CHOICES_PROMPT_PATH.read_text(encoding="utf-8")
         _choices_agent = _build_agent(
             name="choices",
-            instructions=instructions,
+            instructions=CHOICES,
             config=config,
             output_type=ChoicesOutput,
         )
@@ -164,10 +161,9 @@ def get_state_updater_agent() -> Agent[None, StateUpdaterOutput]:
 
     if _state_updater_agent is None:
         config = get_narrator_llm_config()
-        instructions = _STATE_UPDATER_PROMPT_PATH.read_text(encoding="utf-8")
         _state_updater_agent = _build_agent(
             name="state_updater",
-            instructions=instructions,
+            instructions=STATE_UPDATER,
             config=config,
             output_type=StateUpdaterOutput,
         )
@@ -179,10 +175,9 @@ def get_character_factory_agent() -> Agent[None, NewCharacterProfile]:
 
     if _character_factory_agent is None:
         config = get_character_factory_llm_config()
-        instructions = _CHARACTER_FACTORY_PROMPT_PATH.read_text(encoding="utf-8")
         _character_factory_agent = _build_agent(
             name="character_factory",
-            instructions=instructions,
+            instructions=CHARACTER_FACTORY,
             config=config,
             output_type=NewCharacterProfile,
         )
@@ -194,10 +189,9 @@ def get_offstage_synthesizer_agent() -> Agent[None, OffstageMemoryBlock]:
 
     if _offstage_synth_agent is None:
         config = get_offstage_synthesizer_llm_config()
-        instructions = _OFFSTAGE_SYNTH_PROMPT_PATH.read_text(encoding="utf-8")
         _offstage_synth_agent = _build_agent(
             name="offstage_synthesizer",
-            instructions=instructions,
+            instructions=OFFSTAGE_SYNTH,
             config=config,
             output_type=OffstageMemoryBlock,
         )
@@ -219,35 +213,35 @@ def _ensure_consolidation_agents() -> None:
     )
     _consolidation_agents["memory_merge"] = _build_agent(
         name="memory_merge",
-        instructions=load_text(_MEMORY_MERGE_PROMPT_PATH),
+        instructions=MEMORY_SCENE_MERGE,
         config=config,
         output_type=MemoryMergeOutput,
         max_tokens=consolidation_max_tokens,
     )
     _consolidation_agents["memory_metadata"] = _build_agent(
         name="memory_metadata",
-        instructions=load_text(_MEMORY_METADATA_PROMPT_PATH),
+        instructions=MEMORY_CHUNK_METADATA,
         config=config,
         output_type=MemoryMetadataOutput,
         max_tokens=consolidation_max_tokens,
     )
     _consolidation_agents["growth_extract"] = _build_agent(
         name="growth_extract",
-        instructions=load_text(_GROWTH_EXTRACT_PROMPT_PATH),
+        instructions=GROWTH_EXTRACT,
         config=config,
         output_type=GrowthExtractOutput,
         max_tokens=consolidation_max_tokens,
     )
     _consolidation_agents["growth_dedup"] = _build_agent(
         name="growth_dedup",
-        instructions=load_text(_GROWTH_DEDUP_PROMPT_PATH),
+        instructions=GROWTH_DEDUPE,
         config=config,
         output_type=GrowthDedupOutput,
         max_tokens=consolidation_max_tokens,
     )
     _consolidation_agents["player_profile"] = _build_agent(
         name="player_profile",
-        instructions=load_text(_PLAYER_PROFILE_PROMPT_PATH),
+        instructions=PLAYER_PROFILE,
         config=config,
         max_tokens=player_profile_max_tokens,
     )
