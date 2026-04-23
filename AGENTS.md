@@ -280,7 +280,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ### `config.toml`
 
-- 放运行时策略参数，例如 Agent temperature、超时、向量检索权重
+- 放运行时策略参数，例如 Agent temperature、角色/整理/选项生成超时、embedding/rerank 请求超时、向量检索权重
 - `[history]` 中的 `history_high` / `history_low` 控制多轮消息高低水位截断
 - `[offstage]` 中的 `catchup_threshold_days` 控制角色重新登场时触发离场追补的游戏内天数阈值
 

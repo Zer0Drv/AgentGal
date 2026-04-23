@@ -50,7 +50,12 @@ BM25_RELEVANCE_WEIGHT: float = _cfg["vector"]["bm25_relevance_weight"]
 
 # Agent 运行
 AGENT_RUN_TIMEOUT_SECONDS: int = _cfg["agent"]["run_timeout_seconds"]
+CHOICES_RUN_TIMEOUT_SECONDS: float = _cfg["agent"]["choices_timeout_seconds"]
 AGENT_TEMPERATURE: float = _cfg["agent"]["temperature"]
+
+# 外部 HTTP 服务
+EMBEDDING_REQUEST_TIMEOUT_SECONDS: float = _cfg["embedding"]["request_timeout_seconds"]
+RERANK_REQUEST_TIMEOUT_SECONDS: float = _cfg["rerank"]["request_timeout_seconds"]
 
 # 文本后处理
 MAX_ACTIONS: int = _cfg["text"]["max_actions"]

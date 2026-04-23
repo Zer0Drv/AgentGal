@@ -10,6 +10,8 @@ from typing import Any
 
 import httpx
 
+from shared.config import RERANK_REQUEST_TIMEOUT_SECONDS
+
 
 _rerank_enabled = os.getenv("RERANK_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
 RERANK_MODEL = os.getenv("RERANK_MODEL", "") if _rerank_enabled else ""
@@ -31,7 +33,7 @@ def rerank(
         RERANK_API_URL,
         headers={"Authorization": f"Bearer {RERANK_API_KEY}", "Content-Type": "application/json"},
         json={"model": RERANK_MODEL, "query": query, "documents": documents, "top_n": top_n},
-        timeout=30,
+        timeout=RERANK_REQUEST_TIMEOUT_SECONDS,
     )
     resp.raise_for_status()
     results = resp.json()["results"]

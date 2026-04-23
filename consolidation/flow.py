@@ -18,6 +18,7 @@ from agents.runner import run_structured_agent, run_text_agent
 from log_config.memory import memory_logger
 from llm.providers import get_consolidation_llm_config
 from shared.config import (
+    AGENT_RUN_TIMEOUT_SECONDS,
     CONSOLIDATION_TEMPERATURE,
     GROWTH_DEDUP_THRESHOLD,
     HISTORY_HIGH,
@@ -388,7 +389,7 @@ class MemoryConsolidationFlow:
             agent=agent,
             user_input=user,
             output_type=output_type,
-            timeout_seconds=120.0,
+            timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
             workflow_name="agentgal_consolidation",
             trace_metadata={"agent_name": agent_name, "function": function_name},
             usage_agent=agent_name,
@@ -629,7 +630,7 @@ class MemoryConsolidationFlow:
         return await run_text_agent(
             agent=get_player_profile_agent(),
             user_input=user_message,
-            timeout_seconds=120.0,
+            timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
             workflow_name="agentgal_consolidation",
             trace_metadata={"agent_name": agent_name, "function": "player_profile"},
             usage_agent=agent_name,

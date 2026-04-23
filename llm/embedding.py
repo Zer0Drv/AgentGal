@@ -9,6 +9,8 @@ import os
 
 import httpx
 
+from shared.config import EMBEDDING_REQUEST_TIMEOUT_SECONDS
+
 
 EMBED_MODEL = os.getenv("EMBEDDING_MODEL_ID") or os.getenv("EMBEDDING_MODEL") or "text-embedding-3-small"
 EMBED_API_KEY = os.getenv("EMBEDDING_API_KEY") or os.getenv("LLM_API_KEY", "")
@@ -26,7 +28,7 @@ def _validate_embed_config() -> None:
 async def embed_async(texts: list[str]) -> list[list[float]]:
     """异步计算嵌入。"""
     _validate_embed_config()
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=EMBEDDING_REQUEST_TIMEOUT_SECONDS) as client:
         resp = await client.post(
             EMBED_API_URL,
             headers={"Authorization": f"Bearer {EMBED_API_KEY}", "Content-Type": "application/json"},
@@ -43,7 +45,7 @@ def embed_sync(texts: list[str]) -> list[list[float]]:
         EMBED_API_URL,
         headers={"Authorization": f"Bearer {EMBED_API_KEY}", "Content-Type": "application/json"},
         json={"model": EMBED_MODEL, "input": texts},
-        timeout=60,
+        timeout=EMBEDDING_REQUEST_TIMEOUT_SECONDS,
     )
     resp.raise_for_status()
     return [d["embedding"] for d in resp.json()["data"]]

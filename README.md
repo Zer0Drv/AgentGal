@@ -226,8 +226,11 @@ uv run uvicorn server:app --reload
 | `[vector].hybrid_search_enabled` | 是否启用向量 + BM25 混合检索 |
 | `[vector].bm25_candidate_limit` | BM25 初筛候选数 |
 | `[vector].vector_relevance_weight` / `[vector].bm25_relevance_weight` | hybrid relevance 内部权重 |
-| `[agent].run_timeout_seconds` | 单次 Agent 调用超时 |
+| `[agent].run_timeout_seconds` | 单次 Agent 调用超时，角色、narrator、整理、新角色孵化、离场追补共用 |
+| `[agent].choices_timeout_seconds` | 选项生成 Agent 调用超时 |
 | `[agent].temperature` | 角色与 narrator 对话温度 |
+| `[embedding].request_timeout_seconds` | embedding HTTP 请求超时 |
+| `[rerank].request_timeout_seconds` | rerank HTTP 请求超时 |
 | `[text].max_actions` / `[text].max_ellipsis` | 回复后处理约束 |
 
 > 对话历史使用高低水位截断，由 `config.toml` 中的 `[history].history_high` / `[history].history_low` 控制；超过 high 时会批量截到 low，通过 `.history_window_state.json` 维持窗口，并触发对应角色的后台记忆整理。
