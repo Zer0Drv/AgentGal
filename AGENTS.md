@@ -94,7 +94,7 @@ server.py        ← 全部
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
 - `tmp_user.md`：`user.md` 的工作草稿；首次写入时复制正式档案，整理后删除
 - `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有）
-- `relations.md`：角色对其他角色（不含 `player`）的当下视角；`## {target}` 一节一段；每轮 `output.relations[target]` 整段覆盖（仅角色有）。对玩家的长期视角走 `user.md` 与 `status.md` 的「和玩家的关系」
+- `relations.md`：角色对其他角色（不含 `player`）的当下视角；`## {character}` 一节一段；每轮 `output.relations[character]` 整段覆盖（仅角色有）。
 
 ### 历史文件
 
@@ -181,7 +181,7 @@ world_sync 为出场 targets 写入 `.last_seen.json`
 - `output.player` → 追加到 `tmp_user.md` 对应字段；首次写入时先复制 `user.md` 为工作草稿，整理后再回写 `user.md`
 - `output.triggered` → 从 `status.md` 中移除已执行条目
 - `output.add_event` → 向 `status.md` 中插入新条目
-- `output.relations` → 覆盖 `relations.md` 的 `## {target}` 节（target 必须是 `get_agent_names()` 中的角色，不能是自己或 `player`；对玩家的长期视角走 `user.md` 与 `status.md` 的「和玩家的关系」，不写进 relations；非法 target 跳过并记录 warning）
+- `output.relations` → 覆盖 `relations.md` 的 `## {target}` 节（target 必须是其他角色的显示名，不能是自己或 `player`；对玩家的长期视角走 `user.md` 与 `status.md` 的「和玩家的关系」，不写进 relations；非法 target 跳过并记录 warning）
 
 其中：
 

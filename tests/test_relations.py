@@ -20,7 +20,6 @@ try:
     from storage.agent_files import (
         read_relations,
         read_relations_section,
-        resolve_agent_display_name,
         update_relations,
     )
 except ModuleNotFoundError as exc:
@@ -231,16 +230,41 @@ async def test_character_apply_updates_writes_valid_relations(character_dir, pat
         memory="",
         relations={
             "player": "对玩家的视角应走 user.md / status，不写进 relations",
-            "lilith": "同班好友",
+            "莉莉丝": "同班好友",
             "ghost": "不应该被写入",
-            "mitsuki": "不能对自己写关系",
+            "美月": "不能对自己写关系",
         },
     )
     char = Character("mitsuki")
     await char._apply_updates(output)
 
     sections = read_relations("mitsuki")
-    assert sections[resolve_agent_display_name("lilith")] == "同班好友"
+    assert sections["莉莉丝"] == "同班好友"
     assert "player" not in sections
     assert "ghost" not in sections
-    assert resolve_agent_display_name("mitsuki") not in sections
+    assert "美月" not in sections
+
+
+@pytest.mark.asyncio
+async def test_character_apply_updates_rejects_relation_character_id(
+    character_dir, patched_agents
+):
+    _write_character(
+        character_dir,
+        "mitsuki",
+        soul="# 美月\n",
+        status="## 心境\n平静\n",
+    )
+    _write_character(character_dir, "lilith", soul="# 莉莉丝\n")
+    patched_agents(["mitsuki", "lilith"])
+
+    output = CharacterOutput(
+        content="...",
+        memory="",
+        relations={"lilith": "旧 key 不应再兼容"},
+    )
+    char = Character("mitsuki")
+    await char._apply_updates(output)
+
+    sections = read_relations("mitsuki")
+    assert "莉莉丝" not in sections

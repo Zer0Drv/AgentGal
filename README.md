@@ -98,7 +98,7 @@ uv run uvicorn server:app --reload
 - `output.memory` → `memory.md`
 - `output.status` → `status.md`
 - `output.player` → 追加到 `tmp_user.md`；首次写入时先复制 `user.md` 作为工作草稿，整理后再回写 `user.md`
-- `output.relations` → 覆盖 `relations.md` 中对应角色 section（只写其他角色，不写 `player`）
+- `output.relations` → 用其他角色**名称**作为 key，覆盖 `relations.md` 中对应角色 section（不写自己，也不写 `player`）
 - `output.triggered` / `output.add_event` → `status.md` 中的事件区块
 
 其中：

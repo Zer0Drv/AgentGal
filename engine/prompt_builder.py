@@ -173,7 +173,21 @@ def build_system_prompt(agent_name: str, soul_content: str) -> str:
         "、".join(get_allowed_fields(agent_name, "user")) if agent_name != "narrator" else ""
     )
     display_name = get_display_name(agent_name, soul_content)
-    valid_targets = ", ".join(get_agent_names(include_narrator=False))
+    if agent_name == "narrator":
+        valid_targets = ", ".join(get_agent_names(include_narrator=False))
+    else:
+        relation_targets: list[str] = []
+        seen_targets: set[str] = set()
+        for target_name in get_agent_names(include_narrator=False):
+            if target_name == agent_name:
+                continue
+            target_soul = read_agent_file(target_name, "soul.md")
+            target_display = get_display_name(target_name, target_soul)
+            if target_display in seen_targets:
+                continue
+            seen_targets.add(target_display)
+            relation_targets.append(target_display)
+        valid_targets = ", ".join(relation_targets)
 
     return prompt_template.format(
         agent_name=agent_name,

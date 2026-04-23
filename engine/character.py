@@ -45,7 +45,6 @@ from storage.agent_files import (
     add_pending_event,
     mark_event_triggered,
     read_agent_file,
-    resolve_agent_display_name,
     update_memory,
     update_player,
     update_relations,
@@ -320,18 +319,21 @@ class Character(BaseEntity):
             if r is not None:
                 results.append(r)
 
-        valid_relation_targets = set(get_agent_names(include_narrator=False))
+        valid_relation_targets = {
+            get_display_name(name, read_agent_file(name, "soul.md"))
+            for name in get_agent_names(include_narrator=False)
+            if name != self.name
+        }
         for target, content in output.relations.items():
             target_clean = target.strip()
-            if not target_clean or target_clean == self.name or target_clean == "player":
+            if not target_clean or target_clean == "player":
                 continue
             if target_clean not in valid_relation_targets:
                 routing_logger.warning(
                     "[%s] 忽略 relations 中的未知目标: %s", self.name, target_clean
                 )
                 continue
-            display = resolve_agent_display_name(target_clean)
-            r = self.set_relation(display, content)
+            r = self.set_relation(target_clean, content)
             if r is not None:
                 results.append(r)
 

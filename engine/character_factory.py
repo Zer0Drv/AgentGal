@@ -24,7 +24,6 @@ from shared.config import (
 from shared.text_utils import extract_identity, get_display_name
 from storage.agent_files import (
     read_agent_file,
-    resolve_agent_display_name,
     update_status,
     write_sidecar_json,
 )
@@ -54,22 +53,24 @@ class CreatedCharacterInfo:
     identity: str
 
 
-def _format_existing_agents() -> str:
+def _format_scene_characters(scene_characters: list[str]) -> str:
     rows: list[str] = []
-    for agent in get_agent_names(include_narrator=False):
-        soul = read_agent_file(agent, "soul.md")
-        display = get_display_name(agent, soul) if soul else agent
-        identity = extract_identity(soul) if soul else ""
-        label = f"{agent} / {display}" if display and display != agent else agent
-        rows.append(f"- {label}：{identity}" if identity else f"- {label}")
-    return "\n".join(rows) if rows else "（暂无）"
+    for character_name in scene_characters:
+        soul = read_agent_file(character_name, "soul.md")
+        if not soul:
+            continue
+        rows.append(f"- {get_display_name(character_name, soul)}")
+    return "\n".join(rows) if rows else "（无）"
 
 
-def _build_factory_user_message(spec: NewCharacterRequest) -> str:
+def _build_factory_user_message(
+    spec: NewCharacterRequest,
+    scene_characters: list[str] | None = None,
+) -> str:
     narrator_status = read_agent_file("narrator", "status.md")
     current_time = extract_status_field(narrator_status, "当前时间").strip() or "（未知）"
     scene = extract_status_field(narrator_status, "场景").strip() or "（未知）"
-    existing_agents = _format_existing_agents()
+    scene_character_names = _format_scene_characters(scene_characters or [])
     story_setting = read_agent_file("narrator", "soul.md").strip()
 
     spec_lines = [
@@ -92,7 +93,7 @@ def _build_factory_user_message(spec: NewCharacterRequest) -> str:
         "<world_now>\n"
         f"当前时间：{current_time}\n"
         f"当前场景：{scene}\n"
-        f"已有角色（character_id / 显示名）：{existing_agents}\n"
+        f"本轮 scene_characters（仅显示名，initial_relations 只能使用这些名称作为 key）：{scene_character_names}\n"
         "</world_now>"
     )
     return "\n\n".join(blocks)
@@ -103,7 +104,7 @@ def _validate_spec(spec: NewCharacterRequest) -> str | None:
     valid_anchors = set(get_agent_names(include_narrator=False)) | {"player"}
     anchor = spec.relation_to.strip()
     if anchor not in valid_anchors:
-        return f"relation_to 不在已有角色中: {anchor!r}"
+        return f"relation_to 不在可锚定角色中: {anchor!r}"
     if not spec.relation_description.strip():
         return "relation_description 为空"
     return None
@@ -155,17 +156,32 @@ def _write_relations_md(
     agent_dir: Path,
     relations: dict[str, str],
     spec: NewCharacterRequest,
+    scene_characters: list[str],
 ) -> None:
     relation_to_display = (
-        resolve_agent_display_name(spec.relation_to) if spec.relation_to != "player" else None
+        get_display_name(spec.relation_to, read_agent_file(spec.relation_to, "soul.md"))
+        if spec.relation_to != "player"
+        else None
     )
     sections: dict[str, str] = {}
+    valid_relation_targets = {
+        get_display_name(name, read_agent_file(name, "soul.md"))
+        for name in scene_characters
+        if name != agent_dir.name
+    }
     for k, v in relations.items():
-        if not k or not v or not v.strip() or k == "player":
+        target_clean = k.strip()
+        if not target_clean or not v or not v.strip() or target_clean == "player":
             continue
-        sections[resolve_agent_display_name(k)] = v.strip()
+        if target_clean not in valid_relation_targets:
+            continue
+        sections[target_clean] = v.strip()
 
-    if relation_to_display and relation_to_display not in sections:
+    if (
+        relation_to_display
+        and relation_to_display in valid_relation_targets
+        and relation_to_display not in sections
+    ):
         sections[relation_to_display] = spec.relation_description.strip()
 
     lines = ["# 我眼中的其他人", ""]
@@ -246,6 +262,7 @@ def _write_bootstrap_files(
     spec: NewCharacterRequest,
     creation: NewCharacterProfile,
     soul_content: str,
+    scene_characters: list[str],
 ) -> None:
     agent_dir = CHARACTERS_DIR / creation.character_id
     agent_dir.mkdir(parents=True, exist_ok=True)
@@ -256,7 +273,7 @@ def _write_bootstrap_files(
     (agent_dir / "user.md").write_text(_USER_MD_SKELETON, encoding="utf-8")
 
     _write_status_md(agent_dir, creation.initial_status, spec, creation.display_name)
-    _write_relations_md(agent_dir, creation.initial_relations, spec)
+    _write_relations_md(agent_dir, creation.initial_relations, spec, scene_characters)
 
     if not _write_schedule_json(agent_dir, creation.schedule):
         routing_logger.warning(
@@ -273,7 +290,10 @@ def _write_bootstrap_files(
         _append_to_narrator_locations(creation.display_name, spec.initial_location.strip())
 
 
-async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | None:
+async def create_character(
+    spec: NewCharacterRequest,
+    scene_characters: list[str] | None = None,
+) -> CreatedCharacterInfo | None:
     """孵化新角色；成功返回 CreatedCharacterInfo，失败返回 None 并记录日志。"""
     error = _validate_spec(spec)
     if error:
@@ -285,7 +305,7 @@ async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | 
     try:
         creation = await run_structured_agent(
             agent=get_character_factory_agent(),
-            user_input=_build_factory_user_message(spec),
+            user_input=_build_factory_user_message(spec, scene_characters or []),
             output_type=NewCharacterProfile,
             timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
             workflow_name="agentgal_character_factory",
@@ -313,16 +333,16 @@ async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | 
 
     soul_content = _build_soul_md(creation)
     try:
-        _write_bootstrap_files(spec, creation, soul_content)
+        _write_bootstrap_files(spec, creation, soul_content, scene_characters or [])
     except Exception as e:
         routing_logger.error(f"[character_factory] 写入 {creation.character_id!r} 文件失败: {e}")
         return None
 
-    # 新角色进入目录后，narrator 的 system prompt 里的 valid_targets 需要刷新
     try:
-        reload_conversation_agent("narrator")
+        for agent_name in get_agent_names(include_narrator=True):
+            reload_conversation_agent(agent_name)
     except Exception as e:
-        routing_logger.warning(f"[character_factory] 刷新 narrator agent 失败: {e}")
+        routing_logger.warning(f"[character_factory] 刷新对话 agents 失败: {e}")
 
     routing_logger.info(
         f"[character_factory] 生成 {creation.character_id!r}（锚点 relation_to={spec.relation_to}）"

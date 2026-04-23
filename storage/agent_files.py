@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 from shared.config import character_path
-from shared.text_utils import get_display_name
 from log_config.routing import routing_logger
 
 _EMPTY_PLACEHOLDER = "（暂无）"
@@ -48,11 +47,6 @@ def read_agent_file(agent_name: str, filename: str) -> str:
     """读取角色目录下的指定文件内容，不存在返回空字符串。"""
     path = character_path(agent_name, filename)
     return load_text(Path(path))
-
-
-def resolve_agent_display_name(character_id: str) -> str:
-    """读取 soul.md 提取显示名，回退到 character_id。"""
-    return get_display_name(character_id, read_agent_file(character_id, "soul.md"))
 
 
 # ===== JSON sidecar =====

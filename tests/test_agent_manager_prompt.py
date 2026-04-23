@@ -63,3 +63,57 @@ def test_narrator_system_prompt_reads_narrator_template(tmp_path, monkeypatch):
     result = prompt_builder_module.build_system_prompt("narrator", "# 旁白")
 
     assert result.startswith("NARRATOR narrator")
+
+
+def test_character_system_prompt_uses_other_character_display_names_for_relations(
+    tmp_path, monkeypatch
+):
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "character_prompt.txt").write_text("{valid_targets}", encoding="utf-8")
+    (prompts_dir / "narrator_prompt.txt").write_text("{valid_targets}", encoding="utf-8")
+
+    monkeypatch.setattr(prompt_builder_module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(prompt_builder_module, "get_allowed_fields", lambda agent_name, field: [])
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "get_agent_names",
+        lambda include_narrator=False: ["mitsuki", "lilith"],
+    )
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "read_agent_file",
+        lambda agent_name, filename: {"mitsuki": "# 美月\n", "lilith": "# 莉莉丝\n"}.get(
+            agent_name, ""
+        ),
+    )
+
+    result = prompt_builder_module.build_system_prompt("mitsuki", "# 美月")
+
+    assert result == "莉莉丝"
+
+
+def test_narrator_system_prompt_keeps_character_ids_in_valid_targets(tmp_path, monkeypatch):
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "character_prompt.txt").write_text("{valid_targets}", encoding="utf-8")
+    (prompts_dir / "narrator_prompt.txt").write_text("{valid_targets}", encoding="utf-8")
+
+    monkeypatch.setattr(prompt_builder_module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(prompt_builder_module, "get_allowed_fields", lambda agent_name, field: [])
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "get_agent_names",
+        lambda include_narrator=False: ["mitsuki", "lingo"],
+    )
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "read_agent_file",
+        lambda agent_name, filename: {"mitsuki": "# 美月\n", "lingo": "# 铃子\n"}.get(
+            agent_name, ""
+        ),
+    )
+
+    result = prompt_builder_module.build_system_prompt("narrator", "# 旁白")
+
+    assert result == "mitsuki, lingo"
