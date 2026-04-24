@@ -240,10 +240,10 @@ class MemoryConsolidationFlow:
         agent_name: str,
         memory_entries: str,
         raw_dialogue: str,
-    ) -> list[EpisodeMemory]:
-        """EpisodeMemoryGenerator 现在针对单个闭合 episode 输出一条记忆块。
+    ) -> EpisodeMemory:
+        """EpisodeMemoryGenerator 对单个闭合 episode 生成一条记忆。
 
-        raw_dialogue 作为事实校正材料送入 LLM，同时原样注入到落盘的 EpisodeMemory，
+        raw_dialogue 既作为事实校正材料送入 LLM，也原样注入到落盘的 EpisodeMemory，
         保留源对话的可追溯性（不进向量索引、不进召回文本）。
         """
         user = build_episode_memory_generator_payload(agent_name, memory_entries, raw_dialogue)
@@ -258,28 +258,26 @@ class MemoryConsolidationFlow:
         if not all([block.date, block.time, block.location, block.participants, block.content]):
             raise ValueError(f"{block.date} 输出块结构不完整（存在空字段）")
         normalized_date = canonical_cn_date(block.date) or canonical_cn_date(block.time)
-        return [
-            EpisodeMemory(
-                date=normalized_date or block.date,
-                time=_normalize_episode_memory_time(block.time, normalized_date),
-                location=block.location,
-                participants=block.participants,
-                keywords=block.keywords,
-                importance=block.importance,
-                content=block.content,
-                memory_owner=agent_name,
-                title=block.title,
-                raw_dialogue=raw_dialogue,
-            )
-        ]
+        return EpisodeMemory(
+            date=normalized_date or block.date,
+            time=_normalize_episode_memory_time(block.time, normalized_date),
+            location=block.location,
+            participants=block.participants,
+            keywords=block.keywords,
+            importance=block.importance,
+            content=block.content,
+            memory_owner=agent_name,
+            title=block.title,
+            raw_dialogue=raw_dialogue,
+        )
 
     async def _extract_growth_updates(
         self,
         agent_name: str,
-        episodes: list[EpisodeMemory],
+        episode: EpisodeMemory,
     ) -> None:
         payload = json.dumps(
-            [_episode_to_llm_payload(ep) for ep in episodes],
+            [_episode_to_llm_payload(episode)],
             ensure_ascii=False,
             indent=2,
         )
@@ -362,11 +360,11 @@ class MemoryConsolidationFlow:
         agent_name: str,
         memory_entries: str,
         raw_dialogue: str = "",
-    ) -> tuple[list[EpisodeMemory] | None, list[str]]:
+    ) -> tuple[EpisodeMemory | None, list[str]]:
         errors: list[str] = []
 
         try:
-            episodes = await self._merge_memory_blocks(
+            episode = await self._merge_memory_blocks(
                 agent_name, memory_entries, raw_dialogue
             )
         except Exception as e:
@@ -376,14 +374,14 @@ class MemoryConsolidationFlow:
 
         if not self._supports_growth(agent_name):
             memory_logger.info(f"[整理器] {agent_name} 跳过 growth.md 流程")
-            return episodes, errors
+            return episode, errors
 
         try:
-            await self._extract_growth_updates(agent_name, episodes)
+            await self._extract_growth_updates(agent_name, episode)
         except Exception as e:
             errors.append(f"第二步调用失败: {e}")
             memory_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
-            return episodes, errors
+            return episode, errors
 
         try:
             await self._dedup_growth_entries(agent_name)
@@ -391,12 +389,13 @@ class MemoryConsolidationFlow:
             errors.append(f"第三步调用失败: {e}")
             memory_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
 
-        return episodes, errors
+        return episode, errors
 
     def _prepare_consolidation_slice(
         self,
         agent_name: str,
         until_turn: int,
+        raw_messages: list[dict],
     ) -> tuple[list[dict], list[dict], str, str] | None:
         """按 until_turn 切 memory_draft.jsonl，并构造对应的 memory_entries / raw_dialogue。
 
@@ -416,7 +415,6 @@ class MemoryConsolidationFlow:
             return None
 
         turn_ge = min(int(r.get("turn", 0)) for r in taken)
-        raw_messages = load_conversation_history(limit=None)
         raw_dialogue = render_raw_history(
             raw_messages,
             visible_to=agent_name,
@@ -484,8 +482,13 @@ class MemoryConsolidationFlow:
         self,
         agent_name: str,
         until_turn: int,
+        raw_messages: list[dict] | None = None,
     ) -> _ConsolidationResult | None:
-        """合并该角色 memory_draft 中 turn <= until_turn 的记忆草稿为一条 EpisodeMemory。"""
+        """合并该角色 memory_draft 中 turn <= until_turn 的记忆草稿为一条 EpisodeMemory。
+
+        raw_messages 由 detect_and_consolidate 统一加载后传入，避免每个闭合角色重复扫描
+        整个 raw JSONL；为空时退化为自己加载（保留直接调用 / 测试入口的便利）。
+        """
         result = _ConsolidationResult(agent_name=agent_name)
         if agent_name == "narrator":
             result.skipped, result.skip_reason = True, "旁白不维护 memory.jsonl，也不参与整理"
@@ -497,7 +500,11 @@ class MemoryConsolidationFlow:
             return result
 
         async with lock:
-            slice_data = self._prepare_consolidation_slice(agent_name, until_turn)
+            if raw_messages is None:
+                raw_messages = load_conversation_history(limit=None)
+            slice_data = self._prepare_consolidation_slice(
+                agent_name, until_turn, raw_messages
+            )
             if slice_data is None:
                 result.skipped, result.skip_reason = True, (
                     f"memory_draft.jsonl 在 turn<={until_turn} 区间无可整理内容"
@@ -511,9 +518,9 @@ class MemoryConsolidationFlow:
             if jsonl_path.exists() and result.original_len > 0:
                 backup_file(jsonl_path, agent_name, "Memory")
 
-            episodes: list[EpisodeMemory] | None = None
+            episode: EpisodeMemory | None = None
             try:
-                episodes, pipeline_errors = await self._apply_consolidation_pipeline(
+                episode, pipeline_errors = await self._apply_consolidation_pipeline(
                     agent_name,
                     memory_entries,
                     raw_dialogue,
@@ -523,24 +530,21 @@ class MemoryConsolidationFlow:
                 result.errors.append(f"整合失败: {e}")
                 memory_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
 
-            if episodes is None:
-                # 整合失败：保留 memory.jsonl 与 memory_draft.jsonl 原状，留给下一轮重试
+            if episode is None:
                 return result
 
-            appended = append_memory_records(agent_name, episodes)
-            rewritten_dates = [ep.date for ep in appended]
-            unique_dates = list(dict.fromkeys(rewritten_dates))
+            appended = append_memory_records(agent_name, [episode])
+            unique_dates = list(dict.fromkeys(ep.date for ep in appended))
             result.days = len(unique_dates)
             if unique_dates:
                 result.date_range = f"{unique_dates[0]}~{unique_dates[-1]}"
 
             result.final_len = jsonl_path.stat().st_size if jsonl_path.exists() else 0
 
-            # 只抹掉已归并的 turn 切片，保留之后 turn 的 draft 条目供下轮再评估
             rewrite_memory_draft(agent_name, remaining)
 
-            for episode in appended:
-                await vector_store.add(episode)
+            for ep in appended:
+                await vector_store.add(ep)
 
             user_before, user_after = await self._consolidate_player_profile(agent_name)
             result.user_md_before, result.user_md_after = user_before, user_after
@@ -562,33 +566,36 @@ class MemoryConsolidationFlow:
             memory_logger.error(f"[整理器] {agent_name} user.md 整理失败: {e}")
             return None
 
-    def _collect_candidates(self) -> list[tuple[str, str]]:
-        """扫描角色目录，返回 memory_draft.jsonl 非空的 (agent_name, display_name)。"""
+    def _collect_candidates(self) -> tuple[list[tuple[str, str]], int | None]:
+        """扫描角色目录，返回 (candidates, earliest_draft_turn)。
+
+        earliest_draft_turn 是所有候选 draft 里最早的 turn；早于此的 raw 历史已归并，
+        对本轮闭合判断无关，作为 closure detector 的窗口下界。
+        """
         candidates: list[tuple[str, str]] = []
+        earliest: int | None = None
         for name in get_agent_names(include_narrator=False):
-            if not read_memory_draft(name):
+            draft = read_memory_draft(name)
+            if not draft:
                 continue
             soul = read_agent_file(name, "soul.md") or ""
             display = get_display_name(name, soul) if soul else name
             candidates.append((name, display))
-        return candidates
+            for record in draft:
+                turn = record.get("turn")
+                if isinstance(turn, int) and turn > 0:
+                    if earliest is None or turn < earliest:
+                        earliest = turn
+        return candidates, earliest
 
     async def _detect_closures(
         self,
         candidates: list[tuple[str, str]],
+        raw_messages: list[dict],
+        earliest_draft_turn: int | None,
         current_turn: int,
     ) -> dict[str, int]:
         """调 EpisodeClosureDetector，返回 {agent_name: closed_at_turn}。"""
-        # 窗口下界：取所有候选 draft 里最早的 turn；早于此的历史已归并，对本轮判断无关。
-        earliest_draft_turn: int | None = None
-        for name, _ in candidates:
-            for record in read_memory_draft(name):
-                turn = record.get("turn")
-                if isinstance(turn, int) and turn > 0:
-                    if earliest_draft_turn is None or turn < earliest_draft_turn:
-                        earliest_draft_turn = turn
-
-        raw_messages = load_conversation_history(limit=None)
         history_transcript = render_raw_history(raw_messages, turn_ge=earliest_draft_turn)
         if not history_transcript:
             return {}
@@ -625,11 +632,14 @@ class MemoryConsolidationFlow:
 
         无候选或无闭合时静默返回；失败不影响主流程。
         """
-        candidates = self._collect_candidates()
+        candidates, earliest_draft_turn = self._collect_candidates()
         if not candidates:
             return
 
-        closures = await self._detect_closures(candidates, current_turn)
+        raw_messages = load_conversation_history(limit=None)
+        closures = await self._detect_closures(
+            candidates, raw_messages, earliest_draft_turn, current_turn
+        )
         if not closures:
             memory_logger.info(
                 f"[整理器] turn={current_turn} 无角色闭合 "
@@ -640,7 +650,10 @@ class MemoryConsolidationFlow:
         memory_logger.info(f"[整理器] turn={current_turn} 闭合: {closures}")
         t0 = time.monotonic()
         await asyncio.gather(
-            *(self.consolidate_agent(name, until_turn=turn) for name, turn in closures.items()),
+            *(
+                self.consolidate_agent(name, until_turn=turn, raw_messages=raw_messages)
+                for name, turn in closures.items()
+            ),
             return_exceptions=True,
         )
         memory_logger.info(f"[整理器] 闭合归并完成 (耗时 {time.monotonic() - t0:.1f}s)")

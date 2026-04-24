@@ -51,7 +51,7 @@ def test_prepare_slice_returns_none_when_draft_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_files_module, "character_path", _make_character_path(tmp_path))
     consolidator = MemoryConsolidationFlow()
 
-    result = consolidator._prepare_consolidation_slice("chenxiao", until_turn=5)
+    result = consolidator._prepare_consolidation_slice("chenxiao", until_turn=5, raw_messages=[])
     assert result is None
 
 
@@ -59,20 +59,18 @@ def test_prepare_slice_skips_entries_beyond_until_turn(tmp_path, monkeypatch):
     """只取 turn <= until_turn 的 draft 条目，后续 turn 留在 remaining。"""
     monkeypatch.setattr(consolidator_module, "character_path", _make_character_path(tmp_path))
     monkeypatch.setattr(agent_files_module, "character_path", _make_character_path(tmp_path))
-    monkeypatch.setattr(
-        consolidator_module,
-        "load_conversation_history",
-        lambda limit=None: [
-            {"role": "narrator", "content": "场景 A", "visible_to": ["chenxiao", "narrator"], "turn": 3},
-            {"role": "chenxiao", "content": "回应 A", "visible_to": ["chenxiao", "narrator"], "turn": 3},
-        ],
-    )
 
     agent_files_module.append_memory_draft("chenxiao", 3, "- 第三轮 draft")
     agent_files_module.append_memory_draft("chenxiao", 5, "- 第五轮 draft")
 
+    raw_messages = [
+        {"role": "narrator", "content": "场景 A", "visible_to": ["chenxiao", "narrator"], "turn": 3},
+        {"role": "chenxiao", "content": "回应 A", "visible_to": ["chenxiao", "narrator"], "turn": 3},
+    ]
     consolidator = MemoryConsolidationFlow()
-    result = consolidator._prepare_consolidation_slice("chenxiao", until_turn=3)
+    result = consolidator._prepare_consolidation_slice(
+        "chenxiao", until_turn=3, raw_messages=raw_messages
+    )
 
     assert result is not None
     taken, remaining, memory_entries, raw_dialogue = result
@@ -90,7 +88,9 @@ def test_prepare_slice_returns_none_when_no_entries_within_turn(tmp_path, monkey
     agent_files_module.append_memory_draft("chenxiao", 10, "- 未来轮 draft")
 
     consolidator = MemoryConsolidationFlow()
-    result = consolidator._prepare_consolidation_slice("chenxiao", until_turn=5)
+    result = consolidator._prepare_consolidation_slice(
+        "chenxiao", until_turn=5, raw_messages=[]
+    )
 
     assert result is None
 
@@ -395,7 +395,7 @@ async def test_merge_memory_blocks_uses_episode_memory_generator(monkeypatch):
         fake_run_consolidation_agent,
     )
 
-    episodes = await consolidator._merge_memory_blocks(
+    episode = await consolidator._merge_memory_blocks(
         "chenxiao",
         "payload",
         "raw 对话原文",
@@ -403,16 +403,15 @@ async def test_merge_memory_blocks_uses_episode_memory_generator(monkeypatch):
 
     assert captured["agent"] is sentinel_agent
     assert "<memory_entries>" in captured["user"]
-    assert len(episodes) == 1
-    assert episodes[0].date == "10月19日"
-    assert episodes[0].content == "一起吃饭。"
-    assert episodes[0].location == "餐厅"
-    assert episodes[0].memory_owner == "chenxiao"
-    assert episodes[0].keywords == ["餐厅", "吃饭", "日常"]
-    assert episodes[0].importance == 2
-    assert episodes[0].title == "餐厅晚饭"
+    assert episode.date == "10月19日"
+    assert episode.content == "一起吃饭。"
+    assert episode.location == "餐厅"
+    assert episode.memory_owner == "chenxiao"
+    assert episode.keywords == ["餐厅", "吃饭", "日常"]
+    assert episode.importance == 2
+    assert episode.title == "餐厅晚饭"
     # raw_dialogue 由流程注入，不由 LLM 输出
-    assert episodes[0].raw_dialogue == "raw 对话原文"
+    assert episode.raw_dialogue == "raw 对话原文"
 
 
 def test_enforce_user_section_limits_trims_to_configured_caps():
@@ -516,7 +515,7 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
         assert "傍晚 draft 内容" not in memory_entries
         assert "上午稳定内容" not in memory_entries
         assert "[turn=4]" in raw_dialogue
-        return [rewritten_episode], []
+        return rewritten_episode, []
 
     monkeypatch.setattr(
         MemoryConsolidationFlow,
