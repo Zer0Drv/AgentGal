@@ -33,7 +33,7 @@ async def cmd_list():
     db = await vector_store._get_db()
     try:
         row = await (await db.execute(
-            "SELECT COUNT(*), COUNT(DISTINCT game_date) FROM memory_chunks"
+            "SELECT COUNT(*), COUNT(DISTINCT game_date) FROM EpisodeMemory"
         )).fetchone()
         total, days = row if row else (0, 0)
 
@@ -42,7 +42,7 @@ async def cmd_list():
 
         # 按游戏日期分布（Top 10）
         cur = await db.execute(
-            "SELECT game_date, COUNT(*) AS c FROM memory_chunks GROUP BY game_date ORDER BY c DESC LIMIT 10"
+            "SELECT game_date, COUNT(*) AS c FROM EpisodeMemory GROUP BY game_date ORDER BY c DESC LIMIT 10"
         )
         rows = await cur.fetchall()
         if rows:
@@ -54,14 +54,14 @@ async def cmd_list():
 
 
 async def cmd_show(limit: int, agent: str | None, date: str | None, order: str):
-    """查看 memory_chunks 内容，支持按角色/日期过滤"""
+    """查看 EpisodeMemory 内容，支持按角色/日期过滤"""
     await vector_store.init_tables()
     db = await vector_store._get_db()
     try:
         where = []
         params: list = []
         if agent:
-            where.append("owner_agent = ?")
+            where.append("memory_owner = ?")
             params.append(agent)
         if date:
             where.append("game_date = ?")
@@ -70,23 +70,26 @@ async def cmd_show(limit: int, agent: str | None, date: str | None, order: str):
         order_sql = "DESC" if order.lower().startswith("d") else "ASC"
 
         sql = (
-            "SELECT id, memory_key, owner_agent, game_date, content, last_recalled_at "
-            "FROM memory_chunks" + where_sql + f" ORDER BY id {order_sql} LIMIT ?"
+            "SELECT id, memory_key, memory_owner, game_date, title, content, last_recalled_at "
+            "FROM EpisodeMemory" + where_sql + f" ORDER BY id {order_sql} LIMIT ?"
         )
         params2 = params + [limit]
         cur = await db.execute(sql, params2)
         rows = await cur.fetchall()
 
         # 总数
-        sql_cnt = "SELECT COUNT(*) FROM memory_chunks" + where_sql
+        sql_cnt = "SELECT COUNT(*) FROM EpisodeMemory" + where_sql
         total = (await (await db.execute(sql_cnt, params)).fetchone())[0]
 
-        print(f"=== memory_chunks（显示 {len(rows)}/{total}）===\n")
-        for row_id, memory_key, owner, game_date, content, recalled_at in rows:
+        print(f"=== EpisodeMemory（显示 {len(rows)}/{total}）===\n")
+        for row_id, memory_key, owner, game_date, title, content, recalled_at in rows:
             preview = content[:200].replace("\n", "\\n")
             if len(content) > 200:
                 preview += "…"
-            print(f"id={row_id}, memory_key={memory_key}, owner={owner}, game_date={game_date or '-'}, recalled_at={recalled_at or '-'}")
+            print(
+                f"id={row_id}, memory_key={memory_key}, owner={owner}, game_date={game_date or '-'}, "
+                f"title={title or '-'}, recalled_at={recalled_at or '-'}"
+            )
             print(f"{len(content)} chars: {preview}\n")
     finally:
         await vector_store.close()
@@ -97,10 +100,10 @@ async def cmd_stats():
     await vector_store.init_tables()
     db = await vector_store._get_db()
     try:
-        total_chunks = (await (await db.execute("SELECT COUNT(*) FROM memory_chunks")).fetchone())[0]
+        total_chunks = (await (await db.execute("SELECT COUNT(*) FROM EpisodeMemory")).fetchone())[0]
         lens = await (
             await db.execute(
-                "SELECT SUM(LENGTH(content)), MIN(LENGTH(content)), MAX(LENGTH(content)), AVG(LENGTH(content)) FROM memory_chunks"
+                "SELECT SUM(LENGTH(content)), MIN(LENGTH(content)), MAX(LENGTH(content)), AVG(LENGTH(content)) FROM EpisodeMemory"
             )
         ).fetchone()
         total_len, min_len, max_len, avg_len = lens if lens else (0, 0, 0, 0)
@@ -112,7 +115,7 @@ async def cmd_stats():
             print("（空库）")
 
         cur = await db.execute(
-            "SELECT game_date, COUNT(*) AS c FROM memory_chunks GROUP BY game_date ORDER BY c DESC LIMIT 10"
+            "SELECT game_date, COUNT(*) AS c FROM EpisodeMemory GROUP BY game_date ORDER BY c DESC LIMIT 10"
         )
         rows = await cur.fetchall()
         if rows:

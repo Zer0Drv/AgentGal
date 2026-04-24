@@ -129,8 +129,11 @@ def _parse_keywords(raw: str) -> list[str]:
     return [p for p in parts if p]
 
 
-def _block_to_episode(date: str, block_text: str) -> EpisodeMemory:
-    """把单个事件块解析成 EpisodeMemory；不合规范时退化为 content-only。"""
+def _block_to_episode(date: str, block_text: str, memory_owner: str) -> EpisodeMemory:
+    """把单个事件块解析成 EpisodeMemory；不合规范时退化为 content-only。
+
+    title 在旧 markdown 里没有对应字段，留空由后续整理（或首次召回时的运行时 fallback）补。
+    """
     if _is_structured_memory_block(block_text):
         return EpisodeMemory(
             date=date,
@@ -140,6 +143,8 @@ def _block_to_episode(date: str, block_text: str) -> EpisodeMemory:
             keywords=_parse_keywords(_extract_event_field(block_text, "关键词")),
             importance=_parse_event_importance(block_text, default=3),
             content=_extract_event_field(block_text, "内容") or block_text.strip(),
+            memory_owner=memory_owner,
+            title="",
         )
     # 非规范块：整段落入 content，其它字段留空，importance 默认 3
     return EpisodeMemory(
@@ -150,6 +155,8 @@ def _block_to_episode(date: str, block_text: str) -> EpisodeMemory:
         keywords=[],
         importance=3,
         content=block_text.strip(),
+        memory_owner=memory_owner,
+        title="",
     )
 
 
@@ -161,12 +168,13 @@ def _convert_agent(agent_dir: Path) -> list[EpisodeMemory]:
     if not content.strip():
         return []
     sections = _split_by_date(content)
+    memory_owner = agent_dir.name
     episodes: list[EpisodeMemory] = []
     for date, body in sections.items():
         for block in _split_event_blocks(body):
             if not block.strip():
                 continue
-            episodes.append(_block_to_episode(date, block))
+            episodes.append(_block_to_episode(date, block, memory_owner))
     return episodes
 
 
@@ -210,7 +218,7 @@ async def _migrate(args: argparse.Namespace) -> int:
 
         if args.dry_run:
             for ep in episodes[:3]:
-                print(f"  · {ep['date']} | {ep['time']} | {ep['location']} | 重要度={ep['importance']}")
+                print(f"  · {ep.date} | {ep.time} | {ep.location} | 重要度={ep.importance}")
             if len(episodes) > 3:
                 print(f"  · ... 共 {len(episodes)} 条")
             continue

@@ -398,12 +398,13 @@ async def test_merge_memory_blocks_uses_factory_agent_getter(monkeypatch):
     assert captured["agent"] is sentinel_agent
     assert "<memory_entries>" in captured["user"]
     assert len(episodes) == 1
-    assert episodes[0]["date"] == "10月19日"
-    assert episodes[0]["content"] == "一起吃饭。"
-    assert episodes[0]["location"] == "餐厅"
+    assert episodes[0].date == "10月19日"
+    assert episodes[0].content == "一起吃饭。"
+    assert episodes[0].location == "餐厅"
+    assert episodes[0].memory_owner == "chenxiao"
     # keywords/importance 在此步仅为占位，后续由 metadata agent 填充
-    assert episodes[0]["keywords"] == []
-    assert episodes[0]["importance"] == 3
+    assert episodes[0].keywords == []
+    assert episodes[0].importance == 3
 
 
 def test_enforce_user_section_limits_trims_to_configured_caps():
@@ -530,21 +531,21 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     # append-only: 存量 1 条 + 新增 2 条 = 3 条，并按 append 顺序排列
     records = read_memory_jsonl(agent_name)
     assert len(records) == 3
-    assert records[0]["content"] == "上午稳定内容。"
-    assert records[1]["content"] == "中午合并后内容。"
-    assert records[2]["content"] == "下午合并后内容。"
+    assert records[0].content == "上午稳定内容。"
+    assert records[1].content == "中午合并后内容。"
+    assert records[2].content == "下午合并后内容。"
 
     assert not (agent_dir / "memory_draft.md").exists()
 
     # 受影响日期只有 10月6日，对应的 chunks 应该包含该日期下全部 3 条记录
     assert len(vector_calls) == 1
-    agent_arg, date_arg, chunks_arg = vector_calls[0]
-    assert agent_arg == agent_name
+    owner_arg, date_arg, episodes_arg = vector_calls[0]
+    assert owner_arg == agent_name
     assert date_arg == "10月6日"
-    assert len(chunks_arg) == 3
-    # 每个 chunk 是 (text, keywords, importance) 三元组
-    for chunk in chunks_arg:
-        assert isinstance(chunk, tuple) and len(chunk) == 3
-        assert isinstance(chunk[0], str) and chunk[0]
-        assert isinstance(chunk[1], str)
-        assert isinstance(chunk[2], int)
+    assert len(episodes_arg) == 3
+    # 每个 chunk 是 EpisodeMemory 实例
+    for episode in episodes_arg:
+        assert isinstance(episode, EpisodeMemory)
+        assert episode.content
+        assert isinstance(episode.keywords, list)
+        assert 1 <= episode.importance <= 5

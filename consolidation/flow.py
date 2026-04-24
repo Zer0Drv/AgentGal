@@ -41,7 +41,6 @@ from memory.parser import (
     canonical_cn_date,
     memory_jsonl_path,
     read_memory_jsonl,
-    render_episode_markdown,
 )
 from storage.vector_store import vector_store
 from agents.schema import (
@@ -59,16 +58,18 @@ from agents.schema import (
 
 
 def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:
-    """把 EpisodeMemory 压成喂给 metadata/growth LLM 的 5 字段 dict。
+    """把 EpisodeMemory 压成喂给 metadata/growth LLM 的 dict。
 
     剔除 keywords/importance：metadata 阶段是占位值、会干扰打分；growth 阶段用不到。
+    memory_owner 是调用方上下文，不喂给 LLM。
     """
     return {
-        "date": episode.get("date", "").strip(),
-        "time": episode.get("time", "").strip(),
-        "location": episode.get("location", "").strip(),
-        "participants": episode.get("participants", "").strip(),
-        "content": episode.get("content", "").strip(),
+        "date": episode.date,
+        "time": episode.time,
+        "location": episode.location,
+        "participants": episode.participants,
+        "title": episode.title,
+        "content": episode.content,
     }
 
 
@@ -197,6 +198,7 @@ def _normalize_memory_merge_events(
                 location=event.location.strip(),
                 participants=event.participants.strip(),
                 content=event.content.strip(),
+                title=event.title.strip(),
             )
         )
     return normalized_events
@@ -301,6 +303,8 @@ class MemoryConsolidationFlow:
                 keywords=[],
                 importance=3,
                 content=event.content,
+                memory_owner=agent_name,
+                title=event.title,
             )
             for event in normalized_events
         ]
@@ -339,20 +343,11 @@ class MemoryConsolidationFlow:
 
         enriched: list[EpisodeMemory] = []
         for episode in episodes:
-            time_key = episode.get("time", "").strip()
-            bucket = pending.get(time_key)
+            bucket = pending.get(episode.time)
             if bucket:
                 keywords, importance = bucket.pop(0)
                 enriched.append(
-                    EpisodeMemory(
-                        date=episode["date"],
-                        time=episode["time"],
-                        location=episode["location"],
-                        participants=episode["participants"],
-                        keywords=keywords,
-                        importance=importance,
-                        content=episode["content"],
-                    )
+                    episode.model_copy(update={"keywords": keywords, "importance": importance})
                 )
             else:
                 enriched.append(episode)
@@ -594,7 +589,7 @@ class MemoryConsolidationFlow:
                 return result
 
             appended = append_memory_records(agent_name, episodes)
-            rewritten_dates = [ep["date"] for ep in appended]
+            rewritten_dates = [ep.date for ep in appended]
             unique_dates = list(dict.fromkeys(rewritten_dates))
             result.days = len(unique_dates)
             if unique_dates:
@@ -604,13 +599,13 @@ class MemoryConsolidationFlow:
 
             Path(character_path(agent_name, "memory_draft.md")).unlink(missing_ok=True)
 
-            # 影响到的日期需要重建向量：vector_store.add 会先删除同 (agent,date)
+            # 影响到的日期需要重建向量：vector_store.add 会先删除同 (owner,date)
             # 再写入，因此必须从 jsonl 读回该日期的全部记录一次性重算
             if unique_dates:
                 all_records = read_memory_jsonl(agent_name)
                 by_date: dict[str, list[EpisodeMemory]] = {}
                 for record in all_records:
-                    normalized = canonical_cn_date(record.get("date", ""))
+                    normalized = canonical_cn_date(record.date)
                     if normalized:
                         by_date.setdefault(normalized, []).append(record)
                 affected = {canonical_cn_date(d) or d for d in unique_dates}
@@ -618,15 +613,7 @@ class MemoryConsolidationFlow:
                     records = by_date.get(date, [])
                     if not records:
                         continue
-                    chunks = [
-                        (
-                            render_episode_markdown(record),
-                            "、".join(record.get("keywords") or []),
-                            int(record.get("importance") or 3),
-                        )
-                        for record in records
-                    ]
-                    await vector_store.add(agent_name, date, chunks)
+                    await vector_store.add(agent_name, date, records)
 
             user_before, user_after = await self._consolidate_player_profile(agent_name)
             result.user_md_before, result.user_md_after = user_before, user_after

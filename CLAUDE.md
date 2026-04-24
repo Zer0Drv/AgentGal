@@ -45,7 +45,7 @@ agentgal-memos/
 ├── log_config/                 # Logfire 与业务 logger 配置
 ├── memory/                     # 记忆规则与流程
 │   ├── indexer.py              # 向量索引重建入口（从 memory.jsonl 读取后写入 storage）
-│   ├── parser.py               # memory.jsonl 结构化记录读写、EpisodeMemory 定义、日期工具、markdown 渲染
+│   ├── parser.py               # memory.jsonl 结构化记录读写、EpisodeMemory 定义、日期工具
 │   └── retrieval.py            # 完整检索 pipeline（融合、rerank、recency、召回状态更新）
 ├── shared/                     # 纯配置与无副作用工具函数
 │   ├── config.py               # 路径、运行参数、character_path、get_agent_names
@@ -89,7 +89,7 @@ server.py        ← 全部
 ### 角色文件
 
 - `soul.md`：手写角色定义，只读；分 `<identity>` / `<goal>` / `<dynamic>` / `<behavior>` / `<voice>` 五段，其中 `<goal>` 写角色在故事期内要拿到的具体长期目标（外部可验证里程碑 + 可选的关系愿景），整个故事期大体不变
-- `memory.jsonl`：角色长期记忆，每行一个结构化 `EpisodeMemory`（`date / time / location / participants / keywords / importance / content`），append-only，仅角色有
+- `memory.jsonl`：角色长期记忆，每行一个结构化 `EpisodeMemory`（`date / time / location / participants / keywords / importance / content / memory_owner / title`），append-only，仅角色有
 - `memory_draft.md`：每轮 `output.memory` 的落盘缓冲（仅角色有）；由 consolidation 读取并产出结构化 `EpisodeMemory` 追加到 `memory.jsonl` 后清空
 - `status.md`：当前状态；角色包含「打算」，旁白包含「待触发事件」和「角色位置」（所有主要角色的当前位置快照，由 `state_updater` 每轮维护，角色端不再自维护「当前位置」）
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
@@ -244,7 +244,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 - 默认检索路径是 memory-only；非 memory 检索已停用
 - `memory/retrieval.py` 负责完整检索 pipeline：embedding → 向量/BM25 候选 → hybrid 融合 → (可选) rerank → recency 排序 → recall 状态更新
 - `storage/vector_store.py` 只做存储层：提供 `get_vector_candidates` / `get_bm25_candidates` 原始候选，pipeline 逻辑不在此处
-- `memory/indexer.py` 负责从 `memory.jsonl` 按日期聚合后渲染 markdown 写入向量库（聚合、字段渲染、元数据提取在此层，storage 只做 I/O）
+- `memory/indexer.py` 负责从 `memory.jsonl` 按日期聚合后把 `EpisodeMemory` 记录交给向量库（聚合在此层，storage 只做 I/O）
 - 召回排序为：向量相关性与 BM25 相关性先融合，rerank（可选）替换 relevance 信号，最后叠加游戏内时间 recency
 - 已配置 Logfire 时，记忆检索会记录每轮 query 和 top 命中摘要，便于排查召回质量
 - `last_recalled_at` 会在命中后更新到 DB；`.memory_recall_state.json` 仅在存档时从 DB 导出，读档重建时作为降级数据源

@@ -126,7 +126,7 @@ uv run uvicorn server:app --reload
 ### 6. 长期记忆检索
 
 - 只有角色会做向量召回，`narrator` 依赖 `status.md` 中的场景状态和待触发事件推进当前回合；待触发事件主要由 `state_updater` 从角色打算同步
-- 向量库只索引 `memory.jsonl` 中的长期记忆事件，不再混入其他来源；入库前仍通过 `render_episode_markdown` 渲染成 markdown 便于 LLM 阅读
+- 向量库只索引 `memory.jsonl` 中的长期记忆事件，不再混入其他来源；入库时直接保存 `EpisodeMemory` 结构字段，召回时再格式化为 LLM 可读块
 - `memory/retrieval.py` 负责完整检索 pipeline：embedding → 向量/BM25 候选 → hybrid 融合 → 可选 rerank → recency 排序 → recall 状态更新
 - `storage/vector_store.py` 只做存储层：提供向量与 BM25 原始候选，pipeline 逻辑不放在 storage 层
 - 检索默认走 hybrid search：向量相关性 + BM25 关键字相关性，可选 rerank 替换 relevance 信号，最后叠加游戏内时间 recency
@@ -167,7 +167,7 @@ uv run uvicorn server:app --reload
 ### 角色文件职责
 
 - `soul.md`：角色定义，只读；分 `<identity>` / `<goal>` / `<dynamic>` / `<behavior>` / `<voice>` 五段，其中 `<goal>` 用来写角色在故事期内要拿到的具体长期目标
-- `memory.jsonl`：角色长期记忆，每行一个结构化 `EpisodeMemory`（`date / time / location / participants / keywords / importance / content`），append-only，仅角色有
+- `memory.jsonl`：角色长期记忆，每行一个结构化 `EpisodeMemory`（`date / time / location / participants / keywords / importance / content / memory_owner / title`），append-only，仅角色有
 - `status.md`：当前状态 / 打算 / 待触发事件
 - `user.md`：角色对玩家的认知（仅角色有）
 - `tmp_user.md`：`user.md` 的工作草稿；由 typed `player` 字段增量写入，整理后删除

@@ -1,7 +1,7 @@
 """记忆向量索引重建。
 
 将 memory.jsonl 的结构化记忆记录写入向量库。
-业务逻辑（按日期聚合、字段渲染、元数据提取）在此层，storage 层只做 I/O。
+业务逻辑（按日期聚合）在此层，storage 层只做 I/O。
 """
 
 from collections import OrderedDict
@@ -12,7 +12,6 @@ from memory.parser import (
     canonical_cn_date,
     memory_jsonl_path,
     read_memory_jsonl,
-    render_episode_markdown,
 )
 from shared.config import get_agent_names
 from storage.vector_store import vector_store
@@ -41,20 +40,12 @@ async def rebuild_memory_index(agent_name: str | None = None) -> None:
 
         grouped: OrderedDict[str, list[EpisodeMemory]] = OrderedDict()
         for record in read_memory_jsonl(agent):
-            normalized_date = canonical_cn_date(record.get("date", ""))
+            normalized_date = canonical_cn_date(record.date)
             if not normalized_date:
                 continue
             grouped.setdefault(normalized_date, []).append(record)
 
         for normalized_date, records in grouped.items():
-            chunks = [
-                (
-                    render_episode_markdown(record),
-                    "、".join(record.get("keywords") or []),
-                    int(record.get("importance") or 3),
-                )
-                for record in records
-            ]
-            await vector_store.add(agent, normalized_date, chunks)
+            await vector_store.add(agent, normalized_date, records)
 
         logger.info("[indexer] %s 索引完成", agent)

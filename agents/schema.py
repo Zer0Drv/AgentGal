@@ -140,6 +140,7 @@ class MemoryMergeEvent(BaseModel):
     location: str
     participants: str
     content: str
+    title: str = ""
 
 
 class MemoryMergeOutput(BaseModel):

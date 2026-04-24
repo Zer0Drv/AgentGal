@@ -1,10 +1,11 @@
 """memory 数据结构与解析工具 - EpisodeMemory、JSONL I/O、日期工具"""
 
-import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, TypedDict
+from typing import Iterable
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from shared.config import character_path
 
@@ -12,76 +13,54 @@ from shared.config import character_path
 # ===== EpisodeMemory：长期记忆单条记录 =====
 
 
-class EpisodeMemory(TypedDict):
+class EpisodeMemory(BaseModel):
     """memory.jsonl 的一行记录，对应一条结构化长期记忆事件。
 
     字段布局与 MemoryMergeEvent / OffstageMemoryBlock 对齐，便于直接写盘。
     """
 
-    date: str
-    time: str
-    location: str
-    participants: str
-    keywords: list[str]
-    importance: int
-    content: str
+    model_config = ConfigDict(str_strip_whitespace=True)
 
+    date: str = ""
+    time: str = ""
+    location: str = ""
+    participants: str = ""
+    keywords: list[str] = Field(default_factory=list)
+    importance: int = 3
+    content: str = ""
+    memory_owner: str = ""
+    title: str = ""
 
-def render_episode_markdown(episode: EpisodeMemory) -> str:
-    """将单条 EpisodeMemory 渲染成 `- **时间**：...` 结构化块。"""
-    keywords = "、".join(episode.get("keywords") or []) or "（无）"
-    importance = int(episode.get("importance") or 3)
-    return (
-        f"- **时间**：{episode.get('time', '').strip()}\n"
-        f"- **地点**：{episode.get('location', '').strip()}\n"
-        f"- **在场**：{episode.get('participants', '').strip()}\n"
-        f"- **关键词**：{keywords}\n"
-        f"- **重要度**：{importance}\n"
-        f"- **内容**：{episode.get('content', '').strip()}"
-    )
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def _clean_keywords(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(k).strip() for k in value if str(k).strip()]
+
+    @field_validator("importance", mode="before")
+    @classmethod
+    def _clamp_importance(cls, value: object) -> int:
+        try:
+            return max(1, min(5, int(value)))
+        except (TypeError, ValueError):
+            return 3
 
 
 def parse_jsonl_line(line: str) -> EpisodeMemory | None:
-    """解析一行 JSONL 为 EpisodeMemory；字段缺失则填默认值，格式非法返回 None。"""
+    """解析一行 JSONL 为 EpisodeMemory；格式非法返回 None。"""
     stripped = line.strip()
     if not stripped:
         return None
     try:
-        raw = json.loads(stripped)
-    except json.JSONDecodeError:
+        return EpisodeMemory.model_validate_json(stripped)
+    except ValidationError:
         return None
-    if not isinstance(raw, dict):
-        return None
-    keywords_raw = raw.get("keywords") or []
-    if not isinstance(keywords_raw, list):
-        keywords_raw = []
-    try:
-        importance = int(raw.get("importance", 3))
-    except (TypeError, ValueError):
-        importance = 3
-    return EpisodeMemory(
-        date=str(raw.get("date", "")).strip(),
-        time=str(raw.get("time", "")).strip(),
-        location=str(raw.get("location", "")).strip(),
-        participants=str(raw.get("participants", "")).strip(),
-        keywords=[str(k).strip() for k in keywords_raw if str(k).strip()],
-        importance=max(1, min(5, importance)),
-        content=str(raw.get("content", "")).strip(),
-    )
 
 
 def serialize_episode(episode: EpisodeMemory) -> str:
     """将 EpisodeMemory 序列化为 JSONL 一行（不含换行）。"""
-    payload = {
-        "date": episode.get("date", ""),
-        "time": episode.get("time", ""),
-        "location": episode.get("location", ""),
-        "participants": episode.get("participants", ""),
-        "keywords": list(episode.get("keywords") or []),
-        "importance": int(episode.get("importance") or 3),
-        "content": episode.get("content", ""),
-    }
-    return json.dumps(payload, ensure_ascii=False)
+    return episode.model_dump_json()
 
 
 # ===== memory.jsonl 读写 =====
@@ -115,7 +94,7 @@ def append_memory_records(
     Returns:
         实际写入的记录列表（过滤掉 content 为空的条目，保持原顺序）。
     """
-    valid = [r for r in records if (r.get("content") or "").strip()]
+    valid = [r for r in records if r.content.strip()]
     if not valid:
         return []
     path = memory_jsonl_path(agent_name)
@@ -213,5 +192,3 @@ def game_day_diff(current_date: str, past_date: str) -> int | None:
     if current_day is None or past_day is None:
         return None
     return max(current_day - past_day, 0)
-
-
