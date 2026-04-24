@@ -3,11 +3,27 @@
 from __future__ import annotations
 
 import asyncio
+import types
+import typing
 from typing import Any, TypeVar
 
 from log_config.routing import routing_logger
 
 T = TypeVar("T")
+
+
+def _matches_output_type(value: Any, output_type: Any) -> bool:
+    """兼容 UnionType (X | Y) 与参数化泛型 (dict[str, int]) 的 isinstance 检查。
+
+    Python 内建 isinstance 第二参数不接受参数化泛型，会抛 TypeError；
+    这里把 union 拆成各 arm 递归，把泛型退化到 origin 后再做常规 isinstance。
+    """
+    origin = typing.get_origin(output_type)
+    if origin is types.UnionType or origin is typing.Union:
+        return any(_matches_output_type(value, arg) for arg in typing.get_args(output_type))
+    if origin is not None:
+        return isinstance(value, origin)
+    return isinstance(value, output_type)
 
 
 def _build_run_metadata(
@@ -98,7 +114,7 @@ async def run_structured_agent(
     )
 
     output = result.output
-    if isinstance(output, output_type):
+    if _matches_output_type(output, output_type):
         return output
 
     routing_logger.error(
