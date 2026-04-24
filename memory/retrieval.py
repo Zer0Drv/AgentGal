@@ -241,6 +241,9 @@ def _format_retrieved_memory(item: dict[str, Any]) -> str:
     location = str(item.get("location", "")).strip()
     participants = str(item.get("participants", "")).strip()
 
+    if not any([date, title, time, location, participants]):
+        return content
+
     lines: list[str] = []
     if title:
         lines.append(f"- **标题**：{title}")

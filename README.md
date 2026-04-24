@@ -115,8 +115,8 @@ uv run uvicorn server:app --reload
 `consolidation/flow.py` 负责角色后台记忆整理：
 
 - 通过 `consolidation/inputs.py` 组装整理输入，并把 raw 对话对齐到当前角色视角
-- 读取 `memory_draft.md` + 最近 raw 对话，LLM 产出结构化 `EpisodeMemory` 后 append 到 `memory.jsonl`（append-only），成功即清空 draft
-- metadata / growth 两阶段使用整理出的 `EpisodeMemory` JSON 数组作为 LLM 输入，不再先渲染成 markdown
+- 读取 `memory_draft.md` + 最近 raw 对话，EpisodeMemoryGenerator 产出完整结构化 `EpisodeMemory` 后 append 到 `memory.jsonl`（append-only），成功即清空 draft
+- growth 阶段使用整理出的 `EpisodeMemory` JSON 数组作为 LLM 输入，不再先渲染成 markdown
 - 提炼、更新并去重压缩 `growth.md`（仅角色）
 - 顺带精炼 `user.md`（仅角色）
 - 按进度同步向量索引

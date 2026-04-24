@@ -58,7 +58,7 @@ def _format_message_for_owner(agent_name: str, msg: dict) -> str:
 
 
 def build_memory_owner_block(agent_name: str) -> str:
-    """构造 memory merge 的记忆主体约束块。"""
+    """构造 EpisodeMemoryGenerator 的记忆主体约束块。"""
     display_name = _get_owner_display_name(agent_name)
     no_self_ref = f"\u201c{display_name}\u201d\u6216\u201c{display_name}\uff08\u6211\uff09\u201d"
     lines = [
@@ -98,12 +98,12 @@ def format_raw_dialogue_for_owner(agent_name: str, limit: int) -> str:
     return "\n\n".join(formatted)
 
 
-def build_memory_merge_payload(
+def build_episode_memory_generator_payload(
     agent_name: str,
     memory_entries: str,
     raw_dialogue: str = "",
 ) -> str:
-    """构造 memory merge 的 user payload。"""
+    """构造 EpisodeMemoryGenerator 的 user payload。"""
     payload_parts = [
         build_memory_owner_block(agent_name),
         f"<memory_entries>\n{memory_entries}\n</memory_entries>",

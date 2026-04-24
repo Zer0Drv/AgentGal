@@ -61,15 +61,13 @@ def test_auxiliary_structured_agents_use_prompted_output(monkeypatch):
 
     choices = agent_factory_module.get_choices_agent()
     state_updater = agent_factory_module.get_state_updater_agent()
-    memory_merge = agent_factory_module.get_memory_merge_agent()
-    memory_metadata = agent_factory_module.get_memory_metadata_agent()
+    episode_memory_generator = agent_factory_module.get_episode_memory_generator_agent()
     growth_extract = agent_factory_module.get_growth_extract_agent()
     growth_dedup = agent_factory_module.get_growth_dedup_agent()
 
     assert choices._output_schema.mode == "prompted"
     assert state_updater._output_schema.mode == "prompted"
-    assert memory_merge._output_schema.mode == "prompted"
-    assert memory_metadata._output_schema.mode == "prompted"
+    assert episode_memory_generator._output_schema.mode == "prompted"
     assert growth_extract._output_schema.mode == "prompted"
     assert growth_dedup._output_schema.mode == "prompted"
 
@@ -101,11 +99,11 @@ def test_openrouter_consolidation_agents_clamp_unbounded_max_tokens(monkeypatch)
     monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_MAX_TOKENS", None)
     monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS", 2048)
 
-    memory_merge = agent_factory_module.get_memory_merge_agent()
+    episode_memory_generator = agent_factory_module.get_episode_memory_generator_agent()
     player_profile = agent_factory_module.get_player_profile_agent()
 
     assert (
-        memory_merge.model_settings["max_tokens"]
+        episode_memory_generator.model_settings["max_tokens"]
         == agent_factory_module._OPENROUTER_SAFE_DEFAULT_MAX_TOKENS
     )
     assert player_profile.model_settings["max_tokens"] == 2048

@@ -38,6 +38,8 @@ agentgal-memos/
 ├── world/                      # 世界模型（时间 / 位置）
 │   └── schedule.py             # 角色 schedule 查询、游戏时间解析、时段匹配
 ├── consolidation/              # 后台记忆整理（独立流程）
+│   ├── flow.py                 # 整理编排：EpisodeMemoryGenerator / growth / user 精炼
+│   └── inputs.py               # 整理 prompt 组装（memory_owner / raw_dialogue）
 ├── llm/
 │   ├── providers.py            # Provider 配置与 URL 解析（返回 provider/api_url/api_key/model/temperature）
 │   ├── embedding.py            # Embeddings 客户端（embed_async / embed_sync）
@@ -57,7 +59,7 @@ agentgal-memos/
 │   ├── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 │   └── vector_store.py         # sqlite-vec 向量存储（write/delete + 原始候选检索）
 ├── prompts/                    # 按生命周期分组的 prompt 常量模块
-│   ├── consolidation_prompts.py  # 后台整理：memory / growth / user
+│   ├── consolidation_prompts.py  # 后台整理：EpisodeMemoryGenerator / growth / user
 │   ├── runtime_prompts.py        # 对话主线：character / narrator / choices / state_updater
 │   ├── worldgen_prompts.py       # 角色孵化
 │   └── opening_intro.txt         # 玩法介绍开场文案（面向玩家）
@@ -164,6 +166,7 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 - `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`, `relations`
 - `NarratorOutput`：`content`, `targets`, `new_characters`（路由、场景描述与动态角色请求）
 - `NewCharacterRequest` / `NewCharacterProfile`：新角色孵化锚点（可选 `name_hint`，不含 `character_id`）与 character_factory 的完整输出（包含 `character_id`、最终 `display_name`、`initial_status`、`initial_relations`）
+- `EpisodeMemoryBlock` / `EpisodeMemoryGeneratorOutput`：`EpisodeMemoryGenerator` 输出的单条长期记忆事件（`date / time / location / participants / keywords / importance / content / title`），由流程层注入 `memory_owner` 后追加到角色 `memory.jsonl`
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`
 
@@ -255,8 +258,8 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 `consolidation/flow.py` 负责角色后台整理：
 
 - 组装整理流程，并调用 `consolidation/inputs.py` 准备整理输入
-- 读取 `memory_draft.md` + 最近 raw 对话，LLM 产出结构化 `EpisodeMemory` 后 append 到 `memory.jsonl`，写回成功即清空 draft；失败则保留 draft 留待下一轮重试
-- metadata / growth 两阶段使用整理出的 `EpisodeMemory` JSON 数组作为 LLM 输入，不再先渲染成 markdown
+- 读取 `memory_draft.md` + 最近 raw 对话，EpisodeMemoryGenerator 产出完整结构化 `EpisodeMemory` 后 append 到 `memory.jsonl`，写回成功即清空 draft；失败则保留 draft 留待下一轮重试
+- growth 阶段使用整理出的 `EpisodeMemory` JSON 数组作为 LLM 输入，不再先渲染成 markdown
 - 提炼 / 更新 `growth.md`（仅角色）
 - 去重压缩 `growth.md`（仅角色）
 - 顺带精炼 `user.md`（仅角色）

@@ -17,8 +17,8 @@ try:
     import memory.parser as parser_module
     from consolidation.flow import MemoryConsolidationFlow
     from agents.schema import (
-        MemoryMergeEvent,
-        MemoryMergeOutput,
+        EpisodeMemoryBlock,
+        EpisodeMemoryGeneratorOutput,
     )
     from memory.parser import (
         EpisodeMemory,
@@ -350,12 +350,16 @@ def test_enforce_user_section_limits_preserves_custom_sections():
 
 
 @pytest.mark.asyncio
-async def test_merge_memory_blocks_uses_factory_agent_getter(monkeypatch):
+async def test_merge_memory_blocks_uses_episode_memory_generator(monkeypatch):
     consolidator = MemoryConsolidationFlow()
     sentinel_agent = object()
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(consolidator_module, "get_memory_merge_agent", lambda: sentinel_agent)
+    monkeypatch.setattr(
+        consolidator_module,
+        "get_episode_memory_generator_agent",
+        lambda: sentinel_agent,
+    )
 
     async def fake_run_consolidation_agent(
         self_inner,
@@ -368,17 +372,20 @@ async def test_merge_memory_blocks_uses_factory_agent_getter(monkeypatch):
     ):
         captured["agent"] = agent
         captured["user"] = user
-        assert output_type is MemoryMergeOutput
+        assert output_type is EpisodeMemoryGeneratorOutput
         assert agent_name == "chenxiao"
-        assert function_name == "memory_merge"
-        return MemoryMergeOutput(
-            events=[
-                MemoryMergeEvent(
+        assert function_name == "episode_memory_generator"
+        return EpisodeMemoryGeneratorOutput(
+            episodes=[
+                EpisodeMemoryBlock(
                     date="10月19日",
                     time="10月19日 晚上",
                     location="餐厅",
                     participants="我、他",
+                    keywords=["餐厅", "吃饭", "日常"],
+                    importance=2,
                     content="一起吃饭。",
+                    title="餐厅晚饭",
                 )
             ]
         )
@@ -402,9 +409,9 @@ async def test_merge_memory_blocks_uses_factory_agent_getter(monkeypatch):
     assert episodes[0].content == "一起吃饭。"
     assert episodes[0].location == "餐厅"
     assert episodes[0].memory_owner == "chenxiao"
-    # keywords/importance 在此步仅为占位，后续由 metadata agent 填充
-    assert episodes[0].keywords == []
-    assert episodes[0].importance == 3
+    assert episodes[0].keywords == ["餐厅", "吃饭", "日常"]
+    assert episodes[0].importance == 2
+    assert episodes[0].title == "餐厅晚饭"
 
 
 def test_enforce_user_section_limits_trims_to_configured_caps():

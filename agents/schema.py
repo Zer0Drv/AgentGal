@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 
 MAX_CHOICE_CHARS = 50
@@ -134,27 +134,41 @@ class ChoicesOutput(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class MemoryMergeEvent(BaseModel):
+class EpisodeMemoryBlock(BaseModel):
+    """EpisodeMemoryGenerator 输出的单条长期记忆事件。
+
+    memory_owner 由整理流程根据 agent_name 注入，不交给 LLM 判断。
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     date: str
     time: str
     location: str
     participants: str
+    keywords: list[str] = Field(default_factory=list)
+    importance: int = 3
     content: str
     title: str = ""
 
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def clean_keywords(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()][:5]
 
-class MemoryMergeOutput(BaseModel):
-    events: list[MemoryMergeEvent]
+    @field_validator("importance", mode="before")
+    @classmethod
+    def clamp_importance(cls, value: object) -> int:
+        try:
+            return max(1, min(5, int(value)))
+        except (TypeError, ValueError):
+            return 3
 
 
-class MemoryMetadataItem(BaseModel):
-    time: str
-    keywords: list[str]
-    importance: int
-
-
-class MemoryMetadataOutput(BaseModel):
-    items: list[MemoryMetadataItem]
+class EpisodeMemoryGeneratorOutput(BaseModel):
+    episodes: list[EpisodeMemoryBlock]
 
 
 class GrowthExtractOutput(BaseModel):

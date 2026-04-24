@@ -8,10 +8,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agents.factory import (
+    get_episode_memory_generator_agent,
     get_growth_dedup_agent,
     get_growth_extract_agent,
-    get_memory_merge_agent,
-    get_memory_metadata_agent,
     get_player_profile_agent,
 )
 from agents.runner import run_structured_agent, run_text_agent
@@ -25,7 +24,7 @@ from shared.config import (
     character_path,
 )
 from consolidation.inputs import (
-    build_memory_merge_payload,
+    build_episode_memory_generator_payload,
     format_raw_dialogue_for_owner,
 )
 from storage.agent_files import (
@@ -43,11 +42,9 @@ from memory.parser import (
 )
 from storage.vector_store import vector_store
 from agents.schema import (
+    EpisodeMemoryGeneratorOutput,
     GrowthDedupOutput,
     GrowthExtractOutput,
-    MemoryMergeEvent,
-    MemoryMergeOutput,
-    MemoryMetadataOutput,
 )
 
 
@@ -57,9 +54,9 @@ from agents.schema import (
 
 
 def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:
-    """把 EpisodeMemory 压成喂给 metadata/growth LLM 的 dict。
+    """把 EpisodeMemory 压成喂给 growth LLM 的 dict。
 
-    剔除 keywords/importance：metadata 阶段是占位值、会干扰打分；growth 阶段用不到。
+    剔除 keywords/importance：growth 阶段用不到。
     memory_owner 是调用方上下文，不喂给 LLM。
     """
     return {
@@ -155,52 +152,20 @@ def _enforce_user_section_limits(content: str) -> str:
     return "\n".join(rebuilt).strip()
 
 
-def _validate_memory_merge_output(events: list[MemoryMergeEvent]) -> str | None:
-    """验证 memory merge 结构化输出的完整性。"""
-    if not events:
-        return "memory merge 输出事件列表为空"
+def _normalize_episode_memory_time(time_text: str, date_text: str | None) -> str:
+    if not time_text:
+        return time_text
 
-    for event in events:
-        if not all([event.date, event.time, event.location, event.participants, event.content]):
-            return f"{event.date} 输出块结构不完整（存在空字段）"
-
-    return None
-
-
-def _normalize_memory_merge_time(time_text: str, date_text: str | None) -> str:
-    stripped_time = (time_text or "").strip()
-    if not stripped_time:
-        return stripped_time
-
-    explicit_date = canonical_cn_date(stripped_time)
+    explicit_date = canonical_cn_date(time_text)
     if explicit_date:
         if not date_text:
-            return stripped_time
-        remainder = re.sub(r"\d{1,2}月\d{1,2}日", "", stripped_time, count=1).strip()
+            return time_text
+        remainder = re.sub(r"\d{1,2}月\d{1,2}日", "", time_text, count=1).strip()
         return f"{date_text} {remainder}".strip()
 
     if date_text:
-        return f"{date_text} {stripped_time}".strip()
-    return stripped_time
-
-
-def _normalize_memory_merge_events(
-    events: list[MemoryMergeEvent],
-) -> list[MemoryMergeEvent]:
-    normalized_events: list[MemoryMergeEvent] = []
-    for event in events:
-        normalized_date = canonical_cn_date(event.date) or canonical_cn_date(event.time)
-        normalized_events.append(
-            MemoryMergeEvent(
-                date=normalized_date or event.date.strip(),
-                time=_normalize_memory_merge_time(event.time, normalized_date),
-                location=event.location.strip(),
-                participants=event.participants.strip(),
-                content=event.content.strip(),
-                title=event.title.strip(),
-            )
-        )
-    return normalized_events
+        return f"{date_text} {time_text}".strip()
+    return time_text
 
 
 
@@ -275,82 +240,37 @@ class MemoryConsolidationFlow:
         memory_entries: str,
         raw_dialogue: str,
     ) -> list[EpisodeMemory]:
-        user = build_memory_merge_payload(agent_name, memory_entries, raw_dialogue)
+        user = build_episode_memory_generator_payload(agent_name, memory_entries, raw_dialogue)
         output = await self._run_consolidation_agent(
-            agent=get_memory_merge_agent(),
-            output_type=MemoryMergeOutput,
+            agent=get_episode_memory_generator_agent(),
+            output_type=EpisodeMemoryGeneratorOutput,
             agent_name=agent_name,
-            function_name="memory_merge",
+            function_name="episode_memory_generator",
             user=user,
         )
 
-        if not output.events:
-            raise ValueError("memory merge 返回事件列表为空")
+        if not output.episodes:
+            raise ValueError("EpisodeMemoryGenerator 返回事件列表为空")
 
-        normalized_events = _normalize_memory_merge_events(output.events)
-        validation_error = _validate_memory_merge_output(normalized_events)
-        if validation_error:
-            raise ValueError(validation_error)
-
-        # keywords/importance 交给下一步 metadata agent 填充，此处先占位
-        return [
-            EpisodeMemory(
-                date=event.date,
-                time=event.time,
-                location=event.location,
-                participants=event.participants,
-                keywords=[],
-                importance=3,
-                content=event.content,
-                memory_owner=agent_name,
-                title=event.title,
-            )
-            for event in normalized_events
-        ]
-
-    async def _annotate_memory_metadata(
-        self,
-        agent_name: str,
-        episodes: list[EpisodeMemory],
-    ) -> list[EpisodeMemory]:
-        payload = json.dumps(
-            [_episode_to_llm_payload(ep) for ep in episodes],
-            ensure_ascii=False,
-            indent=2,
-        )
-        user = f"<consolidated_memory>\n{payload}\n</consolidated_memory>"
-        try:
-            output = await self._run_consolidation_agent(
-                agent=get_memory_metadata_agent(),
-                output_type=MemoryMetadataOutput,
-                agent_name=agent_name,
-                function_name="memory_metadata",
-                user=user,
-            )
-        except Exception as e:
-            memory_logger.error(f"[整理器] {agent_name} memory metadata 失败: {e}")
-            return episodes
-
-        pending: dict[str, list[tuple[list[str], int]]] = {}
-        for item in output.items:
-            time_key = (item.time or "").strip()
-            if not time_key:
-                continue
-            keywords = [kw.strip() for kw in (item.keywords or []) if kw.strip()]
-            importance = max(1, min(5, int(item.importance or 3)))
-            pending.setdefault(time_key, []).append((keywords, importance))
-
-        enriched: list[EpisodeMemory] = []
-        for episode in episodes:
-            bucket = pending.get(episode.time)
-            if bucket:
-                keywords, importance = bucket.pop(0)
-                enriched.append(
-                    episode.model_copy(update={"keywords": keywords, "importance": importance})
+        episodes: list[EpisodeMemory] = []
+        for block in output.episodes:
+            if not all([block.date, block.time, block.location, block.participants, block.content]):
+                raise ValueError(f"{block.date} 输出块结构不完整（存在空字段）")
+            normalized_date = canonical_cn_date(block.date) or canonical_cn_date(block.time)
+            episodes.append(
+                EpisodeMemory(
+                    date=normalized_date or block.date,
+                    time=_normalize_episode_memory_time(block.time, normalized_date),
+                    location=block.location,
+                    participants=block.participants,
+                    keywords=block.keywords,
+                    importance=block.importance,
+                    content=block.content,
+                    memory_owner=agent_name,
+                    title=block.title,
                 )
-            else:
-                enriched.append(episode)
-        return enriched
+            )
+        return episodes
 
     async def _extract_growth_updates(
         self,
@@ -452,8 +372,6 @@ class MemoryConsolidationFlow:
             errors.append(f"第一步调用失败: {e}")
             memory_logger.error(f"[整理器] {agent_name} 第一步调用失败: {e}")
             return None, errors
-
-        episodes = await self._annotate_memory_metadata(agent_name, episodes)
 
         if not self._supports_growth(agent_name):
             memory_logger.info(f"[整理器] {agent_name} 跳过 growth.md 流程")

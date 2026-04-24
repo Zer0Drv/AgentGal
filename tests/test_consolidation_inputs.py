@@ -10,8 +10,8 @@ os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
 from consolidation.inputs import (
+    build_episode_memory_generator_payload,
     build_memory_owner_block,
-    build_memory_merge_payload,
     format_raw_dialogue_for_owner,
 )
 
@@ -62,15 +62,15 @@ def test_format_raw_dialogue_for_character_owner(monkeypatch):
     assert "## 顾以宁" not in formatted
 
 
-def test_build_memory_merge_payload_includes_owner_before_memory(monkeypatch):
-    """memory merge payload 应先注入记忆主体，再附带 memory 与 raw 对话。"""
+def test_build_episode_memory_generator_payload_includes_owner_before_memory(monkeypatch):
+    """EpisodeMemoryGenerator payload 应先注入记忆主体，再附带 memory 与 raw 对话。"""
 
     monkeypatch.setattr(
         "consolidation.inputs.read_agent_file",
         lambda agent_name, filename: "<role>陈晓</role>" if filename == "soul.md" else "",
     )
 
-    payload = build_memory_merge_payload(
+    payload = build_episode_memory_generator_payload(
         "chenxiao",
         "## 10月6日\n- **时间**：10月6日 上午\n- **地点**：公司\n- **在场**：我、他\n- **内容**：测试内容。",
         raw_dialogue="旁白：**时间**：10月6日 星期五 11:42",

@@ -16,7 +16,7 @@ from shared.config import character_path
 class EpisodeMemory(BaseModel):
     """memory.jsonl 的一行记录，对应一条结构化长期记忆事件。
 
-    字段布局与 MemoryMergeEvent / OffstageMemoryBlock 对齐，便于直接写盘。
+    字段布局与 EpisodeMemoryBlock（供 EpisodeMemoryGenerator / offstage_synthesizer 共用）对齐，便于直接写盘。
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
