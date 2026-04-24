@@ -70,7 +70,7 @@ async def cmd_show(limit: int, agent: str | None, date: str | None, order: str):
         order_sql = "DESC" if order.lower().startswith("d") else "ASC"
 
         sql = (
-            "SELECT id, memory_key, memory_owner, game_date, title, content, last_recalled_at "
+            "SELECT id, memory_owner, game_date, title, content, last_recalled_at "
             "FROM EpisodeMemory" + where_sql + f" ORDER BY id {order_sql} LIMIT ?"
         )
         params2 = params + [limit]
@@ -82,12 +82,12 @@ async def cmd_show(limit: int, agent: str | None, date: str | None, order: str):
         total = (await (await db.execute(sql_cnt, params)).fetchone())[0]
 
         print(f"=== EpisodeMemory（显示 {len(rows)}/{total}）===\n")
-        for row_id, memory_key, owner, game_date, title, content, recalled_at in rows:
+        for row_id, owner, game_date, title, content, recalled_at in rows:
             preview = content[:200].replace("\n", "\\n")
             if len(content) > 200:
                 preview += "…"
             print(
-                f"id={row_id}, memory_key={memory_key}, owner={owner}, game_date={game_date or '-'}, "
+                f"id={row_id}, owner={owner}, game_date={game_date or '-'}, "
                 f"title={title or '-'}, recalled_at={recalled_at or '-'}"
             )
             print(f"{len(content)} chars: {preview}\n")

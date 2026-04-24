@@ -515,10 +515,10 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
         fake_apply_consolidation_pipeline,
     )
 
-    vector_calls: list[tuple[str, str, list]] = []
+    vector_calls: list[EpisodeMemory] = []
 
-    async def fake_add(agent: str, date: str, chunks: list) -> None:
-        vector_calls.append((agent, date, chunks))
+    async def fake_add(episode: EpisodeMemory) -> None:
+        vector_calls.append(episode)
 
     monkeypatch.setattr(consolidator_module.vector_store, "add", fake_add)
 
@@ -537,14 +537,12 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
 
     assert not (agent_dir / "memory_draft.md").exists()
 
-    # 受影响日期只有 10月6日，对应的 chunks 应该包含该日期下全部 3 条记录
-    assert len(vector_calls) == 1
-    owner_arg, date_arg, episodes_arg = vector_calls[0]
-    assert owner_arg == agent_name
-    assert date_arg == "10月6日"
-    assert len(episodes_arg) == 3
-    # 每个 chunk 是 EpisodeMemory 实例
-    for episode in episodes_arg:
+    # 向量索引只接收本次 append 的 2 条新记录，不再重建当天旧记录
+    assert len(vector_calls) == 2
+    assert [episode.memory_owner for episode in vector_calls] == [agent_name, agent_name]
+    assert [episode.content for episode in vector_calls] == ["中午合并后内容。", "下午合并后内容。"]
+    # 每次 add 接收一条 EpisodeMemory 实例
+    for episode in vector_calls:
         assert isinstance(episode, EpisodeMemory)
         assert episode.content
         assert isinstance(episode.keywords, list)

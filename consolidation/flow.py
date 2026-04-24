@@ -40,7 +40,6 @@ from memory.parser import (
     append_memory_records,
     canonical_cn_date,
     memory_jsonl_path,
-    read_memory_jsonl,
 )
 from storage.vector_store import vector_store
 from agents.schema import (
@@ -599,21 +598,8 @@ class MemoryConsolidationFlow:
 
             Path(character_path(agent_name, "memory_draft.md")).unlink(missing_ok=True)
 
-            # 影响到的日期需要重建向量：vector_store.add 会先删除同 (owner,date)
-            # 再写入，因此必须从 jsonl 读回该日期的全部记录一次性重算
-            if unique_dates:
-                all_records = read_memory_jsonl(agent_name)
-                by_date: dict[str, list[EpisodeMemory]] = {}
-                for record in all_records:
-                    normalized = canonical_cn_date(record.date)
-                    if normalized:
-                        by_date.setdefault(normalized, []).append(record)
-                affected = {canonical_cn_date(d) or d for d in unique_dates}
-                for date in affected:
-                    records = by_date.get(date, [])
-                    if not records:
-                        continue
-                    await vector_store.add(agent_name, date, records)
+            for episode in appended:
+                await vector_store.add(episode)
 
             user_before, user_after = await self._consolidate_player_profile(agent_name)
             result.user_md_before, result.user_md_after = user_before, user_after

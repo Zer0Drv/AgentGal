@@ -137,9 +137,13 @@ def get_episodes(tmp_path, agent_name: str, date: str) -> list[EpisodeMemory]:
     return episodes
 
 
+async def add_episodes(store, episodes: list[EpisodeMemory]) -> None:
+    for episode in episodes:
+        await store.add(episode)
+
+
 _MEMORY_CHUNK_COLS = [
     "id",
-    "memory_key",
     "memory_owner",
     "game_date",
     "title",
@@ -170,7 +174,7 @@ def _get_db_snapshot(db_path: str) -> dict:
             pass
 
         rows = conn.execute(
-            "SELECT id, memory_key, memory_owner, game_date, title, time, location, "
+            "SELECT id, memory_owner, game_date, title, time, location, "
             "participants, content, keywords, importance, content_hash, last_recalled_at "
             "FROM EpisodeMemory ORDER BY id"
         ).fetchall()
@@ -193,7 +197,7 @@ def _compare_snapshots(before: dict, after: dict) -> tuple[bool, str]:
     if len(before["EpisodeMemory_vec"]) != len(after["EpisodeMemory_vec"]):
         return False, f"EpisodeMemory_vec 数量不同: before={len(before['EpisodeMemory_vec'])}, after={len(after['EpisodeMemory_vec'])}"
 
-    # 比较 EpisodeMemory 内容（忽略 id，因为 AUTOINCREMENT 在 DELETE 后重新 INSERT 不会重置）
+    # 比较 EpisodeMemory 内容（忽略存储层 id，重建后允许重新分配）
     for i, (b, a) in enumerate(zip(before["EpisodeMemory"], after["EpisodeMemory"])):
         b_copy = {k: v for k, v in b.items() if k != "id"}
         a_copy = {k: v for k, v in a.items() if k != "id"}
@@ -229,7 +233,7 @@ class TestSaveLoadConsistency:
                 "- **时间**：4月3日 09:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
                 "- **内容**：这是第一轮对话的内容，包含重要信息。",
             )
-            await store.add("lilith", "4月3日", get_episodes(tmp_path, "lilith", "4月3日"))
+            await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
 
             write_memory(
                 tmp_path,
@@ -238,7 +242,7 @@ class TestSaveLoadConsistency:
                 "- **时间**：4月3日 09:30\n- **地点**：走廊\n- **在场**：美月\n"
                 "- **内容**：这是第二轮对话的内容，mitsuki 的回应。",
             )
-            await store.add("mitsuki", "4月3日", get_episodes(tmp_path, "mitsuki", "4月3日"))
+            await add_episodes(store, get_episodes(tmp_path, "mitsuki", "4月3日"))
 
             from memory.retrieval import search_memories
             search_result = search_memories("lilith", "第一轮对话")
@@ -259,8 +263,8 @@ class TestSaveLoadConsistency:
             assert len(snapshot_empty["EpisodeMemory_vec"]) == 0, "清空后应该没有向量"
 
             # 重新加载相同的数据（模拟 rebuild）
-            await store.add("lilith", "4月3日", get_episodes(tmp_path, "lilith", "4月3日"))
-            await store.add("mitsuki", "4月3日", get_episodes(tmp_path, "mitsuki", "4月3日"))
+            await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
+            await add_episodes(store, get_episodes(tmp_path, "mitsuki", "4月3日"))
 
             snapshot_after = _get_db_snapshot(test_db_path)
 

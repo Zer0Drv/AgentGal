@@ -230,14 +230,19 @@ def _read_episodes(tmp_path, agent_name: str) -> list[EpisodeMemory]:
 
 
 def get_episodes(tmp_path, agent_name: str, date: str) -> list[EpisodeMemory]:
-    """从 tmp_path 下的 memory.jsonl 提取指定日期的 EpisodeMemory 列表，供 store.add() 使用。"""
+    """从 tmp_path 下的 memory.jsonl 提取指定日期的 EpisodeMemory 列表。"""
     return [r for r in _read_episodes(tmp_path, agent_name) if r.date == date]
 
 
-def _chunk_row(conn, memory_key: str):
+async def add_episodes(store, episodes: list[EpisodeMemory]) -> None:
+    for episode in episodes:
+        await store.add(episode)
+
+
+def _chunk_row_by_content(conn, content: str):
     return conn.execute(
-        "SELECT content, keywords, importance FROM EpisodeMemory WHERE memory_key = ?",
-        (memory_key,),
+        "SELECT content, keywords, importance FROM EpisodeMemory WHERE content = ?",
+        (content,),
     ).fetchone()
 
 
@@ -262,7 +267,7 @@ class TestVectorStoreBasic:
                 "- **内容**：早上好，今天天气不错。"
             ),
         )
-        await store.add("lilith", "4月3日", get_episodes(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
 
         res_before = await wait_for_search(store, "lilith", "早上好")
         assert len(res_before) >= 1, "删除前应该有数据"
@@ -388,7 +393,7 @@ class TestVectorStoreEdgeCases:
 
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
 
-        await store.add("lilith", "4月2日", get_episodes(tmp_path, "lilith", "4月2日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月2日"))
 
         res_old = await wait_for_search(store, "lilith", "昨天的长期记忆锚点")
         assert len(res_old) >= 1, "应该能搜索到昨天的记忆"
@@ -422,8 +427,8 @@ class TestVectorStoreEdgeCases:
             "# mitsuki\n\n## 4月3日\n- **时间**：4月3日 10:01\n- **地点**：操场\n- **在场**：美月\n- **内容**：仅 mitsuki 可见的记忆。",
         )
 
-        await store.add("lilith", "4月3日", get_episodes(tmp_path, "lilith", "4月3日"))
-        await store.add("mitsuki", "4月3日", get_episodes(tmp_path, "mitsuki", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "mitsuki", "4月3日"))
 
         await wait_for_search(store, "lilith", "仅 lilith 可见的记忆")
         await wait_for_search(store, "mitsuki", "仅 mitsuki 可见的记忆")
@@ -457,7 +462,7 @@ class TestVectorStoreEdgeCases:
             tmp_path, "lilith",
             "# lilith\n\n## 4月2日\n- **时间**：4月2日 晚上\n- **地点**：天台\n- **在场**：莉莉丝、玩家\n- **内容**：这是昨天的长期记忆锚点。",
         )
-        await store.add("lilith", "4月2日", get_episodes(tmp_path, "lilith", "4月2日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月2日"))
         await wait_for_search(store, "lilith", "昨天的长期记忆锚点")
 
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith", "mitsuki", "narrator"])
@@ -499,7 +504,7 @@ class TestVectorStoreMemoryIndexing:
         )
 
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
-        await store.add("mitsuki", "4月3日", get_episodes(tmp_path, "mitsuki", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "mitsuki", "4月3日"))
 
         # 等待索引完成并验证结果
         res1 = await wait_for_search(store, "mitsuki", "眼神让我在意")
@@ -544,7 +549,7 @@ class TestVectorStoreMemoryIndexing:
         )
 
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
-        await store.add("mitsuki", "4月3日", get_episodes(tmp_path, "mitsuki", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "mitsuki", "4月3日"))
 
         res_hit = await wait_for_search(store, "mitsuki", "让我在意")
         assert len(res_hit) >= 1, "应命中索引的日期"
@@ -582,17 +587,69 @@ class TestVectorStoreMemoryIndexing:
 """.strip(),
         )
 
-        await store.add("lilith", "10月5日", get_episodes(tmp_path, "lilith", "10月5日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "10月5日"))
 
         conn = __import__("sqlite3").connect(test_db_path)
         try:
-            row = _chunk_row(conn, "memory::lilith::10月5日::1")
+            row = _chunk_row_by_content(conn, "我们在小巷里停下，他第一次主动靠近，试探着吻了我。")
         finally:
             conn.close()
 
         assert row is not None
         assert row[1] == "小巷、初次亲密、主动靠近、紧张、心跳"
         assert row[2] == 5
+
+    @pytest.mark.asyncio
+    async def test_add_appends_same_date_without_replacing_existing(
+        self, clean_store, tmp_path, monkeypatch
+    ):
+        """同一天新增记忆时只追加新行，不重建旧行。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+
+        first = EpisodeMemory(
+            date="10月5日",
+            time="10月5日 上午",
+            location="公司",
+            participants="我、他",
+            keywords=["公司"],
+            importance=2,
+            content="上午稳定内容。",
+            memory_owner="lilith",
+            title="上午",
+        )
+        second = EpisodeMemory(
+            date="10月5日",
+            time="10月5日 中午",
+            location="公司",
+            participants="我、他",
+            keywords=["公司", "新增"],
+            importance=3,
+            content="中午新增内容。",
+            memory_owner="lilith",
+            title="中午",
+        )
+
+        await store.add(first)
+        db = await store._get_db()
+        await db.execute(
+            "UPDATE EpisodeMemory SET last_recalled_at = ? WHERE content = ?",
+            ("10月8日", "上午稳定内容。"),
+        )
+        await db.commit()
+
+        await store.add(second)
+
+        rows = await db.execute_fetchall(
+            "SELECT id, content, last_recalled_at "
+            "FROM EpisodeMemory WHERE memory_owner = ? AND game_date = ? ORDER BY id",
+            ("lilith", "10月5日"),
+        )
+        assert [row[1:] for row in rows] == [
+            ("上午稳定内容。", "10月8日"),
+            ("中午新增内容。", "10月5日"),
+        ]
+        assert rows[0][0] != rows[1][0]
 
 
 class TestHybridSearch:
@@ -610,7 +667,7 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：今天遇到了桥本美月，她提到了学园祭的准备工作。",
         )
-        await store.add("lilith", "4月3日", get_episodes(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
         await wait_for_search(store, "lilith", "学园祭")
 
         # 直接测试 BM25 搜索
@@ -637,7 +694,7 @@ class TestHybridSearch:
             "- **关键词**：小巷 初次亲密 主动靠近 紧张 心跳\n- **重要度**：5\n"
             "- **内容**：我们在巷子里停下，他第一次主动靠近，试探着吻了我。",
         )
-        await store.add("lilith", "10月5日", get_episodes(tmp_path, "lilith", "10月5日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "10月5日"))
 
         conn = __import__("sqlite3").connect(test_db_path)
         try:
@@ -661,7 +718,7 @@ class TestHybridSearch:
             "- **关键词**：紫水晶 传闻\n- **重要度**：3\n"
             "- **内容**：听到了关于紫水晶项链的传闻。",
         )
-        await store.add("lilith", "4月3日", get_episodes(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
         await wait_for_search(store, "lilith", "紫水晶")
 
         import sqlite3 as _sqlite3
@@ -822,7 +879,7 @@ class TestHybridSearch:
             "- **时间**：10月3日 18:20\n- **地点**：梧桐街咖啡馆\n- **在场**：我、玩家\n"
             "- **内容**：玩家在咖啡馆里直接问我\"我们现在是在约会吗？\"，我没有否认。",
         )
-        await store.add("lilith", "10月3日", get_episodes(tmp_path, "lilith", "10月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "10月3日"))
 
         conn = __import__("sqlite3").connect(test_db_path)
         try:
@@ -850,7 +907,7 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：收到了来自京都大学的录取通知书，非常激动。",
         )
-        await store.add("lilith", "4月3日", get_episodes(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
         await wait_for_search(store, "lilith", "录取通知书")
 
         # 启用混合检索后，用精确关键词搜索
@@ -878,7 +935,7 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：我记住了那天的告白。",
         )
-        await store.add("lilith", "4月3日", get_episodes(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
         await wait_for_search(store, "lilith", "告白")
 
         from memory.retrieval import search_memories
@@ -887,8 +944,8 @@ class TestHybridSearch:
 
         conn = __import__("sqlite3").connect(test_db_path)
         row = conn.execute(
-            "SELECT last_recalled_at FROM EpisodeMemory WHERE memory_key = ?",
-            ("memory::lilith::4月3日::1",),
+            "SELECT last_recalled_at FROM EpisodeMemory WHERE memory_owner = ? AND content = ?",
+            ("lilith", "我记住了那天的告白。"),
         ).fetchone()
         conn.close()
         assert row[0] == "4月8日"
@@ -925,7 +982,7 @@ class TestHybridSearch:
         (tmp_path / "lilith" / ".memory_recall_state.json").write_text(
             json.dumps(
                 {
-                    "memory::lilith::4月3日::1": {
+                    "legacy-or-previous-memory-key": {
                         "date": "4月3日",
                         "content_hash": content_hash,
                         "last_recalled_at": "4月7日",
@@ -943,8 +1000,8 @@ class TestHybridSearch:
 
         conn = __import__("sqlite3").connect(test_db_path)
         row = conn.execute(
-            "SELECT last_recalled_at FROM EpisodeMemory WHERE memory_key = ?",
-            ("memory::lilith::4月3日::1",),
+            "SELECT last_recalled_at FROM EpisodeMemory WHERE memory_owner = ? AND content = ?",
+            ("lilith", "这是会被恢复 recall 的记忆。"),
         ).fetchone()
         conn.close()
         assert row[0] == "4月7日"
@@ -961,7 +1018,7 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：今天讨论了毕业典礼的安排。",
         )
-        await store.add("lilith", "4月3日", get_episodes(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
         await wait_for_search(store, "lilith", "毕业典礼")
 
         # 确认 FTS 有数据

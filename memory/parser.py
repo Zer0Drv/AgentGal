@@ -94,7 +94,11 @@ def append_memory_records(
     Returns:
         实际写入的记录列表（过滤掉 content 为空的条目，保持原顺序）。
     """
-    valid = [r for r in records if r.content.strip()]
+    valid = [
+        r.model_copy(update={"memory_owner": agent_name})
+        for r in records
+        if r.content.strip()
+    ]
     if not valid:
         return []
     path = memory_jsonl_path(agent_name)

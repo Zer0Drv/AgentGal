@@ -244,7 +244,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 - 默认检索路径是 memory-only；非 memory 检索已停用
 - `memory/retrieval.py` 负责完整检索 pipeline：embedding → 向量/BM25 候选 → hybrid 融合 → (可选) rerank → recency 排序 → recall 状态更新
 - `storage/vector_store.py` 只做存储层：提供 `get_vector_candidates` / `get_bm25_candidates` 原始候选，pipeline 逻辑不在此处
-- `memory/indexer.py` 负责从 `memory.jsonl` 按日期聚合后把 `EpisodeMemory` 记录交给向量库（聚合在此层，storage 只做 I/O）
+- `memory/indexer.py` 负责从 `memory.jsonl` 读取 `EpisodeMemory` 记录并逐条追加到向量库
 - 召回排序为：向量相关性与 BM25 相关性先融合，rerank（可选）替换 relevance 信号，最后叠加游戏内时间 recency
 - 已配置 Logfire 时，记忆检索会记录每轮 query 和 top 命中摘要，便于排查召回质量
 - `last_recalled_at` 会在命中后更新到 DB；`.memory_recall_state.json` 仅在存档时从 DB 导出，读档重建时作为降级数据源

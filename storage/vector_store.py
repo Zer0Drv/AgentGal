@@ -20,7 +20,7 @@ import aiosqlite
 
 from log_config.memory import memory_logger
 from llm.embedding import embed_async, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
-from memory.parser import EpisodeMemory
+from memory.parser import EpisodeMemory, canonical_cn_date
 from shared.config import (
     character_path,
     PROJECT_ROOT,
@@ -103,7 +103,6 @@ def _build_fts_match_query(text: str, max_terms: int = 32) -> str:
 _EPISODE_MEMORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS EpisodeMemory (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    memory_key TEXT NOT NULL UNIQUE,
     memory_owner TEXT NOT NULL,
     game_date TEXT NOT NULL,
     title TEXT NOT NULL DEFAULT '',
@@ -123,9 +122,9 @@ class VectorStore:
     """sqlite-vec 本地向量库（memory-only）。
 
     表结构：
-    - EpisodeMemory(id PK, memory_key UNIQUE, memory_owner, game_date, title,
-                    time, location, participants, content, keywords, importance,
-                    content_hash, last_recalled_at)
+    - EpisodeMemory(id PK, memory_owner, game_date, title, time, location,
+                    participants, content, keywords, importance, content_hash,
+                    last_recalled_at)
     - EpisodeMemory_vec USING vec0(embedding F32[EMBED_DIM])  -- rowid = EpisodeMemory.id
     - EpisodeMemory_fts USING fts5(content, keywords)
     """
@@ -150,37 +149,13 @@ class VectorStore:
         return self._write_lock
 
     async def _ensure_tables(self) -> None:
-        """建表/迁移只做一次；跨 loop 重建（脚本场景）。"""
+        """建表只做一次；跨 loop 重建（脚本场景）。"""
         loop = asyncio.get_running_loop()
         if self._tables_initialized and self._tables_initialized_loop is loop:
             return
         await self.init_tables()
         self._tables_initialized = True
         self._tables_initialized_loop = loop
-
-    async def _query_db_recall_by_hash(
-        self,
-        memory_owner: str,
-        date: str,
-    ) -> dict[str, str]:
-        """从 DB 查询 (memory_owner, date) 现有记录的 {content_hash → last_recalled_at}。
-
-        用于 add() 重建前保留 recall 状态；DB 为空时返回空 dict。
-        """
-        try:
-            db = await self._get_db()
-            rows = await db.execute_fetchall(
-                "SELECT content_hash, last_recalled_at FROM EpisodeMemory "
-                "WHERE memory_owner = ? AND game_date = ?",
-                (memory_owner, date),
-            )
-            return {
-                str(row[0]): str(row[1])
-                for row in rows
-                if row[0] and row[1]
-            }
-        except Exception:
-            return {}
 
     def _sidecar_recall_by_hash(
         self,
@@ -229,20 +204,20 @@ class VectorStore:
         """从 DB 导出 recall 状态，供存档时写入 sidecar。
 
         返回格式与 _read_memory_recall_state 兼容：
-        {memory_key: {"date": ..., "content_hash": ..., "last_recalled_at": ...}}
+        {row_id: {"date": ..., "content_hash": ..., "last_recalled_at": ...}}
         """
         await self.init_tables()
         db = await self._get_db()
         rows = await db.execute_fetchall(
-            "SELECT memory_key, game_date, content_hash, last_recalled_at "
+            "SELECT id, game_date, content_hash, last_recalled_at "
             "FROM EpisodeMemory WHERE memory_owner = ?",
             (agent_name,),
         )
         state: dict[str, dict[str, str]] = {}
-        for memory_key, game_date, content_hash, last_recalled_at in rows:
-            if not memory_key:
+        for row_id, game_date, content_hash, last_recalled_at in rows:
+            if row_id is None:
                 continue
-            state[str(memory_key)] = {
+            state[str(row_id)] = {
                 "date": str(game_date or "").strip(),
                 "content_hash": str(content_hash or "").strip(),
                 "last_recalled_at": str(last_recalled_at or game_date or "").strip(),
@@ -340,73 +315,71 @@ class VectorStore:
         """决定拿哪段文本去 embed：优先 title，空则降级 content。"""
         return episode.title.strip() or episode.content.strip()
 
-    async def _insert_chunks(
+    async def _insert_chunk(
         self,
         db: aiosqlite.Connection,
-        payloads: list[tuple[EpisodeMemory, str, str, str, str]],
-        embeddings: list[list[float]],
+        episode: EpisodeMemory,
+        memory_owner: str,
+        date: str,
+        content_hash: str,
+        recalled_at: str,
+        embedding: list[float],
     ) -> None:
-        """将 payloads 与对应 embeddings 写入三张表，不做删除。
-
-        payload tuple: (episode, memory_key, memory_owner, content_hash, recalled_at)
-        """
-        if not payloads:
-            return
-        for i, (episode, memory_key, memory_owner, c_hash, recalled_at) in enumerate(payloads):
-            keywords_str = "、".join(episode.keywords)
-            cur = await db.execute(
-                "INSERT INTO EpisodeMemory("
-                "memory_key, memory_owner, game_date, title, time, location, "
-                "participants, content, keywords, importance, content_hash, last_recalled_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    memory_key,
-                    memory_owner,
-                    episode.date,
-                    episode.title,
-                    episode.time,
-                    episode.location,
-                    episode.participants,
-                    episode.content,
-                    keywords_str,
-                    episode.importance,
-                    c_hash,
-                    recalled_at,
-                ),
+        """将单条 EpisodeMemory 与 embedding 写入三张表，不做删除。"""
+        keywords_str = "、".join(episode.keywords)
+        cur = await db.execute(
+            "INSERT INTO EpisodeMemory("
+            "memory_owner, game_date, title, time, location, "
+            "participants, content, keywords, importance, content_hash, last_recalled_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                memory_owner,
+                date,
+                episode.title,
+                episode.time,
+                episode.location,
+                episode.participants,
+                episode.content,
+                keywords_str,
+                episode.importance,
+                content_hash,
+                recalled_at,
+            ),
+        )
+        rowid = int(cur.lastrowid or 0)
+        if rowid:
+            await db.execute(
+                "INSERT OR REPLACE INTO EpisodeMemory_vec(rowid, embedding) VALUES (?, ?)",
+                (rowid, self._to_vec_blob(embedding)),
             )
-            rowid = int(cur.lastrowid or 0)
-            if rowid:
-                await db.execute(
-                    "INSERT OR REPLACE INTO EpisodeMemory_vec(rowid, embedding) VALUES (?, ?)",
-                    (rowid, self._to_vec_blob(embeddings[i])),
-                )
-                await db.execute(
-                    "INSERT INTO EpisodeMemory_fts(rowid, content, keywords) VALUES (?, ?, ?)",
-                    (rowid, _tokenize_for_fts(episode.content), _tokenize_for_fts(keywords_str)),
-                )
+            await db.execute(
+                "INSERT INTO EpisodeMemory_fts(rowid, content, keywords) VALUES (?, ?, ?)",
+                (rowid, _tokenize_for_fts(episode.content), _tokenize_for_fts(keywords_str)),
+            )
 
     async def add(
         self,
-        memory_owner: str,
-        date: str,
-        episodes: list[EpisodeMemory],
+        episode: EpisodeMemory,
     ) -> None:
-        """将一组 EpisodeMemory upsert 到向量库（先删同 owner+date 旧数据，再写入）。
+        """将单条 EpisodeMemory 追加写入向量库。
 
         Args:
-            memory_owner: 记忆所属角色
-            date: 规范化游戏日期（X月X日），由调用方保证格式正确
-            episodes: 待写入的 EpisodeMemory 列表，同属一个日期
+            episode: 待插入的长期记忆事件
         """
-        if not _CN_DATE_RE.match(date):
+        memory_owner = episode.memory_owner.strip()
+        if not memory_owner:
+            memory_logger.warning("[VectorStore] 跳过长期记忆索引: memory_owner 为空")
+            return
+
+        date = canonical_cn_date(episode.date)
+        if not date or not _CN_DATE_RE.match(date):
             memory_logger.warning(
                 "[VectorStore] 跳过长期记忆索引: memory_owner=%s, date=%s, 日期格式无效",
-                memory_owner, date,
+                memory_owner, episode.date,
             )
             return
 
-        items = [ep for ep in episodes if ep.content.strip()]
-        if not items:
+        if not episode.content.strip():
             memory_logger.info(
                 "[VectorStore] 跳过长期记忆索引: memory_owner=%s, date=%s, 无有效事件",
                 memory_owner, date,
@@ -415,7 +388,7 @@ class VectorStore:
 
         # embed_async 是 HTTP 请求，绝不能在写锁或事务内调用
         try:
-            embeddings = await embed_async([self._embed_text(ep) for ep in items])
+            embedding = (await embed_async([self._embed_text(episode)]))[0]
         except Exception as e:
             memory_logger.error(
                 "[VectorStore] embedding 计算失败: memory_owner=%s, date=%s, error=%s",
@@ -424,29 +397,29 @@ class VectorStore:
             return
 
         sidecar_recall = self._sidecar_recall_by_hash(memory_owner, date)
-        recall_by_hash = await self._query_db_recall_by_hash(memory_owner, date)
-        if not recall_by_hash:
-            recall_by_hash = sidecar_recall
-
-        payloads: list[tuple[EpisodeMemory, str, str, str, str]] = []
-        for idx, episode in enumerate(items, start=1):
-            memory_key = f"memory::{memory_owner}::{date}::{idx}"
-            content_hash = hashlib.sha1(episode.content.encode("utf-8")).hexdigest()
-            recalled_at = recall_by_hash.get(content_hash, date)
-            payloads.append((episode, memory_key, memory_owner, content_hash, recalled_at))
+        content_hash = hashlib.sha1(episode.content.encode("utf-8")).hexdigest()
+        recalled_at = sidecar_recall.get(content_hash, date)
 
         db: aiosqlite.Connection | None = None
         try:
             async with self._get_write_lock():
                 await self._ensure_tables()
                 db = await self._get_db()
+
                 await db.execute("BEGIN")
-                await self._delete_chunks(db, memory_owner, date)
-                await self._insert_chunks(db, payloads, embeddings)
+                await self._insert_chunk(
+                    db,
+                    episode,
+                    memory_owner,
+                    date,
+                    content_hash,
+                    recalled_at,
+                    embedding,
+                )
                 await db.commit()
                 memory_logger.info(
-                    "[VectorStore] 长期记忆索引完成: memory_owner=%s, date=%s, 写入事件=%s",
-                    memory_owner, date, len(payloads),
+                    "[VectorStore] 长期记忆追加索引完成: memory_owner=%s, date=%s",
+                    memory_owner, date,
                 )
         except Exception as e:
             try:
