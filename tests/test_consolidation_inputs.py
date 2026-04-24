@@ -10,56 +10,85 @@ os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
 from consolidation.inputs import (
+    build_episode_closure_payload,
     build_episode_memory_generator_payload,
-    build_memory_owner_block,
-    format_raw_dialogue_for_owner,
+    render_raw_history,
 )
 
 
-def test_format_raw_dialogue_for_character_owner(monkeypatch):
-    """角色整理时应把自己/玩家/旁白/其他角色映射成统一视角。"""
+def _sample_messages() -> list[dict]:
+    return [
+        {
+            "role": "narrator",
+            "content": "**时间**：10月6日 星期五 11:42\n**地点**：舒芙蕾店",
+            "visible_to": ["chenxiao", "narrator"],
+            "turn": 3,
+        },
+        {
+            "role": "chenxiao",
+            "content": "（看着他）……那我点了哦。",
+            "visible_to": ["chenxiao", "narrator"],
+            "turn": 3,
+        },
+        {
+            "role": "player",
+            "content": "我猜啊，你吃不完的是我的",
+            "visible_to": ["chenxiao", "narrator"],
+            "turn": 4,
+        },
+        {
+            "role": "guyining",
+            "content": "先把文件发我。",
+            "visible_to": ["chenxiao", "guyining", "narrator"],
+            "turn": 5,
+        },
+        {
+            "role": "mitsuki",
+            "content": "你们继续。",
+            "visible_to": ["mitsuki", "narrator"],
+            "turn": 5,
+        },
+    ]
 
-    def mock_history(limit: int):
-        assert limit == 20
-        return [
-            {
-                "role": "narrator",
-                "content": "**时间**：10月6日 星期五 11:42\n**地点**：舒芙蕾店",
-                "visible_to": ["chenxiao", "narrator"],
-            },
-            {
-                "role": "chenxiao",
-                "content": "## 陈晓\n（看着他）……那我点了哦。",
-                "visible_to": ["chenxiao", "narrator"],
-            },
-            {
-                "role": "player",
-                "content": "我猜啊，你吃不完的是我的",
-                "visible_to": ["chenxiao", "narrator"],
-            },
-            {
-                "role": "guyining",
-                "content": "## 顾以宁\n先把文件发我。",
-                "visible_to": ["chenxiao", "guyining", "narrator"],
-            },
-            {
-                "role": "mitsuki",
-                "content": "你们继续。",
-                "visible_to": ["mitsuki", "narrator"],
-            },
-        ]
 
-    monkeypatch.setattr("consolidation.inputs.load_conversation_history", mock_history)
+def test_render_raw_history_filters_by_visibility_and_turn():
+    """按 visible_to 过滤 + turn 区间截断，输出带 `[turn=N]` 前缀的对话。"""
+    messages = _sample_messages()
 
-    formatted = format_raw_dialogue_for_owner("chenxiao", 20)
+    rendered = render_raw_history(messages, visible_to="chenxiao", turn_ge=3, turn_le=4)
 
-    assert "旁白：**时间**：10月6日 星期五 11:42" in formatted
-    assert "我：（看着他）……那我点了哦。" in formatted
-    assert "他：我猜啊，你吃不完的是我的" in formatted
-    assert "顾以宁：先把文件发我。" in formatted
-    assert "mitsuki" not in formatted
-    assert "## 陈晓" not in formatted
-    assert "## 顾以宁" not in formatted
+    assert "[turn=3]" in rendered
+    assert "[turn=4]" in rendered
+    assert "[turn=5]" not in rendered  # guyining/mitsuki 回合被截掉
+    assert "旁白:" in rendered
+    assert "玩家:" in rendered
+    assert "mitsuki" not in rendered
+
+
+def test_render_raw_history_without_filters_renders_all():
+    """不带过滤时保留全部消息；无 turn 的消息不加前缀。"""
+    messages = [
+        {"role": "player", "content": "hello", "visible_to": ["chenxiao"]},
+        {"role": "chenxiao", "content": "hi", "visible_to": ["chenxiao"], "turn": 2},
+    ]
+    rendered = render_raw_history(messages)
+
+    assert "玩家: hello" in rendered
+    assert "[turn=2]" in rendered
+
+
+def test_build_episode_closure_payload_structure():
+    """closure payload 带 current_turn / candidates / recent_history 三块。"""
+    payload = build_episode_closure_payload(
+        candidates=[("chenxiao", "陈晓"), ("guyining", "顾以宁")],
+        history_transcript="[turn=5] 玩家: 再见",
+        current_turn=6,
+    )
+
+    assert "<current_turn>6</current_turn>" in payload
+    assert "- chenxiao（陈晓）" in payload
+    assert "- guyining（顾以宁）" in payload
+    assert "[turn=5] 玩家: 再见" in payload
 
 
 def test_build_episode_memory_generator_payload_includes_owner_before_memory(monkeypatch):

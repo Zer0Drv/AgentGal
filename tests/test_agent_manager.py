@@ -239,11 +239,13 @@ def test_state_updater_output_writes_narrator_status_and_events(monkeypatch):
 async def test_apply_response_updates_logs_structured_file_updates(monkeypatch, tmp_path):
     logs: list[tuple[tuple, dict]] = []
 
-    def _character_path(agent: str, subpath: str | None = None) -> str:
-        base = tmp_path / agent
-        return str(base / subpath) if subpath else str(base)
+    draft_calls: list[tuple[str, int, str]] = []
 
-    monkeypatch.setattr(character_module, "character_path", _character_path)
+    def _fake_append_memory_draft(agent: str, turn: int, text: str) -> None:
+        draft_calls.append((agent, turn, text))
+
+    monkeypatch.setattr(character_module, "append_memory_draft", _fake_append_memory_draft)
+    monkeypatch.setattr(character_module, "read_turn_counter", lambda: 7)
     monkeypatch.setattr(
         character_module,
         "update_status",
@@ -325,7 +327,7 @@ async def test_apply_response_updates_logs_structured_file_updates(monkeypatch, 
     assert "file_update.items" not in extra
     assert extra["file_update.updates"] == [
         {
-            "file": "memory_draft.md",
+            "file": "memory_draft.jsonl",
             "target": "长期记忆",
             "operation": "append",
             "appended": output.memory,

@@ -30,6 +30,7 @@ class EpisodeMemory(BaseModel):
     content: str = ""
     memory_owner: str = ""
     title: str = ""
+    raw_dialogue: str = ""
 
     @field_validator("keywords", mode="before")
     @classmethod

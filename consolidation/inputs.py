@@ -4,12 +4,8 @@ from __future__ import annotations
 
 import re
 
-from shared.text_utils import get_display_name
+from shared.text_utils import get_display_name, role_to_speaker
 from storage.agent_files import read_agent_file
-from storage.history import load_conversation_history
-
-
-_HEADING_RE = re.compile(r"^\s*##\s*([^\n]+)\n?")
 
 
 def _get_owner_display_name(agent_name: str) -> str:
@@ -18,43 +14,55 @@ def _get_owner_display_name(agent_name: str) -> str:
     return get_display_name(agent_name, soul_content)
 
 
-def _extract_heading_name(content: str) -> str | None:
-    """从角色消息首行的 ## 标题里提取名字。"""
-    match = _HEADING_RE.match(content or "")
-    if not match:
-        return None
-    name = match.group(1).strip()
-    return name or None
+def render_raw_history(
+    raw_messages: list[dict],
+    *,
+    visible_to: str | None = None,
+    turn_le: int | None = None,
+    turn_ge: int | None = None,
+) -> str:
+    """无窗口副作用地渲染 raw 消息为 `[turn=N] 角色: 内容` 行。
+
+    - visible_to 非空：按消息 visible_to 过滤。
+    - turn_le / turn_ge：turn 区间过滤（含端点）。
+    - 不对旁白做"只留最后一条"折叠（consolidation 需要完整上下文）。
+    """
+    lines: list[str] = []
+    for msg in raw_messages:
+        if visible_to is not None and visible_to not in msg.get("visible_to", []):
+            continue
+        turn = msg.get("turn")
+        if turn_le is not None and (not isinstance(turn, int) or turn > turn_le):
+            continue
+        if turn_ge is not None and (not isinstance(turn, int) or turn < turn_ge):
+            continue
+        content = re.sub(r"\n+", "\n", (msg.get("content") or "").strip())
+        if not content:
+            continue
+        role = msg.get("role", "unknown")
+        prefix = f"[turn={turn}] " if isinstance(turn, int) and turn > 0 else ""
+        lines.append(f"{prefix}{role_to_speaker(role)}: {content}")
+    return "\n\n".join(lines)
 
 
-def _strip_leading_character_heading(content: str) -> str:
-    """移除消息开头的角色标题，避免出现"我：## 陈晓"。"""
-    match = _HEADING_RE.match(content or "")
-    if not match:
-        return (content or "").strip()
-    return (content[match.end():]).lstrip("\n").strip()
+def build_episode_closure_payload(
+    candidates: list[tuple[str, str]],
+    history_transcript: str,
+    current_turn: int,
+) -> str:
+    """构造 EpisodeClosureDetector 的 user payload。
 
-
-def _format_message_for_owner(agent_name: str, msg: dict) -> str:
-    role = msg.get("role", "unknown")
-    raw_content = (msg.get("content") or "").strip()
-    if not raw_content:
-        return ""
-
-    content = _strip_leading_character_heading(raw_content)
-
-    if role == "narrator":
-        speaker = "旁白"
-    elif role == "player":
-        speaker = "玩家" if agent_name == "narrator" else "他"
-    elif agent_name != "narrator" and role == agent_name:
-        speaker = "我"
-    else:
-        speaker = _extract_heading_name(raw_content) or role
-
-    if not content:
-        return ""
-    return f"{speaker}：{content}"
+    Args:
+        candidates: (agent_name, display_name) 列表，本轮有 draft 待归并的角色。
+        history_transcript: 渲染好的近若干 turn 的对话（带 `[turn=N]` 前缀）。
+        current_turn: 本轮 turn 号，帮助 detector 判断"本轮缺席"。
+    """
+    cand_lines = "\n".join(f"- {name}（{display}）" for name, display in candidates)
+    return (
+        f"<current_turn>{current_turn}</current_turn>\n\n"
+        f"<candidates>\n{cand_lines}\n</candidates>\n\n"
+        f"<recent_history>\n{history_transcript}\n</recent_history>"
+    )
 
 
 def build_memory_owner_block(agent_name: str) -> str:
@@ -83,19 +91,6 @@ def build_memory_owner_block(agent_name: str) -> str:
         "</memory_owner>",
     ]
     return "\n".join(lines)
-
-
-def format_raw_dialogue_for_owner(agent_name: str, limit: int) -> str:
-    """读取最近原始消息，过滤并转换成适合当前整理对象阅读的视角文本。"""
-    raw_messages = load_conversation_history(limit=limit)
-    raw_messages = [m for m in raw_messages if agent_name in m.get("visible_to", [])]
-
-    formatted = [
-        line
-        for line in (_format_message_for_owner(agent_name, msg) for msg in raw_messages)
-        if line
-    ]
-    return "\n\n".join(formatted)
 
 
 def build_episode_memory_generator_payload(

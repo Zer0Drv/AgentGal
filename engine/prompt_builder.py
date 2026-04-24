@@ -106,10 +106,14 @@ def _get_windowed_visible_messages(
 def build_history_transcript(
     agent_name: str,
     raw_messages: list[dict],
+    *,
+    inject_turn_markers: bool = False,
 ) -> tuple[str, bool]:
     """将 JSONL 原始消息转为历史文本，但只保留最后一条可见旁白。
 
-    高低水位窗口与可见性过滤仍照常应用。返回 (文本, 是否触发截断)。
+    高低水位窗口与可见性过滤仍照常应用。
+    inject_turn_markers=True 时在每条前加 `[turn=N]` 前缀，供 detector / 整理输入使用。
+    返回 (文本, 是否触发截断)。
     """
     visible, was_truncated = _get_windowed_visible_messages(agent_name, raw_messages)
 
@@ -135,7 +139,12 @@ def build_history_transcript(
         content = re.sub(r"\n+", "\n", msg.get("content", "").strip())
         if not content:
             continue
-        lines.append(f"{role_to_speaker(role)}: {content}")
+        prefix = ""
+        if inject_turn_markers:
+            turn = msg.get("turn")
+            if isinstance(turn, int) and turn > 0:
+                prefix = f"[turn={turn}] "
+        lines.append(f"{prefix}{role_to_speaker(role)}: {content}")
 
     return "\n\n".join(lines), was_truncated
 

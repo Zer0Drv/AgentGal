@@ -35,7 +35,7 @@ from log_config.routing import routing_logger
 from log_config.logfire import setup_logfire
 from shared.config import CHARACTERS_DIR, get_agent_names
 from shared.text_utils import get_display_name
-from storage.agent_files import read_agent_file
+from storage.agent_files import increment_turn_counter, read_agent_file
 from storage.history import load_conversation_history
 from storage.message_router import message_router
 
@@ -227,6 +227,9 @@ async def _chat_stream(user_input: str):
     """核心游戏循环，通过 SSE 逐步推送结果。"""
     await _settle_pending_state_update()
 
+    # 0. 递增全局 turn 计数；后续写入 history / memory_draft 的所有消息都带这个 turn
+    current_turn = increment_turn_counter()
+
     # 1. narrator 路由
     targets, scene_description, new_character_specs, is_narrator_valid = (
         await narrator.route(user_input)
@@ -283,8 +286,9 @@ async def _chat_stream(user_input: str):
                 {"content": f"[错误: {e}]", "author": _get_agent_display_name(agent_name)},
             )
 
-    # 5. 生成选项，同时后台维护 narrator 状态
-    _start_state_update()
+    # 5. 生成选项；后台并行：state_updater 维护 narrator 状态 + closure detector 检测 episode 闭合
+    _start_state_update(targets)
+    asyncio.create_task(memory_consolidation_flow.detect_and_consolidate(current_turn))
     if agent_responses:
         choices = await generate_choices(scene_description, agent_responses)
         if choices:

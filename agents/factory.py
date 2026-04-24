@@ -11,7 +11,7 @@ from pydantic_ai.settings import ModelSettings
 from agents.schema import (
     CharacterOutput,
     ChoicesOutput,
-    EpisodeMemoryGeneratorOutput,
+    EpisodeMemoryBlock,
     GrowthDedupOutput,
     GrowthExtractOutput,
     NarratorOutput,
@@ -27,6 +27,7 @@ from llm.providers import (
     get_narrator_llm_config,
 )
 from prompts.consolidation_prompts import (
+    EPISODE_CLOSURE_DETECTOR,
     EPISODE_MEMORY_GENERATOR,
     GROWTH_DEDUPE,
     GROWTH_EXTRACT,
@@ -196,7 +197,14 @@ def _ensure_consolidation_agents() -> None:
         name="episode_memory_generator",
         instructions=EPISODE_MEMORY_GENERATOR,
         config=config,
-        output_type=EpisodeMemoryGeneratorOutput,
+        output_type=EpisodeMemoryBlock,
+        max_tokens=consolidation_max_tokens,
+    )
+    _consolidation_agents["episode_closure_detector"] = _build_agent(
+        name="episode_closure_detector",
+        instructions=EPISODE_CLOSURE_DETECTOR,
+        config=config,
+        output_type=bool | dict[str, int],
         max_tokens=consolidation_max_tokens,
     )
     _consolidation_agents["growth_extract"] = _build_agent(
@@ -226,8 +234,12 @@ def _get_consolidation_agent(key: str) -> StructuredAgent | TextAgent:
     return _consolidation_agents[key]
 
 
-def get_episode_memory_generator_agent() -> Agent[None, EpisodeMemoryGeneratorOutput]:
+def get_episode_memory_generator_agent() -> Agent[None, EpisodeMemoryBlock]:
     return _get_consolidation_agent("episode_memory_generator")
+
+
+def get_episode_closure_detector_agent() -> Agent[None, bool | dict[str, int]]:
+    return _get_consolidation_agent("episode_closure_detector")
 
 
 def get_growth_extract_agent() -> Agent[None, GrowthExtractOutput]:

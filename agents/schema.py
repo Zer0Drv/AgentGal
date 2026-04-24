@@ -137,7 +137,8 @@ class ChoicesOutput(BaseModel):
 class EpisodeMemoryBlock(BaseModel):
     """EpisodeMemoryGenerator 输出的单条长期记忆事件。
 
-    memory_owner 由整理流程根据 agent_name 注入，不交给 LLM 判断。
+    memory_owner 与 raw_dialogue 由整理流程注入，不交给 LLM 判断。
+    raw_dialogue 只作为可回溯的源对话 metadata，不参与向量索引。
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -150,6 +151,7 @@ class EpisodeMemoryBlock(BaseModel):
     importance: int = 3
     content: str
     title: str = ""
+    raw_dialogue: str = ""
 
     @field_validator("keywords", mode="before")
     @classmethod
@@ -165,10 +167,6 @@ class EpisodeMemoryBlock(BaseModel):
             return max(1, min(5, int(value)))
         except (TypeError, ValueError):
             return 3
-
-
-class EpisodeMemoryGeneratorOutput(BaseModel):
-    episodes: list[EpisodeMemoryBlock]
 
 
 class GrowthExtractOutput(BaseModel):
