@@ -35,7 +35,7 @@ def normalize(content: str) -> str:
             out.append(line)
     content = "\n".join(out)
     content = re.sub(r"\n{3,}", "\n\n", content)
-    return content
+    return content.strip()
 
 
 # ===== 按日期切分 =====

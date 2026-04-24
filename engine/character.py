@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from pathlib import Path
 from typing import Any, ClassVar
 
 from agents.factory import (
@@ -31,9 +32,9 @@ from engine.prompt_builder import (
 )
 from llm.providers import get_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
-from memory.parser import extract_status_field
+from memory.parser import extract_status_field, normalize
 from memory.retrieval import search_memories
-from shared.config import AGENT_RUN_TIMEOUT_SECONDS, get_agent_names
+from shared.config import AGENT_RUN_TIMEOUT_SECONDS, character_path, get_agent_names
 from shared.text_utils import (
     clean_response,
     get_display_name,
@@ -45,7 +46,6 @@ from storage.agent_files import (
     add_pending_event,
     mark_event_triggered,
     read_agent_file,
-    update_memory,
     update_player,
     update_relations,
     update_status,
@@ -215,12 +215,27 @@ class Character(BaseEntity):
     # ── Character 独有的写入方法 ──
 
     def append_memory(self, text: str) -> FileUpdateResult | None:
+        """把本轮 memory 片段追加到 memory_draft.md，等待后续 consolidation 归并。"""
         if not text:
             return None
+        normalized = normalize(text)
+        if not normalized:
+            return None
         try:
-            return update_memory(self.name, text)
+            draft_path = Path(character_path(self.name, "memory_draft.md"))
+            draft_path.parent.mkdir(parents=True, exist_ok=True)
+            existing = draft_path.read_text(encoding="utf-8") if draft_path.exists() else ""
+            separator = "\n\n" if existing.strip() else ""
+            with draft_path.open("a", encoding="utf-8") as f:
+                f.write(separator + normalized)
+            return FileUpdateResult(
+                file="memory_draft.md",
+                target="长期记忆",
+                operation="append",
+                appended=normalized,
+            )
         except Exception as e:
-            routing_logger.error(f"[{self.name}] memory 写入失败: {e}")
+            routing_logger.error(f"[{self.name}] memory_draft 写入失败: {e}")
             return None
 
     def set_user_profile_fields(self, fields: dict[str, Any]) -> list[FileUpdateResult]:

@@ -3,7 +3,6 @@
 import asyncio
 import re
 import time
-from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,7 +39,6 @@ from memory.parser import (
     extract_event_field,
     flatten_sections,
     group_blocks,
-    is_structured_memory_block,
     make_block,
     normalize,
     parse_event_importance,
@@ -246,33 +244,14 @@ def _merge_chunk_metadata(
     return merged
 
 
-def _validate_memory_merge_output(
-    events: list[MemoryMergeEvent],
-    window_dates: list[str],
-) -> str | None:
-    """验证 memory merge 结构化输出的完整性与日期范围。"""
+def _validate_memory_merge_output(events: list[MemoryMergeEvent]) -> str | None:
+    """验证 memory merge 结构化输出的完整性。"""
     if not events:
         return "memory merge 输出事件列表为空"
 
     for event in events:
         if not all([event.date, event.time, event.location, event.participants, event.content]):
             return f"{event.date} 输出块结构不完整（存在空字段）"
-
-    normalized_window_dates = [canonical_cn_date(date) or date for date in window_dates]
-    output_dates = {canonical_cn_date(event.date) or event.date for event in events}
-
-    if normalized_window_dates:
-        missing = [d for d in normalized_window_dates if d not in output_dates]
-        if missing:
-            preview = "、".join(missing[:5])
-            suffix = f" 等{len(missing)}天" if len(missing) > 5 else ""
-            return f"输出缺少日期：{preview}{suffix}"
-
-        unexpected = [d for d in output_dates if d not in normalized_window_dates]
-        if unexpected:
-            preview = "、".join(unexpected[:5])
-            suffix = f" 等{len(unexpected)}天" if len(unexpected) > 5 else ""
-            return f"输出包含窗口外日期：{preview}{suffix}"
 
     return None
 
@@ -296,14 +275,10 @@ def _normalize_memory_merge_time(time_text: str, date_text: str | None) -> str:
 
 def _normalize_memory_merge_events(
     events: list[MemoryMergeEvent],
-    window_dates: list[str],
 ) -> list[MemoryMergeEvent]:
-    normalized_window_dates = [canonical_cn_date(date) or date for date in window_dates]
-    fallback_date = normalized_window_dates[0] if len(normalized_window_dates) == 1 else None
-
     normalized_events: list[MemoryMergeEvent] = []
     for event in events:
-        normalized_date = canonical_cn_date(event.date) or canonical_cn_date(event.time) or fallback_date
+        normalized_date = canonical_cn_date(event.date) or canonical_cn_date(event.time)
         normalized_events.append(
             MemoryMergeEvent(
                 date=normalized_date or event.date.strip(),
@@ -317,19 +292,6 @@ def _normalize_memory_merge_events(
 
 
 
-def _load_memory_blocks(agent_name: str) -> tuple[Path, str, list[dict[str, str]]] | None:
-    path = Path(character_path(agent_name, "memory.md"))
-    if not path.exists():
-        return None
-    original_content = path.read_text(encoding="utf-8")
-    if len(original_content.strip()) < 50:
-        return None
-    sections = split_by_date(normalize(original_content))
-    if not sections:
-        return None
-    return path, original_content, flatten_sections(sections)
-
-
 # ---------------------------------------------------------------------------
 # 数据类
 # ---------------------------------------------------------------------------
@@ -337,9 +299,6 @@ def _load_memory_blocks(agent_name: str) -> tuple[Path, str, list[dict[str, str]
 
 @dataclass
 class _ConsolidationWindow:
-    stable_blocks: list[dict[str, str]]
-    window_blocks: list[dict[str, str]]
-    window_dates: list[str]
     window_memory_entries: str
     raw_dialogue: str
 
@@ -403,7 +362,6 @@ class MemoryConsolidationFlow:
         agent_name: str,
         memory_entries: str,
         raw_dialogue: str,
-        window_dates: list[str],
     ) -> tuple[list[dict[str, str]], str]:
         user = build_memory_merge_payload(agent_name, memory_entries, raw_dialogue)
         output = await self._run_consolidation_agent(
@@ -417,8 +375,8 @@ class MemoryConsolidationFlow:
         if not output.events:
             raise ValueError("memory merge 返回事件列表为空")
 
-        normalized_events = _normalize_memory_merge_events(output.events, window_dates)
-        validation_error = _validate_memory_merge_output(normalized_events, window_dates)
+        normalized_events = _normalize_memory_merge_events(output.events)
+        validation_error = _validate_memory_merge_output(normalized_events)
         if validation_error:
             raise ValueError(validation_error)
 
@@ -548,14 +506,13 @@ class MemoryConsolidationFlow:
         self,
         agent_name: str,
         memory_entries: str,
-        window_dates: list[str],
         raw_dialogue: str = "",
     ) -> tuple[list[dict[str, str]] | None, list[str]]:
         errors: list[str] = []
 
         try:
             blocks, merged_markdown = await self._merge_memory_blocks(
-                agent_name, memory_entries, raw_dialogue, window_dates
+                agent_name, memory_entries, raw_dialogue
             )
         except Exception as e:
             errors.append(f"第一步调用失败: {e}")
@@ -586,34 +543,18 @@ class MemoryConsolidationFlow:
     def _prepare_consolidation_window(
         self,
         agent_name: str,
-        blocks: list[dict[str, str]],
     ) -> tuple[_ConsolidationWindow | None, str | None]:
-        if not blocks:
-            return None, "memory 中没有可整理的块"
+        draft_path = Path(character_path(agent_name, "memory_draft.md"))
+        draft_text = draft_path.read_text(encoding="utf-8") if draft_path.exists() else ""
+        if not draft_text.strip():
+            return None, "memory_draft.md 为空，无需整理"
 
-        first_unstructured_index = next(
-            (
-                i
-                for i, block in enumerate(blocks)
-                if not is_structured_memory_block(block["content"])
-            ),
-            None,
-        )
-        start_index = (
-            first_unstructured_index if first_unstructured_index is not None else len(blocks) - 1
-        )
-
-        stable_blocks = blocks[:start_index]
-        window_blocks = blocks[start_index:]
-        window_dates = list(OrderedDict.fromkeys(block["date"] for block in window_blocks))
         raw_dialogue = format_raw_dialogue_for_owner(agent_name, HISTORY_HIGH)
         if not raw_dialogue:
             return None, f"最近 {HISTORY_HIGH} 条消息中无参与"
+
         return _ConsolidationWindow(
-            stable_blocks=stable_blocks,
-            window_blocks=window_blocks,
-            window_dates=window_dates,
-            window_memory_entries=render_sections(group_blocks(window_blocks)),
+            window_memory_entries=draft_text,
             raw_dialogue=raw_dialogue,
         ), None
 
@@ -684,38 +625,54 @@ class MemoryConsolidationFlow:
             return result
 
         async with lock:
-            loaded = _load_memory_blocks(agent_name)
-            if loaded is None:
-                return None
-            path, original_content, blocks = loaded
-            window, skip_reason = self._prepare_consolidation_window(agent_name, blocks)
+            window, skip_reason = self._prepare_consolidation_window(agent_name)
             if window is None:
                 if skip_reason:
                     result.skipped, result.skip_reason = True, skip_reason
                     memory_logger.info(f"[整理器] {agent_name} 跳过: {skip_reason}")
                 return result if result.skipped else None
 
-            result.days = len(window.window_dates)
-            result.date_range = f"{window.window_dates[0]}~{window.window_dates[-1]}"
+            path = Path(character_path(agent_name, "memory.md"))
+            original_content = path.read_text(encoding="utf-8") if path.exists() else ""
             result.original_len = len(original_content)
-            backup_file(path, agent_name, "Memory")
+            if path.exists() and original_content:
+                backup_file(path, agent_name, "Memory")
 
-            merged_blocks = window.stable_blocks + window.window_blocks
+            existing_blocks: list[dict[str, str]] = []
+            if original_content.strip():
+                existing_sections = split_by_date(normalize(original_content))
+                if existing_sections:
+                    existing_blocks = flatten_sections(existing_sections)
+
+            rewritten_blocks: list[dict[str, str]] | None = None
             try:
                 rewritten_blocks, pipeline_errors = await self._apply_consolidation_pipeline(
                     agent_name,
                     window.window_memory_entries,
-                    window.window_dates,
                     window.raw_dialogue,
                 )
                 result.errors.extend(pipeline_errors)
-                if rewritten_blocks is not None:
-                    merged_blocks = window.stable_blocks + rewritten_blocks
             except Exception as e:
                 result.errors.append(f"整合失败: {e}")
                 memory_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
 
+            if rewritten_blocks is None:
+                # 整合失败：保留 memory.md 与 memory_draft.md 原状，留给下一轮重试
+                return result
+
+            rewritten_dates = [block["date"] for block in rewritten_blocks]
+            unique_dates = list(dict.fromkeys(rewritten_dates))
+            result.days = len(unique_dates)
+            if unique_dates:
+                result.date_range = f"{unique_dates[0]}~{unique_dates[-1]}"
+
+            merged_blocks = existing_blocks + rewritten_blocks
             merged_sections = group_blocks(merged_blocks)
+
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("", encoding="utf-8")
+
             result.final_len, _consolidated_len = safe_write_memory(
                 path, merged_sections, agent_name, original_content
             )
@@ -723,11 +680,9 @@ class MemoryConsolidationFlow:
                 result.errors.append("并发冲突：检测到中间变更，已放弃写回")
                 return result
 
-            actual_window_blocks = merged_blocks[len(window.stable_blocks):]
-            update_dates = set(window.window_dates) | {
-                block["date"] for block in actual_window_blocks
-            }
-            for date in update_dates:
+            Path(character_path(agent_name, "memory_draft.md")).unlink(missing_ok=True)
+
+            for date in set(rewritten_dates):
                 events = split_into_events(merged_sections.get(date, ""))
                 chunks = [
                     (text, extract_event_field(text, "关键词"), parse_event_importance(text, default=3))

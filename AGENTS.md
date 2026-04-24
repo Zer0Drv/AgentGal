@@ -90,6 +90,7 @@ server.py        ← 全部
 
 - `soul.md`：手写角色定义，只读；分 `<identity>` / `<goal>` / `<dynamic>` / `<behavior>` / `<voice>` 五段，其中 `<goal>` 写角色在故事期内要拿到的具体长期目标（外部可验证里程碑 + 可选的关系愿景），整个故事期大体不变
 - `memory.md`：角色长期记忆，记录事件与情绪变化（仅角色有）
+- `memory_draft.md`：每轮 `output.memory` 的落盘缓冲（仅角色有）；由 consolidation 读取归并进 `memory.md` 后清空
 - `status.md`：当前状态；角色包含「打算」，旁白包含「待触发事件」和「角色位置」（所有主要角色的当前位置快照，由 `state_updater` 每轮维护，角色端不再自维护「当前位置」）
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
 - `tmp_user.md`：`user.md` 的工作草稿；首次写入时复制正式档案，整理后删除
@@ -170,7 +171,7 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 
 ### 写回规则
 
-- `output.memory` → 追加/更新 `memory.md`
+- `output.memory` → 追加到 `memory_draft.md`（由后续 consolidation 归并进 `memory.md` 并清空 draft）
 - `output.status` → 覆盖更新 `status.md` 对应字段
 - `output.player` → 追加到 `tmp_user.md` 对应字段；首次写入时先复制 `user.md` 为工作草稿，整理后再回写 `user.md`
 - `output.triggered` → 从 `status.md` 中移除已执行条目
@@ -254,7 +255,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 `consolidation/flow.py` 负责角色后台整理：
 
 - 组装整理流程，并调用 `consolidation/inputs.py` 准备整理输入
-- 归并 `memory.md`
+- 读取 `memory_draft.md` + 最近 raw 对话，LLM 产出结构化事件后追加进 `memory.md`，写回成功即清空 draft；失败则保留 draft 留待下一轮重试
 - 提炼 / 更新 `growth.md`（仅角色）
 - 去重压缩 `growth.md`（仅角色）
 - 顺带精炼 `user.md`（仅角色）
@@ -288,7 +289,8 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 存档会包含：
 
-- 角色 markdown 文件（`narrator` 不含 `memory.md`）
+- 角色 markdown 文件（`narrator` 不含 `memory.md` / `memory_draft.md`）
+- 角色 `memory_draft.md`（存在时；确保未归并的本轮 memory 不随存档丢失）
 - 角色 `schedule.json`（存在时）
 - narrator 的 raw 历史
 - 各 Agent `.history_window_state.json`
