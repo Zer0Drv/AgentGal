@@ -2,6 +2,12 @@
 
 GROWTH_EXTRACT = r"""<task>从整理后的记忆中提炼值得进入 growth.md 的新条目，只写本轮新形成的内容。</task>
 
+<input>
+- <soul>：角色的核心设定。
+- <existing_growth>：此前已沉淀的人格变化条目（可能为空）。
+- <consolidated_memory>：本轮整理出的事件 JSON 数组，每个元素含 date/time/location/participants/content 字段。
+</input>
+
 <judgment>
 写入的条目有两种触发情形，满足其一即可写入：
 
@@ -183,6 +189,15 @@ MEMORY_CHUNK_METADATA = r"""<task>
 请为 <consolidated_memory> 里的每一条记忆 chunk 生成检索 metadata。
 </task>
 
+<input>
+<consolidated_memory> 是一个 JSON 数组，每个元素是一条记忆 chunk，包含以下字段：
+- date：事件日期（X月X日）
+- time：具体时刻或时间段
+- location：地点或相邻地点
+- participants：关键在场人物
+- content：事件内容
+</input>
+
 <goal>
 - 输出每条 chunk 的关键词和重要度
 - 关键词用于检索，不是摘要
@@ -191,7 +206,7 @@ MEMORY_CHUNK_METADATA = r"""<task>
 
 <rules>
 - 一次处理全部 chunk，不要遗漏，不要新增 chunk
-- 每条 chunk 必须原样抄写它的"time"字段（即时间值）作为对齐锚点
+- 每条 chunk 必须原样抄写输入中的 "time" 字段值作为对齐锚点
 - keywords 最多 5 个词，用数组表示，不要加逗号分隔的字符串
 - keywords 优先覆盖：地点 1 词 + 事件类型 1-2 词 + 情绪/状态 1-2 词
 - importance 只能是 1 到 5 的整数
@@ -209,10 +224,7 @@ MEMORY_CHUNK_METADATA = r"""<task>
 示例 1：普通日常，主要提供背景
 
 输入 chunk：
-- **时间**：10月6日 中午
-- **地点**：食堂
-- **在场**：我、他
-- **内容**：一起吃了午饭，他顺手把我不爱吃的菜夹走，又问我下午还开不开会。我说照常开会，他点了点头，没再多说。
+{{"date": "10月6日", "time": "10月6日 中午", "location": "食堂", "participants": "我、他", "content": "一起吃了午饭，他顺手把我不爱吃的菜夹走，又问我下午还开不开会。我说照常开会，他点了点头，没再多说。"}}
 
 输出对应 item：
 {{"time": "10月6日 中午", "keywords": ["食堂", "吃饭", "照顾", "日常", "平静"], "importance": 1}}
@@ -220,9 +232,7 @@ MEMORY_CHUNK_METADATA = r"""<task>
 示例 2：留下了之后可能会回收的新信息
 
 输入 chunk：
-- **时间**：10月20日 早上
-- **在场**：我、他
-- **内容**：他忽然说今晚想一个人待会儿。我先愣了一下，后来告诉他，下次可以直接说"今晚想自己待会儿"，不用问"可以吗"。临下车前，我又补了一句"到家和我说一声"。
+{{"date": "10月20日", "time": "10月20日 早上", "location": "车内", "participants": "我、他", "content": "他忽然说今晚想一个人待会儿。我先愣了一下，后来告诉他，下次可以直接说\"今晚想自己待会儿\"，不用问\"可以吗\"。临下车前，我又补了一句\"到家和我说一声\"。"}}
 
 输出对应 item：
 {{"time": "10月20日 早上", "keywords": ["车内", "个人空间", "表达方式", "报平安", "约定"], "importance": 3}}
@@ -230,9 +240,7 @@ MEMORY_CHUNK_METADATA = r"""<task>
 示例 3：关系结构发生了长期变化
 
 输入 chunk：
-- **时间**：10月18日 晚上
-- **在场**：我、他
-- **内容**：他发现我把门锁换成了指纹锁。我告诉他，我提前录好了他的指纹，以后他想来随时都可以，不用再等我开门。
+{{"date": "10月18日", "time": "10月18日 晚上", "location": "玄关", "participants": "我、他", "content": "他发现我把门锁换成了指纹锁。我告诉他，我提前录好了他的指纹，以后他想来随时都可以，不用再等我开门。"}}
 
 输出对应 item：
 {{"time": "10月18日 晚上", "keywords": ["玄关", "指纹锁", "随时来", "权限", "关系升级"], "importance": 5}}

@@ -280,7 +280,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     core_files = ["soul.md", "status.md"]
     if agent_name != "narrator":
         core_files.extend([
-            "memory.md", "memory_draft.md", "user.md", "tmp_user.md", "growth.md",
+            "memory.jsonl", "memory_draft.md", "user.md", "tmp_user.md", "growth.md",
             "relations.md", "schedule.json",
         ])
 

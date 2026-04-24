@@ -1,6 +1,7 @@
 """后台记忆整理流程。"""
 
 import asyncio
+import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -35,16 +36,12 @@ from storage.agent_files import (
     write_growth_entries,
 )
 from memory.parser import (
+    EpisodeMemory,
+    append_memory_records,
     canonical_cn_date,
-    extract_event_field,
-    flatten_sections,
-    group_blocks,
-    make_block,
-    normalize,
-    parse_event_importance,
-    render_sections,
-    split_by_date,
-    split_into_events,
+    memory_jsonl_path,
+    read_memory_jsonl,
+    render_episode_markdown,
 )
 from storage.vector_store import vector_store
 from agents.schema import (
@@ -61,37 +58,18 @@ from agents.schema import (
 # ---------------------------------------------------------------------------
 
 
-def safe_write_memory(
-    path: Path,
-    sections: dict[str, str],
-    agent_name: str,
-    original_content: str,
-) -> tuple[int, int]:
-    """安全写回 memory.md，带最小并发保护。"""
-    current_content = path.read_text(encoding="utf-8")
+def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:
+    """把 EpisodeMemory 压成喂给 metadata/growth LLM 的 5 字段 dict。
 
-    if current_content.startswith(original_content):
-        appended = current_content[len(original_content):]
-        if appended:
-            memory_logger.info(
-                f"[整理器] {agent_name} 检测到并发尾部追加 ({len(appended)} 字符)，将保留"
-            )
-    elif current_content == original_content:
-        appended = ""
-    else:
-        memory_logger.warning(
-            f"[整理器] {agent_name} 检测到并发中间变更，已放弃写回以避免覆盖（建议稍后重试）"
-        )
-        return -1, -1
-
-    result = f"# {agent_name} 的长期记忆\n\n{render_sections(sections)}\n"
-    consolidated_len = len(result)
-
-    if appended:
-        result += appended
-
-    path.write_text(result, encoding="utf-8")
-    return len(result), consolidated_len
+    剔除 keywords/importance：metadata 阶段是占位值、会干扰打分；growth 阶段用不到。
+    """
+    return {
+        "date": episode.get("date", "").strip(),
+        "time": episode.get("time", "").strip(),
+        "location": episode.get("location", "").strip(),
+        "participants": episode.get("participants", "").strip(),
+        "content": episode.get("content", "").strip(),
+    }
 
 
 _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
@@ -175,73 +153,6 @@ def _enforce_user_section_limits(content: str) -> str:
         rebuilt.append("")
 
     return "\n".join(rebuilt).strip()
-
-
-def _apply_chunk_metadata(event_text: str, keywords: str, importance: int) -> str:
-    normalized_keywords = " ".join((keywords or "").split())
-    normalized_importance = max(1, min(5, int(importance)))
-    rewritten: list[str] = []
-    inserted = False
-
-    for line in (event_text or "").strip().splitlines():
-        stripped = line.strip()
-        if re.match(r"^(?:-\s*)?\*\*(关键词|重要度)\*\*：", stripped):
-            continue
-        if not inserted and re.match(r"^(?:-\s*)?\*\*内容\*\*：", stripped):
-            rewritten.append(f"- **关键词**：{normalized_keywords}".rstrip())
-            rewritten.append(f"- **重要度**：{normalized_importance}")
-            inserted = True
-        rewritten.append(line)
-
-    if not inserted:
-        rewritten.append(f"- **关键词**：{normalized_keywords}".rstrip())
-        rewritten.append(f"- **重要度**：{normalized_importance}")
-
-    return "\n".join(rewritten).strip()
-
-
-def _apply_default_chunk_metadata(blocks: list[dict[str, str]]) -> list[dict[str, str]]:
-    return [
-        make_block(
-            block["date"],
-            _apply_chunk_metadata(
-                block["content"],
-                extract_event_field(block["content"], "关键词"),
-                parse_event_importance(block["content"], default=3),
-            ),
-        )
-        for block in blocks
-    ]
-
-
-def _merge_chunk_metadata(
-    blocks: list[dict[str, str]], metadata_items: list[dict]
-) -> list[dict[str, str]]:
-    pending: dict[str, list[dict]] = {}
-    for item in metadata_items:
-        time_key = str(item.get("time", "")).strip()
-        if time_key:
-            pending.setdefault(time_key, []).append(item)
-
-    merged: list[dict[str, str]] = []
-    for block in blocks:
-        time_key = extract_event_field(block["content"], "时间")
-        item = pending.get(time_key, []).pop(0) if pending.get(time_key) else None
-        keywords_str = (
-            " ".join(item.get("keywords", [])) if item and isinstance(item.get("keywords"), list)
-            else str(item.get("keywords", "")).strip() if item
-            else extract_event_field(block["content"], "关键词")
-        )
-        importance = (
-            int(item.get("importance", 3)) if item else parse_event_importance(block["content"], default=3)
-        )
-        merged.append(
-            make_block(
-                block["date"],
-                _apply_chunk_metadata(block["content"], keywords_str, importance),
-            )
-        )
-    return merged
 
 
 def _validate_memory_merge_output(events: list[MemoryMergeEvent]) -> str | None:
@@ -362,7 +273,7 @@ class MemoryConsolidationFlow:
         agent_name: str,
         memory_entries: str,
         raw_dialogue: str,
-    ) -> tuple[list[dict[str, str]], str]:
+    ) -> list[EpisodeMemory]:
         user = build_memory_merge_payload(agent_name, memory_entries, raw_dialogue)
         output = await self._run_consolidation_agent(
             agent=get_memory_merge_agent(),
@@ -380,28 +291,31 @@ class MemoryConsolidationFlow:
         if validation_error:
             raise ValueError(validation_error)
 
-        blocks = [
-            make_block(
-                event.date,
-                (
-                    f"- **时间**：{event.time}\n"
-                    f"- **地点**：{event.location}\n"
-                    f"- **在场**：{event.participants}\n"
-                    f"- **内容**：{event.content}"
-                ),
+        # keywords/importance 交给下一步 metadata agent 填充，此处先占位
+        return [
+            EpisodeMemory(
+                date=event.date,
+                time=event.time,
+                location=event.location,
+                participants=event.participants,
+                keywords=[],
+                importance=3,
+                content=event.content,
             )
             for event in normalized_events
         ]
-        merged_markdown = render_sections(group_blocks(blocks))
-        return blocks, merged_markdown
 
     async def _annotate_memory_metadata(
         self,
         agent_name: str,
-        blocks: list[dict[str, str]],
-        merged_markdown: str,
-    ) -> list[dict[str, str]]:
-        user = f"<consolidated_memory>\n{merged_markdown}\n</consolidated_memory>"
+        episodes: list[EpisodeMemory],
+    ) -> list[EpisodeMemory]:
+        payload = json.dumps(
+            [_episode_to_llm_payload(ep) for ep in episodes],
+            ensure_ascii=False,
+            indent=2,
+        )
+        user = f"<consolidated_memory>\n{payload}\n</consolidated_memory>"
         try:
             output = await self._run_consolidation_agent(
                 agent=get_memory_metadata_agent(),
@@ -410,30 +324,56 @@ class MemoryConsolidationFlow:
                 function_name="memory_metadata",
                 user=user,
             )
-            metadata_items = [
-                {
-                    "time": item.time,
-                    "keywords": item.keywords,
-                    "importance": item.importance,
-                }
-                for item in output.items
-            ]
-            return _merge_chunk_metadata(blocks, metadata_items)
         except Exception as e:
             memory_logger.error(f"[整理器] {agent_name} memory metadata 失败: {e}")
-            return _apply_default_chunk_metadata(blocks)
+            return episodes
+
+        pending: dict[str, list[tuple[list[str], int]]] = {}
+        for item in output.items:
+            time_key = (item.time or "").strip()
+            if not time_key:
+                continue
+            keywords = [kw.strip() for kw in (item.keywords or []) if kw.strip()]
+            importance = max(1, min(5, int(item.importance or 3)))
+            pending.setdefault(time_key, []).append((keywords, importance))
+
+        enriched: list[EpisodeMemory] = []
+        for episode in episodes:
+            time_key = episode.get("time", "").strip()
+            bucket = pending.get(time_key)
+            if bucket:
+                keywords, importance = bucket.pop(0)
+                enriched.append(
+                    EpisodeMemory(
+                        date=episode["date"],
+                        time=episode["time"],
+                        location=episode["location"],
+                        participants=episode["participants"],
+                        keywords=keywords,
+                        importance=importance,
+                        content=episode["content"],
+                    )
+                )
+            else:
+                enriched.append(episode)
+        return enriched
 
     async def _extract_growth_updates(
         self,
         agent_name: str,
-        merged_markdown: str,
+        episodes: list[EpisodeMemory],
     ) -> None:
+        payload = json.dumps(
+            [_episode_to_llm_payload(ep) for ep in episodes],
+            ensure_ascii=False,
+            indent=2,
+        )
         soul_content = read_agent_file(agent_name, "soul.md")
         growth_content = read_agent_file(agent_name, "growth.md") or "（尚无）"
         user = (
             f"<soul>\n{soul_content}\n</soul>\n\n"
             f"<existing_growth>\n{growth_content}\n</existing_growth>\n\n"
-            f"<consolidated_memory>\n{merged_markdown}\n</consolidated_memory>"
+            f"<consolidated_memory>\n{payload}\n</consolidated_memory>"
         )
         output = await self._run_consolidation_agent(
             agent=get_growth_extract_agent(),
@@ -507,11 +447,11 @@ class MemoryConsolidationFlow:
         agent_name: str,
         memory_entries: str,
         raw_dialogue: str = "",
-    ) -> tuple[list[dict[str, str]] | None, list[str]]:
+    ) -> tuple[list[EpisodeMemory] | None, list[str]]:
         errors: list[str] = []
 
         try:
-            blocks, merged_markdown = await self._merge_memory_blocks(
+            episodes = await self._merge_memory_blocks(
                 agent_name, memory_entries, raw_dialogue
             )
         except Exception as e:
@@ -519,18 +459,18 @@ class MemoryConsolidationFlow:
             memory_logger.error(f"[整理器] {agent_name} 第一步调用失败: {e}")
             return None, errors
 
-        blocks = await self._annotate_memory_metadata(agent_name, blocks, merged_markdown)
+        episodes = await self._annotate_memory_metadata(agent_name, episodes)
 
         if not self._supports_growth(agent_name):
             memory_logger.info(f"[整理器] {agent_name} 跳过 growth.md 流程")
-            return blocks, errors
+            return episodes, errors
 
         try:
-            await self._extract_growth_updates(agent_name, merged_markdown)
+            await self._extract_growth_updates(agent_name, episodes)
         except Exception as e:
             errors.append(f"第二步调用失败: {e}")
             memory_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
-            return blocks, errors
+            return episodes, errors
 
         try:
             await self._dedup_growth_entries(agent_name)
@@ -538,7 +478,7 @@ class MemoryConsolidationFlow:
             errors.append(f"第三步调用失败: {e}")
             memory_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
 
-        return blocks, errors
+        return episodes, errors
 
     def _prepare_consolidation_window(
         self,
@@ -616,7 +556,7 @@ class MemoryConsolidationFlow:
     async def consolidate_agent(self, agent_name: str) -> _ConsolidationResult | None:
         result = _ConsolidationResult(agent_name=agent_name)
         if agent_name == "narrator":
-            result.skipped, result.skip_reason = True, "旁白不维护 memory.md，也不参与整理"
+            result.skipped, result.skip_reason = True, "旁白不维护 memory.jsonl，也不参与整理"
             return result
 
         lock = self._get_lock(agent_name)
@@ -632,21 +572,14 @@ class MemoryConsolidationFlow:
                     memory_logger.info(f"[整理器] {agent_name} 跳过: {skip_reason}")
                 return result if result.skipped else None
 
-            path = Path(character_path(agent_name, "memory.md"))
-            original_content = path.read_text(encoding="utf-8") if path.exists() else ""
-            result.original_len = len(original_content)
-            if path.exists() and original_content:
-                backup_file(path, agent_name, "Memory")
+            jsonl_path = memory_jsonl_path(agent_name)
+            result.original_len = jsonl_path.stat().st_size if jsonl_path.exists() else 0
+            if jsonl_path.exists() and result.original_len > 0:
+                backup_file(jsonl_path, agent_name, "Memory")
 
-            existing_blocks: list[dict[str, str]] = []
-            if original_content.strip():
-                existing_sections = split_by_date(normalize(original_content))
-                if existing_sections:
-                    existing_blocks = flatten_sections(existing_sections)
-
-            rewritten_blocks: list[dict[str, str]] | None = None
+            episodes: list[EpisodeMemory] | None = None
             try:
-                rewritten_blocks, pipeline_errors = await self._apply_consolidation_pipeline(
+                episodes, pipeline_errors = await self._apply_consolidation_pipeline(
                     agent_name,
                     window.window_memory_entries,
                     window.raw_dialogue,
@@ -656,63 +589,48 @@ class MemoryConsolidationFlow:
                 result.errors.append(f"整合失败: {e}")
                 memory_logger.error(f"[整理器] {agent_name} 整合失败: {e}")
 
-            if rewritten_blocks is None:
-                # 整合失败：保留 memory.md 与 memory_draft.md 原状，留给下一轮重试
+            if episodes is None:
+                # 整合失败：保留 memory.jsonl 与 memory_draft.md 原状，留给下一轮重试
                 return result
 
-            rewritten_dates = [block["date"] for block in rewritten_blocks]
+            appended = append_memory_records(agent_name, episodes)
+            rewritten_dates = [ep["date"] for ep in appended]
             unique_dates = list(dict.fromkeys(rewritten_dates))
             result.days = len(unique_dates)
             if unique_dates:
                 result.date_range = f"{unique_dates[0]}~{unique_dates[-1]}"
 
-            merged_blocks = existing_blocks + rewritten_blocks
-            merged_sections = group_blocks(merged_blocks)
-
-            if not path.exists():
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("", encoding="utf-8")
-
-            result.final_len, _consolidated_len = safe_write_memory(
-                path, merged_sections, agent_name, original_content
-            )
-            if result.final_len < 0:
-                result.errors.append("并发冲突：检测到中间变更，已放弃写回")
-                return result
+            result.final_len = jsonl_path.stat().st_size if jsonl_path.exists() else 0
 
             Path(character_path(agent_name, "memory_draft.md")).unlink(missing_ok=True)
 
-            for date in set(rewritten_dates):
-                events = split_into_events(merged_sections.get(date, ""))
-                chunks = [
-                    (text, extract_event_field(text, "关键词"), parse_event_importance(text, default=3))
-                    for text in events
-                ]
-                await vector_store.add(agent_name, date, chunks)
+            # 影响到的日期需要重建向量：vector_store.add 会先删除同 (agent,date)
+            # 再写入，因此必须从 jsonl 读回该日期的全部记录一次性重算
+            if unique_dates:
+                all_records = read_memory_jsonl(agent_name)
+                by_date: dict[str, list[EpisodeMemory]] = {}
+                for record in all_records:
+                    normalized = canonical_cn_date(record.get("date", ""))
+                    if normalized:
+                        by_date.setdefault(normalized, []).append(record)
+                affected = {canonical_cn_date(d) or d for d in unique_dates}
+                for date in affected:
+                    records = by_date.get(date, [])
+                    if not records:
+                        continue
+                    chunks = [
+                        (
+                            render_episode_markdown(record),
+                            "、".join(record.get("keywords") or []),
+                            int(record.get("importance") or 3),
+                        )
+                        for record in records
+                    ]
+                    await vector_store.add(agent_name, date, chunks)
 
             user_before, user_after = await self._consolidate_player_profile(agent_name)
             result.user_md_before, result.user_md_after = user_before, user_after
             return result
-
-    async def run_memory_merge_for_date(
-        self,
-        agent_name: str,
-        date: str,
-        sections: dict,
-    ) -> tuple[str | None, str]:
-        memory_entries = sections.get(date, "")
-        if not memory_entries:
-            return None, f"没有找到 {date} 的记忆"
-        raw_dialogue = format_raw_dialogue_for_owner(agent_name, HISTORY_HIGH)
-        try:
-            blocks, _ = await self._merge_memory_blocks(agent_name, memory_entries, raw_dialogue, [date])
-            date_blocks = [block for block in blocks if block["date"] == date]
-            if not date_blocks:
-                return None, "memory merge 结果中未找到目标日期"
-            content = "\n\n".join(block["content"] for block in date_blocks)
-            return content, f"整理完成，共 {len(date_blocks)} 个事件块"
-        except Exception as e:
-            return None, f"整理失败: {e}"
 
     async def run_player_profile_consolidation(
         self,
@@ -734,9 +652,9 @@ class MemoryConsolidationFlow:
 
         summaries: list[str] = []
         for name in agent_names:
-            path = Path(character_path(name, "memory.md"))
+            path = memory_jsonl_path(name)
             summaries.append(
-                f"{name}.memory({len(path.read_text(encoding='utf-8'))}字)"
+                f"{name}.memory({path.stat().st_size}字节)"
                 if path.exists()
                 else f"{name}(无文件)"
             )

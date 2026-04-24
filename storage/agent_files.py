@@ -457,66 +457,12 @@ def backup_file(src: Path, agent_name: str, prefix: str, max_backups: int = 10) 
 # ===== Agent 响应写回（memory / status / user） =====
 
 
-def _parse_memory_entries(text: str) -> list[str]:
-    """将 memory.md 文本切分为独立条目列表。"""
-    entries, current = [], []
-    for line in text.split("\n"):
-        if line.strip().startswith("##") or (line.strip().startswith("-") and "**" in line):
-            if current:
-                entries.append("\n".join(current).strip())
-            current = [line]
-        elif line.strip() or current:
-            current.append(line)
-    if current:
-        entries.append("\n".join(current).strip())
-    return entries
-
-
 def _growth_id_sort_key(value: str) -> int:
     """提取 growth ID 中的数字部分用于排序，无数字时返回 0。"""
     try:
         return int(re.sub(r"[^0-9]", "", value))
     except ValueError:
         return 0
-
-
-def update_memory(agent_name: str, memory_content: str) -> FileUpdateResult:
-    """追加 memory 内容到 memory.md（带去重）。"""
-    if not memory_content or not memory_content.strip():
-        return FileUpdateResult(
-            file="memory.md", target="长期记忆", operation="skip", reason="内容为空，跳过"
-        )
-
-    memory_path = character_path(agent_name, "memory.md")
-    os.makedirs(os.path.dirname(memory_path), exist_ok=True)
-    clean = memory_content.replace("\\n", "\n").strip()
-
-    try:
-        existing = Path(memory_path).read_text(encoding="utf-8")
-    except OSError:
-        existing = ""
-    existing_set = set(_parse_memory_entries(existing))
-    unique = [e for e in _parse_memory_entries(clean) if e and e not in existing_set]
-
-    if not unique:
-        return FileUpdateResult(
-            file="memory.md",
-            target="长期记忆",
-            operation="skip",
-            reason="所有 entry 已存在，跳过",
-        )
-
-    to_append = "\n\n".join(unique)
-    if existing.strip():
-        with open(memory_path, "a", encoding="utf-8") as f:
-            f.write(f"\n\n{to_append}")
-    else:
-        with open(memory_path, "w", encoding="utf-8") as f:
-            f.write(f"# {agent_name} 的长期记忆\n\n{to_append}")
-
-    return FileUpdateResult(
-        file="memory.md", target="长期记忆", operation="append", appended=to_append
-    )
 
 
 def update_status(agent_name: str, field: str, content: str) -> FileUpdateResult:

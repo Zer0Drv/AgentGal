@@ -2,7 +2,7 @@
 
 ## 核心设计
 
-- **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 维护 `status.md` 与 raw 历史
+- **独立记忆**：角色维护自己的 `memory.jsonl / status.md / user.md`，`narrator` 维护 `status.md` 与 raw 历史
 - **信息差**：消息按 `visible_to` 控制可见范围，未参与场景的角色不会看到该轮内容
 - **旁白先行**：`narrator` 先做路由与场景推进，再顺序调用目标角色
 - **结构化输出**：所有结构化 Agent 使用 `PromptedOutput`，不输出 XML；系统直接读取 typed 字段写回文件
@@ -44,8 +44,8 @@ agentgal-memos/
 │   └── rerank.py               # Rerank API 客户端
 ├── log_config/                 # Logfire 与业务 logger 配置
 ├── memory/                     # 记忆规则与流程
-│   ├── indexer.py              # 向量索引重建入口（从 memory.md 解析后写入 storage）
-│   ├── parser.py               # memory.md 格式解析、事件切分、日期工具、记忆块操作
+│   ├── indexer.py              # 向量索引重建入口（从 memory.jsonl 读取后写入 storage）
+│   ├── parser.py               # memory.jsonl 结构化记录读写、EpisodeMemory 定义、日期工具、markdown 渲染
 │   └── retrieval.py            # 完整检索 pipeline（融合、rerank、recency、召回状态更新）
 ├── shared/                     # 纯配置与无副作用工具函数
 │   ├── config.py               # 路径、运行参数、character_path、get_agent_names
@@ -89,8 +89,8 @@ server.py        ← 全部
 ### 角色文件
 
 - `soul.md`：手写角色定义，只读；分 `<identity>` / `<goal>` / `<dynamic>` / `<behavior>` / `<voice>` 五段，其中 `<goal>` 写角色在故事期内要拿到的具体长期目标（外部可验证里程碑 + 可选的关系愿景），整个故事期大体不变
-- `memory.md`：角色长期记忆，记录事件与情绪变化（仅角色有）
-- `memory_draft.md`：每轮 `output.memory` 的落盘缓冲（仅角色有）；由 consolidation 读取归并进 `memory.md` 后清空
+- `memory.jsonl`：角色长期记忆，每行一个结构化 `EpisodeMemory`（`date / time / location / participants / keywords / importance / content`），append-only，仅角色有
+- `memory_draft.md`：每轮 `output.memory` 的落盘缓冲（仅角色有）；由 consolidation 读取并产出结构化 `EpisodeMemory` 追加到 `memory.jsonl` 后清空
 - `status.md`：当前状态；角色包含「打算」，旁白包含「待触发事件」和「角色位置」（所有主要角色的当前位置快照，由 `state_updater` 每轮维护，角色端不再自维护「当前位置」）
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
 - `tmp_user.md`：`user.md` 的工作草稿；首次写入时复制正式档案，整理后删除
@@ -171,7 +171,7 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 
 ### 写回规则
 
-- `output.memory` → 追加到 `memory_draft.md`（由后续 consolidation 归并进 `memory.md` 并清空 draft）
+- `output.memory` → 追加到 `memory_draft.md`（由后续 consolidation 产出 `EpisodeMemory` 并 append 到 `memory.jsonl`，清空 draft）
 - `output.status` → 覆盖更新 `status.md` 对应字段
 - `output.player` → 追加到 `tmp_user.md` 对应字段；首次写入时先复制 `user.md` 为工作草稿，整理后再回写 `user.md`
 - `output.triggered` → 从 `status.md` 中移除已执行条目
@@ -207,7 +207,7 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 4. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断；历史中的旁白只保留最后一条）
 5. `status.md`
 6. `<relations>`（直接注入角色自己的 `relations.md`，涵盖所有已知主要角色，不分在场与否。对玩家的视角不走 relations）
-7. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
+7. `<relevant_memories>`（来自 `memory.jsonl` 的长期记忆召回，向量库侧仍渲染成 markdown 供 LLM 阅读）
 8. 本轮玩家输入
 
 ### narrator Agent
@@ -240,11 +240,11 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ## 长期记忆检索
 
-- 向量库只索引 `memory.md` 中的长期记忆事件，owner scope 固定为当前角色
+- 向量库只索引 `memory.jsonl` 中的长期记忆事件，owner scope 固定为当前角色
 - 默认检索路径是 memory-only；非 memory 检索已停用
 - `memory/retrieval.py` 负责完整检索 pipeline：embedding → 向量/BM25 候选 → hybrid 融合 → (可选) rerank → recency 排序 → recall 状态更新
 - `storage/vector_store.py` 只做存储层：提供 `get_vector_candidates` / `get_bm25_candidates` 原始候选，pipeline 逻辑不在此处
-- `memory/indexer.py` 负责从 `memory.md` 重建向量索引（解析、过滤、元数据提取在此层，storage 只做 I/O）
+- `memory/indexer.py` 负责从 `memory.jsonl` 按日期聚合后渲染 markdown 写入向量库（聚合、字段渲染、元数据提取在此层，storage 只做 I/O）
 - 召回排序为：向量相关性与 BM25 相关性先融合，rerank（可选）替换 relevance 信号，最后叠加游戏内时间 recency
 - 已配置 Logfire 时，记忆检索会记录每轮 query 和 top 命中摘要，便于排查召回质量
 - `last_recalled_at` 会在命中后更新到 DB；`.memory_recall_state.json` 仅在存档时从 DB 导出，读档重建时作为降级数据源
@@ -255,13 +255,14 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 `consolidation/flow.py` 负责角色后台整理：
 
 - 组装整理流程，并调用 `consolidation/inputs.py` 准备整理输入
-- 读取 `memory_draft.md` + 最近 raw 对话，LLM 产出结构化事件后追加进 `memory.md`，写回成功即清空 draft；失败则保留 draft 留待下一轮重试
+- 读取 `memory_draft.md` + 最近 raw 对话，LLM 产出结构化 `EpisodeMemory` 后 append 到 `memory.jsonl`，写回成功即清空 draft；失败则保留 draft 留待下一轮重试
+- metadata / growth 两阶段使用整理出的 `EpisodeMemory` JSON 数组作为 LLM 输入，不再先渲染成 markdown
 - 提炼 / 更新 `growth.md`（仅角色）
 - 去重压缩 `growth.md`（仅角色）
 - 顺带精炼 `user.md`（仅角色）
 - 按进度同步向量索引
 
-`narrator` 不维护 `memory.md`，也不参与整理。
+`narrator` 不维护 `memory.jsonl`，也不参与整理。
 
 整理在对话历史窗口触发高水位截断时自动触发（事件驱动，无固定计数器）。
 
@@ -289,7 +290,8 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 存档会包含：
 
-- 角色 markdown 文件（`narrator` 不含 `memory.md` / `memory_draft.md`）
+- 角色 markdown / jsonl 文件（`narrator` 不含 `memory.jsonl` / `memory_draft.md`）
+- 角色 `memory.jsonl`（结构化长期记忆，每行一条 `EpisodeMemory`）
 - 角色 `memory_draft.md`（存在时；确保未归并的本轮 memory 不随存档丢失）
 - 角色 `schedule.json`（存在时）
 - narrator 的 raw 历史

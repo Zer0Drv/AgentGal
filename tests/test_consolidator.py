@@ -2,7 +2,6 @@
 
 import os
 import sys
-from collections import OrderedDict
 from pathlib import Path
 
 import pytest
@@ -15,13 +14,17 @@ sys.path.insert(0, str(project_root))
 try:
     import storage.agent_files as agent_files_module
     import consolidation.flow as consolidator_module
-    import memory.parser as file_ops_module
+    import memory.parser as parser_module
     from consolidation.flow import MemoryConsolidationFlow
     from agents.schema import (
         MemoryMergeEvent,
         MemoryMergeOutput,
     )
-    from memory.parser import parse_llm_memory_sections, split_into_events, is_structured_memory_block
+    from memory.parser import (
+        EpisodeMemory,
+        append_memory_records,
+        read_memory_jsonl,
+    )
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip consolidator tests: missing dependency ({exc})", allow_module_level=True)
 
@@ -36,31 +39,11 @@ def _make_character_path(tmp_path: Path):
     return _path
 
 
-def _render_memory_file(agent_name: str, sections: OrderedDict[str, str]) -> str:
-    parts = [f"# {agent_name} 的长期记忆", ""]
-    for date, body in sections.items():
-        parts.append(f"## {date}")
-        parts.append(body.strip())
-        parts.append("")
-    return "\n".join(parts).strip() + "\n"
-
-
 def _event(date: str, slot: str, content: str) -> str:
     return (
         f"- **时间**：{date} {slot}\n"
         "- **地点**：公司\n"
         "- **在场**：我、他\n"
-        f"- **内容**：{content}"
-    )
-
-
-def _consolidated_event(date: str, slot: str, content: str) -> str:
-    return (
-        f"- **时间**：{date} {slot}\n"
-        "- **地点**：公司\n"
-        "- **在场**：我、他\n"
-        "- **关键词**：测试关键词\n"
-        "- **重要度**：3\n"
         f"- **内容**：{content}"
     )
 
@@ -246,29 +229,6 @@ def test_agent_file_updates_return_structured_json_items(tmp_path, monkeypatch):
         "removed": "- [ ] 【去天台】午休去天台找玩家",
     }
 
-    memory_entry = (
-        "- **时间**：10月24日 上午\n"
-        "- **地点**：图书馆\n"
-        "- **在场**：我、玩家\n"
-        "- **内容**：玩家主动替我解围。"
-    )
-    append_result = agent_files_module.update_memory(agent_name, memory_entry)
-    appended_memory = "\n\n".join(memory_entry.split("\n"))
-    assert append_result == {
-        "file": "memory.md",
-        "target": "长期记忆",
-        "operation": "append",
-        "appended": appended_memory,
-    }
-
-    duplicate_result = agent_files_module.update_memory(agent_name, memory_entry)
-    assert duplicate_result == {
-        "file": "memory.md",
-        "target": "长期记忆",
-        "operation": "skip",
-        "reason": "所有 entry 已存在，跳过",
-    }
-
 
 @pytest.mark.asyncio
 async def test_consolidate_player_profile_uses_single_draft_profile(tmp_path, monkeypatch):
@@ -429,7 +389,7 @@ async def test_merge_memory_blocks_uses_factory_agent_getter(monkeypatch):
         fake_run_consolidation_agent,
     )
 
-    blocks, merged_markdown = await consolidator._merge_memory_blocks(
+    episodes = await consolidator._merge_memory_blocks(
         "chenxiao",
         "payload",
         "raw",
@@ -437,8 +397,13 @@ async def test_merge_memory_blocks_uses_factory_agent_getter(monkeypatch):
 
     assert captured["agent"] is sentinel_agent
     assert "<memory_entries>" in captured["user"]
-    assert len(blocks) == 1
-    assert "一起吃饭。" in merged_markdown
+    assert len(episodes) == 1
+    assert episodes[0]["date"] == "10月19日"
+    assert episodes[0]["content"] == "一起吃饭。"
+    assert episodes[0]["location"] == "餐厅"
+    # keywords/importance 在此步仅为占位，后续由 metadata agent 填充
+    assert episodes[0]["keywords"] == []
+    assert episodes[0]["importance"] == 3
 
 
 def test_enforce_user_section_limits_trims_to_configured_caps():
@@ -466,178 +431,6 @@ def test_enforce_user_section_limits_trims_to_configured_caps():
     assert "- 相处6" not in trimmed
 
 
-def test_normalize_adds_missing_event_bullets():
-    normalized = file_ops_module.normalize(
-        "\n".join(
-            [
-                "## 10月6日",
-                "- **时间**：10月6日 晚上",
-                "**地点**：卧室",
-                "**在场**：我、他",
-                "**关键词**：卧室 深夜 对视",
-                "**重要度**：4",
-                "**内容**：测试内容。",
-            ]
-        )
-    )
-
-    assert "- **地点**：卧室" in normalized
-    assert "- **在场**：我、他" in normalized
-    assert "- **关键词**：卧室 深夜 对视" in normalized
-    assert "- **重要度**：4" in normalized
-    assert "- **内容**：测试内容。" in normalized
-
-
-def test_split_into_events_uses_blank_lines_between_blocks():
-    day_content = "\n\n".join(
-        [
-            _consolidated_event("10月6日", "上午", "上午稳定内容。"),
-            "- **17:29/玩家住处客厅/我和玩家**：这是 raw 条目。",
-        ]
-    )
-
-    blocks = split_into_events(day_content)
-
-    assert len(blocks) == 2
-    assert "上午稳定内容。" in blocks[0]
-    assert "17:29/玩家住处客厅/我和玩家" in blocks[1]
-
-
-def test_structured_memory_block_rejects_trailing_raw_text():
-    legal_block = _consolidated_event("10月6日", "上午", "上午稳定内容。")
-    mixed_block = "\n".join(
-        [
-            legal_block,
-            "- **17:29/玩家住处客厅/我和玩家**：这是被吞进块里的 raw 条目。",
-        ]
-    )
-
-    assert is_structured_memory_block(legal_block) is True
-    assert is_structured_memory_block(mixed_block) is False
-
-
-def test_split_by_date_preserves_blank_line_when_same_date_repeats():
-    normalized = file_ops_module.normalize(
-        "\n".join(
-            [
-                "## 10月18日",
-                _consolidated_event("10月18日", "中午", "第一块。"),
-                "",
-                "## 10月18日 18:06",
-                "",
-                "- **18:06/创意部工位区/我和玩家**：第二块 raw。",
-            ]
-        )
-    )
-
-    sections = file_ops_module.split_by_date(normalized)
-    blocks = split_into_events(sections["10月18日"])
-
-    assert len(blocks) == 2
-    assert "第一块。" in blocks[0]
-    assert "第二块 raw。" in blocks[1]
-
-
-def test_parse_memory_merge_output_accepts_non_bulleted_time_field():
-    sections = parse_llm_memory_sections(
-        "\n".join(
-            [
-                "**时间**：10月6日 19:20",
-                "**地点**：日式烧鸟店门口",
-                "**在场**：我、他",
-                "**内容**：测试内容。",
-            ]
-        ),
-        ["10月6日"],
-    )
-
-    assert list(sections.keys()) == ["10月6日"]
-    assert sections["10月6日"].startswith("- **时间**：10月6日 19:20")
-    assert "- **地点**：日式烧鸟店门口" in sections["10月6日"]
-    assert "- **在场**：我、他" in sections["10月6日"]
-    assert "- **内容**：测试内容。" in sections["10月6日"]
-
-
-def test_parse_memory_merge_output_accepts_plain_fields_without_bold_markup():
-    sections = parse_llm_memory_sections(
-        "\n".join(
-            [
-                "时间：10月21日 09:42-09:45",
-                "地点：玩家家卧室及客厅玄关",
-                "在场：我、他",
-                "内容：他抱着我提议去吃栗子蛋糕，我换上裙子后和他一起出门。",
-            ]
-        ),
-        ["10月21日"],
-    )
-
-    assert list(sections.keys()) == ["10月21日"]
-    assert sections["10月21日"].startswith("- **时间**：10月21日 09:42-09:45")
-    assert "- **地点**：玩家家卧室及客厅玄关" in sections["10月21日"]
-    assert "- **在场**：我、他" in sections["10月21日"]
-    assert "- **内容**：他抱着我提议去吃栗子蛋糕，我换上裙子后和他一起出门。" in sections["10月21日"]
-
-
-def test_parse_memory_merge_output_infers_single_window_date():
-    sections = parse_llm_memory_sections(
-        "\n".join(
-            [
-                "**时间**：19:20",
-                "**地点**：日式烧鸟店门口",
-                "**在场**：我、他",
-                "**内容**：测试内容。",
-            ]
-        ),
-        ["10月6日"],
-    )
-
-    assert list(sections.keys()) == ["10月6日"]
-    assert sections["10月6日"].startswith("- **时间**：10月6日 19:20")
-
-
-def test_is_structured_memory_block_accepts_plain_fields_without_bold_markup():
-    assert is_structured_memory_block(
-        "\n".join(
-            [
-                "时间：10月21日 09:42-09:45",
-                "地点：玩家家卧室及客厅玄关",
-                "在场：我、他",
-                "关键词：栗子蛋糕 出门 换裙子",
-                "重要度：3",
-                "内容：他抱着我聊天，后来带我出门吃栗子蛋糕。",
-            ]
-        )
-    )
-
-
-def test_merge_chunk_metadata_applies_structured_items():
-    blocks = consolidator_module.flatten_sections(
-        OrderedDict(
-            {
-                "10月6日": "\n\n".join(
-                    [
-                        _event("10月6日", "19:20", "第一次靠近。"),
-                        _event("10月6日", "22:10", "分别前对视了很久。"),
-                    ]
-                )
-            }
-        )
-    )
-
-    metadata_items = [
-        {"time": "10月6日 19:20", "keywords": ["公司", "初次靠近", "心动", "紧张"], "importance": 4},
-        {"time": "10月6日 22:10", "keywords": ["公司", "对视", "告别", "不舍"], "importance": 3},
-    ]
-
-    merged = consolidator_module._merge_chunk_metadata(blocks, metadata_items)
-
-    assert len(merged) == 2
-    assert "- **关键词**：公司 初次靠近 心动 紧张" in merged[0]["content"]
-    assert "- **重要度**：4" in merged[0]["content"]
-    assert "- **关键词**：公司 对视 告别 不舍" in merged[1]["content"]
-    assert "- **重要度**：3" in merged[1]["content"]
-
-
 @pytest.mark.asyncio
 async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_path, monkeypatch):
     consolidator = MemoryConsolidationFlow()
@@ -646,6 +439,7 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
 
     monkeypatch.setattr(consolidator_module, "character_path", path_helper)
     monkeypatch.setattr(agent_files_module, "character_path", path_helper)
+    monkeypatch.setattr(parser_module, "character_path", path_helper)
     monkeypatch.setattr(
         consolidator_module,
         "format_raw_dialogue_for_owner",
@@ -661,13 +455,17 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     agent_dir = tmp_path / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
 
-    stable_sections = OrderedDict(
-        {"10月6日": _consolidated_event("10月6日", "上午", "上午稳定内容。")}
+    # 已有一条存量记忆（日期 10月6日 上午），append-only 流程应保留
+    seed_record = EpisodeMemory(
+        date="10月6日",
+        time="10月6日 上午",
+        location="公司",
+        participants="我、他",
+        keywords=["公司", "日常"],
+        importance=2,
+        content="上午稳定内容。",
     )
-    (agent_dir / "memory.md").write_text(
-        _render_memory_file(agent_name, stable_sections),
-        encoding="utf-8",
-    )
+    append_memory_records(agent_name, [seed_record])
 
     draft_content = "\n\n".join(
         [
@@ -677,17 +475,26 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     )
     (agent_dir / "memory_draft.md").write_text(draft_content, encoding="utf-8")
 
-    rewritten_sections = OrderedDict(
-        {
-            "10月6日": "\n\n".join(
-                [
-                    _consolidated_event("10月6日", "中午", "中午合并后内容。"),
-                    _consolidated_event("10月6日", "下午", "下午合并后内容。"),
-                ]
-            )
-        }
-    )
-    rewritten_blocks = consolidator_module.flatten_sections(rewritten_sections)
+    rewritten_episodes: list[EpisodeMemory] = [
+        EpisodeMemory(
+            date="10月6日",
+            time="10月6日 中午",
+            location="公司",
+            participants="我、他",
+            keywords=["公司", "合并"],
+            importance=3,
+            content="中午合并后内容。",
+        ),
+        EpisodeMemory(
+            date="10月6日",
+            time="10月6日 下午",
+            location="公司",
+            participants="我、他",
+            keywords=["公司", "合并"],
+            importance=3,
+            content="下午合并后内容。",
+        ),
+    ]
 
     async def fake_apply_consolidation_pipeline(
         _self,
@@ -699,7 +506,7 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
         assert "下午 draft 内容" in memory_entries
         assert "上午稳定内容" not in memory_entries
         assert raw_dialogue == "旁白：测试场景"
-        return rewritten_blocks, []
+        return rewritten_episodes, []
 
     monkeypatch.setattr(
         MemoryConsolidationFlow,
@@ -715,14 +522,29 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     monkeypatch.setattr(consolidator_module.vector_store, "add", fake_add)
 
     result = await consolidator.consolidate_agent(agent_name)
-    memory_content = (agent_dir / "memory.md").read_text(encoding="utf-8")
 
     assert result is not None
     assert result.days == 1
     assert result.date_range == "10月6日~10月6日"
-    assert "上午稳定内容。" in memory_content
-    assert "中午合并后内容。" in memory_content
-    assert "下午合并后内容。" in memory_content
+
+    # append-only: 存量 1 条 + 新增 2 条 = 3 条，并按 append 顺序排列
+    records = read_memory_jsonl(agent_name)
+    assert len(records) == 3
+    assert records[0]["content"] == "上午稳定内容。"
+    assert records[1]["content"] == "中午合并后内容。"
+    assert records[2]["content"] == "下午合并后内容。"
+
     assert not (agent_dir / "memory_draft.md").exists()
-    assert vector_calls and vector_calls[0][0] == agent_name
-    assert vector_calls[0][1] == "10月6日"
+
+    # 受影响日期只有 10月6日，对应的 chunks 应该包含该日期下全部 3 条记录
+    assert len(vector_calls) == 1
+    agent_arg, date_arg, chunks_arg = vector_calls[0]
+    assert agent_arg == agent_name
+    assert date_arg == "10月6日"
+    assert len(chunks_arg) == 3
+    # 每个 chunk 是 (text, keywords, importance) 三元组
+    for chunk in chunks_arg:
+        assert isinstance(chunk, tuple) and len(chunk) == 3
+        assert isinstance(chunk[0], str) and chunk[0]
+        assert isinstance(chunk[1], str)
+        assert isinstance(chunk[2], int)

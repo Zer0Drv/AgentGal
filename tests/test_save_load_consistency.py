@@ -10,6 +10,7 @@
 import asyncio
 import json
 import os
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -34,10 +35,12 @@ try:
     import importlib
     import storage.vector_store
     import memory.retrieval
+    import memory.parser as parser_module
     vector_store_module = importlib.import_module("storage.vector_store")
     retrieval_module = importlib.import_module("memory.retrieval")
     from storage.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
     from storage.save_manager import export_save_archive, import_save_archive
+    from memory.parser import EpisodeMemory, render_episode_markdown, serialize_episode, parse_jsonl_line
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip save_load tests: missing dependency ({exc})", allow_module_level=True)
 
@@ -57,19 +60,84 @@ def make_character_path(tmp_path):
     return _path
 
 
+def _parse_memory_markdown(content: str) -> list[EpisodeMemory]:
+    """把测试里惯用的 memory.md 字符串解析成 EpisodeMemory 列表。"""
+    episodes: list[EpisodeMemory] = []
+    current_date = ""
+    current_fields: dict[str, str] = {}
+
+    def _flush():
+        if not current_fields.get("内容"):
+            current_fields.clear()
+            return
+        kw_raw = current_fields.get("关键词", "").strip()
+        keywords = [k for k in re.split(r"[、\s]+", kw_raw) if k] if kw_raw else []
+        try:
+            importance = int(current_fields.get("重要度", "3").strip())
+        except ValueError:
+            importance = 3
+        episodes.append(EpisodeMemory(
+            date=current_date,
+            time=current_fields.get("时间", "").strip(),
+            location=current_fields.get("地点", "").strip(),
+            participants=current_fields.get("在场", "").strip(),
+            keywords=keywords,
+            importance=importance,
+            content=current_fields.get("内容", "").strip(),
+        ))
+        current_fields.clear()
+
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if current_fields.get("内容"):
+                _flush()
+            continue
+        m_date = re.match(r"##\s*(\d{1,2}月\d{1,2}日)", stripped)
+        if m_date:
+            _flush()
+            current_date = m_date.group(1)
+            continue
+        if stripped.startswith("#"):
+            continue
+        m_field = re.match(r"-\s*\*\*(时间|地点|在场|关键词|重要度|内容)\*\*：(.*)", stripped)
+        if m_field:
+            field, value = m_field.group(1), m_field.group(2).strip()
+            if field == "时间" and current_fields.get("内容"):
+                _flush()
+            current_fields[field] = value
+    _flush()
+    return episodes
+
+
 def write_memory(tmp_path, agent_name: str, content: str):
+    """把测试里的 memory.md 字符串解析为 EpisodeMemory 后写入 memory.jsonl。"""
     agent_dir = tmp_path / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
-    path = agent_dir / "memory.md"
-    path.write_text(content, encoding="utf-8")
+    path = agent_dir / "memory.jsonl"
+    episodes = _parse_memory_markdown(content)
+    with path.open("w", encoding="utf-8") as f:
+        for ep in episodes:
+            f.write(serialize_episode(ep) + "\n")
     return path
 
 
-def get_chunks(tmp_path, agent_name: str, date: str) -> list[str]:
-    from memory.parser import split_by_date, normalize, split_into_events
-    path = tmp_path / agent_name / "memory.md"
-    sections = split_by_date(normalize(path.read_text(encoding="utf-8")))
-    return split_into_events(sections.get(date, ""))
+def get_chunks(tmp_path, agent_name: str, date: str) -> list[tuple[str, str, int]]:
+    """从 tmp_path 下的 memory.jsonl 提取指定日期的事件块，供 store.add() 使用。"""
+    path = tmp_path / agent_name / "memory.jsonl"
+    if not path.exists():
+        return []
+    chunks: list[tuple[str, str, int]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        record = parse_jsonl_line(line)
+        if record is None or record.get("date") != date:
+            continue
+        chunks.append((
+            render_episode_markdown(record),
+            "、".join(record.get("keywords") or []),
+            int(record.get("importance") or 3),
+        ))
+    return chunks
 
 
 _MEMORY_CHUNK_COLS = [
