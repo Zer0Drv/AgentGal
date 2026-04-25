@@ -420,9 +420,6 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
     assert (agent_dir / "growth.md").read_text(encoding="utf-8").startswith("# 心路历程")
     assert (agent_dir / "user.md").read_text(encoding="utf-8").startswith("# 眼中的玩家")
 
-    last_seen = (agent_dir / ".last_seen.json").read_text(encoding="utf-8")
-    assert "4月3日 星期一 8:23" in last_seen
-
     import json as _json
 
     schedule_path = agent_dir / "schedule.json"

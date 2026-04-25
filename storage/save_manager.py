@@ -296,7 +296,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
 
     hidden_files = [".history_window_state.json"]
     if agent_name != "narrator":
-        hidden_files.extend([".memory_recall_state.json", ".last_seen.json"])
+        hidden_files.append(".memory_recall_state.json")
 
     for hidden_file in hidden_files:
         hidden_path = f"{base}/{hidden_file}"

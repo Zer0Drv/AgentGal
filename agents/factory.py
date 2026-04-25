@@ -17,7 +17,6 @@ from agents.schema import (
     MemoryMetadataOutput,
     NarratorOutput,
     NewCharacterProfile,
-    OffstageMemoryBlock,
     StateUpdaterOutput,
 )
 from engine.prompt_builder import build_system_prompt
@@ -27,7 +26,6 @@ from llm.providers import (
     get_consolidation_llm_config,
     get_llm_config,
     get_narrator_llm_config,
-    get_offstage_synthesizer_llm_config,
 )
 from prompts.consolidation_prompts import (
     GROWTH_DEDUPE,
@@ -37,7 +35,7 @@ from prompts.consolidation_prompts import (
     PLAYER_PROFILE,
 )
 from prompts.runtime_prompts import CHOICES, STATE_UPDATER
-from prompts.worldgen_prompts import CHARACTER_FACTORY, OFFSTAGE_SYNTH
+from prompts.worldgen_prompts import CHARACTER_FACTORY
 from shared.config import (
     CONSOLIDATION_MAX_TOKENS,
     CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS,
@@ -54,7 +52,6 @@ _conversation_agents: dict[str, ConversationAgent] = {}
 _choices_agent: Agent[None, ChoicesOutput] | None = None
 _state_updater_agent: Agent[None, StateUpdaterOutput] | None = None
 _character_factory_agent: Agent[None, NewCharacterProfile] | None = None
-_offstage_synth_agent: Agent[None, OffstageMemoryBlock] | None = None
 _consolidation_agents: dict[str, StructuredAgent | TextAgent] = {}
 _OPENROUTER_SAFE_DEFAULT_MAX_TOKENS = 4096
 
@@ -182,20 +179,6 @@ def get_character_factory_agent() -> Agent[None, NewCharacterProfile]:
             output_type=NewCharacterProfile,
         )
     return _character_factory_agent
-
-
-def get_offstage_synthesizer_agent() -> Agent[None, OffstageMemoryBlock]:
-    global _offstage_synth_agent
-
-    if _offstage_synth_agent is None:
-        config = get_offstage_synthesizer_llm_config()
-        _offstage_synth_agent = _build_agent(
-            name="offstage_synthesizer",
-            instructions=OFFSTAGE_SYNTH,
-            config=config,
-            output_type=OffstageMemoryBlock,
-        )
-    return _offstage_synth_agent
 
 
 def _ensure_consolidation_agents() -> None:

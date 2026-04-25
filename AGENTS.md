@@ -35,13 +35,9 @@ agentgal-memos/
 │   ├── factory.py              # Agent 创建、注册表与 SDK model 配置
 │   ├── runner.py               # SDK Runner 调用、Logfire trace 与 typed parse
 │   └── schema.py               # Pydantic 结构化输出类型
-├── world/                      # 世界模型（时间 / 位置 / 离场）
-│   ├── schedule.py             # 角色 schedule 查询、游戏时间解析、时段匹配
-│   ├── sync.py                 # 回合后位置 / last_seen 同步
-│   └── offstage.py             # 离场追补（offstage_synthesizer）
+├── world/                      # 世界模型（时间 / 位置）
+│   └── schedule.py             # 角色 schedule 查询、游戏时间解析、时段匹配
 ├── consolidation/              # 后台记忆整理（独立流程）
-│   ├── flow.py                 # 整理编排：memory 归并 / growth / user 精炼
-│   └── inputs.py               # 整理 prompt 组装（memory_owner / raw_dialogue）
 ├── llm/
 │   ├── providers.py            # Provider 配置与 URL 解析（返回 provider/api_url/api_key/model/temperature）
 │   ├── embedding.py            # Embeddings 客户端（embed_async / embed_sync）
@@ -63,7 +59,7 @@ agentgal-memos/
 ├── prompts/                    # 按生命周期分组的 prompt 常量模块
 │   ├── consolidation_prompts.py  # 后台整理：memory / growth / user
 │   ├── runtime_prompts.py        # 对话主线：character / narrator / choices / state_updater
-│   ├── worldgen_prompts.py       # 角色孵化与离场追补
+│   ├── worldgen_prompts.py       # 角色孵化
 │   └── opening_intro.txt         # 玩法介绍开场文案（面向玩家）
 ├── scripts/                    # 维护脚本
 ├── static/                     # Alpine.js + HTML/JS 前端
@@ -113,7 +109,6 @@ server.py        ← 全部
 - `data/characters/*/.history_window_state.json`：各 Agent 的对话历史高低水位窗口 sidecar
 - `data/characters/*/.consolidation_state.json`：角色记忆整理进度 sidecar
 - `data/characters/*/.memory_recall_state.json`：角色长期记忆 recall 快照（仅存档时从 DB 生成，运行期不维护）
-- `data/characters/*/.last_seen.json`：角色上次出场的游戏内时间，由 `world_sync` 在 targets 出场时写入
 
 ## 消息路由
 
@@ -140,13 +135,11 @@ server.py        ← 全部
   ↓
 调用 narrator，得到 NarratorOutput（targets + content + new_characters）
   ↓
-孵化 new_characters：`character_factory` 生成 `character_id`，并写出 soul/status/relations/memory/growth/user + `schedule.json`（LLM 未产出时跳过）+ `.last_seen.json`；孵化成功的新角色会进入本轮最终回应名单
+孵化 new_characters：`character_factory` 生成 `character_id`，并写出 soul/status/relations/memory/growth/user + `schedule.json`（LLM 未产出时跳过）；孵化成功的新角色会进入本轮最终回应名单
   ↓
 将 narrator 内容写入单一 raw 历史（带 visible_to）
   ↓
 顺序调用各 target Agent（每个 agent 响应写入 history 后，下一个才能看到）
-  ↓
-每个 Agent 运行前：若 `.last_seen.json` 距当前游戏时间超过阈值（`OFFSTAGE_CATCHUP_THRESHOLD_DAYS`），调 `offstage_synthesizer` 合成一条压缩记忆追加到 memory.md
   ↓
 每个 Agent 响应后：从 CharacterOutput typed 字段写回文件、广播到 history
   ↓
@@ -161,8 +154,6 @@ state_updater 输入按顺序为：`schedule_snapshot`（按当前 game_time 渲
 state_updater 每轮输出全量「角色位置」快照；优先级：recent_history 事实 > character_intention 中带地点的打算 > 旧快照 > schedule_snapshot 默认值
   ↓
 state_updater 从各角色「打算」同步公共「待触发事件」（事件名保留角色名）
-  ↓
-world_sync 为出场 targets 写入 `.last_seen.json`
 ```
 
 ## Agent 输出与写回机制
@@ -172,11 +163,10 @@ world_sync 为出场 targets 写入 `.last_seen.json`
 - `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`, `relations`
 - `NarratorOutput`：`content`, `targets`, `new_characters`（路由、场景描述与动态角色请求）
 - `NewCharacterRequest` / `NewCharacterProfile`：新角色孵化锚点（可选 `name_hint`，不含 `character_id`）与 character_factory 的完整输出（包含 `character_id`、最终 `display_name`、`initial_status`、`initial_relations`）
-- `OffstageMemoryBlock`：离场追补的 `date` + `content`，由 `offstage_synthesizer` 输出并追加到角色 `memory.md`
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`
 
-`engine/character.py` 的 `Character` / `Narrator` 均继承自 `BaseEntity`，封装 soul / status 的读写与 SDK 调用；写入统一走实体方法（`set_status_fields` / `append_memory` / `add_event` / `mark_triggered` / `set_relation` / `set_user_profile_fields`），不再让外部直接调用底层 `update_xxx`。`Narrator.route()` 负责路由与场景描述，`Narrator.update_state()` 在回合末调 `state_updater` 并同步 `.last_seen.json`。
+`engine/character.py` 的 `Character` / `Narrator` 均继承自 `BaseEntity`，封装 soul / status 的读写与 SDK 调用；写入统一走实体方法（`set_status_fields` / `append_memory` / `add_event` / `mark_triggered` / `set_relation` / `set_user_profile_fields`），不再让外部直接调用底层 `update_xxx`。`Narrator.route()` 负责路由与场景描述，`Narrator.update_state()` 在回合末调 `state_updater` 。
 
 ### 写回规则
 
@@ -280,13 +270,12 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 - 放密钥、模型 ID、provider 和外部服务 URL
 - `RERANK_ENABLED=true` 时才会真正启用 rerank 调用
-- narrator / choices / consolidation / character_factory / offstage_synthesizer 都支持各自的独立 LLM 配置，未设置时逐级回退（`CHARACTER_FACTORY_LLM_*` 未设置时回退到 narrator；`OFFSTAGE_SYNTH_LLM_*` 未设置时回退到 consolidation）
+- narrator / choices / consolidation / character_factory 都支持各自的独立 LLM 配置，未设置时逐级回退（`CHARACTER_FACTORY_LLM_*` 未设置时回退到 narrator）
 
 ### `config.toml`
 
 - 放运行时策略参数，例如 Agent temperature、角色/整理/选项生成超时、embedding/rerank 请求超时、向量检索权重
 - `[history]` 中的 `history_high` / `history_low` 控制多轮消息高低水位截断
-- `[offstage]` 中的 `catchup_threshold_days` 控制角色重新登场时触发离场追补的游戏内天数阈值
 
 ## 存档与重置
 
@@ -305,7 +294,6 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 - 各 Agent `.history_window_state.json`
 - 角色 `.consolidation_state.json`
 - 角色 `.memory_recall_state.json`
-- 角色 `.last_seen.json`（存在时）
 - `last_choices.json`
 
 当前内置故事模板：

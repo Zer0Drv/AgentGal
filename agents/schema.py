@@ -109,17 +109,6 @@ class NewCharacterProfile(BaseModel):
         return " ".join(value.split())
 
 
-class OffstageMemoryBlock(BaseModel):
-    """离场追补：角色重新登场时补录的单条压缩记忆。
-
-    content 是第一人称的 `- **时间/地点/在场**：...` 单条摘要，
-    格式与角色正常输出的 memory 一致，不应包含"离场"等标签。
-    """
-
-    date: str
-    content: str
-
-
 class StateUpdaterOutput(BaseModel):
     status: NarratorStatus = Field(default_factory=NarratorStatus)
     triggered: list[str] = Field(default_factory=list)

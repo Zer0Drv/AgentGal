@@ -401,7 +401,6 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
         lambda: fake_agent,
     )
     monkeypatch.setattr(character_module, "build_schedule_snapshot", lambda _t: "")
-    monkeypatch.setattr(character_module, "post_turn_world_sync", lambda *_a, **_k: None)
     history_limits: list[int | None] = []
 
     def fake_load_conversation_history(limit=None):
@@ -432,7 +431,7 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     monkeypatch.setattr(character_module, "run_structured_agent", fake_run_structured_agent)
     monkeypatch.setattr(character_module.Narrator, "_apply_state_updates", fake_apply_state_updates)
 
-    await Narrator().update_state([])
+    await Narrator().update_state()
 
     assert captured["agent"] is fake_agent
     assert captured["output_type"] is StateUpdaterOutput

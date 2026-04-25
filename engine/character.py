@@ -51,9 +51,7 @@ from storage.agent_files import (
     update_status,
 )
 from storage.history import load_conversation_history
-from world.offstage import maybe_synthesize_offstage
 from world.schedule import load_character_schedule
-from world.sync import post_turn_world_sync
 
 
 _FILE_UPDATES_EVENT = "agentgal.routing.file_updates"
@@ -252,11 +250,6 @@ class Character(BaseEntity):
         """搜记忆 → 构建 prompt → 运行 SDK → 写回文件，返回 CharacterOutput。"""
         if raw_messages is None:
             raw_messages = load_conversation_history(limit=None)
-
-        now_time = extract_status_field(
-            read_agent_file("narrator", "status.md"), "当前时间"
-        ).strip()
-        await maybe_synthesize_offstage(self.name, now_time)
 
         user_message, was_truncated = self._build_prompt(user_input, raw_messages)
         self._trigger_consolidation_if_needed(was_truncated)
@@ -458,9 +451,8 @@ class Narrator(BaseEntity):
 
     # ── 回合结束后维护世界状态（原 conversation_flow.run_state_updater）──
 
-    async def update_state(self, targets: list[str]) -> None:
-        """调用 state_updater 写回 narrator/status.md，并同步 targets 的 .last_seen.json。"""
-        prev_time = extract_status_field(self.status, "当前时间").strip()
+    async def update_state(self) -> None:
+        """调用 state_updater 写回 narrator/status.md。"""
         user_message = self._build_state_updater_input()
         config = get_narrator_llm_config()
         try:
@@ -477,12 +469,6 @@ class Narrator(BaseEntity):
             return
 
         self._apply_state_updates(output)
-
-        new_time = output.status.当前时间.strip() or prev_time
-        try:
-            post_turn_world_sync(targets, new_time)
-        except Exception as e:
-            routing_logger.error(f"[world_sync] 同步 .last_seen.json 失败: {e}")
 
     def _build_state_updater_input(self) -> str:
         narrator_status = self.status

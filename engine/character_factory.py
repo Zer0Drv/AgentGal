@@ -25,7 +25,6 @@ from shared.text_utils import extract_identity, get_display_name
 from storage.agent_files import (
     read_agent_file,
     update_status,
-    write_sidecar_json,
 )
 
 
@@ -280,11 +279,6 @@ def _write_bootstrap_files(
             f"[character_factory] {creation.character_id!r} 未生成 schedule.json，"
             "schedule_snapshot 将显示「（无日程）」"
         )
-
-    narrator_status = read_agent_file("narrator", "status.md")
-    last_seen = extract_status_field(narrator_status, "当前时间").strip()
-    if last_seen:
-        write_sidecar_json(creation.character_id, ".last_seen.json", {"last_seen": last_seen})
 
     if spec.initial_location.strip():
         _append_to_narrator_locations(creation.display_name, spec.initial_location.strip())

@@ -100,9 +100,9 @@ async def _settle_pending_state_update(*, cancel: bool = False) -> None:
         routing_logger.info("[state_updater] 后台任务已取消")
 
 
-def _start_state_update(targets: list[str]) -> None:
+def _start_state_update() -> None:
     global _pending_state_update_task
-    _pending_state_update_task = asyncio.create_task(narrator.update_state(targets))
+    _pending_state_update_task = asyncio.create_task(narrator.update_state())
 
 
 # =============================================================================
@@ -261,7 +261,7 @@ async def _chat_stream(user_input: str):
     if not targets:
         routing_logger.info("[导演] 无角色需要回应")
         if scene_description:
-            _start_state_update([])
+            _start_state_update()
         yield _sse_event("done", {})
         return
 
@@ -284,7 +284,7 @@ async def _chat_stream(user_input: str):
             )
 
     # 5. 生成选项，同时后台维护 narrator 状态
-    _start_state_update(targets)
+    _start_state_update()
     if agent_responses:
         choices = await generate_choices(scene_description, agent_responses)
         if choices:

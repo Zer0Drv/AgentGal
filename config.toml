@@ -45,7 +45,7 @@ history_high = 40
 history_low = 15
 
 [agent]
-# Agent LLM 调用超时（秒）：角色、narrator、整理、新角色孵化、离场追补共用
+# Agent LLM 调用超时（秒）：角色、narrator、整理、新角色孵化共用
 run_timeout_seconds = 300
 # 选项生成 LLM 调用超时（秒）
 choices_timeout_seconds = 5
@@ -65,7 +65,3 @@ request_timeout_seconds = 30
 max_actions = 3
 # 角色回复后处理：最多保留的省略号数
 max_ellipsis = 3
-
-[offstage]
-# 角色离场多少游戏内天数后，重新登场时触发离场追补
-catchup_threshold_days = 1
