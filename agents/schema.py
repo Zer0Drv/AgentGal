@@ -169,12 +169,20 @@ class EpisodeMemoryBlock(BaseModel):
             return 3
 
 
-class EpisodeClosureOutput(RootModel[dict[str, int]]):
-    """key 是 candidates 里的 agent_name，value 是该角色最后一次活跃的 turn 号。
+class EpisodeClosureBoundary(BaseModel):
+    """单个主题边界：旧主题最后停留的 turn 号 + 主题/原因元信息。"""
 
-    空 dict 表示无角色闭合。用 RootModel 让 dict 直接做根 schema，
-    LLM 输出无需任何外壳字段（实测 pydantic-ai 注入的就是裸 schema）。
-    访问内部 dict 用 `.root`。
+    end_turn: int
+    old_theme: str = ""
+    new_theme: str = ""
+    reason: str = ""
+
+
+class EpisodeClosureOutput(RootModel[dict[str, list[EpisodeClosureBoundary]]]):
+    """key 是 candidates 里的 agent_name，value 是该角色在 history 中检测到的所有主题边界。
+
+    空数组表示该角色无边界。RootModel 让 dict 直接做根 schema。访问内部 dict 用 `.root`。
+    消费方通常取每个数组里 end_turn 最大的边界作为本轮可归并的闭合点。
     """
 
 

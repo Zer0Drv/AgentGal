@@ -616,13 +616,10 @@ class MemoryConsolidationFlow:
 
         candidate_names = {name for name, _ in candidates}
         cleaned: dict[str, int] = {}
-        for name, turn in output.root.items():
-            if name not in candidate_names:
+        for name, boundaries in output.root.items():
+            if name not in candidate_names or not boundaries:
                 continue
-            try:
-                cleaned[name] = int(turn)
-            except (TypeError, ValueError):
-                continue
+            cleaned[name] = max(b.end_turn for b in boundaries)
         return cleaned
 
     async def detect_and_consolidate(self, current_turn: int) -> None:
