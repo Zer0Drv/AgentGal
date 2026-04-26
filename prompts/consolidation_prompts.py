@@ -1,120 +1,154 @@
 """后台记忆整理流程使用的 prompt 模板。"""
 EPISODE_CLOSURE_DETECTOR = r"""<task>
 你是互动主题切分器。
-阅读 recent_history，为每个出现过的角色找出其参与互动中的主题边界。
-目标是把连续对话切成适合独立记忆的互动片段。
+
+阅读 recent_history，按“适合独立记忆的互动主题”切分每个角色参与的互动。
+
+你要找的是：一段互动在意义上完成了一个小节点，并进入了另一个小节点的位置。
 </task>
 
 <inputs>
-- <recent_history>：近期对话，每条消息标 [turn=N]，同一 turn 可包含多人发言。
+<recent_history>
+近期对话，每条消息带有 [turn=N] 标记。
+同一个 turn 中可能包含玩家、旁白、多个角色的发言。
+</recent_history>
 </inputs>
 
-<concepts>
-主题片段：一段可独立记忆的互动单元。当互动对象、目标、情绪动作或关系推进发生明显变化，就形成新的片段。
+<guidance>
+好的切分不是按大剧情事件切，而是按可独立记忆的小互动节点切。
 
-互动核心：
-判断主题片段时，关注以下变化：
-- 主要互动对象
-- 正在处理的目标
-- 当前焦点事件
-- 情绪动作
-- 关系推进
-- 下一步约定
-- 该角色是否仍在场
+一个节点通常可以概括成一句记忆，例如：
+- 美月和玩家在巷口完成亲密试探
+- 美月在确认后和玩家并肩离开
+- 佐藤爱离开后，美月单独感谢玩家
+- 顾一宁结束上线方案讨论，转去聊晚饭
 
+当上一段互动已经形成一个清楚的小结，后面开始新的互动姿态、目标、关系动作、约定或场景任务时，就输出边界。
 
-主题边界：
-一个互动单元结束，另一个互动单元开始的位置。
+如果后面只是继续完成同一个尚未完成的小节点，就保持不切。
+</guidance>
 
-边界 turn：
-输出旧主题最后仍在进行的 turn。
-如果旧主题和新主题在同一个 turn 内交替，输出这个 turn。
-</concepts>
+<turn_rule>
+end_turn = 上一个互动节点最后仍在进行的 turn。
 
-<boundary_rules>
-当互动核心发生明显变化时，切分主题边界。
-
-常见边界包括：
-- 从处理一件事，转为处理另一件事
-- 从三人或多人互动，转为某角色与玩家单独互动
-- 从安抚、解释、善后，转为调侃、感谢、邀约或关系推进
-- 从当前事件处理，转为下一步安排或新的约定
-- 新角色、新消息、新任务或突发事件打断当前互动
-- 角色告别、离场、下线，或旁白说明该角色不在场
-
-如果新互动承接了前一事件，但已经形成新的互动目标、关系动作或下一步约定，也切分。
-
-如果只是同一互动核心下的追问、解释、确认、补充动作、环境描写或自然来回，保持同一主题片段。
-</boundary_rules>
-
-<character_policy>
-对 recent_history 中出现过的每个角色独立判断；忽略“玩家”和“旁白”。
-
-第三方角色可以触发当前角色的边界。
-
-当第三方离场后，当前角色转向玩家展开单独调侃、感谢、邀约或关系推进，通常视为新的主题片段。
-
-如果某角色在 recent_history 中出现但没有形成可切分边界，输出空数组。
-</character_policy>
+如果新节点从 turn 79 开始，end_turn 就是 78。
+如果旧节点和新节点在同一个 turn 内交替，end_turn 就是这个 turn。
+</turn_rule>
 
 <output>
-只输出合法 JSON（不带 markdown）：
+只输出合法 JSON，不带 markdown。
 
 {
   "<agent_name>": [
-    { "end_turn": int, "old_theme": "...", "new_theme": "...", "reason": "..." }
+    {
+      "end_turn": 整数,
+      "old_theme": "上一段互动节点",
+      "new_theme": "下一段互动节点",
+      "reason": "简短说明为什么这里形成新的互动节点"
+    }
   ]
 }
 
-- recent_history 中出现过的每个角色 agent_name 都必须有 key；无边界输出空数组。
+要求：
+- 为 recent_history 中出现过的每个非玩家、非旁白角色输出 key。
+- 无边界输出空数组。
 - 数组按 end_turn 升序。
-- 不为“玩家”或“旁白”创建 key。
 </output>
 
 <examples>
 
-<example_no_boundary>
+<example_1_no_boundary_same_node>
 history:
-[turn=10] 玩家: 借的漫画看完了。
-[turn=10] mitsuki: 结尾怎么样？
-[turn=11] 玩家: 主角有点冲动。
-[turn=11] mitsuki: 那是他第一次认真面对自己。
-output: {}
-</example_no_boundary>
+[turn=10] 玩家: 你刚才说的那个规则我还是没懂。
+[turn=10] mitsuki: 重点是先判断条件，再看结果。
+[turn=11] 玩家: 所以不是看谁先说，而是看条件是否成立？
+[turn=11] mitsuki: 对，这样理解就对了。
+[turn=12] 玩家: 那我明白了。
+[turn=12] mitsuki: 嗯，这题就这样。
+output:
+{
+  "mitsuki": []
+}
+</example_1_no_boundary_same_node>
 
-<example_new_theme>
+<example_2_goal_done_then_followup_action>
 history:
-[turn=20] mitsuki: 那本漫画你看到第几卷了？
-[turn=20] 玩家: 第三卷，主角开始有变化了。
-[turn=21] mitsuki: 对吧！我就说他不是纯粹的冲动型。
-[turn=21] 玩家: 嗯，有点理解你了。
-[turn=22] 玩家: 对了，这周末有空吗？新开的猫咖听说不错。
-[turn=22] mitsuki: 啊，好巧，我正好想去！
+[turn=20] 玩家: 我已经把报名表交上去了。
+[turn=20] mitsuki: 真的？那就放心了，我还担心你会忘。
+[turn=21] 玩家: 多亏你提醒。
+[turn=21] mitsuki: 好啦，这件事算解决了。
+[turn=22] 玩家: 那接下来去哪里？
+[turn=22] mitsuki: 去便利店吧，我想买点喝的。
 output:
 {
   "mitsuki": [
-    {"end_turn": 21, "old_theme": "讨论漫画角色", "new_theme": "约周末去猫咖", "reason": "turn 22 起玩家主动提出新邀约，互动焦点从漫画讨论切换到线下邀约，关系推进。"}
+    {
+      "end_turn": 21,
+      "old_theme": "确认报名表已提交",
+      "new_theme": "商量接下来去便利店",
+      "reason": "turn 21 报名表提交这一节点完成，turn 22 起转为下一步行动。"
+    }
   ]
 }
-</example_new_theme>
+</example_2_goal_done_then_followup_action>
 
-<example_exit_and_shift>
+<example_3_crisis_resolved_then_private_interaction>
 history:
-[turn=50] chenxiao: 我先去开会。
-[turn=50] guyining: 那继续说上线方案。
-[turn=52] guyining: 今天先按这个版本推进。
-[turn=53] 玩家: 那晚上吃什么？
-[turn=53] guyining: 想吃火锅。
+[turn=30] 玩家: 文件已经恢复了，没有丢。
+[turn=30] guyining: 太好了，刚才真的吓我一跳。
+[turn=31] chenxiao: 那我先去通知其他人，免得大家继续担心。
+[turn=31] guyining: 好，辛苦你。
+[turn=32] 旁白: 陈晓离开会议室，房间里只剩玩家和顾一宁。
+[turn=32] guyining: 刚才谢谢你。要不是你反应快，我可能真要慌了。
+[turn=33] 玩家: 没事，你刚才也反应很快。
+[turn=33] guyining: 别安慰我了，我手心现在还是凉的。
+[turn=34] 玩家: 那先坐一会儿？
+[turn=34] guyining: 嗯……陪我缓一下。
+[turn=35] 玩家: 好，我在这。
+[turn=35] guyining: 谢谢。
+[turn=36] 玩家: 等会儿还要继续开会吗？
+[turn=36] guyining: 不了，今天先到这吧。
 output:
 {
   "chenxiao": [
-    {"end_turn": 50, "old_theme": "讨论上线方案", "new_theme": "陈晓离场", "reason": "陈晓 turn 50 离开当前互动。"}
+    {
+      "end_turn": 31,
+      "old_theme": "处理文件恢复危机",
+      "new_theme": "陈晓离场",
+      "reason": "陈晓在 turn 31 表示要离开当前互动。"
+    }
   ],
   "guyining": [
-    {"end_turn": 52, "old_theme": "讨论上线方案", "new_theme": "讨论晚饭安排", "reason": "turn 53 起核心事件从工作方案换成晚饭。"}
+    {
+      "end_turn": 31,
+      "old_theme": "处理文件恢复危机",
+      "new_theme": "危机解除后的单独安抚",
+      "reason": "turn 32 起陈晓离开，互动从多人处理危机转为顾一宁和玩家单独缓和情绪。"
+    },
+    {
+      "end_turn": 35,
+      "old_theme": "危机解除后的单独安抚",
+      "new_theme": "决定结束今天会议",
+      "reason": "turn 36 起互动从情绪安抚转为是否继续会议的安排。"
+    }
   ]
 }
-</example_exit_and_shift>
+</example_3_crisis_resolved_then_private_interaction>
+
+<example_4_same_workflow_no_boundary>
+history:
+[turn=40] 玩家: 所以第一版先做搜索和收藏？
+[turn=40] guyining: 对，登录可以放到第二版。
+[turn=41] 玩家: 那这个范围就定了。
+[turn=41] guyining: 嗯，今天先按这个推进。
+[turn=42] 玩家: 那我晚上把任务拆一下。
+[turn=42] guyining: 好，我明早看你的拆分。
+output:
+{
+  "guyining": []
+}
+</example_4_same_workflow_no_boundary>
+
 </examples>
 """
 
@@ -154,8 +188,8 @@ EPISODE_MEMORY_GENERATOR = r"""<role>
 </event_rules>
 
 <metadata_rules>
-- keywords 最多 5 个词，用数组表示，不要加逗号分隔的字符串。
-- keywords 优先覆盖：地点 1 词 + 事件类型 1-2 词 + 情绪/状态 1-2 词。
+- keywords 控制在5个词以内，用数组表示，不要加逗号分隔的字符串。
+- keywords 优先覆盖考虑实体，如地点、物品等，同时也需要事件类型和情绪状态的表示。
 - importance 只能是 1 到 5 的整数。
 - importance 看"这条以后被检索出来时，有多有用"。
 - 1 = 日常背景。删掉也基本不影响后续理解。
