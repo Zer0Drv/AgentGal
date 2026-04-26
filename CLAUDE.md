@@ -170,7 +170,7 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 - `NarratorOutput`：`content`, `targets`, `new_characters`（路由、场景描述与动态角色请求）
 - `NewCharacterRequest` / `NewCharacterProfile`：新角色孵化锚点（可选 `name_hint`，不含 `character_id`）与 character_factory 的完整输出（包含 `character_id`、最终 `display_name`、`initial_status`、`initial_relations`）
 - `EpisodeMemoryBlock`：`EpisodeMemoryGenerator` 输出的单条长期记忆事件（`date / time / location / participants / keywords / importance / content / title`），由流程层注入 `memory_owner` 与 `raw_dialogue`（原始对话追溯，仅作 metadata，不进向量索引、不进召回文本）后追加到角色 `memory.jsonl`
-- `EpisodeClosureDetector` 输出类型：`bool | dict[str, int]`（`false` 表示无候选闭合；否则 key 是候选 `agent_name`，value 是该角色闭合于的 turn 号）
+- `EpisodeClosureDetector` 输出类型：`dict[str, int]`（空 dict 表示无角色闭合；否则 key 是候选 `agent_name`，value 是该角色闭合于的 turn 号）
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`
 

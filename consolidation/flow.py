@@ -604,16 +604,13 @@ class MemoryConsolidationFlow:
         try:
             output = await self._run_consolidation_agent(
                 agent=get_episode_closure_detector_agent(),
-                output_type=bool | dict[str, int],
+                output_type=dict[str, int],
                 agent_name="_closure_detector",
                 function_name="episode_closure_detector",
                 user=user,
             )
         except Exception as e:
             memory_logger.error(f"[整理器] closure detector 调用失败: {e}")
-            return {}
-
-        if not isinstance(output, dict):
             return {}
 
         candidate_names = {name for name, _ in candidates}

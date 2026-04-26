@@ -135,7 +135,7 @@ B. 事情聊完了：原来那件事已经自然收尾（得出结论、说完�
 <examples>
 例 1：话题还在展开
 - 输入大意：candidates 只有 mitsuki；近期对话里 mitsuki 还在追问玩家想法，玩家也在回应。
-- 预期输出：false
+- 预期输出：{}
 
 例 2：人走了
 - 输入大意：candidates 只有 mitsuki；turn=38 mitsuki 说「我先回去了」转身离开，turn=39、40 只剩玩家独处加旁白。
@@ -155,15 +155,11 @@ B. 事情聊完了：原来那件事已经自然收尾（得出结论、说完�
 </examples>
 
 <output_format>
-两种输出格式，二选一：
+输出 JSON 对象：
+- key 必须来自 <candidates> 中的 agent_name；value 是该角色最后一次活跃的 turn 号（整数）。
+- 名单里全部人都还在进行中时，输出空对象 `{}`。
 
-1. 名单里全部人都还在进行中 → 输出字面量：
-false
-
-2. 有人已结束 → 输出 JSON 对象，key 是 agent_name（必须来自 <candidates>），value 是该角色最后一次活跃的 turn 号（整数）：
-{"mitsuki": 42, "chenxiao": 40}
-
-直接输出 JSON 或 `false`，单独成行。
+例：{"mitsuki": 42, "chenxiao": 40} 或 {}
 </output_format>
 """
 
