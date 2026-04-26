@@ -23,6 +23,7 @@ from llm.providers import (
     get_character_factory_llm_config,
     get_choices_llm_config,
     get_consolidation_llm_config,
+    get_episode_closure_detector_llm_config,
     get_llm_config,
     get_narrator_llm_config,
 )
@@ -200,12 +201,19 @@ def _ensure_consolidation_agents() -> None:
         output_type=EpisodeMemoryBlock,
         max_tokens=consolidation_max_tokens,
     )
+    closure_config = get_episode_closure_detector_llm_config(
+        temperature=CONSOLIDATION_TEMPERATURE
+    )
+    closure_max_tokens = _resolve_openrouter_safe_max_tokens(
+        closure_config,
+        CONSOLIDATION_MAX_TOKENS,
+    )
     _consolidation_agents["episode_closure_detector"] = _build_agent(
         name="episode_closure_detector",
         instructions=EPISODE_CLOSURE_DETECTOR,
-        config=config,
+        config=closure_config,
         output_type=dict[str, int],
-        max_tokens=consolidation_max_tokens,
+        max_tokens=closure_max_tokens,
     )
     _consolidation_agents["growth_extract"] = _build_agent(
         name="growth_extract",

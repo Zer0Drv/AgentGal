@@ -198,6 +198,10 @@ uv run uvicorn server:app --reload
 | `NARRATOR_LLM_API_KEY` | 否 | 旁白 API Key，不填则复用 `LLM_API_KEY` |
 | `NARRATOR_LLM_MODEL_ID` | 否 | 旁白模型 ID |
 | `NARRATOR_LLM_API_URL` | 否 | 旁白端点 URL |
+| `EPISODE_CLOSURE_DETECTOR_LLM_PROVIDER` | 否 | episode 闭合检测器 provider，已知 provider 可省略 URL |
+| `EPISODE_CLOSURE_DETECTOR_LLM_API_KEY` | 否 | episode 闭合检测器 API Key，不填则复用 `LLM_API_KEY` |
+| `EPISODE_CLOSURE_DETECTOR_LLM_MODEL_ID` | 否 | episode 闭合检测器模型 ID |
+| `EPISODE_CLOSURE_DETECTOR_LLM_API_URL` | 否 | episode 闭合检测器端点 URL |
 | `EMBEDDING_API_URL` | 否 | embedding 接口地址 |
 | `EMBEDDING_MODEL` | 否 | embedding 模型（默认 `BAAI/bge-m3`） |
 | `EMBEDDING_DIM` | 否 | 向量维度（默认 1024） |
