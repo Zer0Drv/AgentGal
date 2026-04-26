@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, field_validator
 
 
 MAX_CHOICE_CHARS = 50
@@ -167,6 +167,15 @@ class EpisodeMemoryBlock(BaseModel):
             return max(1, min(5, int(value)))
         except (TypeError, ValueError):
             return 3
+
+
+class EpisodeClosureOutput(RootModel[dict[str, int]]):
+    """key 是 candidates 里的 agent_name，value 是该角色最后一次活跃的 turn 号。
+
+    空 dict 表示无角色闭合。用 RootModel 让 dict 直接做根 schema，
+    LLM 输出无需任何外壳字段（实测 pydantic-ai 注入的就是裸 schema）。
+    访问内部 dict 用 `.root`。
+    """
 
 
 class GrowthExtractOutput(BaseModel):

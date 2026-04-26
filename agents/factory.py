@@ -11,6 +11,7 @@ from pydantic_ai.settings import ModelSettings
 from agents.schema import (
     CharacterOutput,
     ChoicesOutput,
+    EpisodeClosureOutput,
     EpisodeMemoryBlock,
     GrowthDedupOutput,
     GrowthExtractOutput,
@@ -212,7 +213,7 @@ def _ensure_consolidation_agents() -> None:
         name="episode_closure_detector",
         instructions=EPISODE_CLOSURE_DETECTOR,
         config=closure_config,
-        output_type=dict[str, int],
+        output_type=EpisodeClosureOutput,
         max_tokens=closure_max_tokens,
     )
     _consolidation_agents["growth_extract"] = _build_agent(
@@ -246,7 +247,7 @@ def get_episode_memory_generator_agent() -> Agent[None, EpisodeMemoryBlock]:
     return _get_consolidation_agent("episode_memory_generator")
 
 
-def get_episode_closure_detector_agent() -> Agent[None, dict[str, int]]:
+def get_episode_closure_detector_agent() -> Agent[None, EpisodeClosureOutput]:
     return _get_consolidation_agent("episode_closure_detector")
 
 

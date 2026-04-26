@@ -49,6 +49,7 @@ from memory.parser import (
 )
 from storage.vector_store import vector_store
 from agents.schema import (
+    EpisodeClosureOutput,
     EpisodeMemoryBlock,
     GrowthDedupOutput,
     GrowthExtractOutput,
@@ -604,7 +605,7 @@ class MemoryConsolidationFlow:
         try:
             output = await self._run_consolidation_agent(
                 agent=get_episode_closure_detector_agent(),
-                output_type=dict[str, int],
+                output_type=EpisodeClosureOutput,
                 agent_name="_closure_detector",
                 function_name="episode_closure_detector",
                 user=user,
@@ -615,7 +616,7 @@ class MemoryConsolidationFlow:
 
         candidate_names = {name for name, _ in candidates}
         cleaned: dict[str, int] = {}
-        for name, turn in output.items():
+        for name, turn in output.root.items():
             if name not in candidate_names:
                 continue
             try:
