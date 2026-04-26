@@ -18,7 +18,7 @@ from shared.config import (
     character_path,
     get_agent_names,
 )
-from shared.text_utils import get_display_name, role_to_speaker
+from shared.text_utils import extract_identity, get_display_name, role_to_speaker
 from storage.agent_files import (
     get_allowed_fields,
     read_agent_file,
@@ -170,34 +170,31 @@ def build_search_query(agent_name: str, user_input: str) -> str:
 
 def build_system_prompt(agent_name: str, soul_content: str) -> str:
     """构建 system prompt（仅包含稳定的身份与规则部分）。"""
-    prompt_template = NARRATOR if agent_name == "narrator" else CHARACTER
-    excluded_status_fields = {"打算"} if agent_name != "narrator" else set()
+    if agent_name == "narrator":
+        return NARRATOR.format(soul=soul_content)
+
+    excluded_status_fields = {"打算"}
     status_fields = "、".join(
         field
         for field in get_allowed_fields(agent_name, "status")
         if field not in excluded_status_fields
     )
-    player_fields = (
-        "、".join(get_allowed_fields(agent_name, "user")) if agent_name != "narrator" else ""
-    )
+    player_fields = "、".join(get_allowed_fields(agent_name, "user"))
     display_name = get_display_name(agent_name, soul_content)
-    if agent_name == "narrator":
-        valid_targets = ", ".join(get_agent_names(include_narrator=False))
-    else:
-        relation_targets: list[str] = []
-        seen_targets: set[str] = set()
-        for target_name in get_agent_names(include_narrator=False):
-            if target_name == agent_name:
-                continue
-            target_soul = read_agent_file(target_name, "soul.md")
-            target_display = get_display_name(target_name, target_soul)
-            if target_display in seen_targets:
-                continue
-            seen_targets.add(target_display)
-            relation_targets.append(target_display)
-        valid_targets = ", ".join(relation_targets)
+    relation_targets: list[str] = []
+    seen_targets: set[str] = set()
+    for target_name in get_agent_names(include_narrator=False):
+        if target_name == agent_name:
+            continue
+        target_soul = read_agent_file(target_name, "soul.md")
+        target_display = get_display_name(target_name, target_soul)
+        if target_display in seen_targets:
+            continue
+        seen_targets.add(target_display)
+        relation_targets.append(target_display)
+    valid_targets = ", ".join(relation_targets)
 
-    return prompt_template.format(
+    return CHARACTER.format(
         agent_name=agent_name,
         display_name=display_name,
         soul=soul_content,
@@ -263,6 +260,22 @@ def build_schedule_snapshot(game_time: str) -> str:
     return f"{header}\n" + "\n".join(rows) + "\n</schedule_snapshot>"
 
 
+def build_fields_block(agent_name: str) -> str:
+    """narrator 专用：列出当前所有候选角色的 id / 显示名 / identity。"""
+    if agent_name != "narrator":
+        return ""
+    rows: list[str] = []
+    for name in get_agent_names(include_narrator=False):
+        soul = read_agent_file(name, "soul.md")
+        display = get_display_name(name, soul)
+        identity = extract_identity(soul)
+        suffix = f"｜{identity}" if identity else ""
+        rows.append(f"- {name}: {display}{suffix}")
+    if not rows:
+        return ""
+    return "<fields>\n" + "\n".join(rows) + "\n</fields>"
+
+
 def build_relations_block(audience: str) -> str:
     """character 专用：直接把 audience 的 relations.md 整块注入 <relations>。"""
     if audience == "narrator":
@@ -295,6 +308,7 @@ def build_user_message(
     parts.append(
         f"<user_profile>\n{user_content.strip()}\n</user_profile>" if user_content else ""
     )
+    parts.append(build_fields_block(agent_name))
     parts.append(f"最近对话历史:\n\n{history}" if history else "")
     parts.append(
         f"<status>\n{status_content.strip()}\n</status>" if status_content.strip() else ""

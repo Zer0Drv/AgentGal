@@ -178,8 +178,6 @@ Return the result in this exact JSON format:
 如果本轮没有新角色生成，请将 new_characters 设置为空数组 `[]`。
 </output_format>
 
-<fields>可用角色id：{valid_targets}</fields>
-
 <examples>
 <example scene="原地延续：roleA/roleB 在场">
 <input>玩家看着roleA说："刚才的事别告诉别人。" 当前场景：楼下连廊，roleA和roleB都在场。待触发事件：【roleB：退回的钥匙】10月2日 19:30 共享资料室。</input>
