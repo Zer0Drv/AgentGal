@@ -1,6 +1,6 @@
 """测试 Agent 结构化输出模型。"""
 
-from agents.schema import MAX_CHOICE_CHARS, ChoicesOutput
+from agents.schema import MAX_CHOICE_CHARS, ChoicesOutput, EpisodeMemoryBlock
 
 
 def test_choices_output_trims_each_choice_to_50_chars():
@@ -11,3 +11,33 @@ def test_choices_output_trims_each_choice_to_50_chars():
     assert output.choices[0] == "我" * MAX_CHOICE_CHARS
     assert len(output.choices[0]) == MAX_CHOICE_CHARS
     assert output.choices[1] == "短选项"
+
+
+def test_episode_memory_block_cleans_keywords_and_clamps_importance():
+    block = EpisodeMemoryBlock(
+        date="10月19日",
+        time="10月19日 晚上",
+        location="餐厅",
+        participants="我、他",
+        keywords=[" 餐厅 ", "", "吃饭", "  ", 123, "约定", "关系", "多余"],
+        importance=9,
+        content="一起吃饭。",
+    )
+
+    assert block.keywords == ["餐厅", "吃饭", "123", "约定", "关系"]
+    assert block.importance == 5
+
+
+def test_episode_memory_block_defaults_bad_metadata():
+    block = EpisodeMemoryBlock(
+        date="10月19日",
+        time="10月19日 晚上",
+        location="餐厅",
+        participants="我、他",
+        keywords="餐厅,吃饭",
+        importance="bad",
+        content="一起吃饭。",
+    )
+
+    assert block.keywords == []
+    assert block.importance == 3

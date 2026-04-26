@@ -8,6 +8,7 @@
 import asyncio
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -33,6 +34,8 @@ try:
     vector_store_module = importlib.import_module("storage.vector_store")
     from storage.vector_store import vector_store, VectorStore, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
     import memory.retrieval as retrieval_module
+    import memory.parser as parser_module
+    from memory.parser import EpisodeMemory
     from memory.retrieval import (
         hybrid_fusion,
         apply_recency,
@@ -127,11 +130,80 @@ def make_character_path(tmp_path):
     return _path
 
 
+def _parse_memory_markdown(content: str, memory_owner: str = "") -> list[EpisodeMemory]:
+    """把测试里惯用的 memory.md 字符串解析成 EpisodeMemory 列表。
+
+    支持最小格式：
+        ## X月X日
+        - **时间**：...
+        - **地点**：...
+        - **在场**：...
+        - **关键词**：...（可选，空格或顿号分隔）
+        - **重要度**：...（可选，默认 3）
+        - **内容**：...
+
+    空行或新的 `- **时间**` 视为分块；非结构化行静默跳过。
+    """
+    episodes: list[EpisodeMemory] = []
+    current_date = ""
+    current_fields: dict[str, str] = {}
+
+    def _flush():
+        if not current_fields.get("内容"):
+            current_fields.clear()
+            return
+        kw_raw = current_fields.get("关键词", "").strip()
+        keywords = [k for k in re.split(r"[、\s]+", kw_raw) if k] if kw_raw else []
+        try:
+            importance = int(current_fields.get("重要度", "3").strip())
+        except ValueError:
+            importance = 3
+        episodes.append(EpisodeMemory(
+            date=current_date,
+            time=current_fields.get("时间", "").strip(),
+            location=current_fields.get("地点", "").strip(),
+            participants=current_fields.get("在场", "").strip(),
+            keywords=keywords,
+            importance=importance,
+            content=current_fields.get("内容", "").strip(),
+            memory_owner=memory_owner,
+        ))
+        current_fields.clear()
+
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if current_fields.get("内容"):
+                _flush()
+            continue
+        m_date = re.match(r"##\s*(\d{1,2}月\d{1,2}日)", stripped)
+        if m_date:
+            _flush()
+            current_date = m_date.group(1)
+            continue
+        if stripped.startswith("#"):
+            continue
+        m_field = re.match(r"-\s*\*\*(时间|地点|在场|关键词|重要度|内容)\*\*：(.*)", stripped)
+        if m_field:
+            field, value = m_field.group(1), m_field.group(2).strip()
+            if field == "时间" and current_fields.get("内容"):
+                _flush()
+            current_fields[field] = value
+    _flush()
+    return episodes
+
+
 def write_memory(tmp_path, agent_name: str, content: str):
+    """把测试里的 memory.md 字符串解析为 EpisodeMemory 后写入 memory.jsonl。"""
     agent_dir = tmp_path / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
-    path = agent_dir / "memory.md"
-    path.write_text(content, encoding="utf-8")
+    path = agent_dir / "memory.jsonl"
+    path.write_text("", encoding="utf-8")  # 清空以保证幂等
+    from memory.parser import serialize_episode
+    episodes = _parse_memory_markdown(content, memory_owner=agent_name)
+    with path.open("w", encoding="utf-8") as f:
+        for ep in episodes:
+            f.write(serialize_episode(ep) + "\n")
     return path
 
 
@@ -143,18 +215,34 @@ def write_status(tmp_path, agent_name: str, content: str):
     return path
 
 
-def get_chunks(tmp_path, agent_name: str, date: str) -> list[str]:
-    """从 tmp_path 下的 memory.md 提取指定日期的事件列表，供 store.add() 使用。"""
-    from memory.parser import split_by_date, normalize, split_into_events
-    path = tmp_path / agent_name / "memory.md"
-    sections = split_by_date(normalize(path.read_text(encoding="utf-8")))
-    return split_into_events(sections.get(date, ""))
+def _read_episodes(tmp_path, agent_name: str) -> list[EpisodeMemory]:
+    """直接从 tmp_path 下的 memory.jsonl 读回 EpisodeMemory 列表。"""
+    from memory.parser import parse_jsonl_line
+    path = tmp_path / agent_name / "memory.jsonl"
+    if not path.exists():
+        return []
+    records: list[EpisodeMemory] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        record = parse_jsonl_line(line)
+        if record is not None:
+            records.append(record)
+    return records
 
 
-def _chunk_row(conn, memory_key: str):
+def get_episodes(tmp_path, agent_name: str, date: str) -> list[EpisodeMemory]:
+    """从 tmp_path 下的 memory.jsonl 提取指定日期的 EpisodeMemory 列表。"""
+    return [r for r in _read_episodes(tmp_path, agent_name) if r.date == date]
+
+
+async def add_episodes(store, episodes: list[EpisodeMemory]) -> None:
+    for episode in episodes:
+        await store.add(episode)
+
+
+def _chunk_row_by_content(conn, content: str):
     return conn.execute(
-        "SELECT content, keywords, importance FROM memory_chunks WHERE memory_key = ?",
-        (memory_key,),
+        "SELECT content, keywords, importance FROM EpisodeMemory WHERE content = ?",
+        (content,),
     ).fetchone()
 
 
@@ -179,7 +267,7 @@ class TestVectorStoreBasic:
                 "- **内容**：早上好，今天天气不错。"
             ),
         )
-        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
 
         res_before = await wait_for_search(store, "lilith", "早上好")
         assert len(res_before) >= 1, "删除前应该有数据"
@@ -205,11 +293,12 @@ class TestVectorStoreRebuild:
 
     @pytest.mark.asyncio
     async def test_rebuild_memory_layer(self, clean_store, tmp_path, monkeypatch):
-        """测试 rebuild() 从 memory.md + consolidation_state 重建 memory 层向量索引"""
+        """测试 rebuild() 从 memory.jsonl + consolidation_state 重建 memory 层向量索引"""
         import importlib; vs_mod = importlib.import_module("storage.vector_store")
 
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(parser_module, "character_path", make_character_path(tmp_path))
 
         write_memory(
             tmp_path,
@@ -234,58 +323,13 @@ class TestVectorStoreRebuild:
         # monkeypatch get_agent_names
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
 
-        await store.rebuild("narrator")
+        from memory.indexer import rebuild_memory_index
+        monkeypatch.setattr("memory.indexer.vector_store", store)
+        monkeypatch.setattr("memory.indexer.get_agent_names", lambda **_: ["lilith"])
+        await rebuild_memory_index()
 
         res = await wait_for_search(store, "lilith", "被 rebuild 的记忆")
         assert len(res) >= 1, "rebuild 后应该能搜索到 lilith 的记忆"
-
-    @pytest.mark.asyncio
-    async def test_rebuild_skips_unstructured_blocks(self, clean_store, tmp_path, monkeypatch):
-        """rebuild() 只索引结构完整的整理块，raw 块应跳过。"""
-        import importlib
-
-        vs_mod = importlib.import_module("storage.vector_store")
-        store = clean_store
-        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
-        monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
-
-        write_memory(
-            tmp_path,
-            "lilith",
-            (
-                "# lilith 的长期记忆\n\n"
-                "## 4月3日\n"
-                "- **时间**：4月3日 08:00\n"
-                "- **地点**：教室\n"
-                "- **在场**：莉莉丝\n"
-                "- **关键词**：教室 稳定记忆\n"
-                "- **重要度**：3\n"
-                "- **内容**：这是结构完整的记忆。\n\n"
-                "- **17:29/教室/我和玩家**：这是还没整理的 raw 记忆。"
-            ),
-        )
-
-        await store.rebuild("narrator")
-
-        res_structured = await wait_for_search(store, "lilith", "结构完整的记忆")
-        assert len(res_structured) >= 1
-
-        import sqlite3
-        conn = sqlite3.connect(test_db_path)
-        try:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM memory_chunks WHERE owner_agent = ? AND game_date = ?",
-                ("lilith", "4月3日"),
-            ).fetchone()[0]
-            raw_rows = conn.execute(
-                "SELECT COUNT(*) FROM memory_chunks WHERE owner_agent = ? AND instr(content, '还没整理的 raw 记忆') > 0",
-                ("lilith",),
-            ).fetchone()[0]
-        finally:
-            conn.close()
-
-        assert count == 1
-        assert raw_rows == 0
 
 
 
@@ -349,7 +393,7 @@ class TestVectorStoreEdgeCases:
 
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
 
-        await store.add("lilith", "4月2日", get_chunks(tmp_path, "lilith", "4月2日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月2日"))
 
         res_old = await wait_for_search(store, "lilith", "昨天的长期记忆锚点")
         assert len(res_old) >= 1, "应该能搜索到昨天的记忆"
@@ -383,8 +427,8 @@ class TestVectorStoreEdgeCases:
             "# mitsuki\n\n## 4月3日\n- **时间**：4月3日 10:01\n- **地点**：操场\n- **在场**：美月\n- **内容**：仅 mitsuki 可见的记忆。",
         )
 
-        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
-        await store.add("mitsuki", "4月3日", get_chunks(tmp_path, "mitsuki", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "mitsuki", "4月3日"))
 
         await wait_for_search(store, "lilith", "仅 lilith 可见的记忆")
         await wait_for_search(store, "mitsuki", "仅 mitsuki 可见的记忆")
@@ -418,7 +462,7 @@ class TestVectorStoreEdgeCases:
             tmp_path, "lilith",
             "# lilith\n\n## 4月2日\n- **时间**：4月2日 晚上\n- **地点**：天台\n- **在场**：莉莉丝、玩家\n- **内容**：这是昨天的长期记忆锚点。",
         )
-        await store.add("lilith", "4月2日", get_chunks(tmp_path, "lilith", "4月2日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月2日"))
         await wait_for_search(store, "lilith", "昨天的长期记忆锚点")
 
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith", "mitsuki", "narrator"])
@@ -426,10 +470,10 @@ class TestVectorStoreEdgeCases:
         assert result == {"lilith": True, "mitsuki": True, "narrator": True}
 
         db = await store._get_db()
-        chunk_count = (await (await db.execute("SELECT COUNT(*) FROM memory_chunks")).fetchone())[0]
-        vec_count = (await (await db.execute("SELECT COUNT(*) FROM vec_memory_chunks")).fetchone())[0]
-        assert chunk_count == 0, f"memory_chunks 表应该为空，实际有{chunk_count}条"
-        assert vec_count == 0, f"vec_memory_chunks 表应该为空，实际有{vec_count}条"
+        chunk_count = (await (await db.execute("SELECT COUNT(*) FROM EpisodeMemory")).fetchone())[0]
+        vec_count = (await (await db.execute("SELECT COUNT(*) FROM EpisodeMemory_vec")).fetchone())[0]
+        assert chunk_count == 0, f"EpisodeMemory 表应该为空，实际有{chunk_count}条"
+        assert vec_count == 0, f"vec_EpisodeMemory 表应该为空，实际有{vec_count}条"
 
 
 class TestVectorStoreMemoryIndexing:
@@ -460,7 +504,7 @@ class TestVectorStoreMemoryIndexing:
         )
 
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
-        await store.add("mitsuki", "4月3日", get_chunks(tmp_path, "mitsuki", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "mitsuki", "4月3日"))
 
         # 等待索引完成并验证结果
         res1 = await wait_for_search(store, "mitsuki", "眼神让我在意")
@@ -505,7 +549,7 @@ class TestVectorStoreMemoryIndexing:
         )
 
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
-        await store.add("mitsuki", "4月3日", get_chunks(tmp_path, "mitsuki", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "mitsuki", "4月3日"))
 
         res_hit = await wait_for_search(store, "mitsuki", "让我在意")
         assert len(res_hit) >= 1, "应命中索引的日期"
@@ -523,7 +567,7 @@ class TestVectorStoreMemoryIndexing:
 
     @pytest.mark.asyncio
     async def test_add_persists_chunk_keywords_and_importance(self, clean_store, tmp_path, monkeypatch):
-        """新版 memory.md 中的关键词和重要度应写入 memory_chunks。"""
+        """新版 memory.md 中的关键词和重要度应写入 EpisodeMemory。"""
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
 
@@ -543,17 +587,69 @@ class TestVectorStoreMemoryIndexing:
 """.strip(),
         )
 
-        await store.add("lilith", "10月5日", get_chunks(tmp_path, "lilith", "10月5日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "10月5日"))
 
         conn = __import__("sqlite3").connect(test_db_path)
         try:
-            row = _chunk_row(conn, "memory::lilith::10月5日::1")
+            row = _chunk_row_by_content(conn, "我们在小巷里停下，他第一次主动靠近，试探着吻了我。")
         finally:
             conn.close()
 
         assert row is not None
-        assert row[1] == "小巷 初次亲密 主动靠近 紧张 心跳"
+        assert row[1] == "小巷、初次亲密、主动靠近、紧张、心跳"
         assert row[2] == 5
+
+    @pytest.mark.asyncio
+    async def test_add_appends_same_date_without_replacing_existing(
+        self, clean_store, tmp_path, monkeypatch
+    ):
+        """同一天新增记忆时只追加新行，不重建旧行。"""
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+
+        first = EpisodeMemory(
+            date="10月5日",
+            time="10月5日 上午",
+            location="公司",
+            participants="我、他",
+            keywords=["公司"],
+            importance=2,
+            content="上午稳定内容。",
+            memory_owner="lilith",
+            title="上午",
+        )
+        second = EpisodeMemory(
+            date="10月5日",
+            time="10月5日 中午",
+            location="公司",
+            participants="我、他",
+            keywords=["公司", "新增"],
+            importance=3,
+            content="中午新增内容。",
+            memory_owner="lilith",
+            title="中午",
+        )
+
+        await store.add(first)
+        db = await store._get_db()
+        await db.execute(
+            "UPDATE EpisodeMemory SET last_recalled_at = ? WHERE content = ?",
+            ("10月8日", "上午稳定内容。"),
+        )
+        await db.commit()
+
+        await store.add(second)
+
+        rows = await db.execute_fetchall(
+            "SELECT id, content, last_recalled_at "
+            "FROM EpisodeMemory WHERE memory_owner = ? AND game_date = ? ORDER BY id",
+            ("lilith", "10月5日"),
+        )
+        assert [row[1:] for row in rows] == [
+            ("上午稳定内容。", "10月8日"),
+            ("中午新增内容。", "10月5日"),
+        ]
+        assert rows[0][0] != rows[1][0]
 
 
 class TestHybridSearch:
@@ -571,7 +667,7 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：今天遇到了桥本美月，她提到了学园祭的准备工作。",
         )
-        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
         await wait_for_search(store, "lilith", "学园祭")
 
         # 直接测试 BM25 搜索
@@ -598,7 +694,7 @@ class TestHybridSearch:
             "- **关键词**：小巷 初次亲密 主动靠近 紧张 心跳\n- **重要度**：5\n"
             "- **内容**：我们在巷子里停下，他第一次主动靠近，试探着吻了我。",
         )
-        await store.add("lilith", "10月5日", get_chunks(tmp_path, "lilith", "10月5日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "10月5日"))
 
         conn = __import__("sqlite3").connect(test_db_path)
         try:
@@ -622,7 +718,7 @@ class TestHybridSearch:
             "- **关键词**：紫水晶 传闻\n- **重要度**：3\n"
             "- **内容**：听到了关于紫水晶项链的传闻。",
         )
-        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
         await wait_for_search(store, "lilith", "紫水晶")
 
         import sqlite3 as _sqlite3
@@ -783,7 +879,7 @@ class TestHybridSearch:
             "- **时间**：10月3日 18:20\n- **地点**：梧桐街咖啡馆\n- **在场**：我、玩家\n"
             "- **内容**：玩家在咖啡馆里直接问我\"我们现在是在约会吗？\"，我没有否认。",
         )
-        await store.add("lilith", "10月3日", get_chunks(tmp_path, "lilith", "10月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "10月3日"))
 
         conn = __import__("sqlite3").connect(test_db_path)
         try:
@@ -811,7 +907,7 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：收到了来自京都大学的录取通知书，非常激动。",
         )
-        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
         await wait_for_search(store, "lilith", "录取通知书")
 
         # 启用混合检索后，用精确关键词搜索
@@ -839,7 +935,7 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：我记住了那天的告白。",
         )
-        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
         await wait_for_search(store, "lilith", "告白")
 
         from memory.retrieval import search_memories
@@ -848,8 +944,8 @@ class TestHybridSearch:
 
         conn = __import__("sqlite3").connect(test_db_path)
         row = conn.execute(
-            "SELECT last_recalled_at FROM memory_chunks WHERE memory_key = ?",
-            ("memory::lilith::4月3日::1",),
+            "SELECT last_recalled_at FROM EpisodeMemory WHERE memory_owner = ? AND content = ?",
+            ("lilith", "我记住了那天的告白。"),
         ).fetchone()
         conn.close()
         assert row[0] == "4月8日"
@@ -858,10 +954,12 @@ class TestHybridSearch:
     async def test_rebuild_restores_recall_from_sidecar(self, clean_store, tmp_path, monkeypatch):
         """rebuild() DB 为空时应从 sidecar 降级恢复 last_recalled_at。"""
         import importlib
+        import hashlib
 
         vs_mod = importlib.import_module("storage.vector_store")
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(parser_module, "character_path", make_character_path(tmp_path))
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
 
         write_memory(
@@ -876,28 +974,34 @@ class TestHybridSearch:
             json.dumps({"last_consolidated_date": "4月4日"}, ensure_ascii=False),
             encoding="utf-8",
         )
+
+        # content_hash 基于 EpisodeMemory.content 原文（vector_store 写入时的哈希算法），
+        # 否则 rebuild 读回 JSONL 后与 sidecar 对不上、无法恢复 last_recalled_at
+        expected_episode = _read_episodes(tmp_path, "lilith")[0]
+        content_hash = hashlib.sha1(expected_episode.content.encode("utf-8")).hexdigest()
         (tmp_path / "lilith" / ".memory_recall_state.json").write_text(
             json.dumps(
                 {
-                        "memory::lilith::4月3日::1": {
-                            "date": "4月3日",
-                            "content_hash": __import__("hashlib").sha1(
-                                "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n- **关键词**：教室 recall 恢复\n- **重要度**：3\n- **内容**：这是会被恢复 recall 的记忆。".strip().encode("utf-8")
-                            ).hexdigest(),
-                            "last_recalled_at": "4月7日",
-                        }
+                    "legacy-or-previous-memory-key": {
+                        "date": "4月3日",
+                        "content_hash": content_hash,
+                        "last_recalled_at": "4月7日",
+                    }
                 },
                 ensure_ascii=False,
             ),
             encoding="utf-8",
         )
 
-        await store.rebuild("narrator")
+        from memory.indexer import rebuild_memory_index
+        monkeypatch.setattr("memory.indexer.vector_store", store)
+        monkeypatch.setattr("memory.indexer.get_agent_names", lambda **_: ["lilith"])
+        await rebuild_memory_index()
 
         conn = __import__("sqlite3").connect(test_db_path)
         row = conn.execute(
-            "SELECT last_recalled_at FROM memory_chunks WHERE memory_key = ?",
-            ("memory::lilith::4月3日::1",),
+            "SELECT last_recalled_at FROM EpisodeMemory WHERE memory_owner = ? AND content = ?",
+            ("lilith", "这是会被恢复 recall 的记忆。"),
         ).fetchone()
         conn.close()
         assert row[0] == "4月7日"
@@ -914,13 +1018,13 @@ class TestHybridSearch:
             "- **时间**：4月3日 08:00\n- **地点**：教室\n- **在场**：莉莉丝\n"
             "- **内容**：今天讨论了毕业典礼的安排。",
         )
-        await store.add("lilith", "4月3日", get_chunks(tmp_path, "lilith", "4月3日"))
+        await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
         await wait_for_search(store, "lilith", "毕业典礼")
 
         # 确认 FTS 有数据
         db = await store._get_db()
         fts_count_before = (await (await db.execute(
-            "SELECT COUNT(*) FROM memory_chunks_fts"
+            "SELECT COUNT(*) FROM EpisodeMemory_fts"
         )).fetchone())[0]
         assert fts_count_before > 0, "删除前 FTS 应有数据"
 
@@ -928,6 +1032,6 @@ class TestHybridSearch:
         await store.delete("lilith")
 
         fts_count_after = (await (await db.execute(
-            "SELECT COUNT(*) FROM memory_chunks_fts"
+            "SELECT COUNT(*) FROM EpisodeMemory_fts"
         )).fetchone())[0]
         assert fts_count_after == 0, "删除后 FTS 应为空"

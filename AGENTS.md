@@ -2,7 +2,7 @@
 
 ## 核心设计
 
-- **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 维护 `status.md` 与 raw 历史
+- **独立记忆**：角色维护自己的 `memory.jsonl / status.md / user.md`，`narrator` 维护 `status.md` 与 raw 历史
 - **信息差**：消息按 `visible_to` 控制可见范围，未参与场景的角色不会看到该轮内容
 - **旁白先行**：`narrator` 先做路由与场景推进，再顺序调用目标角色
 - **结构化输出**：所有结构化 Agent 使用 `PromptedOutput`，不输出 XML；系统直接读取 typed 字段写回文件
@@ -38,14 +38,16 @@ agentgal-memos/
 ├── world/                      # 世界模型（时间 / 位置）
 │   └── schedule.py             # 角色 schedule 查询、游戏时间解析、时段匹配
 ├── consolidation/              # 后台记忆整理（独立流程）
+│   ├── flow.py                 # 整理编排：EpisodeMemoryGenerator / growth / user 精炼
+│   └── inputs.py               # 整理 prompt 组装（memory_owner / raw_dialogue）
 ├── llm/
 │   ├── providers.py            # Provider 配置与 URL 解析（返回 provider/api_url/api_key/model/temperature）
 │   ├── embedding.py            # Embeddings 客户端（embed_async / embed_sync）
 │   └── rerank.py               # Rerank API 客户端
 ├── log_config/                 # Logfire 与业务 logger 配置
 ├── memory/                     # 记忆规则与流程
-│   ├── indexer.py              # 向量索引重建入口（从 memory.md 解析后写入 storage）
-│   ├── parser.py               # memory.md 格式解析、事件切分、日期工具、记忆块操作
+│   ├── indexer.py              # 向量索引重建入口（从 memory.jsonl 读取后写入 storage）
+│   ├── parser.py               # memory.jsonl 结构化记录读写、EpisodeMemory 定义、日期工具
 │   └── retrieval.py            # 完整检索 pipeline（融合、rerank、recency、召回状态更新）
 ├── shared/                     # 纯配置与无副作用工具函数
 │   ├── config.py               # 路径、运行参数、character_path、get_agent_names
@@ -57,7 +59,7 @@ agentgal-memos/
 │   ├── save_manager.py         # 存档 / 读档 / 重置 / 开场加载
 │   └── vector_store.py         # sqlite-vec 向量存储（write/delete + 原始候选检索）
 ├── prompts/                    # 按生命周期分组的 prompt 常量模块
-│   ├── consolidation_prompts.py  # 后台整理：memory / growth / user
+│   ├── consolidation_prompts.py  # 后台整理：EpisodeClosureDetector / EpisodeMemoryGenerator / growth / user
 │   ├── runtime_prompts.py        # 对话主线：character / narrator / choices / state_updater
 │   ├── worldgen_prompts.py       # 角色孵化
 │   └── opening_intro.txt         # 玩法介绍开场文案（面向玩家）
@@ -89,7 +91,8 @@ server.py        ← 全部
 ### 角色文件
 
 - `soul.md`：手写角色定义，只读；分 `<identity>` / `<goal>` / `<dynamic>` / `<behavior>` / `<voice>` 五段，其中 `<goal>` 写角色在故事期内要拿到的具体长期目标（外部可验证里程碑 + 可选的关系愿景），整个故事期大体不变
-- `memory.md`：角色长期记忆，记录事件与情绪变化（仅角色有）
+- `memory.jsonl`：角色长期记忆，每行一个结构化 `EpisodeMemory`（`date / time / location / participants / keywords / importance / content / memory_owner / title / raw_dialogue`），append-only，仅角色有
+- `memory_draft.jsonl`：每轮 `output.memory` 的落盘缓冲（仅角色有），每行 `{"turn": int, "text": str}`；由 consolidation 在 `EpisodeClosureDetector` 判定闭合后，按 `until_turn` 切片读取并产出结构化 `EpisodeMemory` 追加到 `memory.jsonl`，已归并的条目从 draft 中移除，未闭合 turn 的条目保留
 - `status.md`：当前状态；角色包含「打算」，旁白包含「待触发事件」和「角色位置」（所有主要角色的当前位置快照，由 `state_updater` 每轮维护，角色端不再自维护「当前位置」）
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
 - `tmp_user.md`：`user.md` 的工作草稿；首次写入时复制正式档案，整理后删除
@@ -105,6 +108,7 @@ server.py        ← 全部
 ### 其他运行时文件
 
 - `data/characters/last_choices.json`：最新一组玩家选项，续档时恢复展示，重置时清除
+- `data/characters/.turn_counter.json`：全局 turn 计数器，每条玩家消息递增 1；raw JSONL 与 `memory_draft.jsonl` 的每条记录都带 turn 号，供 `EpisodeClosureDetector` 判定闭合点；reset 随 characters 目录清除，新游戏从 0 起计
 - `data/characters/narrator/tasks.md`：可选剧情种子文件；当前主流程主要由 `state_updater` 从角色 `打算` 同步 `待触发事件`
 - `data/characters/*/.history_window_state.json`：各 Agent 的对话历史高低水位窗口 sidecar
 - `data/characters/*/.consolidation_state.json`：角色记忆整理进度 sidecar
@@ -147,7 +151,9 @@ server.py        ← 全部
   ↓
 持久化最新选项到 last_choices.json（供续档恢复）
   ↓
-后台调用 state_updater，更新 narrator/status.md（场景、时间、角色位置、叙事焦点、待触发事件）
+后台并发启动两个 task（均 `asyncio.create_task`，不阻塞主流程）：
+  1. state_updater → 更新 narrator/status.md（场景、时间、角色位置、叙事焦点、待触发事件）
+  2. detect_and_consolidate(current_turn) → 判定 episode 闭合并归并记忆（见「记忆整理」）
   ↓
 state_updater 输入按顺序为：`schedule_snapshot`（按当前 game_time 渲染各角色 schedule 默认位置，缺日程标「（无日程）」）、character_intention、current_narrator_status、recent_history
   ↓
@@ -163,6 +169,8 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 - `CharacterOutput`：`content`, `memory`, `status`, `player`, `triggered`, `add_event`, `relations`
 - `NarratorOutput`：`content`, `targets`, `new_characters`（路由、场景描述与动态角色请求）
 - `NewCharacterRequest` / `NewCharacterProfile`：新角色孵化锚点（可选 `name_hint`，不含 `character_id`）与 character_factory 的完整输出（包含 `character_id`、最终 `display_name`、`initial_status`、`initial_relations`）
+- `EpisodeMemoryBlock`：`EpisodeMemoryGenerator` 输出的单条长期记忆事件（`date / time / location / participants / keywords / importance / content / title`），由流程层注入 `memory_owner` 与 `raw_dialogue`（原始对话追溯，仅作 metadata，不进向量索引、不进召回文本）后追加到角色 `memory.jsonl`
+- `EpisodeClosureDetector` 输出类型：`dict[str, int]`（空 dict 表示无角色闭合；否则 key 是候选 `agent_name`，value 是该角色闭合于的 turn 号）
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`
 
@@ -170,7 +178,7 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 
 ### 写回规则
 
-- `output.memory` → 追加/更新 `memory.md`
+- `output.memory` → 以当前全局 turn 号为标签，追加一条记录到 `memory_draft.jsonl`（后续 `EpisodeClosureDetector` 判定闭合 turn 后，consolidation 按 `until_turn` 切片产出 `EpisodeMemory` 追加到 `memory.jsonl`，已归并条目从 draft 中移除）
 - `output.status` → 覆盖更新 `status.md` 对应字段
 - `output.player` → 追加到 `tmp_user.md` 对应字段；首次写入时先复制 `user.md` 为工作草稿，整理后再回写 `user.md`
 - `output.triggered` → 从 `status.md` 中移除已执行条目
@@ -206,7 +214,7 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 4. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断；历史中的旁白只保留最后一条）
 5. `status.md`
 6. `<relations>`（直接注入角色自己的 `relations.md`，涵盖所有已知主要角色，不分在场与否。对玩家的视角不走 relations）
-7. `<relevant_memories>`（来自 `memory.md` 的长期记忆召回）
+7. `<relevant_memories>`（来自 `memory.jsonl` 的长期记忆召回，向量库侧仍渲染成 markdown 供 LLM 阅读）
 8. 本轮玩家输入
 
 ### narrator Agent
@@ -239,11 +247,11 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 ## 长期记忆检索
 
-- 向量库只索引 `memory.md` 中的长期记忆事件，owner scope 固定为当前角色
+- 向量库只索引 `memory.jsonl` 中的长期记忆事件，owner scope 固定为当前角色
 - 默认检索路径是 memory-only；非 memory 检索已停用
 - `memory/retrieval.py` 负责完整检索 pipeline：embedding → 向量/BM25 候选 → hybrid 融合 → (可选) rerank → recency 排序 → recall 状态更新
 - `storage/vector_store.py` 只做存储层：提供 `get_vector_candidates` / `get_bm25_candidates` 原始候选，pipeline 逻辑不在此处
-- `memory/indexer.py` 负责从 `memory.md` 重建向量索引（解析、过滤、元数据提取在此层，storage 只做 I/O）
+- `memory/indexer.py` 负责从 `memory.jsonl` 读取 `EpisodeMemory` 记录并逐条追加到向量库
 - 召回排序为：向量相关性与 BM25 相关性先融合，rerank（可选）替换 relevance 信号，最后叠加游戏内时间 recency
 - 已配置 Logfire 时，记忆检索会记录每轮 query 和 top 命中摘要，便于排查召回质量
 - `last_recalled_at` 会在命中后更新到 DB；`.memory_recall_state.json` 仅在存档时从 DB 导出，读档重建时作为降级数据源
@@ -253,16 +261,15 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 `consolidation/flow.py` 负责角色后台整理：
 
-- 组装整理流程，并调用 `consolidation/inputs.py` 准备整理输入
-- 归并 `memory.md`
+- 每回合末由 `detect_and_consolidate(current_turn)` 作为后台 task 触发（与 `state_updater` 并发）：先扫描有 `memory_draft.jsonl` 的角色作为候选，调用 `EpisodeClosureDetector` 判定哪些角色本轮 episode 已闭合（返回 `{agent_name: closed_at_turn}`）；闭合角色并行执行 `consolidate_agent(name, until_turn=closed_at_turn)`
+- `consolidate_agent` 按 `until_turn` 从 `memory_draft.jsonl` 切片出本 episode 的草稿条目 + 对应 turn 区间的 raw 对话，交给 `EpisodeMemoryGenerator` 产出单条结构化 `EpisodeMemory`；流程层注入 `memory_owner` 与 `raw_dialogue` 后 append 到 `memory.jsonl`，已归并条目从 draft 中移除，未闭合 turn 的条目保留；失败则 draft 全部保留留待下一轮重试
+- growth 阶段使用整理出的 `EpisodeMemory` JSON 数组作为 LLM 输入，不再先渲染成 markdown
 - 提炼 / 更新 `growth.md`（仅角色）
 - 去重压缩 `growth.md`（仅角色）
 - 顺带精炼 `user.md`（仅角色）
 - 按进度同步向量索引
 
-`narrator` 不维护 `memory.md`，也不参与整理。
-
-整理在对话历史窗口触发高水位截断时自动触发（事件驱动，无固定计数器）。
+`narrator` 不维护 `memory.jsonl`，也不参与整理。
 
 ## 配置来源
 
@@ -270,7 +277,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 - 放密钥、模型 ID、provider 和外部服务 URL
 - `RERANK_ENABLED=true` 时才会真正启用 rerank 调用
-- narrator / choices / consolidation / character_factory 都支持各自的独立 LLM 配置，未设置时逐级回退（`CHARACTER_FACTORY_LLM_*` 未设置时回退到 narrator）
+- narrator / choices / consolidation / character_factory / episode_closure_detector 都支持各自的独立 LLM 配置，未设置时逐级回退（`CHARACTER_FACTORY_LLM_*` 未设置时回退到 narrator；`EPISODE_CLOSURE_DETECTOR_LLM_*` 未设置时回退到主 LLM）
 
 ### `config.toml`
 
@@ -288,13 +295,16 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 存档会包含：
 
-- 角色 markdown 文件（`narrator` 不含 `memory.md`）
+- 角色 markdown / jsonl 文件（`narrator` 不含 `memory.jsonl` / `memory_draft.jsonl`）
+- 角色 `memory.jsonl`（结构化长期记忆，每行一条 `EpisodeMemory`，含 `raw_dialogue` 追溯字段）
+- 角色 `memory_draft.jsonl`（存在时；每行 `{"turn": int, "text": str}`，确保未闭合归并的本轮 memory 不随存档丢失）
 - 角色 `schedule.json`（存在时）
-- narrator 的 raw 历史
+- narrator 的 raw 历史（每条带 turn 号）
 - 各 Agent `.history_window_state.json`
 - 角色 `.consolidation_state.json`
 - 角色 `.memory_recall_state.json`
 - `last_choices.json`
+- `.turn_counter.json`（全局 turn 计数）
 
 当前内置故事模板：
 

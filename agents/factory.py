@@ -11,10 +11,9 @@ from pydantic_ai.settings import ModelSettings
 from agents.schema import (
     CharacterOutput,
     ChoicesOutput,
+    EpisodeMemoryBlock,
     GrowthDedupOutput,
     GrowthExtractOutput,
-    MemoryMergeOutput,
-    MemoryMetadataOutput,
     NarratorOutput,
     NewCharacterProfile,
     StateUpdaterOutput,
@@ -24,14 +23,15 @@ from llm.providers import (
     get_character_factory_llm_config,
     get_choices_llm_config,
     get_consolidation_llm_config,
+    get_episode_closure_detector_llm_config,
     get_llm_config,
     get_narrator_llm_config,
 )
 from prompts.consolidation_prompts import (
+    EPISODE_CLOSURE_DETECTOR,
+    EPISODE_MEMORY_GENERATOR,
     GROWTH_DEDUPE,
     GROWTH_EXTRACT,
-    MEMORY_CHUNK_METADATA,
-    MEMORY_SCENE_MERGE,
     PLAYER_PROFILE,
 )
 from prompts.runtime_prompts import CHOICES, STATE_UPDATER
@@ -194,19 +194,26 @@ def _ensure_consolidation_agents() -> None:
         config,
         CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS,
     )
-    _consolidation_agents["memory_merge"] = _build_agent(
-        name="memory_merge",
-        instructions=MEMORY_SCENE_MERGE,
+    _consolidation_agents["episode_memory_generator"] = _build_agent(
+        name="episode_memory_generator",
+        instructions=EPISODE_MEMORY_GENERATOR,
         config=config,
-        output_type=MemoryMergeOutput,
+        output_type=EpisodeMemoryBlock,
         max_tokens=consolidation_max_tokens,
     )
-    _consolidation_agents["memory_metadata"] = _build_agent(
-        name="memory_metadata",
-        instructions=MEMORY_CHUNK_METADATA,
-        config=config,
-        output_type=MemoryMetadataOutput,
-        max_tokens=consolidation_max_tokens,
+    closure_config = get_episode_closure_detector_llm_config(
+        temperature=CONSOLIDATION_TEMPERATURE
+    )
+    closure_max_tokens = _resolve_openrouter_safe_max_tokens(
+        closure_config,
+        CONSOLIDATION_MAX_TOKENS,
+    )
+    _consolidation_agents["episode_closure_detector"] = _build_agent(
+        name="episode_closure_detector",
+        instructions=EPISODE_CLOSURE_DETECTOR,
+        config=closure_config,
+        output_type=dict[str, int],
+        max_tokens=closure_max_tokens,
     )
     _consolidation_agents["growth_extract"] = _build_agent(
         name="growth_extract",
@@ -235,12 +242,12 @@ def _get_consolidation_agent(key: str) -> StructuredAgent | TextAgent:
     return _consolidation_agents[key]
 
 
-def get_memory_merge_agent() -> Agent[None, MemoryMergeOutput]:
-    return _get_consolidation_agent("memory_merge")
+def get_episode_memory_generator_agent() -> Agent[None, EpisodeMemoryBlock]:
+    return _get_consolidation_agent("episode_memory_generator")
 
 
-def get_memory_metadata_agent() -> Agent[None, MemoryMetadataOutput]:
-    return _get_consolidation_agent("memory_metadata")
+def get_episode_closure_detector_agent() -> Agent[None, dict[str, int]]:
+    return _get_consolidation_agent("episode_closure_detector")
 
 
 def get_growth_extract_agent() -> Agent[None, GrowthExtractOutput]:

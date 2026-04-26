@@ -280,7 +280,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     core_files = ["soul.md", "status.md"]
     if agent_name != "narrator":
         core_files.extend([
-            "memory.md", "user.md", "tmp_user.md", "growth.md",
+            "memory.jsonl", "memory_draft.jsonl", "user.md", "tmp_user.md", "growth.md",
             "relations.md", "schedule.json",
         ])
 
@@ -383,7 +383,7 @@ async def export_save_archive_with_detail() -> tuple[str | None, str | None]:
                 "metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2)
             )
 
-            for marker in [".story_id", ".save_id"]:
+            for marker in [".story_id", ".save_id", ".turn_counter.json"]:
                 marker_path = CHARACTERS_DIR / marker
                 if marker_path.exists():
                     zf.write(str(marker_path), marker)

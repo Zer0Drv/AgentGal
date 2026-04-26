@@ -204,3 +204,14 @@ def get_consolidation_llm_config(temperature: float | None = None) -> dict:
     temperature 不为 None 时覆盖默认值。
     """
     return _make_scoped_llm_config("CONSOLIDATION_LLM", get_llm_config, temperature=temperature)
+
+
+def get_episode_closure_detector_llm_config(temperature: float | None = None) -> dict:
+    """返回 episode 闭合检测器使用的 LLM 配置。
+
+    优先使用 EPISODE_CLOSURE_DETECTOR_LLM_* 系列环境变量，未设置则复用主 LLM 配置。
+    temperature 不为 None 时覆盖默认值。
+    """
+    return _make_scoped_llm_config(
+        "EPISODE_CLOSURE_DETECTOR_LLM", get_llm_config, temperature=temperature
+    )

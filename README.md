@@ -4,7 +4,7 @@
 
 ## 项目特点
 
-- **独立记忆**：角色维护自己的 `memory.md / status.md / user.md`，`narrator` 维护 `status.md` 和单一 raw 历史
+- **独立记忆**：角色维护自己的 `memory.jsonl / status.md / user.md`，`narrator` 维护 `status.md` 和单一 raw 历史
 - **真实信息差**：消息通过 `visible_to` 控制可见性，不在场的角色不会自动知情
 - **旁白驱动路由**：`narrator` 决定谁参与当前回合，并推进场景与时间
 - **结构化更新**：Agent 使用 Pydantic 结构化输出，系统直接读取 typed 字段写回文件
@@ -95,7 +95,7 @@ uv run uvicorn server:app --reload
 
 所有结构化 Agent 使用 Pydantic 结构化输出（`PromptedOutput`），系统直接读取 typed 字段写回文件：
 
-- `output.memory` → `memory.md`
+- `output.memory` → 追加到 `memory_draft.md`，由后续 consolidation 产出 `EpisodeMemory` 并 append 到 `memory.jsonl`
 - `output.status` → `status.md`
 - `output.player` → 追加到 `tmp_user.md`；首次写入时先复制 `user.md` 作为工作草稿，整理后再回写 `user.md`
 - `output.relations` → 用其他角色**名称**作为 key，覆盖 `relations.md` 中对应角色 section（不写自己，也不写 `player`）
@@ -115,17 +115,18 @@ uv run uvicorn server:app --reload
 `consolidation/flow.py` 负责角色后台记忆整理：
 
 - 通过 `consolidation/inputs.py` 组装整理输入，并把 raw 对话对齐到当前角色视角
-- 归并 `memory.md`
+- 读取 `memory_draft.md` + 最近 raw 对话，EpisodeMemoryGenerator 产出完整结构化 `EpisodeMemory` 后 append 到 `memory.jsonl`（append-only），成功即清空 draft
+- growth 阶段使用整理出的 `EpisodeMemory` JSON 数组作为 LLM 输入，不再先渲染成 markdown
 - 提炼、更新并去重压缩 `growth.md`（仅角色）
 - 顺带精炼 `user.md`（仅角色）
 - 按进度同步向量索引
 
-`narrator` 不维护 `memory.md`，也不参与整理。整理在角色对话历史窗口触发高水位截断时自动启动（事件驱动，无固定计数器）。
+`narrator` 不维护 `memory.jsonl`，也不参与整理。整理在角色对话历史窗口触发高水位截断时自动启动（事件驱动，无固定计数器）。
 
 ### 6. 长期记忆检索
 
 - 只有角色会做向量召回，`narrator` 依赖 `status.md` 中的场景状态和待触发事件推进当前回合；待触发事件主要由 `state_updater` 从角色打算同步
-- 向量库只索引 `memory.md` 中的长期记忆事件，不再混入其他来源
+- 向量库只索引 `memory.jsonl` 中的长期记忆事件，不再混入其他来源；入库时直接保存 `EpisodeMemory` 结构字段，召回时再格式化为 LLM 可读块
 - `memory/retrieval.py` 负责完整检索 pipeline：embedding → 向量/BM25 候选 → hybrid 融合 → 可选 rerank → recency 排序 → recall 状态更新
 - `storage/vector_store.py` 只做存储层：提供向量与 BM25 原始候选，pipeline 逻辑不放在 storage 层
 - 检索默认走 hybrid search：向量相关性 + BM25 关键字相关性，可选 rerank 替换 relevance 信号，最后叠加游戏内时间 recency
@@ -166,7 +167,7 @@ uv run uvicorn server:app --reload
 ### 角色文件职责
 
 - `soul.md`：角色定义，只读；分 `<identity>` / `<goal>` / `<dynamic>` / `<behavior>` / `<voice>` 五段，其中 `<goal>` 用来写角色在故事期内要拿到的具体长期目标
-- `memory.md`：角色长期记忆（仅角色有）
+- `memory.jsonl`：角色长期记忆，每行一个结构化 `EpisodeMemory`（`date / time / location / participants / keywords / importance / content / memory_owner / title`），append-only，仅角色有
 - `status.md`：当前状态 / 打算 / 待触发事件
 - `user.md`：角色对玩家的认知（仅角色有）
 - `tmp_user.md`：`user.md` 的工作草稿；由 typed `player` 字段增量写入，整理后删除
@@ -197,6 +198,10 @@ uv run uvicorn server:app --reload
 | `NARRATOR_LLM_API_KEY` | 否 | 旁白 API Key，不填则复用 `LLM_API_KEY` |
 | `NARRATOR_LLM_MODEL_ID` | 否 | 旁白模型 ID |
 | `NARRATOR_LLM_API_URL` | 否 | 旁白端点 URL |
+| `EPISODE_CLOSURE_DETECTOR_LLM_PROVIDER` | 否 | episode 闭合检测器 provider，已知 provider 可省略 URL |
+| `EPISODE_CLOSURE_DETECTOR_LLM_API_KEY` | 否 | episode 闭合检测器 API Key，不填则复用 `LLM_API_KEY` |
+| `EPISODE_CLOSURE_DETECTOR_LLM_MODEL_ID` | 否 | episode 闭合检测器模型 ID |
+| `EPISODE_CLOSURE_DETECTOR_LLM_API_URL` | 否 | episode 闭合检测器端点 URL |
 | `EMBEDDING_API_URL` | 否 | embedding 接口地址 |
 | `EMBEDDING_MODEL` | 否 | embedding 模型（默认 `BAAI/bge-m3`） |
 | `EMBEDDING_DIM` | 否 | 向量维度（默认 1024） |

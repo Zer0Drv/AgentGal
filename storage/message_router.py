@@ -1,6 +1,7 @@
 """消息路由系统 - 维护每个角色的独立对话历史"""
 
 from shared.config import get_agent_names
+from storage.agent_files import read_turn_counter
 from storage.history import append_message
 
 
@@ -15,54 +16,40 @@ class MessageRouter:
         targets: list[str],
         message: dict,
     ):
-        """统一的消息广播方法 — 只写入 narrator 的 jsonl（单一数据源）
+        """只写入 narrator 的 jsonl（单一数据源）。
 
-        Args:
-            targets: 原始目标角色列表
-            message: 要广播的消息字典
+        每条消息都带上当前全局 turn 号，供 `EpisodeClosureDetector` 与
+        `consolidate_agent` 按 turn 切片。
         """
-        # 确保 visible_to 包含 narrator（上帝视角）
         visible = targets.copy()
         if "narrator" not in visible:
             visible.append("narrator")
-
         visible = list(dict.fromkeys(visible))
 
         message["visible_to"] = visible
+        message["turn"] = read_turn_counter()
         await append_message(message)
 
-    async def broadcast_player_message(self, targets: list[str], content: str):
-        """
-        广播玩家消息到所有 targets 的 jsonl
-
-        Args:
-            targets: 需要回应的角色列表
-            content: 玩家消息内容
-        """
-        message = {
-            "role": "player",
-            "content": content,
-            "visible_to": targets,
-        }
-        await self._broadcast_message(targets, message)
+    async def broadcast_player_message(
+        self,
+        targets: list[str],
+        content: str,
+    ):
+        await self._broadcast_message(
+            targets,
+            {"role": "player", "content": content, "visible_to": targets},
+        )
 
     async def broadcast_agent_response(
-        self, agent_name: str, targets: list[str], content: str
+        self,
+        agent_name: str,
+        targets: list[str],
+        content: str,
     ):
-        """
-        广播角色回应到所有 targets（包括自己）的 jsonl
-
-        Args:
-            agent_name: 回应的角色名
-            targets: 需要看到这条回应的角色列表（原消息的 targets）
-            content: 回应内容
-        """
-        message = {
-            "role": agent_name,
-            "content": content,
-            "visible_to": targets,
-        }
-        await self._broadcast_message(targets, message)
+        await self._broadcast_message(
+            targets,
+            {"role": agent_name, "content": content, "visible_to": targets},
+        )
 
 
 

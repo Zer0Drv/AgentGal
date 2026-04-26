@@ -1,18 +1,113 @@
-"""memory.md 格式解析 - 文本规范化、事件切分、日期工具"""
+"""memory 数据结构与解析工具 - EpisodeMemory、JSONL I/O、日期工具"""
 
-import hashlib
 import re
-from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
+from typing import Iterable
 
-_EVENT_FIELD_PATTERN = r"^\s*(?:-\s*)?(?:\*\*{field}\*\*|{field})：\s*(.*)$"
-_MEMORY_FIELD_ORDER = ("时间", "地点", "在场", "关键词", "重要度", "内容")
-_FIELD_LINE_PATTERN = re.compile(
-    r"^\s*(?:-\s*)?(?:\*\*(时间|地点|在场|关键词|重要度|内容)\*\*|(时间|地点|在场|关键词|重要度|内容))：\s*(.*)$"
-)
-_DATE_HEADING_PATTERN = re.compile(r"^\s*##\s*(\d{1,2}月\d{1,2}日)(?:\s.*)?$")
-_BOLD_HEADER_PATTERN = re.compile(r"^\s*(?:-\s*)?\*\*(.+?)\*\*：")
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+from shared.config import character_path
+
+
+# ===== EpisodeMemory：长期记忆单条记录 =====
+
+
+class EpisodeMemory(BaseModel):
+    """memory.jsonl 的一行记录，对应一条结构化长期记忆事件。
+
+    字段布局与 EpisodeMemoryBlock（供 EpisodeMemoryGenerator / offstage_synthesizer 共用）对齐，便于直接写盘。
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    date: str = ""
+    time: str = ""
+    location: str = ""
+    participants: str = ""
+    keywords: list[str] = Field(default_factory=list)
+    importance: int = 3
+    content: str = ""
+    memory_owner: str = ""
+    title: str = ""
+    raw_dialogue: str = ""
+
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def _clean_keywords(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(k).strip() for k in value if str(k).strip()]
+
+    @field_validator("importance", mode="before")
+    @classmethod
+    def _clamp_importance(cls, value: object) -> int:
+        try:
+            return max(1, min(5, int(value)))
+        except (TypeError, ValueError):
+            return 3
+
+
+def parse_jsonl_line(line: str) -> EpisodeMemory | None:
+    """解析一行 JSONL 为 EpisodeMemory；格式非法返回 None。"""
+    stripped = line.strip()
+    if not stripped:
+        return None
+    try:
+        return EpisodeMemory.model_validate_json(stripped)
+    except ValidationError:
+        return None
+
+
+def serialize_episode(episode: EpisodeMemory) -> str:
+    """将 EpisodeMemory 序列化为 JSONL 一行（不含换行）。"""
+    return episode.model_dump_json()
+
+
+# ===== memory.jsonl 读写 =====
+
+
+def memory_jsonl_path(agent_name: str) -> Path:
+    """返回角色的 memory.jsonl 路径（不负责存在性检查）。"""
+    return Path(character_path(agent_name, "memory.jsonl"))
+
+
+def read_memory_jsonl(agent_name: str) -> list[EpisodeMemory]:
+    """按文件顺序读取 memory.jsonl；不存在或全空返回空列表；非法行跳过。"""
+    path = memory_jsonl_path(agent_name)
+    if not path.exists():
+        return []
+    records: list[EpisodeMemory] = []
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            record = parse_jsonl_line(line)
+            if record is not None:
+                records.append(record)
+    return records
+
+
+def append_memory_records(
+    agent_name: str,
+    records: Iterable[EpisodeMemory],
+) -> list[EpisodeMemory]:
+    """将一组 EpisodeMemory 追加写入 memory.jsonl。
+
+    Returns:
+        实际写入的记录列表（过滤掉 content 为空的条目，保持原顺序）。
+    """
+    valid = [
+        r.model_copy(update={"memory_owner": agent_name})
+        for r in records
+        if r.content.strip()
+    ]
+    if not valid:
+        return []
+    path = memory_jsonl_path(agent_name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        for record in valid:
+            f.write(serialize_episode(record) + "\n")
+    return valid
 
 
 # ===== 文本规范化 =====
@@ -35,95 +130,7 @@ def normalize(content: str) -> str:
             out.append(line)
     content = "\n".join(out)
     content = re.sub(r"\n{3,}", "\n\n", content)
-    return content
-
-
-# ===== 按日期切分 =====
-
-
-def split_by_date(content: str) -> OrderedDict[str, str]:
-    """按 ## X月X日 切分，同日期自动合并。
-
-    Returns:
-        sections: 日期 → 合并后的内容（保持出现顺序）
-    """
-    sections: OrderedDict[str, str] = OrderedDict()
-    current_date = None
-    current_lines: list[str] = []
-
-    for line in content.split("\n"):
-        m = re.match(r"^##\s*(\d{1,2}月\d{1,2}日)(?:\s.*)?$", line.strip())
-        if m:
-            if current_date:
-                body = "\n".join(current_lines).strip()
-                if current_date in sections:
-                    sections[current_date] += "\n\n" + body
-                else:
-                    sections[current_date] = body
-            current_date = m.group(1)
-            current_lines = []
-        elif current_date:
-            current_lines.append(line)
-
-    if current_date:
-        body = "\n".join(current_lines).strip()
-        if current_date in sections:
-            sections[current_date] += "\n\n" + body
-        else:
-            sections[current_date] = body
-
-    return sections
-
-
-# ===== 按事件切分 =====
-
-
-def split_event_blocks(content: str) -> list[str]:
-    """按空行将单日内容切分为块。"""
-    stripped = (content or "").strip()
-    if not stripped:
-        return []
-    return [block.strip() for block in re.split(r"\n\s*\n+", stripped) if block.strip()]
-
-
-def is_structured_memory_block(
-    block_text: str,
-    required_fields: tuple[str, ...] = _MEMORY_FIELD_ORDER,
-) -> bool:
-    """判断一个块是否是合法的结构化记忆事件。"""
-    lines = [line.rstrip() for line in (block_text or "").strip().splitlines() if line.strip()]
-    if not lines:
-        return False
-
-    expected_index = 0
-    current_field: str | None = None
-
-    for line in lines:
-        stripped = line.strip()
-        if _DATE_HEADING_PATTERN.match(stripped):
-            return False
-
-        field_match = _FIELD_LINE_PATTERN.match(stripped)
-        if field_match:
-            field_name = field_match.group(1) or field_match.group(2)
-            if expected_index >= len(required_fields) or field_name != required_fields[expected_index]:
-                return False
-            expected_index += 1
-            current_field = field_name
-            continue
-
-        if _BOLD_HEADER_PATTERN.match(stripped):
-            return False
-
-        if current_field != required_fields[-1]:
-            return False
-
-    return expected_index == len(required_fields)
-
-
-def split_into_events(day_content: str) -> list[str]:
-    """将单日内容按事件分割为列表，无法识别时整体作为一个事件返回。"""
-    return split_event_blocks(day_content)
+    return content.strip()
 
 
 # ===== 字段提取 =====
@@ -147,35 +154,6 @@ def extract_status_field(status_text: str, field_name: str) -> str:
     if not m:
         return ""
     return m.group(1).strip()
-
-
-def extract_game_date(text: str) -> str | None:
-    """从文本中提取游戏日期（如 4月3日）。"""
-    m = re.search(r"\*\*时间\*\*：\s*(\d{1,2}月\d{1,2}日)", text)
-    if m:
-        return m.group(1)
-    return None
-
-
-def extract_event_field(event_text: str, field_name: str) -> str:
-    """从单个记忆事件块中提取指定字段的值。"""
-    pattern = re.compile(
-        _EVENT_FIELD_PATTERN.format(field=re.escape(field_name)),
-        re.MULTILINE,
-    )
-    match = pattern.search(event_text or "")
-    return match.group(1).strip() if match else ""
-
-
-def parse_event_importance(event_text: str, default: int = 3) -> int:
-    """解析单个事件块中的重要度字段；缺失或非法时回退默认值。"""
-    raw = extract_event_field(event_text, "重要度")
-    if not raw:
-        return default
-    match = re.search(r"\d+", raw)
-    if not match:
-        return default
-    return max(1, min(5, int(match.group(0))))
 
 
 # ===== 游戏日期工具 =====
@@ -219,132 +197,3 @@ def game_day_diff(current_date: str, past_date: str) -> int | None:
     if current_day is None or past_day is None:
         return None
     return max(current_day - past_day, 0)
-
-
-def is_date_before(date_text: str, cutoff_date: str) -> bool:
-    """判断 date_text 是否在 cutoff_date 之前。"""
-    left = parse_cn_date(date_text)
-    right = parse_cn_date(cutoff_date)
-    if left is None or right is None:
-        return False
-    return left < right
-
-
-# ===== 记忆块操作 =====
-
-
-def block_fingerprint(date: str, content: str) -> str:
-    """计算记忆块的内容指纹（SHA1）。"""
-    normalized = "\n".join(line.rstrip() for line in content.strip().splitlines()).strip()
-    return hashlib.sha1(f"{date}\n{normalized}".encode("utf-8")).hexdigest()
-
-
-def make_block(date: str, content: str) -> dict[str, str]:
-    """将日期和内容封装为带指纹的记忆块 dict。"""
-    stripped = content.strip()
-    return {"date": date, "content": stripped, "fingerprint": block_fingerprint(date, stripped)}
-
-
-def flatten_sections(sections: OrderedDict[str, str]) -> list[dict[str, str]]:
-    """将 split_by_date 结果展平为记忆块列表。"""
-    blocks: list[dict[str, str]] = []
-    for date, body in sections.items():
-        for content in split_into_events(body):
-            stripped = content.strip()
-            if stripped:
-                blocks.append(make_block(date, stripped))
-    return blocks
-
-
-def group_blocks(blocks: list[dict[str, str]]) -> OrderedDict[str, str]:
-    """将记忆块列表重新聚合为 date → body 的有序字典。"""
-    sections: OrderedDict[str, str] = OrderedDict()
-    for block in blocks:
-        date = block["date"]
-        sections[date] = sections.get(date, "") + ("\n\n" if date in sections else "") + block["content"].strip()
-    return sections
-
-
-# ===== sections 序列化 =====
-
-
-def render_sections(sections: OrderedDict[str, str]) -> str:
-    """将按日期组织的 sections 序列化为 memory.md Markdown 格式。逆操作为 split_by_date。"""
-    parts: list[str] = []
-    for date, body in sections.items():
-        parts.append(f"## {date}")
-        parts.append(body.strip())
-        parts.append("")
-    return "\n".join(parts).strip()
-
-
-# ===== LLM 输出解析 =====
-
-
-def parse_llm_memory_sections(
-    llm_result: str, expected_dates: list[str] | None = None
-) -> OrderedDict[str, str]:
-    """解析记忆归并的 LLM 输出，容忍 LLM 生成的格式噪声（时间字段内含日期、无标题行等）。
-
-    与 split_by_date 的区别：split_by_date 处理干净的 memory.md 文本；
-    本函数处理 LLM 返回的同格式文本，会做额外的日期推断和 <analysis> 标签剥除。
-    """
-    cleaned = re.sub(r"<analysis>.*?</analysis>", "", llm_result, flags=re.DOTALL).strip()
-    heading_pattern = re.compile(r"^\s*##\s*(\d{1,2}月\d{1,2}日)(?:\s.*)?$")
-    time_pattern = re.compile(r"^\s*(?:-\s*)?(?:\*\*时间\*\*|时间)：\s*(.*)$")
-    field_pattern = re.compile(r"^\s*(?:-\s*)?(?:\*\*(地点|在场|内容)\*\*|(地点|在场|内容))：\s*(.*)$")
-    explicit_date_pattern = re.compile(r"(\d{1,2}月\d{1,2}日)")
-    fallback_date = expected_dates[0] if expected_dates and len(expected_dates) == 1 else None
-
-    sections: OrderedDict[str, str] = OrderedDict()
-    current_heading_date: str | None = None
-    current_date: str | None = None
-    current_lines: list[str] = []
-
-    def flush_event() -> None:
-        nonlocal current_date, current_lines
-        if not current_date or not current_lines:
-            current_date = None
-            current_lines = []
-            return
-        event_text = "\n".join(current_lines).strip()
-        if event_text:
-            sections[current_date] = (
-                sections.get(current_date, "") + ("\n\n" if current_date in sections else "") + event_text
-            )
-        current_date = None
-        current_lines = []
-
-    for line in cleaned.splitlines():
-        heading_match = heading_pattern.match(line)
-        if heading_match:
-            current_heading_date = heading_match.group(1)
-            continue
-
-        time_match = time_pattern.match(line)
-        if time_match:
-            flush_event()
-            time_value = time_match.group(1).strip()
-            explicit_date_match = explicit_date_pattern.search(time_value)
-            current_date = (
-                explicit_date_match.group(1) if explicit_date_match else current_heading_date or fallback_date
-            )
-            if explicit_date_match:
-                current_lines = [f"- **时间**：{time_value}"]
-            elif current_date:
-                current_lines = [f"- **时间**：{current_date} {time_value}".rstrip()]
-            else:
-                current_lines = [f"- **时间**：{time_value}"]
-            continue
-
-        if current_lines:
-            field_match = field_pattern.match(line)
-            if field_match:
-                field_name = field_match.group(1) or field_match.group(2)
-                field_value = field_match.group(3).strip()
-                current_lines.append(f"- **{field_name}**：{field_value}".rstrip())
-            else:
-                current_lines.append(line)
-
-    flush_event()
-    return sections

@@ -236,19 +236,16 @@ def test_state_updater_output_writes_narrator_status_and_events(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_apply_response_updates_logs_structured_file_updates(monkeypatch):
+async def test_apply_response_updates_logs_structured_file_updates(monkeypatch, tmp_path):
     logs: list[tuple[tuple, dict]] = []
 
-    monkeypatch.setattr(
-        character_module,
-        "update_memory",
-        lambda agent, content: {
-            "file": "memory.md",
-            "target": "长期记忆",
-            "operation": "append",
-            "appended": content,
-        },
-    )
+    draft_calls: list[tuple[str, int, str]] = []
+
+    def _fake_append_memory_draft(agent: str, turn: int, text: str) -> None:
+        draft_calls.append((agent, turn, text))
+
+    monkeypatch.setattr(character_module, "append_memory_draft", _fake_append_memory_draft)
+    monkeypatch.setattr(character_module, "read_turn_counter", lambda: 7)
     monkeypatch.setattr(
         character_module,
         "update_status",
@@ -330,7 +327,7 @@ async def test_apply_response_updates_logs_structured_file_updates(monkeypatch):
     assert "file_update.items" not in extra
     assert extra["file_update.updates"] == [
         {
-            "file": "memory.md",
+            "file": "memory_draft.jsonl",
             "target": "长期记忆",
             "operation": "append",
             "appended": output.memory,

@@ -91,6 +91,33 @@ def _load_current_game_date() -> str | None:
     return canonical_cn_date(current_time)
 
 
+_EPISODE_TUPLE_FIELDS = (
+    "title",
+    "time",
+    "location",
+    "participants",
+)
+
+
+def _row_to_doc(row: tuple) -> dict[str, Any]:
+    """把 vector/BM25 返回的 10 元素 tuple 解到展示字典。
+
+    tuple layout: (id, content, score, game_date, last_recalled_at, importance,
+                   title, time, location, participants)
+    其中 score 对 vector 来说是 distance，对 BM25 来说是 bm25_rank。
+    """
+    doc: dict[str, Any] = {
+        "id": str(int(row[0])),
+        "content": row[1],
+        "date": str(row[3] or ""),
+        "last_recalled_at": str(row[4] or ""),
+        "importance": int(row[5] or 3),
+    }
+    for offset, field in enumerate(_EPISODE_TUPLE_FIELDS, start=6):
+        doc[field] = str(row[offset] or "") if offset < len(row) else ""
+    return doc
+
+
 def hybrid_fusion(
     vec_rows: list[tuple],
     bm25_rows: list[tuple],
@@ -100,37 +127,22 @@ def hybrid_fusion(
 
     for row in vec_rows:
         doc_id = int(row[0])
-        docs[doc_id] = {
-            "id": str(doc_id),
-            "content": row[1],
-            "vector_relevance": _distance_to_relevance(row[2]),
-            "bm25_raw": None,
-            "date": str(row[3] or ""),
-            "last_recalled_at": str(row[4] or ""),
-            "importance": int(row[5] or 3),
-        }
+        doc = _row_to_doc(row)
+        doc["vector_relevance"] = _distance_to_relevance(row[2])
+        doc["bm25_raw"] = None
+        docs[doc_id] = doc
 
     for row in bm25_rows:
         doc_id = int(row[0])
-        entry = docs.setdefault(
-            doc_id,
-            {
-                "id": str(doc_id),
-                "content": row[1],
-                "vector_relevance": 0.0,
-                "bm25_raw": None,
-                "date": str(row[3] or ""),
-                "last_recalled_at": str(row[4] or ""),
-                "importance": int(row[5] or 3),
-            },
-        )
+        if doc_id in docs:
+            entry = docs[doc_id]
+        else:
+            entry = _row_to_doc(row)
+            entry["vector_relevance"] = 0.0
+            entry["bm25_raw"] = None
+            docs[doc_id] = entry
         entry["content"] = row[1]
         entry["bm25_raw"] = abs(float(row[2]))
-        if not entry["date"]:
-            entry["date"] = str(row[3] or "")
-        if not entry["last_recalled_at"]:
-            entry["last_recalled_at"] = str(row[4] or "")
-        entry["importance"] = int(row[5] or entry.get("importance", 3))
 
     bm25_values = [float(entry["bm25_raw"]) for entry in docs.values() if entry["bm25_raw"] is not None]
     bm25_min = min(bm25_values) if bm25_values else 0.0
@@ -150,16 +162,17 @@ def hybrid_fusion(
             VECTOR_RELEVANCE_WEIGHT * float(entry["vector_relevance"])
             + BM25_RELEVANCE_WEIGHT * bm25_relevance
         )
-        results.append(
-            {
-                "id": entry["id"],
-                "content": entry["content"],
-                "relevance": relevance,
-                "date": entry["date"],
-                "last_recalled_at": entry["last_recalled_at"],
-                "importance": int(entry.get("importance", 3) or 3),
-            }
-        )
+        result_entry = {
+            "id": entry["id"],
+            "content": entry["content"],
+            "relevance": relevance,
+            "date": entry["date"],
+            "last_recalled_at": entry["last_recalled_at"],
+            "importance": int(entry.get("importance", 3) or 3),
+        }
+        for field in _EPISODE_TUPLE_FIELDS:
+            result_entry[field] = entry.get(field, "")
+        results.append(result_entry)
 
     return sorted(results, key=lambda item: item["relevance"], reverse=True)
 
@@ -189,47 +202,63 @@ def apply_recency(
             + recency_weight * recency
             + importance_weight * importance_score
         )
-        ranked.append(
-            {
-                "id": str(c["id"]),
-                "content": str(c["content"]),
-                "score": score,
-                "relevance": relevance,
-                "recency": recency,
-                "importance": importance,
-                "importance_score": importance_score,
-                "date": str(c.get("date", "")),
-                "last_recalled_at": str(c.get("last_recalled_at", "")),
-            }
-        )
+        ranked_entry = {
+            "id": str(c["id"]),
+            "content": str(c["content"]),
+            "score": score,
+            "relevance": relevance,
+            "recency": recency,
+            "importance": importance,
+            "importance_score": importance_score,
+            "date": str(c.get("date", "")),
+            "last_recalled_at": str(c.get("last_recalled_at", "")),
+        }
+        for field in _EPISODE_TUPLE_FIELDS:
+            ranked_entry[field] = str(c.get(field, ""))
+        ranked.append(ranked_entry)
     return sorted(ranked, key=lambda item: item["score"], reverse=True)
 
 
 # ----------------------------- 主检索入口 -----------------------------
 
 def _vec_rows_to_candidates(rows: list[tuple]) -> list[dict[str, Any]]:
-    return [
-        {
-            "id": str(row[0]),
-            "content": row[1],
-            "relevance": _distance_to_relevance(row[2]),
-            "date": str(row[3] or ""),
-            "last_recalled_at": str(row[4] or ""),
-            "importance": int(row[5] or 3),
-        }
-        for row in rows
-    ]
+    candidates: list[dict[str, Any]] = []
+    for row in rows:
+        doc = _row_to_doc(row)
+        doc["relevance"] = _distance_to_relevance(row[2])
+        candidates.append(doc)
+    return candidates
 
 
 def _format_retrieved_memory(item: dict[str, Any]) -> str:
-    """将召回结果恢复成带日期上下文的 memory.md 片段。"""
-    content = item.get("content", "").strip()
+    """将召回结果恢复成带日期上下文的结构化块，交给 LLM 阅读。"""
+    content = str(item.get("content", "")).strip()
     if not content:
         return ""
-    date = item.get("date", "").strip()
-    if not date:
+    date = str(item.get("date", "")).strip()
+    title = str(item.get("title", "")).strip()
+    time = str(item.get("time", "")).strip()
+    location = str(item.get("location", "")).strip()
+    participants = str(item.get("participants", "")).strip()
+
+    if not any([date, title, time, location, participants]):
         return content
-    return f"## {date}\n{content}"
+
+    lines: list[str] = []
+    if title:
+        lines.append(f"- **标题**：{title}")
+    if time:
+        lines.append(f"- **时间**：{time}")
+    if location:
+        lines.append(f"- **地点**：{location}")
+    if participants:
+        lines.append(f"- **在场**：{participants}")
+    lines.append(f"- **内容**：{content}")
+    body = "\n".join(lines)
+
+    if not date:
+        return body
+    return f"## {date}\n{body}"
 
 
 def search_memories(agent_name: str, query: str) -> str:
