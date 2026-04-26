@@ -252,13 +252,12 @@ async def _chat_stream(user_input: str):
                 },
             )
 
-    # 2. 广播玩家消息
-    await message_router.broadcast_player_message(targets, user_input)
-
-    # 3. 推送旁白
+    # 2. 广播玩家消息与旁白
+    # 旁白失败时不把玩家消息写进 raw，避免下一轮上下文里残留没人回应的玩家话语。
+    if is_narrator_valid:
+        await message_router.broadcast_player_message(targets, user_input)
+        await message_router.broadcast_agent_response("narrator", targets, scene_description)
     if scene_description:
-        if is_narrator_valid:
-            await message_router.broadcast_agent_response("narrator", targets, scene_description)
         yield _sse_event("narrator", {"content": scene_description, "author": "旁白"})
 
     if not targets:
@@ -287,7 +286,7 @@ async def _chat_stream(user_input: str):
             )
 
     # 5. 生成选项；后台并行：state_updater 维护 narrator 状态 + closure detector 检测 episode 闭合
-    _start_state_update(targets)
+    _start_state_update()
     asyncio.create_task(memory_consolidation_flow.detect_and_consolidate(current_turn))
     if agent_responses:
         choices = await generate_choices(scene_description, agent_responses)
