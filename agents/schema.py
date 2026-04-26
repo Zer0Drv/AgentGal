@@ -179,7 +179,7 @@ class EpisodeClosureBoundary(BaseModel):
 
 
 class EpisodeClosureOutput(RootModel[dict[str, list[EpisodeClosureBoundary]]]):
-    """key 是 candidates 里的 agent_name，value 是该角色在 history 中检测到的所有主题边界。
+    """key 是 history 里的角色 agent_name，value 是该角色在 history 中检测到的所有主题边界。
 
     空数组表示该角色无边界。RootModel 让 dict 直接做根 schema。访问内部 dict 用 `.root`。
     消费方通常取每个数组里 end_turn 最大的边界作为本轮可归并的闭合点。

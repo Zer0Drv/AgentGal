@@ -594,14 +594,13 @@ class MemoryConsolidationFlow:
         candidates: list[tuple[str, str]],
         raw_messages: list[dict],
         earliest_draft_turn: int | None,
-        current_turn: int,
     ) -> dict[str, int]:
         """调 EpisodeClosureDetector，返回 {agent_name: closed_at_turn}。"""
         history_transcript = render_raw_history(raw_messages, turn_ge=earliest_draft_turn)
         if not history_transcript:
             return {}
 
-        user = build_episode_closure_payload(candidates, history_transcript, current_turn)
+        user = build_episode_closure_payload(history_transcript)
         try:
             output = await self._run_consolidation_agent(
                 agent=get_episode_closure_detector_agent(),
@@ -632,9 +631,7 @@ class MemoryConsolidationFlow:
             return
 
         raw_messages = load_conversation_history(limit=None)
-        closures = await self._detect_closures(
-            candidates, raw_messages, earliest_draft_turn, current_turn
-        )
+        closures = await self._detect_closures(candidates, raw_messages, earliest_draft_turn)
         if not closures:
             memory_logger.info(
                 f"[整理器] turn={current_turn} 无角色闭合 "

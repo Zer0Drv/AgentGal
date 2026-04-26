@@ -78,16 +78,13 @@ def test_render_raw_history_without_filters_renders_all():
 
 
 def test_build_episode_closure_payload_structure():
-    """closure payload 带 current_turn / candidates / recent_history 三块。"""
+    """closure payload 只带 recent_history。"""
     payload = build_episode_closure_payload(
-        candidates=[("chenxiao", "陈晓"), ("guyining", "顾以宁")],
         history_transcript="[turn=5] 玩家: 再见",
-        current_turn=6,
     )
 
-    assert "<current_turn>6</current_turn>" in payload
-    assert "- chenxiao（陈晓）" in payload
-    assert "- guyining（顾以宁）" in payload
+    assert "<current_turn>" not in payload
+    assert "<candidates>" not in payload
     assert "[turn=5] 玩家: 再见" in payload
 
 

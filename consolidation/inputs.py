@@ -46,23 +46,14 @@ def render_raw_history(
 
 
 def build_episode_closure_payload(
-    candidates: list[tuple[str, str]],
     history_transcript: str,
-    current_turn: int,
 ) -> str:
     """构造 EpisodeClosureDetector 的 user payload。
 
     Args:
-        candidates: (agent_name, display_name) 列表，本轮有 draft 待归并的角色。
         history_transcript: 渲染好的近若干 turn 的对话（带 `[turn=N]` 前缀）。
-        current_turn: 本轮 turn 号，帮助 detector 判断"本轮缺席"。
     """
-    cand_lines = "\n".join(f"- {name}（{display}）" for name, display in candidates)
-    return (
-        f"<current_turn>{current_turn}</current_turn>\n\n"
-        f"<candidates>\n{cand_lines}\n</candidates>\n\n"
-        f"<recent_history>\n{history_transcript}\n</recent_history>"
-    )
+    return f"<recent_history>\n{history_transcript}\n</recent_history>"
 
 
 def build_memory_owner_block(agent_name: str) -> str:

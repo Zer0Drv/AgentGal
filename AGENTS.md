@@ -170,7 +170,7 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 - `NarratorOutput`：`content`, `targets`, `new_characters`（路由、场景描述与动态角色请求）
 - `NewCharacterRequest` / `NewCharacterProfile`：新角色孵化锚点（可选 `name_hint`，不含 `character_id`）与 character_factory 的完整输出（包含 `character_id`、最终 `display_name`、`initial_status`、`initial_relations`）
 - `EpisodeMemoryBlock`：`EpisodeMemoryGenerator` 输出的单条长期记忆事件（`date / time / location / participants / keywords / importance / content / title`），由流程层注入 `memory_owner` 与 `raw_dialogue`（原始对话追溯，仅作 metadata，不进向量索引、不进召回文本）后追加到角色 `memory.jsonl`
-- `EpisodeClosureDetector` 输出类型：`dict[str, list[EpisodeClosureBoundary]]`（candidates 中每个 `agent_name` 都必须有 key；value 是该角色在 history 中检测到的所有主题边界，按 `end_turn` 升序，空数组表示无边界。每条边界含 `end_turn / old_theme / new_theme / reason`。消费方取每个数组里 `end_turn` 最大的边界作为本轮可归并的闭合点）
+- `EpisodeClosureDetector` 输出类型：`dict[str, list[EpisodeClosureBoundary]]`（key 是 recent_history 中出现过的角色 `agent_name`；value 是该角色在 history 中检测到的所有主题边界，按 `end_turn` 升序，空数组表示无边界。每条边界含 `end_turn / old_theme / new_theme / reason`。消费方只采纳本地候选角色，并取每个数组里 `end_turn` 最大的边界作为本轮可归并的闭合点）
 - `StateUpdaterOutput`：`status`, `triggered`, `add_event`（回合后后台维护 narrator 状态）
 - `ChoicesOutput`：`choices`
 

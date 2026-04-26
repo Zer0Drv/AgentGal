@@ -1,23 +1,61 @@
 """后台记忆整理流程使用的 prompt 模板。"""
 EPISODE_CLOSURE_DETECTOR = r"""<task>
-互动主题切分器：阅读对话，识别 candidate 参与的互动是否已从一个主题切换到另一主题。
+你是互动主题切分器。
+阅读 recent_history，为每个出现过的角色找出其参与互动中的主题边界。
+目标是把连续对话切成适合独立记忆的互动片段。
 </task>
 
 <inputs>
-- <candidates>：agent_name → 显示名。只为 candidates 中的 agent_name 输出 key。
-- <recent_history>：每条消息标 [turn=N]，同一 turn 可包含多人发言。
+- <recent_history>：近期对话，每条消息标 [turn=N]，同一 turn 可包含多人发言。
 </inputs>
 
 <concepts>
-主题片段：一段有起因、经过、结尾的完整事件弧。常见形态：共同处理一件事、一段独立场景内的关系演变、一次完整对话的来回。
+主题片段：一段可独立记忆的互动单元。当互动对象、目标、情绪动作或关系推进发生明显变化，就形成新的片段。
 
-主题边界：从一个完整事件弧切换到另一个的位置——核心问题或焦点事件换了；或被新事件 / 新角色打断；或 candidate 离场（含旁白描述的离场）。第三方角色也可触发 candidate 的边界。
+互动核心：
+判断主题片段时，关注以下变化：
+- 主要互动对象
+- 正在处理的目标
+- 当前焦点事件
+- 情绪动作
+- 关系推进
+- 下一步约定
+- 该角色是否仍在场
+
+
+主题边界：
+一个互动单元结束，另一个互动单元开始的位置。
+
+边界 turn：
+输出旧主题最后仍在进行的 turn。
+如果旧主题和新主题在同一个 turn 内交替，输出这个 turn。
 </concepts>
 
-<turn_rule>
-end_turn = 旧主题最后仍在进行的 turn。
-若旧主题和新主题在同一 turn 内交替，end_turn = 该 turn。
-</turn_rule>
+<boundary_rules>
+当互动核心发生明显变化时，切分主题边界。
+
+常见边界包括：
+- 从处理一件事，转为处理另一件事
+- 从三人或多人互动，转为某角色与玩家单独互动
+- 从安抚、解释、善后，转为调侃、感谢、邀约或关系推进
+- 从当前事件处理，转为下一步安排或新的约定
+- 新角色、新消息、新任务或突发事件打断当前互动
+- 角色告别、离场、下线，或旁白说明该角色不在场
+
+如果新互动承接了前一事件，但已经形成新的互动目标、关系动作或下一步约定，也切分。
+
+如果只是同一互动核心下的追问、解释、确认、补充动作、环境描写或自然来回，保持同一主题片段。
+</boundary_rules>
+
+<character_policy>
+对 recent_history 中出现过的每个角色独立判断；忽略“玩家”和“旁白”。
+
+第三方角色可以触发当前角色的边界。
+
+当第三方离场后，当前角色转向玩家展开单独调侃、感谢、邀约或关系推进，通常视为新的主题片段。
+
+如果某角色在 recent_history 中出现但没有形成可切分边界，输出空数组。
+</character_policy>
 
 <output>
 只输出合法 JSON（不带 markdown）：
@@ -28,42 +66,39 @@ end_turn = 旧主题最后仍在进行的 turn。
   ]
 }
 
-- candidates 中每个 agent_name 都必须有 key；无边界输出空数组。
+- recent_history 中出现过的每个角色 agent_name 都必须有 key；无边界输出空数组。
 - 数组按 end_turn 升序。
-- 不为非 candidate 创建 key。
+- 不为“玩家”或“旁白”创建 key。
 </output>
 
 <examples>
 
 <example_no_boundary>
-candidates: mitsuki
 history:
 [turn=10] 玩家: 借的漫画看完了。
 [turn=10] mitsuki: 结尾怎么样？
 [turn=11] 玩家: 主角有点冲动。
 [turn=11] mitsuki: 那是他第一次认真面对自己。
-output: {"mitsuki": []}
+output: {}
 </example_no_boundary>
 
-<example_within_event_subphases>
-
-candidates: mitsuki, satoai
+<example_new_theme>
 history:
-[turn=59] 旁白: 走廊里突然快门声。
-[turn=59] mitsuki: （调侃）被拍到了呢。
-[turn=59] satoai: 慌张道歉，说马上删。
-[turn=60] mitsuki: 上前正式要求删除。
-[turn=60] satoai: 删了相机里的，漏嘴说有云端备份。
-[turn=61] mitsuki: 重申要求，给出补偿（下次社团可拍）。
-[turn=61] satoai: 当场删除云端并亮屏证明。
-[turn=62] mitsuki: 收尾发言，照片事到此为止。
-[turn=62] satoai: 道谢，请求未来光明正大拍。
-[turn=63] satoai: 表达只拍风景，告别离开。
-output: {"mitsuki": [], "satoai": []}
-</example_within_event_subphases>
+[turn=20] mitsuki: 那本漫画你看到第几卷了？
+[turn=20] 玩家: 第三卷，主角开始有变化了。
+[turn=21] mitsuki: 对吧！我就说他不是纯粹的冲动型。
+[turn=21] 玩家: 嗯，有点理解你了。
+[turn=22] 玩家: 对了，这周末有空吗？新开的猫咖听说不错。
+[turn=22] mitsuki: 啊，好巧，我正好想去！
+output:
+{
+  "mitsuki": [
+    {"end_turn": 21, "old_theme": "讨论漫画角色", "new_theme": "约周末去猫咖", "reason": "turn 22 起玩家主动提出新邀约，互动焦点从漫画讨论切换到线下邀约，关系推进。"}
+  ]
+}
+</example_new_theme>
 
 <example_exit_and_shift>
-candidates: chenxiao, guyining
 history:
 [turn=50] chenxiao: 我先去开会。
 [turn=50] guyining: 那继续说上线方案。
@@ -80,30 +115,6 @@ output:
   ]
 }
 </example_exit_and_shift>
-
-<example_multiple_boundaries>
-candidates: mitsuki
-history:
-[turn=52] 玩家: （在教室）照片删干净了。
-[turn=52] mitsuki: 谢谢你，下次别那么冲动。
-[turn=53] mitsuki: 放学后老地方见。
-[turn=54] 玩家: （放学后到旧阅览角）我没冲动。
-[turn=54] mitsuki: 我知道，谢谢你。
-[turn=55] 玩家: 递果汁。
-[turn=55] mitsuki: 接过喝一口。
-[turn=58] mitsuki: 说这种话要负责。
-[turn=59] 旁白: 突然快门声。
-[turn=59] satoai: 对不起，我马上删！
-[turn=60] mitsuki: 这张对我有点贵重，可以删掉吗？
-output:
-{
-  "mitsuki": [
-    {"end_turn": 53, "old_theme": "教室照片善后", "new_theme": "果汁暧昧推进", "reason": "turn 54 起场景换到放学后旧阅览角，核心事件从善后照片变成关系推进。"},
-    {"end_turn": 58, "old_theme": "果汁暧昧推进", "new_theme": "处理被拍事件", "reason": "turn 59 快门声与佐藤爱出现引入新事件，暧昧被打断。"}
-  ]
-}
-</example_multiple_boundaries>
-
 </examples>
 """
 
