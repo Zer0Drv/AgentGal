@@ -64,6 +64,7 @@ MAX_ELLIPSIS: int = _cfg["text"]["max_ellipsis"]
 # 多轮消息高低水位截断
 HISTORY_HIGH: int = _cfg["history"]["history_high"]
 HISTORY_LOW: int = _cfg["history"]["history_low"]
+HISTORY_RAW_SCAN_TURNS: int = _cfg["history"]["raw_scan_turns"]
 
 
 def character_path(character_name: str, *subpaths: str) -> str:

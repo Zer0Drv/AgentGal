@@ -451,7 +451,7 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     monkeypatch.setattr(
         consolidator_module,
         "load_conversation_history",
-        lambda limit=None: [
+        lambda **_kw: [
             {
                 "role": "narrator",
                 "content": "旁白：测试场景",

@@ -32,7 +32,7 @@ from llm.providers import get_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field, normalize
 from memory.retrieval import search_memories
-from shared.config import AGENT_RUN_TIMEOUT_SECONDS, get_agent_names
+from shared.config import AGENT_RUN_TIMEOUT_SECONDS, HISTORY_RAW_SCAN_TURNS, get_agent_names
 from shared.text_utils import (
     clean_response,
     get_display_name,
@@ -264,7 +264,7 @@ class Character(BaseEntity):
     ) -> CharacterOutput:
         """搜记忆 → 构建 prompt → 运行 SDK → 写回文件，返回 CharacterOutput。"""
         if raw_messages is None:
-            raw_messages = load_conversation_history(limit=None)
+            raw_messages = load_conversation_history(turns=HISTORY_RAW_SCAN_TURNS)
 
         user_message = self._build_prompt(user_input, raw_messages)
 
@@ -370,7 +370,7 @@ class Narrator(BaseEntity):
         self.sync_player_relations()
         valid_agents = get_agent_names(include_narrator=False)
         if raw_messages is None:
-            raw_messages = load_conversation_history(limit=None)
+            raw_messages = load_conversation_history(turns=HISTORY_RAW_SCAN_TURNS)
 
         async def _run(
             narrator_input: str,
@@ -512,7 +512,7 @@ class Narrator(BaseEntity):
         schedule_snapshot = build_schedule_snapshot(game_time)
 
         character_intention = self._format_character_intentions()
-        raw_messages = load_conversation_history(limit=3)
+        raw_messages = load_conversation_history(turns=1)
         history_lines: list[str] = []
         for msg in raw_messages:
             role = msg.get("role", "unknown")

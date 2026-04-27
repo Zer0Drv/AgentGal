@@ -121,8 +121,8 @@ def test_load_conversation_history_limit(temp_raw_dir):
     assert result[2]["content"] == "消息 9"
 
 
-def test_load_conversation_history_all_when_limit_none(temp_raw_dir):
-    """limit=None 时返回全部历史"""
+def test_load_conversation_history_all_when_no_args(temp_raw_dir):
+    """不传 limit / turns 时返回全部历史"""
     today = datetime.now().strftime("%Y-%m-%d")
     jsonl_file = temp_raw_dir / f"{today}.jsonl"
 
@@ -135,7 +135,7 @@ def test_load_conversation_history_all_when_limit_none(temp_raw_dir):
         for msg in messages:
             f.write(json.dumps(msg, ensure_ascii=False) + "\n")
 
-    result = load_conversation_history(limit=None)
+    result = load_conversation_history()
 
     assert len(result) == 4
     assert result[0]["content"] == "消息 0"
@@ -146,3 +146,37 @@ def test_load_conversation_history_empty(temp_raw_dir):
     """测试空目录返回空列表"""
     result = load_conversation_history(limit=10)
     assert result == [], "空目录应该返回空列表"
+
+
+def test_load_conversation_history_by_turns(temp_raw_dir):
+    """turns 参数按 turn 号回溯，包含所有 turn 中的全部消息"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    jsonl_file = temp_raw_dir / f"{today}.jsonl"
+
+    # 5 个 turn，每 turn 2 条消息
+    messages = []
+    for turn in range(1, 6):
+        messages.append(
+            {"role": "player", "content": f"t{turn}-玩家", "turn": turn, "visible_to": ["narrator"]}
+        )
+        messages.append(
+            {"role": "narrator", "content": f"t{turn}-旁白", "turn": turn, "visible_to": ["narrator"]}
+        )
+
+    with open(jsonl_file, "w", encoding="utf-8") as f:
+        for msg in messages:
+            f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+
+    # 最近 2 个 turn = turn 4 + turn 5 = 4 条消息
+    result = load_conversation_history(turns=2)
+    assert [m["content"] for m in result] == [
+        "t4-玩家",
+        "t4-旁白",
+        "t5-玩家",
+        "t5-旁白",
+    ]
+
+
+def test_load_conversation_history_limit_and_turns_mutually_exclusive(temp_raw_dir):
+    with pytest.raises(ValueError):
+        load_conversation_history(limit=3, turns=1)

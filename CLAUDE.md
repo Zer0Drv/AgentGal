@@ -282,7 +282,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 ### `config.toml`
 
 - 放运行时策略参数，例如 Agent temperature、角色/整理/选项生成超时、embedding/rerank 请求超时、向量检索权重
-- `[history]` 中的 `history_high` / `history_low` 控制多轮消息高低水位截断
+- `[history]` 中的 `history_high` / `history_low` 控制多轮消息高低水位截断（基于 turn 号锚定，存于 `.history_window_state.json` 的 `start_turn` 字段）；`raw_scan_turns` 限制 narrator 路由 / 角色运行 / 选项生成读取 raw 历史时回溯的 turn 数（整理流程按 turn 切片，不受此限制）
 
 ## 存档与重置
 

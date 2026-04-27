@@ -12,7 +12,7 @@ from engine.character_factory import CreatedCharacterInfo, create_character
 from engine.prompt_builder import build_history_transcript
 from llm.providers import get_choices_llm_config
 from log_config.routing import routing_logger
-from shared.config import CHOICES_RUN_TIMEOUT_SECONDS
+from shared.config import CHOICES_RUN_TIMEOUT_SECONDS, HISTORY_RAW_SCAN_TURNS
 from shared.text_utils import clean_response, is_valid_response, process_character_response
 from storage.history import load_conversation_history
 
@@ -21,7 +21,7 @@ async def generate_choices(
     scene_description: str, agent_responses: list[tuple[str, str]]
 ) -> list[str]:
     """根据当前场景和角色回应生成玩家可选行动（2-3 个）。"""
-    raw_messages = load_conversation_history(limit=None)
+    raw_messages = load_conversation_history(turns=HISTORY_RAW_SCAN_TURNS)
     parts: list[str] = []
     history, _ = build_history_transcript("narrator", raw_messages)
     if history:

@@ -21,10 +21,10 @@ def fake_history_window_state():
 
     with patch(
         "engine.prompt_builder.read_sidecar_json",
-        side_effect=lambda agent_name, _filename: {"start_raw_index": state.get(agent_name, 0)},
+        side_effect=lambda agent_name, _filename: {"start_turn": state.get(agent_name, 0)},
     ), patch(
         "engine.prompt_builder.write_sidecar_json",
-        side_effect=lambda agent_name, _filename, data: state.__setitem__(agent_name, data["start_raw_index"]),
+        side_effect=lambda agent_name, _filename, data: state.__setitem__(agent_name, data["start_turn"]),
     ):
         yield state
 
@@ -108,7 +108,7 @@ class TestBuildHistoryTranscript:
 
     def test_truncates_when_exceeds_high(self):
         msgs = [
-            {"role": "narrator", "content": f"消息{i}", "visible_to": ["narrator", "lilith"]}
+            {"role": "narrator", "content": f"消息{i}", "turn": i, "visible_to": ["narrator", "lilith"]}
             for i in range(40)
         ]
 
@@ -120,14 +120,14 @@ class TestBuildHistoryTranscript:
 
     def test_true_high_low_window_does_not_slide_every_turn(self):
         msgs_31 = [
-            {"role": "narrator", "content": f"消息{i}", "visible_to": ["narrator", "lilith"]}
+            {"role": "narrator", "content": f"消息{i}", "turn": i, "visible_to": ["narrator", "lilith"]}
             for i in range(31)
         ]
         msgs_32 = msgs_31 + [
-            {"role": "narrator", "content": "消息31", "visible_to": ["narrator", "lilith"]},
+            {"role": "narrator", "content": "消息31", "turn": 31, "visible_to": ["narrator", "lilith"]},
         ]
         msgs_47 = [
-            {"role": "narrator", "content": f"消息{i}", "visible_to": ["narrator", "lilith"]}
+            {"role": "narrator", "content": f"消息{i}", "turn": i, "visible_to": ["narrator", "lilith"]}
             for i in range(47)
         ]
 
@@ -166,22 +166,26 @@ class TestBuildHistoryTranscript:
 
 
 class TestHighLowWatermarkHelper:
-    """纯逻辑：真正的高低水位缓冲"""
+    """纯逻辑：真正的高低水位缓冲（基于 turn 锚定）"""
+
+    @staticmethod
+    def _msgs(n: int) -> list[dict]:
+        return [{"role": "narrator", "content": f"m{i}", "turn": i} for i in range(n)]
 
     def test_apply_high_low_watermark_batches_trimming(self):
-        start_raw_index, kept, was_truncated = _apply_high_low_watermark("lilith", list(range(31)), 0, 30, 15)
-        assert start_raw_index == 16
-        assert kept == list(range(16, 31))
+        anchor, kept, was_truncated = _apply_high_low_watermark(self._msgs(31), 0, 30, 15)
+        assert anchor == 16
+        assert [m["turn"] for m in kept] == list(range(16, 31))
         assert was_truncated is True
 
-        start_raw_index, kept, was_truncated = _apply_high_low_watermark("lilith", list(range(32)), start_raw_index, 30, 15)
-        assert start_raw_index == 16
-        assert kept == list(range(16, 32))
+        anchor, kept, was_truncated = _apply_high_low_watermark(self._msgs(32), anchor, 30, 15)
+        assert anchor == 16
+        assert [m["turn"] for m in kept] == list(range(16, 32))
         assert was_truncated is False
 
-        start_raw_index, kept, was_truncated = _apply_high_low_watermark("lilith", list(range(47)), start_raw_index, 30, 15)
-        assert start_raw_index == 32
-        assert kept == list(range(32, 47))
+        anchor, kept, was_truncated = _apply_high_low_watermark(self._msgs(47), anchor, 30, 15)
+        assert anchor == 32
+        assert [m["turn"] for m in kept] == list(range(32, 47))
         assert was_truncated is True
 
 

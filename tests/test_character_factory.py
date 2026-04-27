@@ -114,7 +114,7 @@ async def test_narrator_route_passes_new_characters(monkeypatch):
         "get_agent_names",
         lambda include_narrator=False: ["mitsuki"],
     )
-    monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
+    monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
     monkeypatch.setattr(character_module, "read_agent_file", lambda *_args: "# soul")
     monkeypatch.setattr(character_module, "get_display_name", lambda *_args: "美月")
 

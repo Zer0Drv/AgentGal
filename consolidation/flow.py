@@ -502,7 +502,7 @@ class MemoryConsolidationFlow:
 
         async with lock:
             if raw_messages is None:
-                raw_messages = load_conversation_history(limit=None)
+                raw_messages = load_conversation_history()
             slice_data = self._prepare_consolidation_slice(
                 agent_name, until_turn, raw_messages
             )
@@ -630,7 +630,7 @@ class MemoryConsolidationFlow:
         if not candidates:
             return
 
-        raw_messages = load_conversation_history(limit=None)
+        raw_messages = load_conversation_history()
         closures = await self._detect_closures(candidates, raw_messages, earliest_draft_turn)
         if not closures:
             memory_logger.info(

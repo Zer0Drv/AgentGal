@@ -44,29 +44,35 @@ _WEEKDAY_EN_TO_CN = {
 # ---------------------------------------------------------------------------
 
 
+def _msg_turn(msg: dict) -> int:
+    return int(msg.get("turn") or 0)
+
+
 def _apply_high_low_watermark(
-    agent_name: str,
-    visible_indices: list[int],
-    start_raw_index: int,
+    visible: list[dict],
+    anchor_turn: int,
     high: int,
     low: int,
-) -> tuple[int, list[int], bool]:
-    """应用高低水位缓冲，返回本轮应显示的消息下标范围及是否触发了截断。"""
-    if not visible_indices:
-        return 0, [], False
+) -> tuple[int, list[dict], bool]:
+    """按 turn 号锚定的高低水位缓冲。返回 (新锚点 turn, 保留消息, 是否触发截断)。
 
-    kept_indices = [idx for idx in visible_indices if idx >= start_raw_index]
-    if not kept_indices:
-        start_raw_index = visible_indices[0]
-        kept_indices = visible_indices
+    锚点用 turn 号而非 raw 下标，避免 raw_messages 被切片时坐标失效。
+    """
+    if not visible:
+        return anchor_turn, [], False
+
+    kept = [m for m in visible if _msg_turn(m) >= anchor_turn]
+    if not kept:
+        kept = visible
+        anchor_turn = _msg_turn(kept[0])
 
     was_truncated = False
-    if len(kept_indices) > high:
-        kept_indices = kept_indices[-low:]
-        start_raw_index = kept_indices[0]
+    if len(kept) > high:
+        kept = kept[-low:]
+        anchor_turn = _msg_turn(kept[0])
         was_truncated = True
 
-    return start_raw_index, kept_indices, was_truncated
+    return anchor_turn, kept, was_truncated
 
 
 def _get_windowed_visible_messages(
@@ -77,30 +83,24 @@ def _get_windowed_visible_messages(
         return [], False
 
     if agent_name != "narrator":
-        visible_indices = [
-            idx for idx, msg in enumerate(raw_messages) if agent_name in msg.get("visible_to", [])
-        ]
+        visible = [m for m in raw_messages if agent_name in m.get("visible_to", [])]
     else:
-        visible_indices = list(range(len(raw_messages)))
+        visible = list(raw_messages)
 
-    if not visible_indices:
+    if not visible:
         return [], False
 
-    _hw = read_sidecar_json(agent_name, ".history_window_state.json")
-    start_raw_index = min(max(0, int(_hw.get("start_raw_index", 0))), len(raw_messages) - 1)
-    next_start_raw_index, kept_indices, was_truncated = _apply_high_low_watermark(
-        agent_name,
-        visible_indices,
-        start_raw_index,
-        HISTORY_HIGH,
-        HISTORY_LOW,
+    sidecar = read_sidecar_json(agent_name, ".history_window_state.json")
+    anchor_turn = max(0, int(sidecar.get("start_turn", 0)))
+    new_anchor, kept, was_truncated = _apply_high_low_watermark(
+        visible, anchor_turn, HISTORY_HIGH, HISTORY_LOW
     )
     write_sidecar_json(
         agent_name,
         ".history_window_state.json",
-        {"start_raw_index": max(0, next_start_raw_index)},
+        {"start_turn": new_anchor},
     )
-    return [raw_messages[idx] for idx in kept_indices], was_truncated
+    return kept, was_truncated
 
 
 def build_history_transcript(

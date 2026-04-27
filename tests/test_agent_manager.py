@@ -82,6 +82,37 @@ def test_narrator_sync_player_relations_writes_derived_status(monkeypatch):
     assert written == [("narrator", "和玩家的关系", "- 美月：恋人")]
 
 
+@pytest.mark.asyncio
+async def test_character_run_scans_recent_raw_history_by_turns(monkeypatch):
+    history_calls: list[dict] = []
+
+    def fake_load_conversation_history(*, limit=None, turns=None):
+        history_calls.append({"limit": limit, "turns": turns})
+        return [{"role": "player", "content": "旧消息", "visible_to": ["lilith"]}]
+
+    monkeypatch.setattr(character_module, "HISTORY_RAW_SCAN_TURNS", 30)
+    monkeypatch.setattr(character_module, "load_conversation_history", fake_load_conversation_history)
+    monkeypatch.setattr(Character, "_build_prompt", lambda self, user_input, raw_messages: "prompt")
+    monkeypatch.setattr(
+        character_module,
+        "get_llm_config",
+        lambda: {"model": "test-model"},
+    )
+
+    async def fake_run_structured(self, **_kwargs):
+        return CharacterOutput(content="回应", memory="")
+
+    async def fake_apply_updates(self, _output):
+        return None
+
+    monkeypatch.setattr(Character, "_run_structured", fake_run_structured)
+    monkeypatch.setattr(Character, "_apply_updates", fake_apply_updates)
+
+    await Character("lilith").run("你好")
+
+    assert history_calls == [{"limit": None, "turns": 30}]
+
+
 def test_update_status_allow_new_field_appends_missing_section(tmp_path, monkeypatch):
     agent_dir = tmp_path / "narrator"
     agent_dir.mkdir()
@@ -118,7 +149,7 @@ async def test_narrator_route_returns_fallback_on_run_failure(monkeypatch):
         "get_agent_names",
         lambda include_narrator=False: ["mitsuki"],
     )
-    monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
+    monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
 
     async def fake_run_narrator(self, *_args, **_kwargs):
         raise asyncio.TimeoutError
@@ -141,7 +172,7 @@ async def test_narrator_route_filters_targets_and_sanitizes_scene(monkeypatch):
         "get_agent_names",
         lambda include_narrator=False: ["mitsuki"],
     )
-    monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
+    monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
     monkeypatch.setattr(character_module, "read_agent_file", lambda *_args: "# 美月")
     monkeypatch.setattr(character_module, "get_display_name", lambda *_args: "美月")
 
@@ -168,7 +199,7 @@ async def test_narrator_route_retries_when_targets_filter_to_empty(monkeypatch):
         "get_agent_names",
         lambda include_narrator=False: ["mitsuki"],
     )
-    monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
+    monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
     calls = 0
 
     async def fake_run_narrator(self, *_args, **_kwargs):
@@ -196,7 +227,7 @@ async def test_narrator_route_retries_when_targets_are_empty(monkeypatch):
         "get_agent_names",
         lambda include_narrator=False: ["mitsuki"],
     )
-    monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
+    monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
     calls = 0
 
     async def fake_run_narrator(self, *_args, **_kwargs):
@@ -224,7 +255,7 @@ async def test_narrator_route_allows_spawn_without_existing_targets(monkeypatch)
         "get_agent_names",
         lambda include_narrator=False: ["mitsuki"],
     )
-    monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
+    monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
     calls = 0
 
     async def fake_run_narrator(self, *_args, **_kwargs):
@@ -262,7 +293,7 @@ async def test_narrator_route_rejects_scene_without_valid_targets(monkeypatch):
         "get_agent_names",
         lambda include_narrator=False: ["mitsuki"],
     )
-    monkeypatch.setattr(character_module, "load_conversation_history", lambda limit=None: [])
+    monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
 
     async def fake_run_narrator(self, *_args, **_kwargs):
         return NarratorOutput(targets=["ghost"], content="走廊里传来广播声。")
@@ -483,17 +514,15 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
         lambda: fake_agent,
     )
     monkeypatch.setattr(character_module, "build_schedule_snapshot", lambda _t: "")
-    history_limits: list[int | None] = []
+    history_calls: list[dict] = []
 
-    def fake_load_conversation_history(limit=None):
-        history_limits.append(limit)
-        messages = [
-            {"role": "player", "content": "更早的问题"},
+    def fake_load_conversation_history(*, limit=None, turns=None):
+        history_calls.append({"limit": limit, "turns": turns})
+        return [
             {"role": "narrator", "content": "手机在掌心震了一下。"},
             {"role": "player", "content": "送到门口会被家人看到吗？"},
             {"role": "role_b", "content": "应该不会，家里人还没回来。"},
         ]
-        return messages if limit is None else messages[-limit:]
 
     monkeypatch.setattr(
         character_module,
@@ -523,7 +552,7 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     assert captured["agent"] is fake_agent
     assert captured["output_type"] is StateUpdaterOutput
     assert captured["usage_agent"] == "state_updater"
-    assert history_limits == [3]
+    assert history_calls == [{"limit": None, "turns": 1}]
     user_input = captured["user_input"]
     assert user_input.index("<character_intention>") < user_input.index("<current_narrator_status>")
     assert user_input.index("<current_narrator_status>") < user_input.index("<recent_history>")
