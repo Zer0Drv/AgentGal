@@ -93,7 +93,7 @@ server.py        ← 全部
 - `soul.md`：手写角色定义，只读；分 `<identity>` / `<goal>` / `<dynamic>` / `<behavior>` / `<voice>` 五段，其中 `<goal>` 写角色在故事期内要拿到的具体长期目标（外部可验证里程碑 + 可选的关系愿景），整个故事期大体不变
 - `memory.jsonl`：角色长期记忆，每行一个结构化 `EpisodeMemory`（`date / time / location / participants / keywords / importance / content / memory_owner / title / raw_dialogue`），append-only，仅角色有
 - `memory_draft.jsonl`：每轮 `output.memory` 的落盘缓冲（仅角色有），每行 `{"turn": int, "text": str}`；由 consolidation 在 `EpisodeClosureDetector` 判定闭合后，按 `until_turn` 切片读取并产出结构化 `EpisodeMemory` 追加到 `memory.jsonl`，已归并的条目从 draft 中移除，未闭合 turn 的条目保留
-- `status.md`：当前状态；角色包含「打算」，旁白包含「待触发事件」和「角色位置」（所有主要角色的当前位置快照，由 `state_updater` 每轮维护，角色端不再自维护「当前位置」）
+- `status.md`：当前状态；角色包含「打算」和「和玩家的关系」，旁白包含「待触发事件」「角色位置」和派生字段「和玩家的关系」（按 `- 角色显示名：关系` 汇总各角色 status，程序维护，narrator 不自行生成）
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
 - `tmp_user.md`：`user.md` 的工作草稿；首次写入时复制正式档案，整理后删除
 - `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有）
@@ -152,7 +152,7 @@ server.py        ← 全部
 持久化最新选项到 last_choices.json（供续档恢复）
   ↓
 后台并发启动两个 task（均 `asyncio.create_task`，不阻塞主流程）：
-  1. state_updater → 更新 narrator/status.md（场景、时间、角色位置、叙事焦点、待触发事件）
+  1. state_updater → 更新 narrator/status.md（场景、时间、角色位置、叙事焦点、待触发事件；「和玩家的关系」由程序从各角色 status 派生同步）
   2. detect_and_consolidate(current_turn) → 判定 episode 闭合并归并记忆（见「记忆整理」）
   ↓
 state_updater 输入按顺序为：`schedule_snapshot`（按当前 game_time 渲染各角色 schedule 默认位置，缺日程标「（无日程）」）、character_intention、current_narrator_status、recent_history
@@ -230,7 +230,7 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 2. `status.md`
 3. 本轮玩家输入
 
-`narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点和待触发事件推进当前回合。待触发事件主要由 `state_updater` 从各角色 `打算` 同步，事件名保留角色名（如 `【美月：顺路的约定】`）。
+`narrator` 不走向量召回；它依赖 `status.md` 中的场景、叙事焦点、待触发事件和「和玩家的关系」索引推进当前回合。待触发事件主要由 `state_updater` 从各角色 `打算` 同步，事件名保留角色名（如 `【美月：顺路的约定】`）。「和玩家的关系」由程序从各角色 status 汇总，格式为 `- 美月：恋人`。
 
 > 注：`<world_now>`（当前时间 / 各角色实时位置的派生投影）目前已停用，待 schedule 机制完善后再恢复。期间 narrator 只读 `status.md` 中作者/state_updater 维护的字段。
 

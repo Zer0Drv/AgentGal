@@ -11,10 +11,15 @@ os.chdir(project_root)
 
 try:
     import engine.character as character_module
+    import storage.agent_files as agent_files_module
     from engine.character import Character, Narrator
     from agents.schema import CharacterOutput, NarratorOutput, NarratorStatus, StateUpdaterOutput
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip conversation flow tests: missing dependency ({exc})", allow_module_level=True)
+
+
+def _stub_player_relation_sync(monkeypatch):
+    monkeypatch.setattr(character_module.Narrator, "sync_player_relations", lambda _self: {})
 
 
 def test_sanitize_narrator_scene_description_truncates_character_dialogue(monkeypatch):
@@ -32,8 +37,82 @@ def test_sanitize_narrator_scene_description_truncates_character_dialogue(monkey
     assert sanitized == "房间里安静下来。"
 
 
+def test_narrator_formats_player_relations_from_character_status(monkeypatch):
+    files = {
+        ("role_a", "status.md"): "# A\n\n## 和玩家的关系\n恋人",
+        ("role_a", "soul.md"): "# A",
+        ("role_b", "status.md"): "# B\n\n## 和玩家的关系\n刚认识\n但有好感",
+        ("role_b", "soul.md"): "# B",
+        ("role_empty", "status.md"): "# Empty\n\n## 和玩家的关系\n",
+        ("role_empty", "soul.md"): "# Empty",
+    }
+    display_names = {"role_a": "美月", "role_b": "陈晓", "role_empty": "空角色"}
+
+    monkeypatch.setattr(
+        character_module,
+        "get_agent_names",
+        lambda include_narrator=False: ["role_a", "role_b", "role_empty"],
+    )
+    monkeypatch.setattr(character_module, "read_agent_file", lambda agent, filename: files[(agent, filename)])
+    monkeypatch.setattr(
+        character_module,
+        "get_display_name",
+        lambda agent_name, _soul: display_names[agent_name],
+    )
+
+    assert Narrator._format_player_relations() == "- 美月：恋人\n- 陈晓：刚认识 但有好感"
+
+
+def test_narrator_sync_player_relations_writes_derived_status(monkeypatch):
+    written: list[tuple[str, str, str]] = []
+
+    monkeypatch.setattr(
+        character_module.Narrator,
+        "_format_player_relations",
+        staticmethod(lambda: "- 美月：恋人"),
+    )
+    monkeypatch.setattr(
+        character_module,
+        "update_status_allow_new_field",
+        lambda agent, field, content: written.append((agent, field, content)) or {},
+    )
+
+    Narrator().sync_player_relations()
+
+    assert written == [("narrator", "和玩家的关系", "- 美月：恋人")]
+
+
+def test_update_status_allow_new_field_appends_missing_section(tmp_path, monkeypatch):
+    agent_dir = tmp_path / "narrator"
+    agent_dir.mkdir()
+    status_path = agent_dir / "status.md"
+    status_path.write_text("# 故事状态\n\n## 当前时间\n4月3日\n", encoding="utf-8")
+
+    def fake_character_path(agent_name, *subpaths):
+        return str(tmp_path / agent_name / Path(*subpaths))
+
+    monkeypatch.setattr(agent_files_module, "character_path", fake_character_path)
+
+    result = agent_files_module.update_status_allow_new_field(
+        "narrator",
+        "和玩家的关系",
+        "- 美月：同班同学",
+    )
+
+    assert result["operation"] == "replace"
+    assert result["target"] == "和玩家的关系"
+    assert status_path.read_text(encoding="utf-8") == (
+        "# 故事状态\n\n"
+        "## 当前时间\n"
+        "4月3日\n\n"
+        "## 和玩家的关系\n"
+        "- 美月：同班同学\n"
+    )
+
+
 @pytest.mark.asyncio
 async def test_narrator_route_returns_fallback_on_run_failure(monkeypatch):
+    _stub_player_relation_sync(monkeypatch)
     monkeypatch.setattr(
         character_module,
         "get_agent_names",
@@ -56,6 +135,7 @@ async def test_narrator_route_returns_fallback_on_run_failure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_narrator_route_filters_targets_and_sanitizes_scene(monkeypatch):
+    _stub_player_relation_sync(monkeypatch)
     monkeypatch.setattr(
         character_module,
         "get_agent_names",
@@ -82,6 +162,7 @@ async def test_narrator_route_filters_targets_and_sanitizes_scene(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_narrator_route_retries_when_targets_filter_to_empty(monkeypatch):
+    _stub_player_relation_sync(monkeypatch)
     monkeypatch.setattr(
         character_module,
         "get_agent_names",
@@ -109,6 +190,7 @@ async def test_narrator_route_retries_when_targets_filter_to_empty(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_narrator_route_retries_when_targets_are_empty(monkeypatch):
+    _stub_player_relation_sync(monkeypatch)
     monkeypatch.setattr(
         character_module,
         "get_agent_names",
@@ -136,6 +218,7 @@ async def test_narrator_route_retries_when_targets_are_empty(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_narrator_route_allows_spawn_without_existing_targets(monkeypatch):
+    _stub_player_relation_sync(monkeypatch)
     monkeypatch.setattr(
         character_module,
         "get_agent_names",
@@ -173,6 +256,7 @@ async def test_narrator_route_allows_spawn_without_existing_targets(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_narrator_route_rejects_scene_without_valid_targets(monkeypatch):
+    _stub_player_relation_sync(monkeypatch)
     monkeypatch.setattr(
         character_module,
         "get_agent_names",
@@ -370,6 +454,7 @@ async def test_apply_response_updates_logs_structured_file_updates(monkeypatch, 
 async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     captured: dict = {}
     applied: list[tuple] = []
+    relation_syncs: list[tuple[str, str, str]] = []
     fake_agent = object()
 
     def fake_read_agent_file(agent, filename):
@@ -427,6 +512,11 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
 
     monkeypatch.setattr(character_module, "run_structured_agent", fake_run_structured_agent)
     monkeypatch.setattr(character_module.Narrator, "_apply_state_updates", fake_apply_state_updates)
+    monkeypatch.setattr(
+        character_module,
+        "update_status_allow_new_field",
+        lambda agent, field, content: relation_syncs.append((agent, field, content)) or {},
+    )
 
     await Narrator().update_state()
 
@@ -443,6 +533,7 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     assert "role_b: 应该不会，家里人还没回来。" in user_input
     assert "【role_b / 角色B】" in user_input
     assert "【楼下碰面】10月24日 09:30 公寓楼下。去见玩家。" in user_input
+    assert relation_syncs == [("narrator", "和玩家的关系", "（暂无）")]
     assert "<character_intentions>" not in user_input
     assert "<player_input>" not in user_input
     assert "<narrator_targets>" not in user_input

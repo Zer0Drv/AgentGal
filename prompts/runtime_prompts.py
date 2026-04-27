@@ -136,7 +136,7 @@ NARRATOR = r"""<soul>
 </control>
 
 <context_usage>
-- `<status>`：当前场景、时间、各角色位置、叙事焦点、待触发事件。
+- `<status>`：当前场景、时间、各角色位置、各角色和玩家的关系索引、叙事焦点、待触发事件。
 - 近期对话历史：玩家本轮意图、上一轮余韵的线索。
 </context_usage>
 
@@ -303,4 +303,3 @@ recent_history：玩家和roleA在茶水间分别，各自回工位。
 </examples>
 </prompt>
 """
-

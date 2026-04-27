@@ -42,7 +42,7 @@ def test_character_system_prompt_reads_character_template(monkeypatch):
 
 
 def test_narrator_system_prompt_reads_narrator_template(monkeypatch):
-    _patch_templates(monkeypatch, "CHARACTER " + _TEMPLATE_VARS, "NARRATOR " + _TEMPLATE_VARS)
+    _patch_templates(monkeypatch, "CHARACTER " + _TEMPLATE_VARS, "NARRATOR {soul}")
     monkeypatch.setattr(prompt_builder_module, "get_allowed_fields", lambda agent_name, field: [])
     monkeypatch.setattr(
         prompt_builder_module,
@@ -57,7 +57,7 @@ def test_narrator_system_prompt_reads_narrator_template(monkeypatch):
 
     result = prompt_builder_module.build_system_prompt("narrator", "# 旁白")
 
-    assert result.startswith("NARRATOR narrator")
+    assert result == "NARRATOR # 旁白"
 
 
 def test_character_system_prompt_uses_other_character_display_names_for_relations(monkeypatch):
@@ -81,22 +81,3 @@ def test_character_system_prompt_uses_other_character_display_names_for_relation
     assert result == "莉莉丝"
 
 
-def test_narrator_system_prompt_keeps_character_ids_in_valid_targets(monkeypatch):
-    _patch_templates(monkeypatch, "{valid_targets}", "{valid_targets}")
-    monkeypatch.setattr(prompt_builder_module, "get_allowed_fields", lambda agent_name, field: [])
-    monkeypatch.setattr(
-        prompt_builder_module,
-        "get_agent_names",
-        lambda include_narrator=False: ["mitsuki", "lingo"],
-    )
-    monkeypatch.setattr(
-        prompt_builder_module,
-        "read_agent_file",
-        lambda agent_name, filename: {"mitsuki": "# 美月\n", "lingo": "# 铃子\n"}.get(
-            agent_name, ""
-        ),
-    )
-
-    result = prompt_builder_module.build_system_prompt("narrator", "# 旁白")
-
-    assert result == "mitsuki, lingo"

@@ -171,7 +171,7 @@ uv run uvicorn server:app --reload
 - `status.md`：当前状态 / 打算 / 待触发事件
 - `user.md`：角色对玩家的认知（仅角色有）
 - `tmp_user.md`：`user.md` 的工作草稿；由 typed `player` 字段增量写入，整理后删除
-- `relations.md`：角色对其他角色（不含 `player`）的当下视角；对玩家的长期视角走 `user.md` 与 `status.md` 的「和玩家的关系」
+- `relations.md`：角色对其他角色（不含 `player`）的当下视角；对玩家的长期视角走 `user.md` 与角色 `status.md` 的「和玩家的关系」，narrator `status.md` 会派生汇总为 `- 角色显示名：关系`
 - `growth.md`：整理器维护的人格沉淀（仅角色有）
 - `tasks.md`：可选的 narrator 剧情种子文件；当前主流程主要通过 `state_updater` 从角色 `打算` 同步 `待触发事件`
 - `.history_window_state.json`：对话历史高低水位窗口 sidecar

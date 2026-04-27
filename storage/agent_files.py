@@ -579,6 +579,24 @@ def update_status(agent_name: str, field: str, content: str) -> FileUpdateResult
     return _update_section_file(status_path, field, content, allowed, _read_title(status_path, "# 我的状态"))
 
 
+def update_status_allow_new_field(agent_name: str, field: str, content: str) -> FileUpdateResult:
+    """覆盖更新 status.md 字段；字段不存在时追加为新 section。
+
+    仅用于程序派生字段。LLM 输出仍应走 update_status() 的文件白名单。
+    """
+    allowed = get_allowed_fields(agent_name, "status")
+    if field not in allowed:
+        allowed = [*allowed, field]
+    status_path = character_path(agent_name, "status.md")
+    return _update_section_file(
+        status_path,
+        field,
+        content,
+        allowed,
+        _read_title(status_path, "# 我的状态"),
+    )
+
+
 _RELATIONS_TITLE = "# 我眼中的其他人"
 
 

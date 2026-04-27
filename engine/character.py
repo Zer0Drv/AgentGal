@@ -49,6 +49,7 @@ from storage.agent_files import (
     update_player,
     update_relations,
     update_status,
+    update_status_allow_new_field,
 )
 from storage.history import load_conversation_history
 from world.schedule import load_character_schedule
@@ -344,6 +345,7 @@ class Narrator(BaseEntity):
     """旁白。封装路由决策、state_updater 调度与 narrator 文件写回。"""
 
     _EVENT_SECTION: ClassVar[str] = "待触发事件"
+    _PLAYER_RELATION_SECTION: ClassVar[str] = "和玩家的关系"
 
     def __init__(self) -> None:
         super().__init__(name="narrator")
@@ -365,6 +367,7 @@ class Narrator(BaseEntity):
         此处只做 schema 层过滤（保留 relation_to 合法且描述非空的锚点），
         实际命名、孵化与目录校验由 engine.character_factory.create_character 负责。
         """
+        self.sync_player_relations()
         valid_agents = get_agent_names(include_narrator=False)
         if raw_messages is None:
             raw_messages = load_conversation_history(limit=None)
@@ -460,6 +463,7 @@ class Narrator(BaseEntity):
 
     async def update_state(self) -> None:
         """调用 state_updater 写回 narrator/status.md。"""
+        self.sync_player_relations()
         user_message = self._build_state_updater_input()
         config = get_narrator_llm_config()
         try:
@@ -476,6 +480,31 @@ class Narrator(BaseEntity):
             return
 
         self._apply_state_updates(output)
+
+    def sync_player_relations(self) -> FileUpdateResult:
+        """把各角色 status.md 的「和玩家的关系」汇总到 narrator/status.md。"""
+        content = self._format_player_relations()
+        result = update_status_allow_new_field(
+            self.name,
+            self._PLAYER_RELATION_SECTION,
+            content,
+        )
+        _log_file_updates(self.name, [result])
+        return result
+
+    @classmethod
+    def _format_player_relations(cls) -> str:
+        lines: list[str] = []
+        for agent_name in get_agent_names(include_narrator=False):
+            status_content = read_agent_file(agent_name, "status.md")
+            relation = extract_status_field(status_content, cls._PLAYER_RELATION_SECTION)
+            relation = " ".join(relation.split())
+            if not relation:
+                continue
+            soul_content = read_agent_file(agent_name, "soul.md")
+            display_name = get_display_name(agent_name, soul_content)
+            lines.append(f"- {display_name}：{relation}")
+        return "\n".join(lines) if lines else "（暂无）"
 
     def _build_state_updater_input(self) -> str:
         narrator_status = self.status
