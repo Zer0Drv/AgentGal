@@ -307,7 +307,7 @@ class MemoryConsolidationFlow:
     async def _dedup_growth_entries(self, agent_name: str) -> None:
         current_count = len(read_growth_entries(agent_name))
         if current_count <= GROWTH_DEDUP_THRESHOLD:
-            memory_logger.info(
+            memory_logger.debug(
                 f"[整理器] {agent_name} 跳过 growth dedup（当前 {current_count} 条，未超过阈值 {GROWTH_DEDUP_THRESHOLD}）"
             )
             return
@@ -471,7 +471,7 @@ class MemoryConsolidationFlow:
             user_path.write_text(consolidated.strip() + "\n", encoding="utf-8")
             tmp_path.unlink(missing_ok=True)
             before_len, after_len = len(user_content), len(consolidated)
-            memory_logger.info(
+            memory_logger.debug(
                 f"[整理器] {agent_name} user.md 整理完成 (长度: {before_len} → {after_len})"
             )
             return before_len, after_len
