@@ -84,6 +84,22 @@ def test_get_choices_llm_config_falls_back_to_narrator_config(monkeypatch):
     assert config["api_url"] == "https://narrator.example/v1"
 
 
+def test_scoped_provider_uses_provider_default_url_instead_of_global_url(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("LLM_API_KEY", "main-key")
+    monkeypatch.setenv("LLM_API_URL", "https://packy.example/v1/chat/completions")
+    monkeypatch.setenv("CHOICES_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("CHOICES_LLM_MODEL_ID", "liquid/test-free")
+    monkeypatch.setenv("CHOICES_LLM_API_KEY", "openrouter-key")
+
+    config = providers_module.get_choices_llm_config()
+
+    assert config["provider"] == "openrouter"
+    assert config["model"] == "liquid/test-free"
+    assert config["api_key"] == "openrouter-key"
+    assert config["api_url"] == "https://openrouter.ai/api/v1"
+
+
 def test_scoped_config_allows_custom_url_without_scoped_provider(monkeypatch):
     _clear_llm_env(monkeypatch)
     monkeypatch.setenv("LLM_PROVIDER", "deepseek")

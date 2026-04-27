@@ -156,7 +156,12 @@ def _make_scoped_llm_config(
             provider = _OPENAI_COMPATIBLE_PROVIDER
         model_id = overrides["model_id"] or _get_default_model_id()
         api_key = overrides["api_key"] or _get_optional_env("LLM_API_KEY")
-        api_url = overrides["api_url"] or _get_optional_env("LLM_API_URL")
+        if overrides["api_url"]:
+            api_url = overrides["api_url"]
+        elif overrides["provider"]:
+            api_url = _resolve_api_url(overrides["provider"].lower(), None)
+        else:
+            api_url = _get_optional_env("LLM_API_URL")
 
         if not api_key:
             raise ValueError(f"{env_prefix}_API_KEY or LLM_API_KEY must be set")
