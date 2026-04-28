@@ -298,11 +298,11 @@ class MemoryConsolidationFlow:
         )
         updates = [{"content": entry.strip()} for entry in output.updates if entry.strip()]
         if updates:
-            memory_logger.info(
+            memory_logger.debug(
                 f"[整理器] {agent_name} growth.md: {self._apply_growth_updates(agent_name, updates)}"
             )
         else:
-            memory_logger.info(f"[整理器] {agent_name} 无人格沉淀更新")
+            memory_logger.debug(f"[整理器] {agent_name} 无人格沉淀更新")
 
     async def _dedup_growth_entries(self, agent_name: str) -> None:
         current_count = len(read_growth_entries(agent_name))
@@ -311,7 +311,7 @@ class MemoryConsolidationFlow:
                 f"[整理器] {agent_name} 跳过 growth dedup（当前 {current_count} 条，未超过阈值 {GROWTH_DEDUP_THRESHOLD}）"
             )
             return
-        memory_logger.info(
+        memory_logger.debug(
             f"[整理器] {agent_name} 触发 growth dedup（当前 {current_count} 条，阈值 {GROWTH_DEDUP_THRESHOLD}）"
         )
         growth_content = read_agent_file(agent_name, "growth.md") or "（尚无）"
