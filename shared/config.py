@@ -31,8 +31,6 @@ if (
         CONSOLIDATION_MAX_TOKENS,
         CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS,
     )
-GROWTH_DEDUP_THRESHOLD: int = _cfg["consolidation"]["growth_dedup_threshold"]
-
 # 向量检索
 VECTOR_SEARCH_LIMIT: int = _cfg["vector"]["search_limit"]
 VECTOR_CANDIDATE_LIMIT: int = _cfg["vector"]["vector_candidate_limit"]

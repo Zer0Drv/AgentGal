@@ -117,7 +117,7 @@ uv run uvicorn server:app --reload
 - 通过 `consolidation/inputs.py` 组装整理输入，并把 raw 对话对齐到当前角色视角
 - 读取 `memory_draft.md` + 最近 raw 对话，EpisodeMemoryGenerator 产出完整结构化 `EpisodeMemory` 后 append 到 `memory.jsonl`（append-only），成功即清空 draft
 - growth 阶段使用整理出的 `EpisodeMemory` JSON 数组作为 LLM 输入，不再先渲染成 markdown
-- 提炼、更新并去重压缩 `growth.md`（仅角色）
+- 对 `growth.md` 做 patch（add/update/remove，按 dimension 1:1 约束；update 可更新同一关系轴的 dimension；最多 20 条）（仅角色）
 - 顺带精炼 `user.md`（仅角色）
 - 按进度同步向量索引
 
@@ -172,7 +172,7 @@ uv run uvicorn server:app --reload
 - `user.md`：角色对玩家的认知（仅角色有）
 - `tmp_user.md`：`user.md` 的工作草稿；由 typed `player` 字段增量写入，整理后删除
 - `relations.md`：角色对其他角色（不含 `player`）的当下视角；对玩家的长期视角走 `user.md` 与角色 `status.md` 的「和玩家的关系」，narrator `status.md` 会派生汇总为 `- 角色显示名：关系`
-- `growth.md`：整理器维护的人格沉淀（仅角色有）
+- `growth.md`：整理器维护的人格沉淀（仅角色有），格式 `[P001|对X：A→B] [日期] ...`，最多 20 条
 - `tasks.md`：可选的 narrator 剧情种子文件；当前主流程主要通过 `state_updater` 从角色 `打算` 同步 `待触发事件`
 - `.history_window_state.json`：对话历史高低水位窗口 sidecar
 - `.consolidation_state.json`：角色整理进度 sidecar
@@ -223,7 +223,6 @@ uv run uvicorn server:app --reload
 | `[consolidation].temperature` | 整理模型温度 |
 | `[consolidation].max_tokens` | 整理输出上限；设为 `0` 时不显式传入，但 OpenRouter 整理器会自动回落到 `4096`，避免默认申请超大输出 |
 | `[consolidation].player_profile_max_tokens` | `user.md` 整理输出上限，默认用较小值避免高价模型因无限制输出直接失败 |
-| `[consolidation].growth_dedup_threshold` | `growth.md` 去重阈值 |
 | `[vector].search_limit` | 长期记忆召回条数 |
 | `[vector].rerank_candidate_multiplier` | rerank 前候选放大倍数 |
 | `[vector].relevance_weight` / `[vector].recency_weight` | relevance 与 recency 总权重 |

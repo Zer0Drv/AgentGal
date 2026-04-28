@@ -96,7 +96,7 @@ server.py        ← 全部
 - `status.md`：当前状态；角色包含「打算」和「和玩家的关系」，旁白包含「待触发事件」「角色位置」和派生字段「和玩家的关系」（按 `- 角色显示名：关系` 汇总各角色 status，程序维护，narrator 不自行生成）
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
 - `tmp_user.md`：`user.md` 的工作草稿；首次写入时复制正式档案，整理后删除
-- `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有）
+- `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有）；每条带 dimension 标签（不可逆转移轴），格式 `[P001|对X：A→B] [日期] ...`，最多 20 条
 - `relations.md`：角色对其他角色（不含 `player`）的当下视角；`## {character}` 一节一段；每轮 `output.relations[character]` 整段覆盖（仅角色有）。
 
 ### 历史文件
@@ -264,8 +264,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 - 每回合末由 `detect_and_consolidate(current_turn)` 作为后台 task 触发（与 `state_updater` 并发）：先扫描有 `memory_draft.jsonl` 的角色作为候选，调用 `EpisodeClosureDetector` 判定哪些角色本轮 episode 已闭合（返回 `{agent_name: closed_at_turn}`）；闭合角色并行执行 `consolidate_agent(name, until_turn=closed_at_turn)`
 - `consolidate_agent` 按 `until_turn` 从 `memory_draft.jsonl` 切片出本 episode 的草稿条目 + 对应 turn 区间的 raw 对话，交给 `EpisodeMemoryGenerator` 产出单条结构化 `EpisodeMemory`；流程层注入 `memory_owner` 与 `raw_dialogue` 后 append 到 `memory.jsonl`，已归并条目从 draft 中移除，未闭合 turn 的条目保留；失败则 draft 全部保留留待下一轮重试
 - growth 阶段使用整理出的 `EpisodeMemory` JSON 数组作为 LLM 输入，不再先渲染成 markdown
-- 提炼 / 更新 `growth.md`（仅角色）
-- 去重压缩 `growth.md`（仅角色）
+- 对 `growth.md` 做 patch（add/update/remove，按 dimension 1:1 约束；update 可随同一对象/同一关系轴的渐进变化更新 dimension）（仅角色）
 - 顺带精炼 `user.md`（仅角色）
 - 按进度同步向量索引
 

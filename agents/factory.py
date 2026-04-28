@@ -13,8 +13,7 @@ from agents.schema import (
     ChoicesOutput,
     EpisodeClosureOutput,
     EpisodeMemoryBlock,
-    GrowthDedupOutput,
-    GrowthExtractOutput,
+    GrowthPatchOutput,
     NarratorOutput,
     NewCharacterProfile,
     StateUpdaterOutput,
@@ -31,8 +30,7 @@ from llm.providers import (
 from prompts.consolidation_prompts import (
     EPISODE_CLOSURE_DETECTOR,
     EPISODE_MEMORY_GENERATOR,
-    GROWTH_DEDUPE,
-    GROWTH_EXTRACT,
+    GROWTH_PATCH,
     PLAYER_PROFILE,
 )
 from prompts.runtime_prompts import CHOICES, STATE_UPDATER
@@ -216,18 +214,11 @@ def _ensure_consolidation_agents() -> None:
         output_type=EpisodeClosureOutput,
         max_tokens=closure_max_tokens,
     )
-    _consolidation_agents["growth_extract"] = _build_agent(
-        name="growth_extract",
-        instructions=GROWTH_EXTRACT,
+    _consolidation_agents["growth_patch"] = _build_agent(
+        name="growth_patch",
+        instructions=GROWTH_PATCH,
         config=config,
-        output_type=GrowthExtractOutput,
-        max_tokens=consolidation_max_tokens,
-    )
-    _consolidation_agents["growth_dedup"] = _build_agent(
-        name="growth_dedup",
-        instructions=GROWTH_DEDUPE,
-        config=config,
-        output_type=GrowthDedupOutput,
+        output_type=GrowthPatchOutput,
         max_tokens=consolidation_max_tokens,
     )
     _consolidation_agents["player_profile"] = _build_agent(
@@ -251,12 +242,8 @@ def get_episode_closure_detector_agent() -> Agent[None, EpisodeClosureOutput]:
     return _get_consolidation_agent("episode_closure_detector")
 
 
-def get_growth_extract_agent() -> Agent[None, GrowthExtractOutput]:
-    return _get_consolidation_agent("growth_extract")
-
-
-def get_growth_dedup_agent() -> Agent[None, GrowthDedupOutput]:
-    return _get_consolidation_agent("growth_dedup")
+def get_growth_patch_agent() -> Agent[None, GrowthPatchOutput]:
+    return _get_consolidation_agent("growth_patch")
 
 
 def get_player_profile_agent() -> TextAgent:

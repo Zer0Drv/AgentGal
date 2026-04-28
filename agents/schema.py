@@ -186,12 +186,35 @@ class EpisodeClosureOutput(RootModel[dict[str, list[EpisodeClosureBoundary]]]):
     """
 
 
-class GrowthExtractOutput(BaseModel):
-    updates: list[str] = Field(default_factory=list)
+class GrowthEntryPatch(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    dimension: str
+    content: str
 
 
-class GrowthDedupOutput(BaseModel):
-    entries: list[str] = Field(default_factory=list)
+class GrowthPatchOutput(BaseModel):
+    add: list[GrowthEntryPatch] = Field(default_factory=list)
+    update: dict[str, GrowthEntryPatch] = Field(default_factory=dict)
+    remove: list[str] = Field(default_factory=list)
+
+    @field_validator("remove", mode="before")
+    @classmethod
+    def clean_remove_ids(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    @field_validator("update", mode="before")
+    @classmethod
+    def clean_update_ids(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return {}
+        return {
+            str(entry_id).strip(): item
+            for entry_id, item in value.items()
+            if str(entry_id).strip()
+        }
 
 
 # ---------------------------------------------------------------------------

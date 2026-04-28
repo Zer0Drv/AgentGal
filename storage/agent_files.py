@@ -33,6 +33,11 @@ class FileUpdateResult(_FileUpdateResultBase, total=False):
     reason: str
 
 
+class GrowthEntry(TypedDict):
+    dimension: str
+    content: str
+
+
 # ===== 通用文件读取 =====
 
 
@@ -476,31 +481,37 @@ def add_pending_event(
 # ===== Growth 文件 =====
 
 
-def read_growth_entries(agent_name: str) -> dict[str, str]:
-    """读取 growth.md，返回 {id: content} 字典，文件不存在返回空字典。
+def read_growth_entries(agent_name: str) -> dict[str, GrowthEntry]:
+    """读取 growth.md，返回 {id: {dimension, content}} 字典，文件不存在返回空字典。
 
-    格式：[P001] 内容（支持多行）
+    格式：[P001|dimension] 内容（支持多行）。
     """
     path = Path(character_path(agent_name, "growth.md"))
     if not path.exists():
         return {}
 
     content = path.read_text(encoding="utf-8")
-    entries: dict[str, str] = {}
-    pattern = r"\[(\w+)\]\s*(.+?)(?=\n\[|$)"
+    entries: dict[str, GrowthEntry] = {}
+    pattern = r"\[(\w+)\|([^\]]+)\]\s*(.+?)(?=\n\[\w+\|[^\]]+\]|$)"
     for m in re.finditer(pattern, content, re.DOTALL):
-        entries[m.group(1)] = m.group(2).strip()
+        entries[m.group(1)] = {
+            "dimension": m.group(2).strip(),
+            "content": m.group(3).strip(),
+        }
     return entries
 
 
-def write_growth_entries(agent_name: str, entries: dict[str, str]) -> None:
-    """将 {id: content} 字典写回 growth.md，按 ID 数字部分排序。"""
+def write_growth_entries(agent_name: str, entries: dict[str, GrowthEntry]) -> None:
+    """将 {id: {dimension, content}} 字典写回 growth.md，按 ID 数字部分排序。"""
     path = Path(character_path(agent_name, "growth.md"))
-    sorted_ids = sorted(entries.keys(), key=_growth_id_sort_key)
+    sorted_ids = sorted(entries.keys(), key=growth_id_sort_key)
 
     lines = [_GROWTH_TITLE, ""]
     for entry_id in sorted_ids:
-        lines.append(f"[{entry_id}] {entries[entry_id]}")
+        entry = entries[entry_id]
+        dimension = entry["dimension"]
+        content = entry["content"]
+        lines.append(f"[{entry_id}|{dimension}] {content}")
         lines.append("")
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -547,7 +558,7 @@ def backup_file(src: Path, agent_name: str, prefix: str, max_backups: int = 10) 
 # ===== Agent 响应写回（memory / status / user） =====
 
 
-def _growth_id_sort_key(value: str) -> int:
+def growth_id_sort_key(value: str) -> int:
     """提取 growth ID 中的数字部分用于排序，无数字时返回 0。"""
     try:
         return int(re.sub(r"[^0-9]", "", value))

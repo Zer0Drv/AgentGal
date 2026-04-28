@@ -58,24 +58,32 @@ def test_auxiliary_structured_agents_use_prompted_output(monkeypatch):
         "get_consolidation_llm_config",
         lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
     )
+    monkeypatch.setattr(
+        agent_factory_module,
+        "get_episode_closure_detector_llm_config",
+        lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
+    )
 
     choices = agent_factory_module.get_choices_agent()
     state_updater = agent_factory_module.get_state_updater_agent()
     episode_memory_generator = agent_factory_module.get_episode_memory_generator_agent()
-    growth_extract = agent_factory_module.get_growth_extract_agent()
-    growth_dedup = agent_factory_module.get_growth_dedup_agent()
+    growth_patch = agent_factory_module.get_growth_patch_agent()
 
     assert choices._output_schema.mode == "prompted"
     assert state_updater._output_schema.mode == "prompted"
     assert episode_memory_generator._output_schema.mode == "prompted"
-    assert growth_extract._output_schema.mode == "prompted"
-    assert growth_dedup._output_schema.mode == "prompted"
+    assert growth_patch._output_schema.mode == "prompted"
 
 
 def test_player_profile_agent_remains_text_output(monkeypatch):
     monkeypatch.setattr(
         agent_factory_module,
         "get_consolidation_llm_config",
+        lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
+    )
+    monkeypatch.setattr(
+        agent_factory_module,
+        "get_episode_closure_detector_llm_config",
         lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
     )
     monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS", 1234)
@@ -90,6 +98,15 @@ def test_openrouter_consolidation_agents_clamp_unbounded_max_tokens(monkeypatch)
     monkeypatch.setattr(
         agent_factory_module,
         "get_consolidation_llm_config",
+        lambda temperature=None: {
+            **_fake_config(),
+            "provider": "openrouter",
+            "temperature": temperature or 0.2,
+        },
+    )
+    monkeypatch.setattr(
+        agent_factory_module,
+        "get_episode_closure_detector_llm_config",
         lambda temperature=None: {
             **_fake_config(),
             "provider": "openrouter",

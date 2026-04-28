@@ -10,8 +10,6 @@ temperature = 0.7
 max_tokens = 0
 # user.md 整理默认输出上限：避免沿用无限制配置导致高价模型直接报 402
 player_profile_max_tokens = 2048
-# growth.md 去重合并阈值：超过该条数才触发压缩，避免每轮重写
-growth_dedup_threshold = 8
 
 [vector]
 # 向量检索返回条数

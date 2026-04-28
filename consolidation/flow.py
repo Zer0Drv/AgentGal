@@ -10,8 +10,7 @@ from pathlib import Path
 from agents.factory import (
     get_episode_closure_detector_agent,
     get_episode_memory_generator_agent,
-    get_growth_dedup_agent,
-    get_growth_extract_agent,
+    get_growth_patch_agent,
     get_player_profile_agent,
 )
 from agents.runner import run_structured_agent, run_text_agent
@@ -20,7 +19,6 @@ from llm.providers import get_consolidation_llm_config
 from shared.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
     CONSOLIDATION_TEMPERATURE,
-    GROWTH_DEDUP_THRESHOLD,
     character_path,
     get_agent_names,
 )
@@ -31,8 +29,10 @@ from consolidation.inputs import (
     render_raw_history,
 )
 from storage.agent_files import (
+    GrowthEntry,
     get_fields_from_file,
     backup_file,
+    growth_id_sort_key,
     read_agent_file,
     read_growth_entries,
     read_memory_draft,
@@ -51,8 +51,7 @@ from storage.vector_store import vector_store
 from agents.schema import (
     EpisodeClosureOutput,
     EpisodeMemoryBlock,
-    GrowthDedupOutput,
-    GrowthExtractOutput,
+    GrowthPatchOutput,
 )
 
 
@@ -61,12 +60,11 @@ from agents.schema import (
 # ---------------------------------------------------------------------------
 
 
-def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:
-    """把 EpisodeMemory 压成喂给 growth LLM 的 dict。
+_GROWTH_MAX_ENTRIES = 20
+_GROWTH_DIMENSION_PATTERN = re.compile(r"^[^:：\s][^:：]*[:：][^→\s][^→]*→\S.*$")
 
-    剔除 keywords/importance：growth 阶段用不到。
-    memory_owner 是调用方上下文，不喂给 LLM。
-    """
+
+def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:
     return {
         "date": episode.date,
         "time": episode.time,
@@ -75,6 +73,113 @@ def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:
         "title": episode.title,
         "content": episode.content,
     }
+
+
+def _sorted_growth_ids(entries: dict[str, GrowthEntry]) -> list[str]:
+    return sorted(entries.keys(), key=growth_id_sort_key)
+
+
+def _is_valid_growth_dimension(dimension: str) -> bool:
+    return bool(_GROWTH_DIMENSION_PATTERN.fullmatch(dimension))
+
+
+def _has_growth_dimension(
+    entries: dict[str, GrowthEntry],
+    dimension: str,
+    *,
+    exclude_id: str | None = None,
+) -> bool:
+    return any(
+        entry_id != exclude_id and entry["dimension"] == dimension
+        for entry_id, entry in entries.items()
+    )
+
+
+def _render_growth_entries_for_prompt(entries: dict[str, GrowthEntry]) -> str:
+    if not entries:
+        return "（尚无）"
+
+    lines: list[str] = []
+    for entry_id in _sorted_growth_ids(entries):
+        entry = entries[entry_id]
+        lines.append(f"[{entry_id}|{entry['dimension']}] {entry['content']}")
+    return "\n".join(lines)
+
+
+def _apply_growth_patch_entries(
+    agent_name: str,
+    entries: dict[str, GrowthEntry],
+    patch: GrowthPatchOutput,
+) -> tuple[dict[str, GrowthEntry], list[str]]:
+    updated_entries = dict(entries)
+    logs: list[str] = []
+    next_index = max((growth_id_sort_key(entry_id) for entry_id in updated_entries), default=0) + 1
+
+    for entry_id in patch.remove:
+        if entry_id not in updated_entries:
+            memory_logger.warning(f"[整理器] {agent_name} growth patch remove 跳过不存在 ID: {entry_id}")
+            continue
+        del updated_entries[entry_id]
+        logs.append(f"REMOVE {entry_id}")
+
+    for entry_id, item in patch.update.items():
+        if entry_id not in updated_entries:
+            memory_logger.warning(f"[整理器] {agent_name} growth patch update 跳过不存在 ID: {entry_id}")
+            continue
+
+        content = item.content
+        if not content:
+            memory_logger.warning(f"[整理器] {agent_name} growth patch update 跳过空 content: {entry_id}")
+            continue
+
+        dimension = item.dimension
+        if not _is_valid_growth_dimension(dimension):
+            memory_logger.warning(
+                f"[整理器] {agent_name} growth patch update 跳过非法 dimension: {entry_id} {dimension!r}"
+            )
+            continue
+        if _has_growth_dimension(updated_entries, dimension, exclude_id=entry_id):
+            memory_logger.warning(
+                f"[整理器] {agent_name} growth patch update 跳过重复 dimension: {dimension}"
+            )
+            continue
+        updated_entries[entry_id] = {
+            "dimension": dimension,
+            "content": content,
+        }
+        logs.append(f"UPDATE {entry_id}")
+
+    for item in patch.add:
+        if len(updated_entries) >= _GROWTH_MAX_ENTRIES:
+            memory_logger.warning(
+                f"[整理器] {agent_name} growth patch add 跳过，已达上限 {_GROWTH_MAX_ENTRIES} 条"
+            )
+            continue
+        dimension = item.dimension
+        content = item.content
+        if not content:
+            memory_logger.warning(f"[整理器] {agent_name} growth patch add 跳过空 content")
+            continue
+        if not _is_valid_growth_dimension(dimension):
+            memory_logger.warning(
+                f"[整理器] {agent_name} growth patch add 跳过非法 dimension: {dimension!r}"
+            )
+            continue
+        if _has_growth_dimension(updated_entries, dimension):
+            memory_logger.warning(
+                f"[整理器] {agent_name} growth patch add 跳过重复 dimension: {dimension}"
+            )
+            continue
+
+        new_id = f"P{next_index:03d}"
+        updated_entries[new_id] = {
+            "dimension": dimension,
+            "content": content,
+        }
+        logs.append(f"ADD {new_id}")
+        next_index += 1
+
+    return updated_entries, logs
 
 
 _USER_FIELD_DESCRIPTIONS: dict[str, str] = {
@@ -272,7 +377,7 @@ class MemoryConsolidationFlow:
             raw_dialogue=raw_dialogue,
         )
 
-    async def _extract_growth_updates(
+    async def _patch_growth_entries(
         self,
         agent_name: str,
         episode: EpisodeMemory,
@@ -283,78 +388,32 @@ class MemoryConsolidationFlow:
             indent=2,
         )
         soul_content = read_agent_file(agent_name, "soul.md")
-        growth_content = read_agent_file(agent_name, "growth.md") or "（尚无）"
+        current_entries = read_growth_entries(agent_name)
+        growth_content = _render_growth_entries_for_prompt(current_entries)
         user = (
             f"<soul>\n{soul_content}\n</soul>\n\n"
             f"<existing_growth>\n{growth_content}\n</existing_growth>\n\n"
             f"<consolidated_memory>\n{payload}\n</consolidated_memory>"
         )
         output = await self._run_consolidation_agent(
-            agent=get_growth_extract_agent(),
-            output_type=GrowthExtractOutput,
+            agent=get_growth_patch_agent(),
+            output_type=GrowthPatchOutput,
             agent_name=agent_name,
-            function_name="growth_extract",
+            function_name="growth_patch",
             user=user,
         )
-        updates = [{"content": entry.strip()} for entry in output.updates if entry.strip()]
-        if updates:
-            memory_logger.debug(
-                f"[整理器] {agent_name} growth.md: {self._apply_growth_updates(agent_name, updates)}"
-            )
-        else:
-            memory_logger.debug(f"[整理器] {agent_name} 无人格沉淀更新")
 
-    async def _dedup_growth_entries(self, agent_name: str) -> None:
-        current_count = len(read_growth_entries(agent_name))
-        if current_count <= GROWTH_DEDUP_THRESHOLD:
-            memory_logger.debug(
-                f"[整理器] {agent_name} 跳过 growth dedup（当前 {current_count} 条，未超过阈值 {GROWTH_DEDUP_THRESHOLD}）"
-            )
-            return
-        memory_logger.debug(
-            f"[整理器] {agent_name} 触发 growth dedup（当前 {current_count} 条，阈值 {GROWTH_DEDUP_THRESHOLD}）"
-        )
-        growth_content = read_agent_file(agent_name, "growth.md") or "（尚无）"
-        user = f"<existing_growth>\n{growth_content}\n</existing_growth>"
-        output = await self._run_consolidation_agent(
-            agent=get_growth_dedup_agent(),
-            output_type=GrowthDedupOutput,
-            agent_name=agent_name,
-            function_name="growth_dedup",
-            user=user,
-        )
-        entries = [entry.strip() for entry in output.entries if entry.strip()]
-        if not entries:
-            memory_logger.warning(f"[整理器] {agent_name} growth dedup 结果为空，跳过")
+        updated_entries, logs = _apply_growth_patch_entries(agent_name, current_entries, output)
+        if not logs:
+            memory_logger.debug(f"[整理器] {agent_name} 无人格沉淀更新")
             return
 
         growth_path = Path(character_path(agent_name, "growth.md"))
         if growth_path.exists():
             backup_file(growth_path, agent_name, "growth")
 
-        write_growth_entries(
-            agent_name,
-            {f"P{i:03d}": entry for i, entry in enumerate(entries, start=1)},
-        )
-        memory_logger.info(f"[整理器] {agent_name} growth dedup 完成，条目数: {len(entries)}")
-
-    def _apply_growth_updates(self, agent_name: str, updates: list[dict]) -> str:
-        entries = read_growth_entries(agent_name)
-        logs: list[str] = []
-        next_index = max(
-            (int(match.group(1)) for key in entries if (match := re.fullmatch(r"P(\d{3})", key))),
-            default=0,
-        ) + 1
-        for update in updates:
-            content = (update.get("content") or "").strip()
-            if not content:
-                continue
-            new_id = f"P{next_index:03d}"
-            entries[new_id] = content
-            logs.append(f"ADD {new_id}")
-            next_index += 1
-        write_growth_entries(agent_name, entries)
-        return ";".join(logs) if logs else "无更新"
+        write_growth_entries(agent_name, updated_entries)
+        memory_logger.info(f"[整理器] {agent_name} growth patch 完成: {';'.join(logs)}")
 
     async def _apply_consolidation_pipeline(
         self,
@@ -378,17 +437,10 @@ class MemoryConsolidationFlow:
             return episode, errors
 
         try:
-            await self._extract_growth_updates(agent_name, episode)
+            await self._patch_growth_entries(agent_name, episode)
         except Exception as e:
             errors.append(f"第二步调用失败: {e}")
             memory_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
-            return episode, errors
-
-        try:
-            await self._dedup_growth_entries(agent_name)
-        except Exception as e:
-            errors.append(f"第三步调用失败: {e}")
-            memory_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
 
         return episode, errors
 
