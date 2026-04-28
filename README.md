@@ -65,13 +65,6 @@ uv run uvicorn server:app --reload
 
 然后直接在聊天界面输入消息即可。每轮角色回应后，系统会生成 2-3 个可选行动供点击，也可以忽略选项直接输入自由文本。
 
-## 聊天命令
-
-- `/save`：导出当前存档到 `saves/`
-- `/load list`：查看存档列表
-- `/load <序号>`：加载指定存档
-- `/reset`：重置当前游戏并重新选择故事模板
-
 ## 当前运行机制
 
 ### 1. narrator 先路由
@@ -241,9 +234,9 @@ uv run uvicorn server:app --reload
 
 ## 存档机制
 
-- `/save` 会将当前角色数据、角色记忆、narrator raw 历史、历史窗口 sidecar、角色 recall sidecar 等打包为 zip 存入 `saves/`
-- `/load <序号>` 会恢复角色目录，并按需要重建向量索引
-- `/reset` 会清空当前运行数据，并从 `data/templates/{story_id}` 重建
+- 前端「存档」按钮调用 `POST /api/save`，将当前角色数据、角色记忆、narrator raw 历史、历史窗口 sidecar、角色 recall sidecar 等打包为 zip 存入 `saves/`
+- 档案室通过 `GET /api/saves` 展示存档列表，选择存档后调用 `POST /api/load` 恢复角色目录，并按需要重建向量索引
+- 前端「重开」操作调用 `POST /api/reset`，清空当前运行数据，并从 `data/templates/{story_id}` 重建
 
 ## 日志与观测
 
