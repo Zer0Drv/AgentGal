@@ -11,29 +11,37 @@ from memory.parser import (
 from shared.config import get_agent_names
 from storage.vector_store import vector_store
 
+DEFAULT_REBUILD_BATCH_SIZE = 64
 
-async def rebuild_memory_index(agent_name: str | None = None) -> None:
+
+async def rebuild_memory_index(
+    agent_name: str | None = None,
+    *,
+    clear_existing: bool = True,
+    batch_size: int = DEFAULT_REBUILD_BATCH_SIZE,
+) -> None:
     """从 memory.jsonl 重建向量索引。
 
     Args:
         agent_name: 指定角色时只重建该角色；为 None 时重建所有非 narrator 角色。
+        clear_existing: 是否在重建前清理目标角色已有索引。
+        batch_size: 每批 embedding 请求与 DB 写入的记忆条数。
     """
     if agent_name is not None:
         agents = [agent_name]
-        await vector_store.delete(agent_name)
+        if clear_existing:
+            await vector_store.delete(agent_name)
     else:
-        try:
-            agents = get_agent_names(include_narrator=False)
-        except TypeError:
-            agents = [a for a in get_agent_names() if a != "narrator"]
-        await vector_store.delete_all_agents(agents)
+        agents = get_agent_names(include_narrator=False)
+        if clear_existing:
+            await vector_store.delete_all_agents(agents)
 
     for agent in agents:
         if not memory_jsonl_path(agent).exists():
             logger.info("[indexer] 跳过 %s：未找到 memory.jsonl", agent)
             continue
 
-        for record in read_memory_jsonl(agent):
-            await vector_store.add(record)
+        records = read_memory_jsonl(agent)
+        inserted = await vector_store.add_many(records, batch_size=batch_size)
 
-        logger.info("[indexer] %s 索引完成", agent)
+        logger.info("[indexer] %s 索引完成：records=%s, inserted=%s", agent, len(records), inserted)

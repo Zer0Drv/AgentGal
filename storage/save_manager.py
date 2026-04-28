@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import time
 import traceback
 import uuid
 import zipfile
@@ -223,18 +224,29 @@ async def import_save_archive(save_filename: str) -> bool:
         print(f"[读档] 存档文件不存在: {save_path}", flush=True)
         return False
 
+    started_at = time.perf_counter()
+    last_step_at = started_at
+
+    def log_step(label: str) -> None:
+        nonlocal last_step_at
+        now = time.perf_counter()
+        print(
+            f"[读档] {label} 用时 {now - last_step_at:.2f}s，累计 {now - started_at:.2f}s",
+            flush=True,
+        )
+        last_step_at = now
+
     try:
         from storage.vector_store import vector_store
 
-        all_agents = get_agent_names()
-        if all_agents:
-            print("[读档] 清理向量记忆...", flush=True)
-            await vector_store.delete_all_agents(all_agents)
+        old_agents = get_agent_names()
+        log_step(f"扫描当前角色（{len(old_agents)} 个）")
 
         characters_dir = str(CHARACTERS_DIR)
         if os.path.exists(characters_dir):
             shutil.rmtree(characters_dir)
             print(f"[读档] 已删除: {characters_dir}", flush=True)
+        log_step("删除旧角色目录")
 
         os.makedirs(characters_dir, exist_ok=True)
         with zipfile.ZipFile(str(save_path), "r") as zf:
@@ -246,6 +258,7 @@ async def import_save_archive(save_filename: str) -> bool:
                     continue
                 zf.extract(member, characters_dir)
                 print(f"[读档] 已恢复: {member}", flush=True)
+        log_step("解压存档")
 
         save_id_path = os.path.join(characters_dir, ".save_id")
         if not os.path.exists(save_id_path):
@@ -253,10 +266,19 @@ async def import_save_archive(save_filename: str) -> bool:
             with open(save_id_path, "w", encoding="utf-8") as f:
                 f.write(new_save_id)
             print(f"[读档] 旧存档无 save_id，已生成新 id: {new_save_id}", flush=True)
+        log_step("校验 save_id")
+
+        restored_agents = get_agent_names()
+        agents_to_clear = list(dict.fromkeys([*old_agents, *restored_agents]))
+        if agents_to_clear:
+            print(f"[读档] 清理向量记忆: {agents_to_clear}", flush=True)
+            await vector_store.delete_all_agents(agents_to_clear)
+        log_step(f"清理向量记忆（{len(agents_to_clear)} 个角色）")
 
         print("[读档] 重建向量库...", flush=True)
         from memory.indexer import rebuild_memory_index
-        await rebuild_memory_index()
+        await rebuild_memory_index(clear_existing=False)
+        log_step("重建向量库")
         print(f"[读档] 读档完成: {save_filename}", flush=True)
         return True
 

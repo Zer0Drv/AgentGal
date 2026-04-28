@@ -14,12 +14,18 @@ import hashlib
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import aiosqlite
 
 from log_config.memory import memory_logger
-from llm.embedding import embed_async, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
+from llm.embedding import (
+    embed_async,
+    embed_sync,
+    EMBED_DIM,
+    EMBED_API_URL,
+    EMBED_API_KEY,
+)
 from memory.parser import EpisodeMemory, canonical_cn_date
 from shared.config import (
     character_path,
@@ -30,9 +36,27 @@ from shared.config import (
 _CN_DATE_RE = re.compile(r"^\d{1,2}月\d{1,2}日$")
 
 
+class _PreparedEpisode(NamedTuple):
+    episode: EpisodeMemory
+    memory_owner: str
+    date: str
+    content_hash: str
+    recalled_at: str
+    embed_text: str
+
+
 # ----------------------------- 配置与常量 -----------------------------
 
 DB_PATH = str(PROJECT_ROOT / "data" / "vectors.sqlite")
+
+__all__ = [
+    "VectorStore",
+    "vector_store",
+    "embed_sync",
+    "EMBED_DIM",
+    "EMBED_API_URL",
+    "EMBED_API_KEY",
+]
 
 
 # FTS 只保留中英文和数字，其他标点交给 jieba 切分后丢弃
@@ -315,6 +339,50 @@ class VectorStore:
         """决定拿哪段文本去 embed：优先 title，空则降级 content。"""
         return episode.title.strip() or episode.content.strip()
 
+    def _prepare_episode_index(
+        self,
+        episode: EpisodeMemory,
+        sidecar_cache: dict[tuple[str, str], dict[str, str]] | None = None,
+    ) -> _PreparedEpisode | None:
+        """校验并准备单条 EpisodeMemory 的索引元数据。"""
+        memory_owner = episode.memory_owner.strip()
+        if not memory_owner:
+            memory_logger.warning("[VectorStore] 跳过长期记忆索引: memory_owner 为空")
+            return None
+
+        date = canonical_cn_date(episode.date)
+        if not date or not _CN_DATE_RE.match(date):
+            memory_logger.warning(
+                "[VectorStore] 跳过长期记忆索引: memory_owner=%s, date=%s, 日期格式无效",
+                memory_owner, episode.date,
+            )
+            return None
+
+        if not episode.content.strip():
+            memory_logger.info(
+                "[VectorStore] 跳过长期记忆索引: memory_owner=%s, date=%s, 无有效事件",
+                memory_owner, date,
+            )
+            return None
+
+        content_hash = hashlib.sha1(episode.content.encode("utf-8")).hexdigest()
+        cache_key = (memory_owner, date)
+        if sidecar_cache is None:
+            sidecar_recall = self._sidecar_recall_by_hash(memory_owner, date)
+        else:
+            if cache_key not in sidecar_cache:
+                sidecar_cache[cache_key] = self._sidecar_recall_by_hash(memory_owner, date)
+            sidecar_recall = sidecar_cache[cache_key]
+        recalled_at = sidecar_recall.get(content_hash, date)
+        return _PreparedEpisode(
+            episode=episode,
+            memory_owner=memory_owner,
+            date=date,
+            content_hash=content_hash,
+            recalled_at=recalled_at,
+            embed_text=self._embed_text(episode),
+        )
+
     async def _insert_chunk(
         self,
         db: aiosqlite.Connection,
@@ -357,6 +425,46 @@ class VectorStore:
                 (rowid, _tokenize_for_fts(episode.content), _tokenize_for_fts(keywords_str)),
             )
 
+    async def _insert_prepared_batch(
+        self,
+        prepared: list[_PreparedEpisode],
+        embeddings: list[list[float]],
+    ) -> int:
+        """在单个事务内写入一批已完成 embedding 的记忆。"""
+        if not prepared:
+            return 0
+
+        db: aiosqlite.Connection | None = None
+        try:
+            async with self._get_write_lock():
+                await self._ensure_tables()
+                db = await self._get_db()
+
+                await db.execute("BEGIN")
+                for item, embedding in zip(prepared, embeddings, strict=True):
+                    await self._insert_chunk(
+                        db,
+                        item.episode,
+                        item.memory_owner,
+                        item.date,
+                        item.content_hash,
+                        item.recalled_at,
+                        embedding,
+                    )
+                await db.commit()
+                return len(prepared)
+        except Exception as e:
+            try:
+                if db is not None:
+                    await db.execute("ROLLBACK")
+            except Exception:
+                pass
+            memory_logger.error(
+                "[VectorStore] 批量索引长期记忆失败: count=%s, error=%s",
+                len(prepared), e,
+            )
+            return 0
+
     async def add(
         self,
         episode: EpisodeMemory,
@@ -366,71 +474,73 @@ class VectorStore:
         Args:
             episode: 待插入的长期记忆事件
         """
-        memory_owner = episode.memory_owner.strip()
-        if not memory_owner:
-            memory_logger.warning("[VectorStore] 跳过长期记忆索引: memory_owner 为空")
-            return
-
-        date = canonical_cn_date(episode.date)
-        if not date or not _CN_DATE_RE.match(date):
-            memory_logger.warning(
-                "[VectorStore] 跳过长期记忆索引: memory_owner=%s, date=%s, 日期格式无效",
-                memory_owner, episode.date,
-            )
-            return
-
-        if not episode.content.strip():
-            memory_logger.info(
-                "[VectorStore] 跳过长期记忆索引: memory_owner=%s, date=%s, 无有效事件",
-                memory_owner, date,
-            )
+        prepared = self._prepare_episode_index(episode)
+        if prepared is None:
             return
 
         # embed_async 是 HTTP 请求，绝不能在写锁或事务内调用
         try:
-            embedding = (await embed_async([self._embed_text(episode)]))[0]
+            embedding = (await embed_async([prepared.embed_text]))[0]
         except Exception as e:
             memory_logger.error(
                 "[VectorStore] embedding 计算失败: memory_owner=%s, date=%s, error=%s",
-                memory_owner, date, e,
+                prepared.memory_owner, prepared.date, e,
             )
             return
 
-        sidecar_recall = self._sidecar_recall_by_hash(memory_owner, date)
-        content_hash = hashlib.sha1(episode.content.encode("utf-8")).hexdigest()
-        recalled_at = sidecar_recall.get(content_hash, date)
-
-        db: aiosqlite.Connection | None = None
-        try:
-            async with self._get_write_lock():
-                await self._ensure_tables()
-                db = await self._get_db()
-
-                await db.execute("BEGIN")
-                await self._insert_chunk(
-                    db,
-                    episode,
-                    memory_owner,
-                    date,
-                    content_hash,
-                    recalled_at,
-                    embedding,
-                )
-                await db.commit()
-                memory_logger.info(
-                    "[VectorStore] 长期记忆追加索引完成: memory_owner=%s, date=%s",
-                    memory_owner, date,
-                )
-        except Exception as e:
-            try:
-                if db is not None:
-                    await db.execute("ROLLBACK")
-            except Exception:
-                pass
-            memory_logger.error(
-                "[VectorStore] 索引长期记忆失败: memory_owner=%s, date=%s, error=%s",
-                memory_owner, date, e,
+        inserted = await self._insert_prepared_batch([prepared], [embedding])
+        if inserted:
+            memory_logger.debug(
+                "[VectorStore] 长期记忆追加索引完成: memory_owner=%s, date=%s",
+                prepared.memory_owner, prepared.date,
             )
+
+    async def add_many(
+        self,
+        episodes: list[EpisodeMemory],
+        *,
+        batch_size: int = 64,
+    ) -> int:
+        """批量追加长期记忆索引，返回成功写入的记录数。"""
+        if batch_size <= 0:
+            batch_size = 64
+
+        sidecar_cache: dict[tuple[str, str], dict[str, str]] = {}
+        prepared = [
+            item
+            for episode in episodes
+            if (item := self._prepare_episode_index(episode, sidecar_cache)) is not None
+        ]
+        if not prepared:
+            return 0
+
+        inserted_total = 0
+        for start in range(0, len(prepared), batch_size):
+            batch = prepared[start:start + batch_size]
+            try:
+                embeddings = await embed_async([item.embed_text for item in batch])
+            except Exception as e:
+                owners = sorted({item.memory_owner for item in batch})
+                memory_logger.error(
+                    "[VectorStore] 批量 embedding 计算失败: owners=%s, count=%s, error=%s",
+                    owners, len(batch), e,
+                )
+                continue
+
+            if len(embeddings) != len(batch):
+                memory_logger.error(
+                    "[VectorStore] 批量 embedding 数量不匹配: expected=%s, got=%s",
+                    len(batch), len(embeddings),
+                )
+                continue
+
+            inserted_total += await self._insert_prepared_batch(batch, embeddings)
+
+        memory_logger.info(
+            "[VectorStore] 批量长期记忆索引完成: requested=%s, prepared=%s, inserted=%s",
+            len(episodes), len(prepared), inserted_total,
+        )
+        return inserted_total
 
     # ----------------------------- 原始检索 -----------------------------
 
