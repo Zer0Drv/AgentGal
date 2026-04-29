@@ -260,10 +260,11 @@ def build_schedule_snapshot(game_time: str) -> str:
     return f"{header}\n" + "\n".join(rows) + "\n</schedule_snapshot>"
 
 
-def build_fields_block(agent_name: str) -> str:
-    """narrator 专用：列出当前所有候选角色的 id / 显示名 / identity。"""
-    if agent_name != "narrator":
-        return ""
+def build_characters_block(tag: str = "characters") -> str:
+    """列出所有主要角色的 id / 显示名 / identity。
+
+    narrator user message 用 tag='fields'，state_updater 用默认 tag='characters'。
+    """
     rows: list[str] = []
     for name in get_agent_names(include_narrator=False):
         soul = read_agent_file(name, "soul.md")
@@ -273,7 +274,7 @@ def build_fields_block(agent_name: str) -> str:
         rows.append(f"- {name}: {display}{suffix}")
     if not rows:
         return ""
-    return "<fields>\n" + "\n".join(rows) + "\n</fields>"
+    return f"<{tag}>\n" + "\n".join(rows) + f"\n</{tag}>"
 
 
 def build_relations_block(audience: str) -> str:
@@ -308,7 +309,7 @@ def build_user_message(
     parts.append(
         f"<user_profile>\n{user_content.strip()}\n</user_profile>" if user_content else ""
     )
-    parts.append(build_fields_block(agent_name))
+    parts.append(build_characters_block(tag="fields") if is_narrator else "")
     parts.append(f"最近对话历史:\n\n{history}" if history else "")
     parts.append(
         f"<status>\n{status_content.strip()}\n</status>" if status_content.strip() else ""

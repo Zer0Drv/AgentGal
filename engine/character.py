@@ -24,6 +24,7 @@ from agents.schema import (
     StateUpdaterOutput,
 )
 from engine.prompt_builder import (
+    build_characters_block,
     build_schedule_snapshot,
     build_search_query,
     build_user_message,
@@ -525,7 +526,11 @@ class Narrator(BaseEntity):
             history_lines.append(f"{role_to_speaker(role)}: {content}")
         recent_history = "\n\n".join(history_lines) if history_lines else "无"
 
+        characters_block = build_characters_block()
+
         parts: list[str] = []
+        if characters_block:
+            parts.append(characters_block)
         if schedule_snapshot:
             parts.append(schedule_snapshot)
         parts.append(f"<character_intention>\n{character_intention}\n</character_intention>")
