@@ -10,6 +10,7 @@ import traceback
 import uuid
 import zipfile
 from datetime import datetime
+from pathlib import Path
 
 from shared.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
 from log_config.routing import routing_logger
@@ -134,10 +135,8 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
         print(f"  已写入: {story_id_path}", flush=True)
 
         save_id = uuid.uuid4().hex[:8]
-        save_id_path = os.path.join(characters_dir, ".save_id")
-        with open(save_id_path, "w", encoding="utf-8") as f:
-            f.write(save_id)
-        print(f"  已写入: {save_id_path} ({save_id})", flush=True)
+        _write_save_id(save_id)
+        print(f"  已写入: .save_id ({save_id})", flush=True)
 
         # 6. 重置日志
         print("[日志]", flush=True)
@@ -215,7 +214,7 @@ async def import_save_archive(save_filename: str) -> bool:
     Returns:
         成功返回 True，失败返回 False
     """
-    if not save_filename.endswith(".zip") or os.sep in save_filename or "/" in save_filename:
+    if not _is_safe_save_filename(save_filename):
         print(f"[读档] 非法文件名: {save_filename}", flush=True)
         return False
 
@@ -335,12 +334,18 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
 
 
 def _read_save_id() -> str:
-    """读取当前游戏的 save_id，用于确定覆盖哪个存档文件"""
+    """读取当前游戏来源标记。它不再参与存档文件名选择。"""
     save_id_path = CHARACTERS_DIR / ".save_id"
     try:
         return save_id_path.read_text(encoding="utf-8").strip()
     except Exception:
         return uuid.uuid4().hex[:8]
+
+
+def _write_save_id(save_id: str) -> None:
+    """更新当前游戏来源标记。"""
+    save_id_path = CHARACTERS_DIR / ".save_id"
+    save_id_path.write_text(save_id, encoding="utf-8")
 
 
 def _read_story_theme() -> str:
@@ -353,7 +358,7 @@ def _read_story_theme() -> str:
 
 
 def _read_narrator_focus() -> str:
-    """从 narrator/status.md 读取叙事焦点，用于存档命名"""
+    """读取叙事焦点写入 metadata.json，供存档列表展示。"""
     try:
         status_text = read_agent_file("narrator", "status.md")
         focus = extract_status_field(status_text, "叙事焦点")
@@ -365,21 +370,82 @@ def _read_narrator_focus() -> str:
     return ""
 
 
-async def export_save_archive_with_detail() -> tuple[str | None, str | None]:
-    """导出存档，并返回路径或可直接展示的错误详情。"""
-    save_id = _read_save_id()
-    theme = _read_story_theme()
-    focus = _read_narrator_focus()
+def _is_safe_save_filename(filename: str) -> bool:
+    """只允许覆盖 saves/ 下的单个 zip 文件名。"""
+    return (
+        bool(filename)
+        and filename.endswith(".zip")
+        and "/" not in filename
+        and "\\" not in filename
+    )
+
+
+def _read_archive_save_id(save_path: Path) -> str:
+    """读取旧档位的来源标记，缺失时用文件名兜底。"""
+    try:
+        with zipfile.ZipFile(str(save_path), "r") as zf:
+            if "metadata.json" in zf.namelist():
+                meta = json.loads(zf.read("metadata.json").decode("utf-8"))
+                save_id = str(meta.get("save_id", "")).strip()
+                if save_id:
+                    return save_id
+    except Exception:
+        pass
+
+    stem = save_path.stem
+    return stem.rsplit("_", 1)[-1] if "_" in stem else stem
+
+
+def _build_new_save_path(theme: str, save_dir: Path) -> tuple[str, Path, str]:
+    """为新档位生成不冲突的 uuid 文件名。"""
+    for _ in range(20):
+        save_id = uuid.uuid4().hex[:8]
+        filename = f"{theme}_{save_id}.zip" if theme else f"{save_id}.zip"
+        save_path = save_dir / filename
+        if not save_path.exists():
+            return filename, save_path, save_id
+
+    save_id = uuid.uuid4().hex
     filename = f"{theme}_{save_id}.zip" if theme else f"{save_id}.zip"
+    return filename, save_dir / filename, save_id
+
+
+async def export_save_archive_with_detail(
+    target_filename: str | None = None,
+) -> tuple[str | None, str | None]:
+    """导出存档，并返回路径或可直接展示的错误详情。
+
+    Args:
+        target_filename: 指定时覆盖该 saves/ 下的 zip；为空时创建新档位。
+
+    Returns:
+        (save_path, error_detail)
+    """
+    theme = _read_story_theme()
 
     save_dir = PROJECT_ROOT / "saves"
     os.makedirs(save_dir, exist_ok=True)
-    save_path = str(save_dir / filename)
+
+    if target_filename is not None:
+        if not _is_safe_save_filename(target_filename):
+            return None, "非法存档文件名。"
+        filename = target_filename
+        save_path = save_dir / filename
+        if not save_path.exists():
+            return None, "目标存档不存在，无法覆盖。"
+        save_id = _read_archive_save_id(save_path) or _read_save_id()
+    else:
+        filename, save_path, save_id = _build_new_save_path(theme, save_dir)
+        print(f"[存档] 新建档位: {filename}")
+
+    focus = _read_narrator_focus()
 
     all_agents = get_agent_names()
     if not all_agents:
         print("[存档] 没有找到任何角色")
         return None, "没有找到任何角色，无法创建存档。"
+
+    temp_path = save_dir / f".{filename}.{uuid.uuid4().hex}.tmp"
 
     try:
         # 存档前从 DB 导出 recall 状态写入 sidecar（运行期不维护 sidecar）
@@ -392,10 +458,11 @@ async def export_save_archive_with_detail() -> tuple[str | None, str | None]:
             if recall_state:
                 write_sidecar_json(agent_name, ".memory_recall_state.json", recall_state)
 
-        with zipfile.ZipFile(save_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(str(temp_path), "w", zipfile.ZIP_DEFLATED) as zf:
             metadata = {
                 "export_time": datetime.now().isoformat(),
                 "save_id": save_id,
+                "filename": filename,
                 "theme": theme,
                 "focus": focus,
                 "agents": all_agents,
@@ -405,7 +472,10 @@ async def export_save_archive_with_detail() -> tuple[str | None, str | None]:
                 "metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2)
             )
 
-            for marker in [".story_id", ".save_id", ".turn_counter.json"]:
+            zf.writestr(".save_id", save_id)
+            print(f"[存档] 已添加: .save_id")
+
+            for marker in [".story_id", ".turn_counter.json"]:
                 marker_path = CHARACTERS_DIR / marker
                 if marker_path.exists():
                     zf.write(str(marker_path), marker)
@@ -419,10 +489,13 @@ async def export_save_archive_with_detail() -> tuple[str | None, str | None]:
                         zf.write(filepath, arcname)
                         print(f"[存档] 已添加: {filepath}")
 
+        os.replace(temp_path, save_path)
+        _write_save_id(save_id)
         print(f"[存档] 导出完成: {save_path}")
-        return save_path, None
+        return str(save_path), None
 
     except Exception as e:
+        temp_path.unlink(missing_ok=True)
         detail = f"{type(e).__name__}: {e}"
         print(f"[存档] 导出失败: {detail}")
         routing_logger.error("[save] 导出异常: %s\n%s", detail, traceback.format_exc())

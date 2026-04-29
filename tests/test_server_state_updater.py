@@ -59,7 +59,8 @@ async def test_settle_pending_state_update_cancels_background_task(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_api_save_returns_error_detail(monkeypatch):
-    async def fake_export_save_archive_with_detail():
+    async def fake_export_save_archive_with_detail(*, target_filename=None):
+        assert target_filename is None
         return None, "sqlite 已锁定"
 
     logged: list[str] = []
@@ -80,6 +81,34 @@ async def test_api_save_returns_error_detail(monkeypatch):
     assert response.status_code == 500
     assert json.loads(response.body) == {"ok": False, "detail": "sqlite 已锁定"}
     assert logged == ["[save] /api/save 失败: sqlite 已锁定"]
+
+
+@pytest.mark.asyncio
+async def test_api_save_passes_target_filename(monkeypatch):
+    called: list[str | None] = []
+
+    async def fake_export_save_archive_with_detail(*, target_filename=None):
+        called.append(target_filename)
+        return "/tmp/school_slot.zip", None
+
+    monkeypatch.setattr(
+        server_module,
+        "export_save_archive_with_detail",
+        fake_export_save_archive_with_detail,
+    )
+    server_module._pending_state_update_task = None
+
+    response = await server_module.api_save(
+        server_module.SaveRequest(filename="school_slot.zip")
+    )
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {
+        "ok": True,
+        "path": "/tmp/school_slot.zip",
+        "filename": "school_slot.zip",
+    }
+    assert called == ["school_slot.zip"]
 
 
 @pytest.mark.asyncio

@@ -323,14 +323,23 @@ async def api_list_saves() -> JSONResponse:
 # =============================================================================
 
 
+class SaveRequest(BaseModel):
+    filename: str | None = None
+
+
 @app.post("/api/save")
-async def api_save() -> JSONResponse:
-    """导出存档。"""
+async def api_save(req: SaveRequest | None = None) -> JSONResponse:
+    """导出存档。filename 为空时新建档位，有值时覆盖该档位。"""
     try:
         await _settle_pending_state_update()
-        save_path, error_detail = await export_save_archive_with_detail()
+        request = req or SaveRequest()
+        save_path, error_detail = await export_save_archive_with_detail(
+            target_filename=request.filename
+        )
         if save_path:
-            return JSONResponse({"ok": True, "path": save_path})
+            return JSONResponse(
+                {"ok": True, "path": save_path, "filename": Path(save_path).name}
+            )
         detail = error_detail or "存档导出失败。"
         routing_logger.error("[save] /api/save 失败: %s", detail)
         return JSONResponse({"ok": False, "detail": detail}, status_code=500)

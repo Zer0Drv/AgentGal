@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -84,3 +85,42 @@ def test_narrator_does_not_include_character_only_sidecars(character_dir: Path):
     assert "schedule.json" not in basenames
     assert ".memory_recall_state.json" not in basenames
     assert "soul.md" in basenames
+
+
+@pytest.mark.asyncio
+async def test_export_new_save_uses_fresh_slot_filename(tmp_path: Path, monkeypatch):
+    characters_dir = tmp_path / "data" / "characters"
+    narrator_dir = characters_dir / "narrator"
+    narrator_dir.mkdir(parents=True)
+    (characters_dir / ".story_id").write_text("school", encoding="utf-8")
+    (characters_dir / ".turn_counter.json").write_text('{"turn": 3}', encoding="utf-8")
+    (narrator_dir / "soul.md").write_text("# narrator\n", encoding="utf-8")
+    (narrator_dir / "status.md").write_text("## 叙事焦点\n屋顶\n", encoding="utf-8")
+
+    monkeypatch.setattr(save_manager, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(save_manager, "CHARACTERS_DIR", characters_dir)
+    monkeypatch.setattr(save_manager, "get_agent_names", lambda: ["narrator"])
+    monkeypatch.setattr(
+        save_manager,
+        "character_path",
+        lambda agent_name, *parts: str(characters_dir / agent_name / Path(*parts)),
+    )
+    monkeypatch.setattr(save_manager, "_read_narrator_focus", lambda: "屋顶")
+
+    save_path, error = await save_manager.export_save_archive_with_detail()
+
+    assert error is None
+    assert save_path is not None
+    archive_path = Path(save_path)
+    assert archive_path.name.startswith("school_")
+    assert archive_path.name.endswith(".zip")
+
+    with zipfile.ZipFile(archive_path) as zf:
+        metadata = json.loads(zf.read("metadata.json").decode("utf-8"))
+        assert metadata["filename"] == archive_path.name
+        assert metadata["save_id"] == archive_path.stem.rsplit("_", 1)[-1]
+        assert zf.read(".save_id").decode("utf-8") == metadata["save_id"]
+
+    assert (characters_dir / ".save_id").read_text(encoding="utf-8") == metadata[
+        "save_id"
+    ]

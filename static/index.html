@@ -178,7 +178,9 @@ svg {
 .primary-btn,
 .story-card,
 .resume-button,
+.new-save-button,
 .save-card,
+.save-action,
 .choice-chip {
   cursor: pointer;
   transition:
@@ -209,7 +211,8 @@ svg {
 
 .ghost-btn:hover,
 .resume-button:hover,
-.save-card:hover,
+.new-save-button:hover,
+.save-action:hover,
 .choice-chip:hover,
 .story-card:hover {
   transform: translateY(-1px);
@@ -219,7 +222,8 @@ svg {
 .ghost-btn:active,
 .primary-btn:active,
 .resume-button:active,
-.save-card:active,
+.new-save-button:active,
+.save-action:active,
 .choice-chip:active,
 .story-card:active {
   transform: translateY(0) scale(0.985);
@@ -871,6 +875,66 @@ svg {
   line-height: 1.65;
 }
 
+.new-save-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-height: 64px;
+  margin-bottom: 12px;
+  padding: 13px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(180, 90, 100, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 251, 247, 0.96), rgba(255, 247, 241, 0.9));
+  color: var(--text);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    var(--shadow-soft);
+  text-align: left;
+}
+
+.new-save-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.new-save-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  border: 1px solid rgba(180, 90, 100, 0.16);
+  background: rgba(180, 90, 100, 0.08);
+  color: var(--accent);
+}
+
+.new-save-title {
+  display: block;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.new-save-meta {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.new-save-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+}
+
 .drawer-empty,
 .drawer-error {
   padding: 18px 16px;
@@ -901,6 +965,7 @@ svg {
   border: 1px solid var(--line);
   background: rgba(255, 251, 247, 0.84);
   box-shadow: var(--shadow-soft);
+  cursor: default;
   text-align: left;
 }
 
@@ -921,8 +986,15 @@ svg {
 }
 
 .save-card-arrow {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-muted);
-  font-size: 15px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .save-card-time {
@@ -936,6 +1008,21 @@ svg {
   color: var(--text-soft);
   font-size: 13px;
   line-height: 1.6;
+}
+
+.save-card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.save-card-actions .ghost-btn,
+.save-card-actions .primary-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 14px;
+  font-size: 13px;
 }
 
 .drawer-skeleton {
@@ -1736,17 +1823,6 @@ svg {
         <span class="btn-label" x-text="isCompact ? '菜单' : '档案'"></span>
       </button>
 
-      <button type="button" class="ghost-btn" x-show="!isCompact" aria-label="保存当前进度" :disabled="busy" @click="saveGame()">
-        <span class="btn-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 4h11l3 3v12.5A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5Z"/>
-            <path d="M8 4v5h7V4"/>
-            <path d="M8 15h8"/>
-          </svg>
-        </span>
-        <span>存档</span>
-      </button>
-
       <button type="button" class="ghost-btn danger" x-show="!isCompact" aria-label="重新选择故事" :disabled="busy" @click="showResetConfirmation()">
         <span class="btn-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -1923,12 +1999,24 @@ svg {
       </div>
 
       <div class="drawer-body">
-        <div class="drawer-copy" x-text="isCompact ? '存档、重开和读档都收在这里。' : '存档以最近焦点展示。读档前会覆盖当前运行时状态。'"></div>
+        <div class="drawer-copy" x-text="isCompact ? '存档、重开和读档都收在这里。' : '选择一个档位覆盖或读取；新建存档会生成新的档位。'"></div>
+
+        <button type="button" class="new-save-button" :disabled="busy || !messages.length" @click="createSave()">
+          <span class="new-save-main">
+            <span class="new-save-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 5v14"/>
+                <path d="M5 12h14"/>
+              </svg>
+            </span>
+            <span>
+              <span class="new-save-title">新建存档</span>
+              <span class="new-save-meta" x-text="messages.length ? '创建一个新的档位' : '开始故事后可用'"></span>
+            </span>
+          </span>
+        </button>
 
         <div class="drawer-shortcuts" x-show="isCompact">
-          <button type="button" class="ghost-btn" :disabled="busy" @click="saveFromDrawer()">
-            <span>存档</span>
-          </button>
           <button type="button" class="ghost-btn danger" :disabled="busy" @click="resetFromDrawer()">
             <span>重开</span>
           </button>
@@ -1954,19 +2042,27 @@ svg {
         </template>
 
         <template x-if="!saveLoading && !saveError && !saves.length">
-          <div class="drawer-empty">还没有可读取的存档。开始一个故事后，可以在输入区旁随时手动存档。</div>
+          <div class="drawer-empty">还没有存档。开始一个故事后，用上方按钮创建第一个档位。</div>
         </template>
 
         <div class="save-list" x-show="!saveLoading && !saveError && saves.length">
-          <template x-for="save in saves" :key="save.filename">
-            <button type="button" class="save-card" @click="promptLoadSave(save.filename)">
+          <template x-for="(save, index) in saves" :key="save.filename">
+            <article class="save-card">
               <div class="save-card-top">
-                <span class="save-card-label">SNAPSHOT</span>
-                <span class="save-card-arrow" aria-hidden="true">→</span>
+                <span class="save-card-label" x-text="`档位 ${index + 1}`"></span>
+                <span class="save-card-arrow" x-text="save.filename"></span>
               </div>
               <div class="save-card-time" x-text="save.display"></div>
               <div class="save-card-focus" x-text="save.focus || '未提供额外焦点摘要。'"></div>
-            </button>
+              <div class="save-card-actions">
+                <button type="button" class="ghost-btn danger save-action" :disabled="busy" @click="promptOverwriteSave(save)">
+                  <span>覆盖</span>
+                </button>
+                <button type="button" class="primary-btn save-action" :disabled="busy" @click="promptLoadSave(save.filename)">
+                  <span>读取</span>
+                </button>
+              </div>
+            </article>
           </template>
         </div>
       </div>
@@ -2261,8 +2357,7 @@ document.addEventListener("alpine:init", () => {
       this.drawerOpen = false;
     },
 
-    async saveFromDrawer() {
-      this.closeDrawer();
+    async createSave() {
       await this.saveGame();
     },
 
@@ -2808,6 +2903,21 @@ document.addEventListener("alpine:init", () => {
       });
     },
 
+    promptOverwriteSave(save) {
+      if (this.busy) {
+        this.setNotice("请等待当前回合结束后再覆盖存档。", "error");
+        return;
+      }
+      this.openConfirm({
+        title: "覆盖这个档位？",
+        body: `当前进度会写入 "${save.filename}"，原档位内容会被替换。`,
+        confirmText: "覆盖",
+        onConfirm: async () => {
+          await this.saveGame(save.filename);
+        },
+      });
+    },
+
     async loadSave(filename) {
       this.busy = true;
 
@@ -2830,7 +2940,7 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    async saveGame() {
+    async saveGame(filename = null) {
       if (this.busy) return;
       if (!this.messages.length) {
         this.setNotice("还没有可保存的对话内容。", "error");
@@ -2838,11 +2948,19 @@ document.addEventListener("alpine:init", () => {
       }
 
       try {
-        const response = await this.fetchJson("/api/save", { method: "POST" });
-        this.hasSave = true;
-        await this.refreshSaves({ quiet: true });
-        this.setNotice(`已保存到 ${response.path}`, "success");
-        this.pushToast("存档完成", "success");
+        const body = filename ? { filename } : {};
+        const response = await this.postJson("/api/save", body);
+
+        if (response.ok) {
+          this.hasSave = true;
+          await this.refreshSaves({ quiet: true });
+          const savedName = response.filename || filename || "新档位";
+          const actionText = filename ? "已覆盖档位" : "已新建档位";
+          this.setNotice(`${actionText}：${savedName}`, "success");
+          this.pushToast(filename ? "档位已覆盖" : "新存档已创建", "success");
+        } else {
+          throw new Error(response.detail || "存档失败");
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "存档失败，请稍后再试。";
         this.setNotice(`存档失败：${message}`, "error", true);

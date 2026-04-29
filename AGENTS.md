@@ -287,7 +287,7 @@ narrator 支持独立 LLM 配置（`NARRATOR_LLM_*` 环境变量），未设置�
 
 由 `storage/save_manager.py` 负责，通过 FastAPI 接口暴露：
 
-- `POST /api/save`：导出 zip 到 `saves/`
+- `POST /api/save`：导出 zip 到 `saves/`；`{}` 新建 uuid 档位，`{"filename": "...zip"}` 覆盖指定档位
 - `GET /api/saves`：列出存档
 - `POST /api/load`：恢复存档并重建必要索引
 - `POST /api/reset`：从 `data/templates/{story_id}` 重置运行时数据
