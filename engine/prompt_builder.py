@@ -109,7 +109,7 @@ def build_history_transcript(
     *,
     inject_turn_markers: bool = False,
 ) -> tuple[str, bool]:
-    """将 JSONL 原始消息转为历史文本，但只保留最后一条可见旁白。
+    """将 JSONL 原始消息转为历史文本。
 
     高低水位窗口与可见性过滤仍照常应用。
     inject_turn_markers=True 时在每条前加 `[turn=N]` 前缀，供 detector / 整理输入使用。
@@ -120,22 +120,9 @@ def build_history_transcript(
     if not visible:
         return "", False
 
-    last_narrator_index: int | None = None
-    for idx in range(len(visible) - 1, -1, -1):
-        msg = visible[idx]
-        if msg.get("role") != "narrator":
-            continue
-        content = re.sub(r"\n+", "\n", msg.get("content", "").strip())
-        if not content:
-            continue
-        last_narrator_index = idx
-        break
-
     lines: list[str] = []
     for idx, msg in enumerate(visible):
         role = msg.get("role", "unknown")
-        if role == "narrator" and idx != last_narrator_index:
-            continue
         content = re.sub(r"\n+", "\n", msg.get("content", "").strip())
         if not content:
             continue

@@ -211,7 +211,7 @@ state_updater 从各角色「打算」同步公共「待触发事件」（事件
 1. `<my_schedule>`（渲染角色 `schedule.json`；整个故事期间最稳定，放最前锚定 prompt cache）
 2. `growth.md`
 3. `user.md`（`tmp_user.md` 仅作为工作草稿参与整理，不直接注入 prompt）
-4. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断；历史中的旁白只保留最后一条）
+4. 最近可见对话历史（从 raw JSONL 构建；按 `visible_to` 过滤；高低水位截断；历史中包含全部旁白消息）
 5. `status.md`
 6. `<relations>`（直接注入角色自己的 `relations.md`，涵盖所有已知主要角色，不分在场与否。对玩家的视角不走 relations）
 7. `<relevant_memories>`（来自 `memory.jsonl` 的长期记忆召回，向量库侧仍渲染成 markdown 供 LLM 阅读）
