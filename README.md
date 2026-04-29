@@ -1,5 +1,9 @@
 # AgentGal
 
+<p align="center">
+  <img src="assets/agentgal-logo.png" alt="AgentGal logo" width="520">
+</p>
+
 AgentGal 是一个开放世界多 Agent 角色扮演 / 叙事游戏系统。
 
 玩家和角色生活在同一个会持续变化的游戏世界里。你可以自由行动、主动找人、离开当前场景、跳过时间、改变关系走向；角色会根据自己的性格、目标和已经经历过的事情作出回应。
