@@ -282,7 +282,7 @@ async def _chat_stream(user_input: str):
             routing_logger.error(f"Agent {agent_name} 运行失败: {e}")
             yield _sse_event(
                 "agent",
-                {"content": f"[错误: {e}]", "author": _get_agent_display_name(agent_name)},
+                {"content": f"（{_get_agent_display_name(agent_name)}暂时无法回应，请稍后再试）", "author": _get_agent_display_name(agent_name)},
             )
 
     # 5. 生成选项；后台并行：state_updater 维护 narrator 状态 + closure detector 检测 episode 闭合
