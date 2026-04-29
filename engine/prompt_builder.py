@@ -54,9 +54,9 @@ def _apply_high_low_watermark(
     high: int,
     low: int,
 ) -> tuple[int, list[dict], bool]:
-    """按 turn 号锚定的高低水位缓冲。返回 (新锚点 turn, 保留消息, 是否触发截断)。
+    """按 turn 号锚定的高低水位缓冲，以 distinct turn 数为截断单位。
 
-    锚点用 turn 号而非 raw 下标，避免 raw_messages 被切片时坐标失效。
+    返回 (新锚点 turn, 保留消息, 是否触发截断)。
     """
     if not visible:
         return anchor_turn, [], False
@@ -67,9 +67,11 @@ def _apply_high_low_watermark(
         anchor_turn = _msg_turn(kept[0])
 
     was_truncated = False
-    if len(kept) > high:
-        kept = kept[-low:]
-        anchor_turn = _msg_turn(kept[0])
+    distinct_turns = sorted({_msg_turn(m) for m in kept})
+    if len(distinct_turns) > high:
+        kept_turns = set(distinct_turns[-low:])
+        kept = [m for m in kept if _msg_turn(m) in kept_turns]
+        anchor_turn = min(kept_turns)
         was_truncated = True
 
     return anchor_turn, kept, was_truncated
