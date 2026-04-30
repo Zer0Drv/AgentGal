@@ -93,6 +93,7 @@ server.py        ← all
 - `soul.md`: Handwritten character definition, read-only; divided into five sections: `<identity>` / `<goal>` / `<dynamic>` / `<behavior>` / `<voice>`. The `<goal>` section describes the character's concrete long-term objectives for the story period (externally verifiable milestones + optional relationship vision), largely unchanged throughout the story period
 - `memory.jsonl`: Character long-term memory, one structured `EpisodeMemory` per line (`id / date / time / location / participants / keywords / importance / content / memory_owner / title / raw_dialogue`), append-only, characters only; `id` is a stable UUID, and old data can be backfilled with `scripts/backfill_episode_ids.py`
 - `memory_draft.jsonl`: On-disk buffer for each round's `output.memory` (characters only), each line is `{"turn": int, "text": str}`; after consolidation's `EpisodeClosureDetector` determines closure, slices are read by `until_turn` to produce structured `EpisodeMemory` appended to `memory.jsonl`. Merged entries are removed from draft; unclosed turn entries are retained
+- `understanding.jsonl`: Stable understandings formed by the character, one structured `Understanding` per line (`id / memory_owner / subject / keywords / content / linked_episodes`); unlike `EpisodeMemory`, this records durable beliefs or interaction patterns rather than single events
 - `status.md`: Current status; characters contain "Intentions" and "Relationship with Player", narrator contains "Pending Events", "Character Locations", and the derived field "Relationship with Player" (summarized from each character's status as `- Character Display Name: Relationship`, maintained by code, narrator does not generate it)
 - `user.md`: Character's perception of the player (characters only, not `narrator`)
 - `tmp_user.md`: Working draft of `user.md`; copies the official file on first write, deleted after consolidation
@@ -297,6 +298,7 @@ Save includes:
 - Character markdown / jsonl files (`narrator` does not include `memory.jsonl` / `memory_draft.jsonl`)
 - Character `memory.jsonl` (structured long-term memory, one `EpisodeMemory` per line, includes stable `id` and `raw_dialogue` trace field)
 - Character `memory_draft.jsonl` (when present; each line `{"turn": int, "text": str}`, ensuring unclosed merge memories are not lost on save)
+- Character `understanding.jsonl` (when present; stable beliefs linked back to EpisodeMemory ids)
 - Character `schedule.json` (when present)
 - Narrator raw history (each entry carries turn number)
 - Per-agent `.history_window_state.json`

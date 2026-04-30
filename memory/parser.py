@@ -117,6 +117,60 @@ def append_memory_records(
     return valid
 
 
+# ===== Understanding：角色形成的稳定理解 =====
+
+
+class Understanding(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    id: str = ""
+    memory_owner: str = ""
+    subject: str = ""
+    keywords: list[str] = Field(default_factory=list)
+    content: str = ""
+    linked_episodes: list[str] = Field(default_factory=list)
+
+
+def understanding_jsonl_path(agent_name: str) -> Path:
+    """返回角色的 understanding.jsonl 路径（不负责存在性检查）。"""
+    return Path(character_path(agent_name, "understanding.jsonl"))
+
+
+def read_understandings(agent_name: str) -> dict[str, Understanding]:
+    """读取 understanding.jsonl，返回 {id: Understanding}；不存在返回空字典；非法行跳过。"""
+    path = understanding_jsonl_path(agent_name)
+    if not path.exists():
+        return {}
+    result: dict[str, Understanding] = {}
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                u = Understanding.model_validate_json(stripped)
+                result[u.id] = u
+            except ValidationError:
+                pass
+    return result
+
+
+def write_understandings(
+    agent_name: str,
+    understandings: dict[str, Understanding],
+) -> None:
+    """全量写回 understanding.jsonl；空字典时删除文件。"""
+    path = understanding_jsonl_path(agent_name)
+    if not understandings:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for u in understandings.values():
+            record = u.model_copy(update={"memory_owner": agent_name})
+            f.write(record.model_dump_json() + "\n")
+
+
 # ===== 文本规范化 =====
 
 

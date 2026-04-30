@@ -217,6 +217,39 @@ class GrowthPatchOutput(BaseModel):
         }
 
 
+class UnderstandingEntry(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    subject: str = ""
+    keywords: list[str] = Field(default_factory=list)
+    content: str = ""
+    linked_episodes: list[str] = Field(default_factory=list)
+
+
+class UnderstandingPatchOutput(BaseModel):
+    add: list[UnderstandingEntry] = Field(default_factory=list)
+    update: dict[str, UnderstandingEntry] = Field(default_factory=dict)
+    remove: list[str] = Field(default_factory=list)
+
+    @field_validator("remove", mode="before")
+    @classmethod
+    def clean_remove_ids(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    @field_validator("update", mode="before")
+    @classmethod
+    def clean_update_ids(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return {}
+        return {
+            str(entry_id).strip(): item
+            for entry_id, item in value.items()
+            if str(entry_id).strip()
+        }
+
+
 # ---------------------------------------------------------------------------
 # 世界调度（schedule.json）
 # ---------------------------------------------------------------------------

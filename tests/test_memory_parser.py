@@ -1,7 +1,15 @@
 from pathlib import Path
 
 import memory.parser as parser_module
-from memory.parser import EpisodeMemory, append_memory_records, read_memory_jsonl
+from memory.parser import (
+    EpisodeMemory,
+    Understanding,
+    append_memory_records,
+    read_memory_jsonl,
+    read_understandings,
+    understanding_jsonl_path,
+    write_understandings,
+)
 
 
 def test_append_memory_records_assigns_episode_ids(tmp_path, monkeypatch):
@@ -28,3 +36,57 @@ def test_append_memory_records_assigns_episode_ids(tmp_path, monkeypatch):
 
     persisted = read_memory_jsonl("alice")
     assert [record.id for record in persisted] == [written[0].id, "stable-id"]
+
+
+def test_understanding_jsonl_round_trips_and_skips_bad_lines(tmp_path, monkeypatch):
+    def _character_path(agent_name: str, *subpaths: str) -> str:
+        return str(tmp_path / agent_name / Path(*subpaths))
+
+    monkeypatch.setattr(parser_module, "character_path", _character_path)
+
+    understandings = {
+        "u1": Understanding(
+            id="u1",
+            memory_owner="alice",
+            subject="对玩家的认知",
+            keywords=["玩家", "信任"],
+            content="玩家在压力下会先确认她是否安全。",
+            linked_episodes=["e1"],
+        ),
+        "u2": Understanding(
+            id="u2",
+            memory_owner="alice",
+            subject="互动模式",
+            content="直接提问时更容易得到真实反应。",
+        ),
+    }
+
+    write_understandings("alice", understandings)
+    path = understanding_jsonl_path("alice")
+    with path.open("a", encoding="utf-8") as f:
+        f.write("{bad json}\n")
+
+    loaded = read_understandings("alice")
+
+    assert list(loaded) == ["u1", "u2"]
+    assert loaded["u1"].keywords == ["玩家", "信任"]
+    assert loaded["u1"].linked_episodes == ["e1"]
+    assert loaded["u2"].content == "直接提问时更容易得到真实反应。"
+
+
+def test_write_understandings_removes_file_when_empty(tmp_path, monkeypatch):
+    def _character_path(agent_name: str, *subpaths: str) -> str:
+        return str(tmp_path / agent_name / Path(*subpaths))
+
+    monkeypatch.setattr(parser_module, "character_path", _character_path)
+
+    write_understandings(
+        "alice",
+        {"u1": Understanding(id="u1", memory_owner="alice", content="存在过。")},
+    )
+    path = understanding_jsonl_path("alice")
+    assert path.exists()
+
+    write_understandings("alice", {})
+
+    assert not path.exists()

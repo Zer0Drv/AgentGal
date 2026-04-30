@@ -5,6 +5,7 @@ from agents.schema import (
     MAX_EPISODE_KEYWORDS,
     ChoicesOutput,
     EpisodeMemoryBlock,
+    UnderstandingPatchOutput,
 )
 
 
@@ -47,3 +48,30 @@ def test_episode_memory_block_defaults_bad_metadata():
 
     assert block.keywords == []
     assert block.importance == 3
+
+
+def test_understanding_patch_output_defaults_to_empty_operations():
+    output = UnderstandingPatchOutput()
+
+    assert output.add == []
+    assert output.update == {}
+    assert output.remove == []
+
+
+def test_understanding_entry_strips_string_fields():
+    output = UnderstandingPatchOutput.model_validate(
+        {
+            "add": [
+                {
+                    "subject": "  对玩家的认知  ",
+                    "keywords": ["玩家"],
+                    "content": "  玩家会主动解释误会。  ",
+                    "linked_episodes": ["e1"],
+                }
+            ]
+        }
+    )
+
+    entry = output.add[0]
+    assert entry.subject == "对玩家的认知"
+    assert entry.content == "玩家会主动解释误会。"

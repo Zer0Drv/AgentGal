@@ -35,6 +35,9 @@ def _seed_character(
     (agent_dir / "user.md").write_text("# user\n", encoding="utf-8")
     (agent_dir / "growth.md").write_text("# growth\n", encoding="utf-8")
     (agent_dir / "relations.md").write_text("## player\n友好。\n", encoding="utf-8")
+    (agent_dir / "understanding.jsonl").write_text(
+        '{"id":"u1","content":"理解。"}\n', encoding="utf-8"
+    )
     if schedule is not None:
         (agent_dir / "schedule.json").write_text(
             json.dumps(schedule), encoding="utf-8"
@@ -56,6 +59,7 @@ def test_character_save_files_include_schedule(character_dir: Path):
     # 已有字段仍然覆盖
     assert "soul.md" in basenames
     assert "relations.md" in basenames
+    assert "understanding.jsonl" in basenames
 
 
 def test_missing_schedule_is_omitted(character_dir: Path):
@@ -68,6 +72,7 @@ def test_missing_schedule_is_omitted(character_dir: Path):
     # 现有文件正常覆盖
     assert "soul.md" in basenames
     assert "relations.md" in basenames
+    assert "understanding.jsonl" in basenames
 
 
 def test_narrator_does_not_include_character_only_sidecars(character_dir: Path):
