@@ -1,6 +1,7 @@
 """memory 数据结构与解析工具 - EpisodeMemory、JSONL I/O、日期工具"""
 
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
@@ -21,6 +22,7 @@ class EpisodeMemory(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
+    id: str = ""
     date: str = ""
     time: str = ""
     location: str = ""
@@ -96,7 +98,12 @@ def append_memory_records(
         实际写入的记录列表（过滤掉 content 为空的条目，保持原顺序）。
     """
     valid = [
-        r.model_copy(update={"memory_owner": agent_name})
+        r.model_copy(
+            update={
+                "memory_owner": agent_name,
+                "id": r.id or uuid.uuid4().hex,
+            }
+        )
         for r in records
         if r.content.strip()
     ]
