@@ -13,7 +13,7 @@ from engine.prompt_builder import build_history_transcript
 from llm.providers import get_choices_llm_config
 from log_config.routing import routing_logger
 from shared.config import CHOICES_RUN_TIMEOUT_SECONDS, HISTORY_RAW_SCAN_TURNS
-from shared.text_utils import clean_response, is_valid_response, process_character_response
+from shared.text_utils import clean_response, is_valid_response
 from storage.history import load_conversation_history
 
 
@@ -85,7 +85,7 @@ async def run_agent_in_scene(
     from storage.message_router import message_router
 
     output = await get_character(agent_name).run(user_input)
-    response = process_character_response(clean_response(output.content))
+    response = clean_response(output.content)
     if is_valid_response(response, agent_name):
         await message_router.broadcast_agent_response(agent_name, targets, response)
     return response

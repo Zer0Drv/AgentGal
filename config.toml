@@ -62,7 +62,7 @@ request_timeout_seconds = 60
 request_timeout_seconds = 30
 
 [text]
-# 角色回复后处理：最多保留的动作描写数（括号内容）
-max_actions = 3
-# 角色回复后处理：最多保留的省略号数
-max_ellipsis = 3
+# 选项文本最大字符数
+max_choice_chars = 50
+# 长期记忆关键词最大数量
+max_episode_keywords = 8

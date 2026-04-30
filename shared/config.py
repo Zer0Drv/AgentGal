@@ -56,8 +56,8 @@ EMBEDDING_REQUEST_TIMEOUT_SECONDS: float = _cfg["embedding"]["request_timeout_se
 RERANK_REQUEST_TIMEOUT_SECONDS: float = _cfg["rerank"]["request_timeout_seconds"]
 
 # 文本后处理
-MAX_ACTIONS: int = _cfg["text"]["max_actions"]
-MAX_ELLIPSIS: int = _cfg["text"]["max_ellipsis"]
+MAX_CHOICE_CHARS: int = _cfg["text"]["max_choice_chars"]
+MAX_EPISODE_KEYWORDS: int = _cfg["text"]["max_episode_keywords"]
 
 # 多轮消息高低水位截断
 HISTORY_HIGH: int = _cfg["history"]["history_high"]

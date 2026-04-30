@@ -1,6 +1,11 @@
 """测试 Agent 结构化输出模型。"""
 
-from agents.schema import MAX_CHOICE_CHARS, ChoicesOutput, EpisodeMemoryBlock
+from agents.schema import (
+    MAX_CHOICE_CHARS,
+    MAX_EPISODE_KEYWORDS,
+    ChoicesOutput,
+    EpisodeMemoryBlock,
+)
 
 
 def test_choices_output_trims_each_choice_to_50_chars():
@@ -19,12 +24,13 @@ def test_episode_memory_block_cleans_keywords_and_clamps_importance():
         time="10月19日 晚上",
         location="餐厅",
         participants="我、他",
-        keywords=[" 餐厅 ", "", "吃饭", "  ", 123, "约定", "关系", "多余"],
+        keywords=[" 餐厅 ", "", "吃饭", "  ", 123, "约定", "关系", "多余", "昵称", "截断"],
         importance=9,
         content="一起吃饭。",
     )
 
-    assert block.keywords == ["餐厅", "吃饭", "123", "约定", "关系"]
+    assert block.keywords == ["餐厅", "吃饭", "123", "约定", "关系", "多余", "昵称", "截断"]
+    assert len(block.keywords) == MAX_EPISODE_KEYWORDS
     assert block.importance == 5
 
 

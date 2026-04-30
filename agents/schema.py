@@ -4,8 +4,8 @@ from typing import Annotated, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, field_validator
 
+from shared.config import MAX_CHOICE_CHARS, MAX_EPISODE_KEYWORDS
 
-MAX_CHOICE_CHARS = 50
 ChoiceText = Annotated[str, Field(max_length=MAX_CHOICE_CHARS)]
 
 
@@ -158,7 +158,7 @@ class EpisodeMemoryBlock(BaseModel):
     def clean_keywords(cls, value: object) -> list[str]:
         if not isinstance(value, list):
             return []
-        return [str(item).strip() for item in value if str(item).strip()][:5]
+        return [s for item in value if (s := str(item).strip())][:MAX_EPISODE_KEYWORDS]
 
     @field_validator("importance", mode="before")
     @classmethod

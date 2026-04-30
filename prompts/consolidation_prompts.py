@@ -213,7 +213,7 @@ EPISODE_MEMORY_GENERATOR = r"""<role>
 - time：写具体时刻或时间段；同一事件可写时间段
 - location：写单个地点或 2-3 个相邻地点
 - participants：写整条事件里的关键在场人物
-- keywords：最多 5 个词，数组
+- keywords：最多 8 个词，数组
 - importance：1 到 5 的整数
 - title：8-16 个字的短标题
 - content：一行写完，包含起点、关键推进和落点
