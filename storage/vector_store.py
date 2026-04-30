@@ -336,8 +336,13 @@ class VectorStore:
 
     @staticmethod
     def _embed_text(episode: EpisodeMemory) -> str:
-        """决定拿哪段文本去 embed：优先 title，空则降级 content。"""
-        return episode.title.strip() or episode.content.strip()
+        """决定拿哪些高密度字段去 embed，避免只靠抽象标题丢失检索锚点。"""
+        parts = [
+            episode.title.strip(),
+            "、".join(filter(None, (k.strip() for k in episode.keywords))),
+            episode.content.strip(),
+        ]
+        return "\n".join(p for p in parts if p)
 
     def _prepare_episode_index(
         self,
