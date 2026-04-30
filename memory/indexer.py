@@ -45,3 +45,29 @@ async def rebuild_memory_index(
         inserted = await vector_store.add_many(records, batch_size=batch_size)
 
         logger.info("[indexer] %s 索引完成：records=%s, inserted=%s", agent, len(records), inserted)
+
+
+async def rebuild_understanding_index(
+    agent_name: str | None = None,
+) -> None:
+    """从 understanding.jsonl 重建 Understanding 向量索引。
+
+    Args:
+        agent_name: 指定角色时只重建该角色；为 None 时重建所有非 narrator 角色。
+    """
+    from memory.parser import read_understandings
+
+    agents = (
+        [agent_name]
+        if agent_name is not None
+        else get_agent_names(include_narrator=False)
+    )
+
+    for agent in agents:
+        understandings = read_understandings(agent)
+        if not understandings:
+            logger.info("[indexer] 跳过 %s：未找到 understanding.jsonl 或为空", agent)
+            continue
+        for u in understandings.values():
+            await vector_store.add_understanding(u)
+        logger.info("[indexer] %s Understanding 索引完成：count=%s", agent, len(understandings))

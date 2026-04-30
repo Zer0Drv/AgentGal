@@ -1,6 +1,6 @@
 """测试长期记忆索引用文本的字段组合。"""
 
-from memory.parser import EpisodeMemory
+from memory.parser import EpisodeMemory, Understanding
 from storage.vector_store import VectorStore
 
 
@@ -18,3 +18,17 @@ def test_embed_text_includes_title_keywords_and_content():
     assert "亲昵称呼约定" in embed_text
     assert "小狗、主人、亲密称呼" in embed_text
     assert "他叫我小狗" in embed_text
+
+
+def test_understanding_embed_text_includes_subject_keywords_and_content():
+    understanding = Understanding(
+        subject="对玩家的认知",
+        keywords=["玩家", "保护欲"],
+        content="玩家在压力下会先确认她是否安全。",
+    )
+
+    embed_text = VectorStore._understanding_embed_text(understanding)
+
+    assert "对玩家的认知" in embed_text
+    assert "玩家、保护欲" in embed_text
+    assert "玩家在压力下" in embed_text

@@ -248,15 +248,15 @@ After each round of character responses, `generate_choices()` is called to gener
 
 ## Long-Term Memory Retrieval
 
-- Vector store only indexes long-term memory events from `memory.jsonl`, owner scope is fixed to current character
+- Vector store indexes long-term memory events from `memory.jsonl` and stable understandings from `understanding.jsonl` in separate tables; owner scope is fixed to current character
 - Default retrieval path is memory-only; non-memory retrieval is disabled
 - `memory/retrieval.py` handles the full retrieval pipeline: embedding → vector/BM25 candidates → hybrid fusion → (optional) rerank → recency sort → recall state update
-- `storage/vector_store.py` is storage layer only: provides `get_vector_candidates` / `get_bm25_candidates` raw candidates, pipeline logic is not here
-- `memory/indexer.py` reads `EpisodeMemory` records from `memory.jsonl` and appends them to the vector store
+- `storage/vector_store.py` is storage layer only: provides raw candidates for EpisodeMemory and Understanding tables, pipeline logic is not here
+- `memory/indexer.py` reads `EpisodeMemory` records from `memory.jsonl` and `Understanding` records from `understanding.jsonl`, then appends them to the vector store
 - Recall ranking: vector relevance and BM25 relevance are fused first, rerank (optional) replaces relevance signal, then in-game time recency is layered on top
 - When Logfire is configured, memory retrieval logs each round's query and top hit summary for debugging recall quality
 - `last_recalled_at` is updated to DB on hit; `.memory_recall_state.json` is only exported from DB on save, used as fallback data source on load rebuild
-- `memory/indexer.rebuild_memory_index()` combines `.consolidation_state.json` to restore long-term memory index; recall state is read from DB first, falls back to `.memory_recall_state.json` when DB is empty
+- `memory/indexer.rebuild_memory_index()` combines `.consolidation_state.json` to restore long-term memory index; recall state is read from DB first, falls back to `.memory_recall_state.json` when DB is empty. `rebuild_understanding_index()` restores the separate Understanding index on load
 
 ## Memory Consolidation
 
