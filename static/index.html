@@ -986,6 +986,7 @@ svg {
 }
 
 .save-card-arrow {
+  flex: 1;
   max-width: 16ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -995,6 +996,35 @@ svg {
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.save-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.save-delete-btn:hover {
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+}
+
+.save-delete-btn:active {
+  background: rgba(220, 38, 38, 0.15);
+}
+
+.save-delete-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .save-card-time {
@@ -2051,6 +2081,11 @@ svg {
               <div class="save-card-top">
                 <span class="save-card-label" x-text="`档位 ${index + 1}`"></span>
                 <span class="save-card-arrow" x-text="save.filename"></span>
+                <button type="button" class="save-delete-btn" title="删除存档" :disabled="busy" @click.stop="promptDeleteSave(save)">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M6 2h4M2 4h12M5 4l.5 9h5l.5-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
               </div>
               <div class="save-card-time" x-text="save.display"></div>
               <div class="save-card-focus" x-text="save.focus || '未提供额外焦点摘要。'"></div>
@@ -2389,6 +2424,10 @@ document.addEventListener("alpine:init", () => {
         throw new Error(`${url} failed: ${response.status}${detail ? ` ${detail.slice(0, 120)}` : ""}`);
       }
       return response.json();
+    },
+
+    deleteJson(url) {
+      return this.fetchJson(url, { method: "DELETE" });
     },
 
     postJson(url, body) {
@@ -2916,6 +2955,34 @@ document.addEventListener("alpine:init", () => {
           await this.saveGame(save.filename);
         },
       });
+    },
+
+    promptDeleteSave(save) {
+      if (this.busy) {
+        this.setNotice("请等待当前回合结束后再删除存档。", "error");
+        return;
+      }
+      this.openConfirm({
+        title: "删除这个存档？",
+        body: `"${save.filename}" 将被永久删除，此操作无法撤销。`,
+        confirmText: "删除",
+        onConfirm: async () => {
+          await this.deleteSave(save.filename);
+        },
+      });
+    },
+
+    async deleteSave(filename) {
+      this.busy = true;
+      try {
+        await this.deleteJson(`/api/save/${encodeURIComponent(filename)}`);
+        await this.refreshSaves({ quiet: true });
+        this.pushToast("存档已删除", "success");
+      } catch (error) {
+        this.pushToast("删除失败", "error");
+      } finally {
+        this.busy = false;
+      }
     },
 
     async loadSave(filename) {
