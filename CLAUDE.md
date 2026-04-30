@@ -96,7 +96,7 @@ server.py        ← 全部
 - `status.md`：当前状态；角色包含「打算」和「和玩家的关系」，旁白包含「待触发事件」「角色位置」和派生字段「和玩家的关系」（按 `- 角色显示名：关系` 汇总各角色 status，程序维护，narrator 不自行生成）
 - `user.md`：角色对玩家的认知（仅角色有，`narrator` 无）
 - `tmp_user.md`：`user.md` 的工作草稿；首次写入时复制正式档案，整理后删除
-- `growth.md`：人格沉淀，由整理器维护并在角色 prompt 中注入（仅角色有）；每条带 dimension 标签（不可逆转移轴），格式 `[P001|对X：A→B] [日期] ...`，最多 20 条
+- `growth.md`：行为偏移记录，由整理器维护并在角色 prompt 中注入（仅角色有）；每条带 dimension 标签（`对X：A→B` 行为偏移轴），格式 `[P001|对X：A→B] [日期] ...`，最多 15 条
 - `relations.md`：角色对其他角色（不含 `player`）的当下视角；`## {character}` 一节一段；每轮 `output.relations[character]` 整段覆盖（仅角色有）。
 
 ### 历史文件

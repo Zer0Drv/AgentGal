@@ -60,8 +60,8 @@ from agents.schema import (
 # ---------------------------------------------------------------------------
 
 
-_GROWTH_MAX_ENTRIES = 20
-_GROWTH_DIMENSION_PATTERN = re.compile(r"^[^:：\s][^:：]*[:：][^→\s][^→]*→\S.*$")
+_GROWTH_MAX_ENTRIES = 15
+_GROWTH_DIMENSION_PATTERN = re.compile(r"^对[^:：]+[:：].+$")
 
 
 def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:

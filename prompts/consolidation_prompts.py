@@ -222,121 +222,97 @@ EPISODE_MEMORY_GENERATOR = r"""<role>
 
 
 GROWTH_PATCH = r"""<task>
-从本轮 consolidated_memory 出发，对 existing_growth 做局部 patch。
-只输出 add / update / remove；保持已有 ID 稳定，不重排、不整表重写。
+你维护角色的行为偏移列表。每个条目记录：因为经历了某些事，她的默认反应方式从 <soul> 中的初始设定偏移成了什么。
+
+输入：
+- <soul>：角色初始的行为方式（baseline）
+- <existing_growth>：当前已记录的行为偏移，每条含 ID 与 dimension
+- <consolidated_memory>：本轮新发生的事件
+
+对每个事件判断：它是否让角色形成了跨情境稳定的新默认反应？若是，更新列表；若不是，输出空 patch。
+
+大多数事件不触发行为偏移。输出空 patch 是正确常态。
 </task>
 
-<input>
-- <soul>：角色的核心设定。
-- <existing_growth>：此前已沉淀的人格变化条目。每条含 ID 与 dimension。
-- <consolidated_memory>：本轮整理出的事件 JSON 数组，每个元素含 date/time/location/participants/title/content 字段。
-</input>
+<deciding>
+一个事件构成行为偏移，需要同时满足：
+1. 跨情境：会扩散到类似情境，不只在一个特定场合有用
+2. 稳定性：是反复出现的默认反应方式
+3. 偏移基线：和 <soul> 中的初始行为方式不同，或和 <existing_growth> 中已记录的状态相比又发生了变化
+</deciding>
 
 <dimension>
-dimension 是一条不可逆转移的轴，用来回答："这个角色相对于某个对象或自己，从什么状态转移到什么状态？"
+格式：`对X：A→B`
+X = 对象（玩家 / 某角色 / 外界 / 自己等）
+A/B = 行为方向，用概括词
 
-形态规则：
-- 写成 `对X：A→B`、`X：A→B` 或 `对自己：A→B`。
-- 必须带对象前缀；对象可以是玩家、某个角色名、群体、关系或自己。
-- 必须包含 `→`；箭头左侧是旧状态，右侧是新状态。
-- 一个 dimension 只对应一条 growth；同一对象、同一关系轴的强化、挑战、裂缝、代价和渐进转向都吸收到同一条。
-- growth 总数最多 20 条。超过上限前优先 update 或 remove；只有在当前存活条目少于 20 条时才 add。
-
-反例：
-- `电话事件`：这是事件，不是转移轴。
-- `更难过了`：这是情绪累积，不是转移轴。
-- `先确认再行动`：这是行为优化，不是人格转移。
-- `依赖`：这是抽象名词，缺少对象、旧状态和新状态。
+A/B 决定两个事件能否归入同一条。用概括词——概括词让不同场合的同类变化能归入同一条：
+  好：`对玩家：压抑→主动表达`（各种场合的"更敢表达"都能吸收进来）
+  不好：`对玩家：在人前压抑→在外界视线下宣示主权`（换一个场合就合不进来）
 </dimension>
 
-<decision_flow>
-按顺序完成判断，只输出最终 JSON：
-1. 扫描每条 existing dimension。判断本轮事件是否归入某条已有轴：同一对象、同一关系轴，或同一轴被强化、挑战、产生裂缝、暴露代价、发生渐进转向。
-2. 能归入已有轴时，输出 update。把本轮事件吸收到该 ID 的单条 content 中；日期采用最近一次相关事件日期；dimension 写更新后的完整轴标签。
-3. 不能归入任何已有轴，且事件形成了新的不可逆转移、新矛盾或新脆弱点时，输出 add 一条新 dimension。
-4. 顺便检查 existing dimension 之间是否本是同一轴。若是，用一条 update 综合保留 ID 的 content，并把另一条 ID 放入 remove。
-5. 若 existing_growth 已有 20 条，先判断是否可 update 或 remove；没有可吸收或可合并的条目时不 add。
-</decision_flow>
+<content>
+`[YYYY-MM-DD] 因为[触发事件，简短]，此后[新默认行为——角色现在遇到类似情况会怎么做]`
 
-<update_rules>
-- 只有同一对象、同一关系轴才能 update。
-- update.dimension 必须填写更新后的完整 dimension。
-- 若原 dimension 仍准确，逐字照抄原 dimension。
-- 若本轮使同一对象/同一关系轴发生渐进转向，允许改写 dimension 来反映新方向。
-- 不能借 update 跨对象、跨关系轴；跨对象或新轴使用 add。
-- 本轮只是坐实同一变化时，用 update 扩写同一条；本轮挑战同一变化时，也用 update 写进同一条的裂缝或代价。
-- 日期采用最近一次相关事件日期，格式写入 content 开头。
-- content 写完整条目，不含 ID 和 dimension。
-</update_rules>
+"此后"是为角色 LLM 写的行为指引，必须具体可操作：
+  好："此后他凑近时我会先确认周围有没有人"
+  不好："此后这种策略更加熟练"
+触发事件一两句即可，全文 100 字内。
+</content>
 
-<add_rules>
-- 只为新的 dimension add。
-- add.dimension 必须符合形态规则。
-- add.content 写完整条目，不含 ID 和 dimension。
-- 已有相同 dimension 时，使用 update，不 add 第二条。
-- 当前存活 growth 达到 20 条时，不 add 新条目。
-- 行为优化、战术调整、单次情绪波动、纯事件记录继续不写。
-</add_rules>
+<operations>
+1. 事件是否已有条目同一行为轴？→ update：更新日期和 content，dimension 在方向反转时才改
+2. 全新行为轴？→ add
+3. 已有条目间有同一轴的？→ 选一条 update 合并，另一条放 remove
 
-<remove_rules>
-- 只在某条被另一条综合吸收时 remove。
-- remove 只写被移除条目的 ID。
-- 为了整洁、压缩数量或改写风格而删除条目时，保持 remove 为空。
-- 同一 ID 同时出现在 remove 和 update 时，以 remove 为准。
-</remove_rules>
-
-<writing_focus>
-- content 格式：`[YYYY-MM-DD] 因为[关键事件]，[描述发生了什么不可逆转移，语气贴近角色内心]，此后[新处境或新矛盾，24字以内]`
-- "因为" 写本轮事件或被综合后的关键锚点。
-- 中间部分写当事人会承认的真实转变：失去了什么，无法再回到什么状态，或同一转移开始显露什么代价。
-- "此后" 写新的存在状态或矛盾，不写行为规则。
-</writing_focus>
+上限 15 条。remove 只用于合并。
+</operations>
 
 <examples>
-例 1：本轮事件归入已有维度，使用 update。
+例 1：强化已有轴 → update
 existing_growth:
-`[P002|对玩家：克制关心→允许索取] [2024-04-25] 因为玩家留下来听我说完，我开始相信开口不会立刻失去分寸，此后想要时会先承认。`
+`[P002|对玩家：克制关心→允许索取] [2024-04-25] 因为玩家留下来听我说完，此后想要时会先承认。`
 consolidated_memory:
 `[{"date":"4月26日","content":"玩家在她犹豫时主动等她说完，她第一次没有把请求咽回去。"}]`
 output:
-`{"add":[],"update":{"P002":{"dimension":"对玩家：克制关心→允许索取","content":"[2024-04-26] 因为玩家再次等我把请求说完，原先只能压住的关心更难继续装作没有，此后想要时会先承认。"}},"remove":[]}`
+`{"add":[],"update":{"P002":{"dimension":"对玩家：克制关心→允许索取","content":"[2024-04-26] 因为玩家再次等我把请求说完，此后想要时会更直接地开口，靠近他也越来越不犹豫。"}},"remove":[]}`
 
-例 2：本轮事件形成新维度，且未达到 20 条，使用 add。
+例 2：新轴 → add
 existing_growth:
-`[P003|对美月：全知→排除] [2024-04-25] 因为美月带同班男生上车后我放行，又因她接连挂断电话无解释，我第一次把全知感排除在她的个人空间外，此后不知道她在哪时也不能立刻追问。`
+`[P003|对美月：全知→被排除] [2024-04-25] 因为美月接二连三不解释就行动，此后不再假设自己知道她在哪、在想什么。`
 consolidated_memory:
-`[{"date":"4月26日","content":"玩家第一次主动承认害怕失去控制，仍选择继续参与节目。"}]`
+`[{"date":"4月26日","content":"在外人在场的几次场合，反复用小动作向玩家示意，事后又立刻拉开距离。"}]`
 output:
-`{"add":[{"dimension":"对自己：控制确信→风险共处","content":"[2024-04-26] 因为我承认害怕失去控制后仍选择继续参与节目，原先只靠掌控维持的确信开始松动，此后每次推进都要和风险共处。"}],"update":{},"remove":[]}`
+`{"add":[{"dimension":"对玩家：人前亲近→人前拉开","content":"[2024-04-26] 因为这阵子在外人在场时反复向他示意后立刻拉开，此后在外界视线下靠近他会变成本能，但亲近后立刻收紧，靠近和撤回交替成了默认节奏。"}],"update":{},"remove":[]}`
+
+例 3：方向反转 → update 改写 dimension
+existing_growth:
+`[P005|对玩家：克制关心→允许索取] [2024-04-26] 因为玩家再次等我把请求说完，此后想要时会先承认。`
+consolidated_memory:
+`[{"date":"5月10日","content":"玩家最近反复忽视她开口的请求，她重新学会把话咽回去。"}]`
+output:
+`{"add":[],"update":{"P005":{"dimension":"对玩家：允许索取→重新克制","content":"[2024-05-10] 因为他反复忽视我开口，此后再开口前会先掂量他的反应，不再默认他会接住。"}},"remove":[]}`
+
+例 4：两条已有条目同一轴 → 合并
+existing_growth:
+`[P002|对玩家：克制关心→允许索取] ...`
+`[P006|对玩家：口头确认→行动表达] ...`
+consolidated_memory:
+`[{"date":"4月29日","content":"他在化妆间醋意追问后，她用瓶底碰他手背回应，又在走廊说有我在替他挡住不安。"}]`
+output:
+`{"add":[],"update":{"P002":{"dimension":"对玩家：克制关心→主动回应","content":"[2024-04-29] 因为他在化妆间追问时我用行动回应了他的不安，又在走廊直接说有我在，原先只在嘴上确认的模式被打破，此后对他的不安更倾向直接用行动或一句重话替他挡住。"}},"remove":["P006"]}`
+
+例 5：不构成偏移 → 空
+consolidated_memory:
+`[{"date":"5月12日","content":"她和玩家在食堂吃了午饭，他帮她夹走不爱吃的菜。"}]`
+output:
+`{"add":[],"update":{},"remove":[]}`
 </examples>
 
-<self_check>
-输出前逐项检查：
-1. 每个 add.dimension 是否含对象前缀和 `→`。
-2. 每个 update.dimension 是否含对象前缀和 `→`。
-3. 每个 add/update.dimension 是否没有撞其他存活条目的 dimension。
-4. add 后存活条目数是否不超过 20 条。
-5. 每条 content 是否是人格转移或同一转移的挑战，而不是行为建议。
-</self_check>
-
 <output_format>
-返回严格 JSON，字段固定为 add / update / remove。无变更时返回空集合：
-
-{
-  "add": [
-    {
-      "dimension": "对X：A→B",
-      "content": "[YYYY-MM-DD] 因为...，...，此后..."
-    }
-  ],
-  "update": {
-    "P001": {
-      "dimension": "对X：A→B",
-      "content": "[YYYY-MM-DD] 因为...，...，此后..."
-    }
-  },
-  "remove": ["P002"]
-}
+严格 JSON：
+{"add": [{"dimension": "对X：A→B", "content": "[日期] 因为...，此后..."}], "update": {"P001": {"dimension": "...", "content": "..."}}, "remove": ["P002"]}
+无变更返回 {"add":[],"update":{},"remove":[]}
 </output_format>
 """
 
