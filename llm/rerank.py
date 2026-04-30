@@ -13,8 +13,7 @@ import httpx
 from shared.config import RERANK_REQUEST_TIMEOUT_SECONDS
 
 
-_rerank_enabled = os.getenv("RERANK_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
-RERANK_MODEL = os.getenv("RERANK_MODEL", "") if _rerank_enabled else ""
+RERANK_MODEL = os.getenv("RERANK_MODEL", "").strip()
 RERANK_API_KEY = os.getenv("RERANK_API_KEY") or os.getenv("EMBEDDING_API_KEY") or os.getenv("LLM_API_KEY", "")
 RERANK_API_URL = os.getenv("RERANK_API_URL", "")
 
