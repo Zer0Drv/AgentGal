@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from agents.factory import (
     get_episode_memory_generator_agent,
     get_growth_patch_agent,
     get_player_profile_agent,
+    get_understanding_patch_agent,
 )
 from agents.runner import run_structured_agent, run_text_agent
 from log_config.memory import memory_logger
@@ -26,6 +28,7 @@ from shared.text_utils import get_display_name
 from consolidation.inputs import (
     build_episode_closure_payload,
     build_episode_memory_generator_payload,
+    build_understanding_patch_payload,
     render_raw_history,
 )
 from storage.agent_files import (
@@ -43,15 +46,19 @@ from storage.agent_files import (
 from storage.history import load_conversation_history
 from memory.parser import (
     EpisodeMemory,
+    Understanding,
     append_memory_records,
     canonical_cn_date,
     memory_jsonl_path,
+    read_understandings,
+    write_understandings,
 )
 from storage.vector_store import vector_store
 from agents.schema import (
     EpisodeClosureOutput,
     EpisodeMemoryBlock,
     GrowthPatchOutput,
+    UnderstandingPatchOutput,
 )
 
 
@@ -66,6 +73,7 @@ _GROWTH_DIMENSION_PATTERN = re.compile(r"^对[^:：]+[:：].+$")
 
 def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:
     return {
+        "id": episode.id,
         "date": episode.date,
         "time": episode.time,
         "location": episode.location,
@@ -73,6 +81,89 @@ def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:
         "title": episode.title,
         "content": episode.content,
     }
+
+
+def _render_understandings_for_prompt(understandings: dict[str, Understanding]) -> str:
+    if not understandings:
+        return "（尚无）"
+    lines: list[str] = []
+    for uid, u in understandings.items():
+        keywords = "、".join(u.keywords) if u.keywords else ""
+        keywords_part = f"\n  keywords: {keywords}" if keywords else ""
+        linked = ", ".join(u.linked_episodes) if u.linked_episodes else ""
+        linked_part = f"\n  linked_episodes: {linked}" if linked else ""
+        lines.append(
+            f"[{uid}] subject={u.subject!r}{keywords_part}{linked_part}\n"
+            f"  content: {u.content}"
+        )
+    return "\n\n".join(lines)
+
+
+def _apply_understanding_patch(
+    agent_name: str,
+    understandings: dict[str, Understanding],
+    patch: UnderstandingPatchOutput,
+) -> tuple[dict[str, Understanding], list[str], list[str], list[str], list[str]]:
+    updated = dict(understandings)
+    logs: list[str] = []
+    links_only_ids: list[str] = []
+    full_replace_ids: list[str] = []
+    added_ids: list[str] = []
+
+    for uid, entry in patch.update.items():
+        if uid not in updated:
+            memory_logger.warning(
+                f"[整理器] {agent_name} understanding patch update 跳过不存在 ID: {uid}"
+            )
+            continue
+        if not entry.content:
+            memory_logger.warning(
+                f"[整理器] {agent_name} understanding patch update 跳过空 content: {uid}"
+            )
+            continue
+        existing = updated[uid]
+        new_subject = entry.subject if entry.subject else existing.subject
+        new_keywords = entry.keywords if entry.keywords else existing.keywords
+        linked_episodes = list(
+            dict.fromkeys([*existing.linked_episodes, *entry.linked_episodes])
+        )
+        updated[uid] = Understanding(
+            id=uid,
+            memory_owner=agent_name,
+            subject=new_subject,
+            keywords=new_keywords,
+            content=entry.content,
+            linked_episodes=linked_episodes,
+        )
+        if (
+            entry.content == existing.content
+            and new_subject == existing.subject
+            and new_keywords == existing.keywords
+        ):
+            links_only_ids.append(uid)
+        else:
+            full_replace_ids.append(uid)
+        logs.append(f"UPDATE {uid}")
+
+    for entry in patch.add:
+        if not entry.content:
+            memory_logger.warning(
+                f"[整理器] {agent_name} understanding patch add 跳过空 content"
+            )
+            continue
+        new_id = uuid.uuid4().hex
+        updated[new_id] = Understanding(
+            id=new_id,
+            memory_owner=agent_name,
+            subject=entry.subject,
+            keywords=entry.keywords,
+            content=entry.content,
+            linked_episodes=entry.linked_episodes,
+        )
+        added_ids.append(new_id)
+        logs.append(f"ADD {new_id}")
+
+    return updated, logs, links_only_ids, full_replace_ids, added_ids
 
 
 def _sorted_growth_ids(entries: dict[str, GrowthEntry]) -> list[str]:
@@ -415,6 +506,46 @@ class MemoryConsolidationFlow:
         write_growth_entries(agent_name, updated_entries)
         memory_logger.info(f"[整理器] {agent_name} growth patch 完成: {';'.join(logs)}")
 
+    async def _patch_understandings(
+        self,
+        agent_name: str,
+        episode: EpisodeMemory,
+    ) -> None:
+        current_understandings = read_understandings(agent_name)
+        existing_text = _render_understandings_for_prompt(current_understandings)
+        episode_json = json.dumps(
+            _episode_to_llm_payload(episode), ensure_ascii=False, indent=2
+        )
+        user = build_understanding_patch_payload(existing_text, episode_json)
+
+        output = await self._run_consolidation_agent(
+            agent=get_understanding_patch_agent(),
+            output_type=UnderstandingPatchOutput,
+            agent_name=agent_name,
+            function_name="understanding_patch",
+            user=user,
+        )
+
+        updated_understandings, logs, links_only_ids, full_replace_ids, added_ids = _apply_understanding_patch(
+            agent_name, current_understandings, output
+        )
+        if not logs:
+            memory_logger.debug(f"[整理器] {agent_name} 无 Understanding 更新")
+            return
+
+        write_understandings(agent_name, updated_understandings)
+        memory_logger.info(
+            f"[整理器] {agent_name} understanding patch 完成: {';'.join(logs)}"
+        )
+
+        for uid in links_only_ids:
+            await vector_store.update_understanding_links(uid, updated_understandings[uid].linked_episodes)
+        for uid in full_replace_ids:
+            await vector_store.delete_understanding(uid)
+            await vector_store.add_understanding(updated_understandings[uid])
+        for uid in added_ids:
+            await vector_store.add_understanding(updated_understandings[uid])
+
     async def _apply_consolidation_pipeline(
         self,
         agent_name: str,
@@ -432,6 +563,9 @@ class MemoryConsolidationFlow:
             memory_logger.error(f"[整理器] {agent_name} 第一步调用失败: {e}")
             return None, errors
 
+        if not episode.id:
+            episode = episode.model_copy(update={"id": uuid.uuid4().hex})
+
         if not self._supports_growth(agent_name):
             memory_logger.info(f"[整理器] {agent_name} 跳过 growth.md 流程")
             return episode, errors
@@ -441,6 +575,12 @@ class MemoryConsolidationFlow:
         except Exception as e:
             errors.append(f"第二步调用失败: {e}")
             memory_logger.error(f"[整理器] {agent_name} 第二步调用失败: {e}")
+
+        try:
+            await self._patch_understandings(agent_name, episode)
+        except Exception as e:
+            errors.append(f"第三步（understanding patch）调用失败: {e}")
+            memory_logger.error(f"[整理器] {agent_name} 第三步调用失败: {e}")
 
         return episode, errors
 

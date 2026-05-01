@@ -68,11 +68,13 @@ def test_auxiliary_structured_agents_use_prompted_output(monkeypatch):
     state_updater = agent_factory_module.get_state_updater_agent()
     episode_memory_generator = agent_factory_module.get_episode_memory_generator_agent()
     growth_patch = agent_factory_module.get_growth_patch_agent()
+    understanding_patch = agent_factory_module.get_understanding_patch_agent()
 
     assert choices._output_schema.mode == "prompted"
     assert state_updater._output_schema.mode == "prompted"
     assert episode_memory_generator._output_schema.mode == "prompted"
     assert growth_patch._output_schema.mode == "prompted"
+    assert understanding_patch._output_schema.mode == "prompted"
 
 
 def test_player_profile_agent_remains_text_output(monkeypatch):

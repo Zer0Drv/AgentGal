@@ -17,6 +17,7 @@ from agents.schema import (
     NarratorOutput,
     NewCharacterProfile,
     StateUpdaterOutput,
+    UnderstandingPatchOutput,
 )
 from engine.prompt_builder import build_system_prompt
 from llm.providers import (
@@ -32,6 +33,7 @@ from prompts.consolidation_prompts import (
     EPISODE_MEMORY_GENERATOR,
     GROWTH_PATCH,
     PLAYER_PROFILE,
+    UNDERSTANDING_PATCH,
 )
 from prompts.runtime_prompts import CHOICES, STATE_UPDATER
 from prompts.worldgen_prompts import CHARACTER_FACTORY
@@ -221,6 +223,13 @@ def _ensure_consolidation_agents() -> None:
         output_type=GrowthPatchOutput,
         max_tokens=consolidation_max_tokens,
     )
+    _consolidation_agents["understanding_patch"] = _build_agent(
+        name="understanding_patch",
+        instructions=UNDERSTANDING_PATCH,
+        config=config,
+        output_type=UnderstandingPatchOutput,
+        max_tokens=consolidation_max_tokens,
+    )
     _consolidation_agents["player_profile"] = _build_agent(
         name="player_profile",
         instructions=PLAYER_PROFILE,
@@ -248,3 +257,7 @@ def get_growth_patch_agent() -> Agent[None, GrowthPatchOutput]:
 
 def get_player_profile_agent() -> TextAgent:
     return _get_consolidation_agent("player_profile")
+
+
+def get_understanding_patch_agent() -> Agent[None, UnderstandingPatchOutput]:
+    return _get_consolidation_agent("understanding_patch")

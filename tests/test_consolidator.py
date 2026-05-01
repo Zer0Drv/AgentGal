@@ -16,11 +16,14 @@ try:
     import consolidation.flow as consolidator_module
     import memory.parser as parser_module
     from consolidation.flow import MemoryConsolidationFlow
-    from agents.schema import EpisodeMemoryBlock
+    from agents.schema import EpisodeMemoryBlock, UnderstandingPatchOutput
     from memory.parser import (
         EpisodeMemory,
+        Understanding,
         append_memory_records,
         read_memory_jsonl,
+        read_understandings,
+        write_understandings,
     )
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip consolidator tests: missing dependency ({exc})", allow_module_level=True)
@@ -437,6 +440,214 @@ def test_enforce_user_section_limits_trims_to_configured_caps():
     assert trimmed.count("- 相处") == 5
     assert "- 判断9" not in trimmed
     assert "- 相处6" not in trimmed
+
+
+def test_apply_understanding_patch_updates_and_adds(monkeypatch):
+    class FakeUUID:
+        hex = "new-understanding-id"
+
+    monkeypatch.setattr(consolidator_module.uuid, "uuid4", lambda: FakeUUID())
+
+    existing = {
+        "u1": Understanding(
+            id="u1",
+            memory_owner="chenxiao",
+            subject="对玩家的认知",
+            keywords=["玩家"],
+            content="旧理解。",
+            linked_episodes=["e0"],
+        ),
+    }
+    patch = UnderstandingPatchOutput.model_validate(
+        {
+            "add": [
+                {
+                    "subject": "互动模式",
+                    "keywords": ["靠近"],
+                    "content": "玩家会用行动解释。",
+                    "linked_episodes": ["e1"],
+                }
+            ],
+            "update": {
+                " u1 ": {
+                    "subject": "",
+                    "keywords": ["玩家", "保护"],
+                    "content": "玩家在压力下会先确认她是否安全。",
+                    "linked_episodes": ["e1"],
+                }
+            },
+        }
+    )
+
+    updated, logs, links_only_ids, full_replace_ids, added_ids = consolidator_module._apply_understanding_patch(
+        "chenxiao", existing, patch
+    )
+
+    assert logs == ["UPDATE u1", "ADD new-understanding-id"]
+    assert updated["u1"].subject == "对玩家的认知"
+    assert updated["u1"].keywords == ["玩家", "保护"]
+    assert updated["u1"].linked_episodes == ["e0", "e1"]
+    assert updated["new-understanding-id"].memory_owner == "chenxiao"
+    assert updated["new-understanding-id"].content == "玩家会用行动解释。"
+
+
+@pytest.mark.asyncio
+async def test_apply_pipeline_assigns_episode_id_before_understanding_patch(monkeypatch):
+    class FakeUUID:
+        hex = "episode-id"
+
+    consolidator = MemoryConsolidationFlow()
+    captured: dict[str, str] = {}
+
+    async def fake_merge(_self, _agent_name, _memory_entries, _raw_dialogue):
+        return EpisodeMemory(
+            date="10月19日",
+            time="10月19日 晚上",
+            location="餐厅",
+            participants="我、他",
+            content="一起吃饭。",
+            memory_owner="chenxiao",
+        )
+
+    async def fake_growth(_self, _agent_name, _episode):
+        return None
+
+    async def fake_understanding(_self, _agent_name, episode):
+        captured["id"] = episode.id
+
+    monkeypatch.setattr(consolidator_module.uuid, "uuid4", lambda: FakeUUID())
+    monkeypatch.setattr(MemoryConsolidationFlow, "_merge_memory_blocks", fake_merge)
+    monkeypatch.setattr(MemoryConsolidationFlow, "_patch_growth_entries", fake_growth)
+    monkeypatch.setattr(
+        MemoryConsolidationFlow, "_patch_understandings", fake_understanding
+    )
+
+    episode, errors = await consolidator._apply_consolidation_pipeline(
+        "chenxiao", "draft", "raw"
+    )
+
+    assert errors == []
+    assert episode is not None
+    assert episode.id == "episode-id"
+    assert captured["id"] == "episode-id"
+
+
+@pytest.mark.asyncio
+async def test_patch_understandings_writes_file_and_syncs_vectors(tmp_path, monkeypatch):
+    class FakeUUID:
+        hex = "new-understanding-id"
+
+    consolidator = MemoryConsolidationFlow()
+    agent_name = "chenxiao"
+    path_helper = _make_character_path(tmp_path)
+    sentinel_agent = object()
+
+    monkeypatch.setattr(consolidator_module.uuid, "uuid4", lambda: FakeUUID())
+    monkeypatch.setattr(consolidator_module, "character_path", path_helper)
+    monkeypatch.setattr(parser_module, "character_path", path_helper)
+    monkeypatch.setattr(agent_files_module, "character_path", path_helper)
+    monkeypatch.setattr(
+        consolidator_module,
+        "get_understanding_patch_agent",
+        lambda: sentinel_agent,
+    )
+
+    agent_dir = tmp_path / agent_name
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    (agent_dir / "soul.md").write_text("<identity>陈晓</identity>", encoding="utf-8")
+    write_understandings(
+        agent_name,
+        {
+            "u1": Understanding(
+                id="u1",
+                memory_owner=agent_name,
+                subject="对玩家的认知",
+                keywords=["玩家"],
+                content="旧理解。",
+                linked_episodes=["e0"],
+            )
+        },
+    )
+
+    async def fake_run_consolidation_agent(
+        self_inner,
+        *,
+        agent,
+        output_type,
+        agent_name,
+        function_name,
+        user,
+    ):
+        assert agent is sentinel_agent
+        assert output_type is UnderstandingPatchOutput
+        assert agent_name == "chenxiao"
+        assert function_name == "understanding_patch"
+        assert '"id": "e1"' in user
+        assert "[u1] subject='对玩家的认知'" in user
+        assert "linked_episodes: e0" in user
+        assert "<profile>" not in user
+        return UnderstandingPatchOutput.model_validate(
+            {
+                "update": {
+                    "u1": {
+                        "content": "玩家在压力下会先确认她是否安全。",
+                        "linked_episodes": ["e1"],
+                    }
+                },
+                "add": [
+                    {
+                        "subject": "互动模式",
+                        "content": "玩家会用行动解释误会。",
+                        "linked_episodes": ["e1"],
+                    }
+                ],
+            }
+        )
+
+    deleted_ids: list[str] = []
+    added_ids: list[str] = []
+
+    async def fake_delete_understanding(uid: str) -> None:
+        deleted_ids.append(uid)
+
+    async def fake_add_understanding(understanding: Understanding) -> None:
+        added_ids.append(understanding.id)
+
+    monkeypatch.setattr(
+        MemoryConsolidationFlow,
+        "_run_consolidation_agent",
+        fake_run_consolidation_agent,
+    )
+    monkeypatch.setattr(
+        consolidator_module.vector_store,
+        "delete_understanding",
+        fake_delete_understanding,
+    )
+    monkeypatch.setattr(
+        consolidator_module.vector_store,
+        "add_understanding",
+        fake_add_understanding,
+    )
+
+    await consolidator._patch_understandings(
+        agent_name,
+        EpisodeMemory(
+            id="e1",
+            date="10月19日",
+            time="10月19日 晚上",
+            location="餐厅",
+            participants="我、他",
+            content="他在她紧张时先确认安全。",
+            memory_owner=agent_name,
+        ),
+    )
+
+    updated = read_understandings(agent_name)
+    assert updated["u1"].content == "玩家在压力下会先确认她是否安全。"
+    assert updated["u1"].linked_episodes == ["e0", "e1"]
+    assert updated["new-understanding-id"].content == "玩家会用行动解释误会。"
+    assert deleted_ids == ["u1"]
+    assert added_ids == ["u1", "new-understanding-id"]
 
 
 @pytest.mark.asyncio

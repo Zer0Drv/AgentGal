@@ -369,3 +369,88 @@ PLAYER_PROFILE = r"""<role>
 - ...
 </format>
 """
+
+
+UNDERSTANDING_PATCH = r"""<task>
+你维护角色对某人、某段关系或某种互动规律的稳定认知（Understanding）。
+每条 Understanding 是一个信念节点，每条 EpisodeMemory 是它的证据。
+
+你的工作：把新记录挂到合适的节点上，并在必要时更新节点内容。
+</task>
+
+<inputs>
+- <existing_entries>：已有节点，格式为 [id] subject=... keywords=[...] linked_episodes=[...] content=...
+- <new_record>：新记录 JSON，其中 id 是本次记录 ID
+</inputs>
+
+<decision>
+按顺序处理：
+
+1. 扫描 existing_entries，找与新记录相关的节点。
+   相关 = 同一个人、同一段关系、同一种互动方式或行为规律。
+
+2. 对每个相关节点：
+   - 新记录带来新角度、修正、例外或深化 → update：更新 content，linked_episodes 填新记录 id
+   - 新记录只是再次印证 → update：content 不变，linked_episodes 填新记录 id
+
+3. 新记录有某个方面在 existing_entries 里没有覆盖 → add 新节点。
+
+4. 只有新记录对任何节点都无贡献时才输出空（例如纯环境描写、无角色互动）。
+</decision>
+
+<write_rules>
+- content 写”以后判断人、关系、互动方式时有用的一句稳定认知”，不描述事件经过
+- content 40-80 个中文字符，最多 120 个中文字符
+- subject 可以是人、关系、互动模式或行为规律
+- 新记录触及多个独立方面时，分别 add/update 各自节点；不把不同主题合并进同一节点
+- linked_episodes 只填 new_record.id；系统自动合并旧链接
+- update 必须使用已有 id；不新增内容相近的重复节点
+- 不删除节点；旧判断需要修正时用 update 改写
+</write_rules>
+
+<examples>
+例 1：无相关节点，首次观察到新规律。
+existing_entries：（尚无）
+new_record：id=e1，两人第一次一起吃饭，气氛轻松，沉默时他也不显得不安。
+输出：
+{“add”:[{“subject”:”我们的日常相处节奏”,”keywords”:[“相处”,”沉默”,”轻松”],”content”:”他和我在一起时不需要一直说话，沉默对他来说不是负担；我们的相处不需要持续维系。”,”linked_episodes”:[“e1”]}],”update”:{}}
+
+例 2：有相关节点，新记录带来新角度，更新 content。
+existing_entries：[u1] subject='我们的日常相处节奏' linked_episodes=[e1] content='他和我在一起时不需要一直说话，沉默对他来说不是负担。'
+new_record：id=e2，他主动提议一起吃饭，选了安静的地方，说”跟你在一起不用表演”。
+输出：
+{“add”:[],”update”:{“u1”:{“subject”:”我们的日常相处节奏”,”keywords”:[“相处”,”沉默”,”轻松”,”主动”],”content”:”他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担；他会主动寻找这种放松的方式。”,”linked_episodes”:[“e2”]}}}
+
+例 3：有相关节点，新记录只是再次印证，content 不变，只挂链接。
+existing_entries：[u1] subject='我们的日常相处节奏' linked_episodes=[e1,e2] content='他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担；他会主动寻找这种放松的方式。'
+new_record：id=e3，又一次一起吃午饭，平静，他没说什么特别的。
+输出：
+{“add”:[],”update”:{“u1”:{“subject”:”我们的日常相处节奏”,”keywords”:[“相处”,”沉默”,”轻松”,”主动”],”content”:”他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担；他会主动寻找这种放松的方式。”,”linked_episodes”:[“e3”]}}}
+
+例 4：新记录触及多个独立方面，分别处理。
+existing_entries：[u1] subject='玩家在压力下的保护方式' linked_episodes=[e0] content='玩家遇到冲突时会先确认我的安全，再用行动替我分担压力。'
+new_record：id=e4，冲突中他先替我挡住对方，事后主动问我有没有受伤；我发现他向来先行动后解释。
+输出：
+{“add”:[{“subject”:”他处理事情的默认节奏”,”keywords”:[“行动”,”解释”,”风格”],”content”:”他倾向于先行动再解释，不会在压力下停下来讨论；这是他面对突发情况的默认节奏。”,”linked_episodes”:[“e4”]}],”update”:{“u1”:{“subject”:”玩家在压力下的保护方式”,”keywords”:[“压力”,”保护”,”行动”],”content”:”玩家在压力下会先用行动替我分担，而不是先问我意见；事后才会确认我的状态。”,”linked_episodes”:[“e4”]}}}
+
+例 5：新记录同时印证多个已有节点，分别挂链接。
+existing_entries：
+[u1] subject='我们的日常相处节奏' linked_episodes=[e1,e2] content='他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担。'
+[u2] subject='他在公开场合的行为方式' linked_episodes=[e3] content='在人多的地方他会不动声色地把我护在里侧，但不会特别说出来。'
+new_record：id=e5，在人来人往的商场里一起吃饭，他把靠走道的位置让给自己，整顿饭气氛轻松，没有特别提这件事。
+输出：
+{“add”:[],”update”:{“u1”:{“subject”:”我们的日常相处节奏”,”keywords”:[“相处”,”沉默”,”轻松”,”主动”],”content”:”他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担。”,”linked_episodes”:[“e5”]},”u2”:{“subject”:”他在公开场合的行为方式”,”keywords”:[“公开场合”,”保护”,”不声张”],”content”:”在人多的地方他会不动声色地把我护在里侧，但不会特别说出来。”,”linked_episodes”:[“e5”]}}}
+
+例 6：纯环境描写，无角色互动，真正无贡献。
+existing_entries：（尚无）
+new_record：id=e6，旁白描述天气骤变，无角色出现。
+输出：
+{“add”:[],”update”:{}}
+</examples>
+
+<output_format>
+严格 JSON，无 markdown：
+{“add”:[{“subject”:”...”,”keywords”:[“词1”],”content”:”一句稳定认知。”,”linked_episodes”:[“new_record_id”]}],”update”:{“<id>”:{“subject”:”...”,”keywords”:[...],”content”:”...”,”linked_episodes”:[“new_record_id”]}}}
+无变更：{“add”:[],”update”:{}}
+</output_format>
+"""

@@ -229,14 +229,6 @@ class UnderstandingEntry(BaseModel):
 class UnderstandingPatchOutput(BaseModel):
     add: list[UnderstandingEntry] = Field(default_factory=list)
     update: dict[str, UnderstandingEntry] = Field(default_factory=dict)
-    remove: list[str] = Field(default_factory=list)
-
-    @field_validator("remove", mode="before")
-    @classmethod
-    def clean_remove_ids(cls, value: object) -> list[str]:
-        if not isinstance(value, list):
-            return []
-        return [str(item).strip() for item in value if str(item).strip()]
 
     @field_validator("update", mode="before")
     @classmethod

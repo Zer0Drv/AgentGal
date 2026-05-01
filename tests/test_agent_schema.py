@@ -55,7 +55,7 @@ def test_understanding_patch_output_defaults_to_empty_operations():
 
     assert output.add == []
     assert output.update == {}
-    assert output.remove == []
+    assert not hasattr(output, "remove")
 
 
 def test_understanding_entry_strips_string_fields():

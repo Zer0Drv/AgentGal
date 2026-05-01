@@ -674,6 +674,31 @@ class VectorStore:
                     uid, e,
                 )
 
+    async def update_understanding_links(
+        self, understanding_id: str, linked_episodes: list[str]
+    ) -> None:
+        """仅更新 linked_episodes 字段，不触碰向量或 FTS 索引。"""
+        linked_str = json.dumps(linked_episodes, ensure_ascii=False)
+        async with self._get_write_lock():
+            await self._ensure_tables()
+            db = await self._get_db()
+            try:
+                await db.execute("BEGIN")
+                await db.execute(
+                    "UPDATE Understanding SET linked_episodes = ? WHERE id = ?",
+                    (linked_str, understanding_id),
+                )
+                await db.commit()
+            except Exception as e:
+                try:
+                    await db.execute("ROLLBACK")
+                except Exception:
+                    pass
+                memory_logger.error(
+                    "[VectorStore] Understanding links 更新失败: id=%s, error=%s",
+                    understanding_id, e,
+                )
+
     async def delete_understanding(self, understanding_id: str) -> None:
         """从三张 Understanding 表删除指定条目。id 不存在时静默返回。"""
         async with self._get_write_lock():

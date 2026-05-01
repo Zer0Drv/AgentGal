@@ -97,3 +97,14 @@ def build_episode_memory_generator_payload(
     if raw_dialogue:
         payload_parts.append(f"<raw_dialogue>\n{raw_dialogue}\n</raw_dialogue>")
     return "\n\n".join(payload_parts)
+
+
+def build_understanding_patch_payload(
+    existing_understandings_text: str,
+    new_record_json: str,
+) -> str:
+    """构造 UnderstandingPatch 的 user payload。"""
+    return (
+        f"<existing_entries>\n{existing_understandings_text}\n</existing_entries>\n\n"
+        f"<new_record>\n{new_record_json}\n</new_record>"
+    )
