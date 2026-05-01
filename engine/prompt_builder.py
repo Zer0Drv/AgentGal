@@ -143,18 +143,32 @@ def build_history_transcript(
 # ---------------------------------------------------------------------------
 
 
-def build_search_query(agent_name: str, user_input: str) -> str:
-    """用叙事焦点富化检索 query。"""
+def _get_narrative_focus(agent_name: str) -> str:
+    """读取 narrator/status.md 的叙事焦点；非角色或读取失败时返回空串。"""
     if agent_name == "narrator":
-        return user_input
+        return ""
     try:
         status = Path(character_path("narrator", "status.md")).read_text(encoding="utf-8")
-        focus = extract_status_field(status, "叙事焦点").strip()
+        return extract_status_field(status, "叙事焦点").strip()
     except OSError:
-        focus = ""
+        return ""
+
+
+def build_search_query(agent_name: str, user_input: str) -> str:
+    """情节记忆检索 query：叙事焦点 + 玩家输入。"""
+    focus = _get_narrative_focus(agent_name)
     if not focus:
         return user_input
     return f"{focus}\n{user_input}"
+
+
+def build_understanding_query(agent_name: str, user_input: str) -> str:
+    """稳定理解检索 query：只取叙事焦点，无焦点时回退到玩家输入。
+
+    Understanding 记录的是行为模式而非事件，场景上下文比具体话语更能命中相关条目。
+    """
+    focus = _get_narrative_focus(agent_name)
+    return focus if focus else user_input
 
 
 def build_system_prompt(agent_name: str, soul_content: str) -> str:
@@ -281,6 +295,7 @@ def build_user_message(
     latest_user_input: str,
     memory_prefix: str,
     raw_messages: list[dict] | None = None,
+    understandings_prefix: str = "",
 ) -> tuple[str, bool]:
     """构建单条大 user message，按稳定度排序上下文。返回 (消息文本, 是否触发历史截断)。"""
     parts: list[str] = []
@@ -305,6 +320,7 @@ def build_user_message(
     )
     parts.append(relations)
     parts.append(memory_prefix if memory_prefix else "")
+    parts.append(understandings_prefix if understandings_prefix else "")
     parts.append(f"玩家新消息: {latest_user_input}")
 
     return "\n\n---\n\n".join(part for part in parts if part), was_truncated

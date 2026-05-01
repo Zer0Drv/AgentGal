@@ -27,12 +27,14 @@ from engine.prompt_builder import (
     build_characters_block,
     build_schedule_snapshot,
     build_search_query,
+    build_understanding_query,
     build_user_message,
 )
+from llm.embedding import embed_sync
 from llm.providers import get_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field, normalize
-from memory.retrieval import search_memories
+from memory.retrieval import search_memories, search_understandings
 from shared.config import AGENT_RUN_TIMEOUT_SECONDS, HISTORY_RAW_SCAN_TURNS, get_agent_names
 from shared.text_utils import (
     clean_response,
@@ -60,6 +62,10 @@ _FILE_UPDATES_EVENT = "agentgal.routing.file_updates"
 
 # 由 add_event / mark_triggered 逐条维护，禁止通过 set_status_fields 整段覆写
 _EVENT_SECTION_FIELDS = {"打算", "待触发事件"}
+
+
+def _wrap_block(tag: str, content: str) -> str:
+    return f"<{tag}>\n{content}\n</{tag}>" if content else ""
 
 
 def _log_file_updates(agent_name: str, results: list[FileUpdateResult]) -> None:
@@ -282,19 +288,29 @@ class Character(BaseEntity):
     def _build_prompt(
         self, user_input: str, raw_messages: list[dict]
     ) -> str:
-        """组装角色 user message（含记忆召回前缀）。"""
-        relevant_memories = search_memories(
-            self.name, build_search_query(self.name, user_input)
-        )
-        memory_prefix = (
-            f"<relevant_memories>\n{relevant_memories}\n</relevant_memories>"
-            if relevant_memories
-            else ""
+        """组装角色 user message（含记忆与长期判断召回前缀）。"""
+        memory_query = build_search_query(self.name, user_input)
+        understanding_query = build_understanding_query(self.name, user_input)
+        try:
+            memory_qvec: list[float] | None = embed_sync([memory_query])[0]
+        except Exception:
+            memory_qvec = None
+        if understanding_query == memory_query:
+            understanding_qvec = memory_qvec
+        else:
+            try:
+                understanding_qvec: list[float] | None = embed_sync([understanding_query])[0]
+            except Exception:
+                understanding_qvec = None
+        relevant_memories = search_memories(self.name, memory_query, qvec=memory_qvec)
+        relevant_understandings = search_understandings(
+            self.name, understanding_query, qvec=understanding_qvec
         )
         message, _ = build_user_message(
             self.name,
             user_input,
-            memory_prefix,
+            _wrap_block("relevant_memories", relevant_memories),
+            understandings_prefix=_wrap_block("relevant_understandings", relevant_understandings),
             raw_messages=raw_messages,
         )
         return message

@@ -217,7 +217,8 @@ Where:
 5. `status.md`
 6. `<relations>` (directly injects the character's own `relations.md`, covering all known major characters, regardless of presence. Player perspective does not go through relations)
 7. `<relevant_memories>` (long-term memory recall from `memory.jsonl`, vector store side still renders as markdown for LLM reading)
-8. Current round player input
+8. `<relevant_understandings>` (stable understanding recall from `understanding.jsonl`; relevance-only ranking, no recency or recall-state update)
+9. Current round player input
 
 ### Narrator Agent
 
@@ -250,7 +251,7 @@ After each round of character responses, `generate_choices()` is called to gener
 ## Long-Term Memory Retrieval
 
 - Vector store indexes long-term memory events from `memory.jsonl` and stable understandings from `understanding.jsonl` in separate tables; owner scope is fixed to current character
-- Default retrieval path is memory-only; non-memory retrieval is disabled
+- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); the embedding vector is computed once and shared between both searches
 - `memory/retrieval.py` handles the full retrieval pipeline: embedding → vector/BM25 candidates → hybrid fusion → (optional) rerank → recency sort → recall state update
 - `storage/vector_store.py` is storage layer only: provides raw candidates for EpisodeMemory and Understanding tables, pipeline logic is not here
 - `memory/indexer.py` reads `EpisodeMemory` records from `memory.jsonl` and `Understanding` records from `understanding.jsonl`, then appends them to the vector store

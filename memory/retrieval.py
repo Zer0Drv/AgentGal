@@ -261,7 +261,18 @@ def _format_retrieved_memory(item: dict[str, Any]) -> str:
     return f"## {date}\n{body}"
 
 
-def search_memories(agent_name: str, query: str) -> str:
+def _format_retrieved_understanding(item: dict[str, Any]) -> str:
+    """将召回的长期判断格式化为 LLM 可读块。"""
+    content = str(item.get("content", "")).strip()
+    if not content:
+        return ""
+    subject = str(item.get("subject", "")).strip()
+    if subject:
+        return f"## {subject}\n{content}"
+    return content
+
+
+def search_memories(agent_name: str, query: str, qvec: list[float] | None = None) -> str:
     """执行完整检索 pipeline 并格式化记忆块。
 
     pipeline 顺序：
@@ -277,7 +288,8 @@ def search_memories(agent_name: str, query: str) -> str:
 
     # Step 1: 计算查询向量
     try:
-        qvec = embed_sync([query])[0]
+        if qvec is None:
+            qvec = embed_sync([query])[0]
     except Exception as e:
         memory_logger.error("[Retrieval] 查询嵌入失败: agent=%s, error=%s", agent_name, e)
         return "（无相关记忆）"
@@ -346,3 +358,114 @@ def search_memories(agent_name: str, query: str) -> str:
 
     memories = [formatted for r in ranked if (formatted := _format_retrieved_memory(r))]
     return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
+
+
+def search_understandings(agent_name: str, query: str, qvec: list[float] | None = None) -> str:
+    """检索角色长期判断，返回格式化文本。
+
+    Understanding 不做 recency 排序，也不更新 recall 状态；只按相关性取前若干条。
+    """
+    if not query or not query.strip():
+        return ""
+
+    try:
+        if qvec is None:
+            qvec = embed_sync([query])[0]
+    except Exception as e:
+        memory_logger.error(
+            "[Retrieval] Understanding 查询嵌入失败: agent=%s, error=%s",
+            agent_name,
+            e,
+        )
+        return ""
+
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        VectorStore._load_sqlite_vec_sync(conn)
+
+        vec_rows = vector_store.get_understanding_vector_candidates(
+            conn, agent_name, qvec, VECTOR_CANDIDATE_LIMIT
+        )
+
+        candidates: dict[str, dict[str, Any]] = {}
+        for row in vec_rows:
+            uid = str(row[1] or "")
+            if not uid:
+                continue
+            candidates[uid] = {
+                "id": uid,
+                "subject": str(row[2] or ""),
+                "content": str(row[3] or ""),
+                "keywords": str(row[4] or ""),
+                "vector_relevance": _distance_to_relevance(float(row[5])),
+                "bm25_raw": None,
+            }
+
+        use_hybrid = False
+        if HYBRID_SEARCH_ENABLED:
+            bm25_rows = vector_store.get_understanding_bm25_candidates(
+                conn, agent_name, query, BM25_CANDIDATE_LIMIT
+            )
+            use_hybrid = bool(bm25_rows)
+            for row in bm25_rows:
+                uid = str(row[1] or "")
+                if not uid:
+                    continue
+                entry = candidates.setdefault(
+                    uid,
+                    {
+                        "id": uid,
+                        "subject": str(row[2] or ""),
+                        "content": str(row[3] or ""),
+                        "keywords": str(row[4] or ""),
+                        "vector_relevance": 0.0,
+                        "bm25_raw": None,
+                    },
+                )
+                entry["bm25_raw"] = abs(float(row[5]))
+
+        bm25_values = [
+            float(entry["bm25_raw"])
+            for entry in candidates.values()
+            if entry["bm25_raw"] is not None
+        ]
+        bm25_min = min(bm25_values) if bm25_values else 0.0
+        bm25_max = max(bm25_values) if bm25_values else 0.0
+
+        ranked: list[dict[str, Any]] = []
+        for entry in candidates.values():
+            if use_hybrid:
+                bm25_raw = entry["bm25_raw"]
+                if bm25_raw is None:
+                    bm25_relevance = 0.0
+                elif bm25_max > bm25_min:
+                    bm25_relevance = (float(bm25_raw) - bm25_min) / (bm25_max - bm25_min)
+                else:
+                    bm25_relevance = 1.0
+                relevance = (
+                    VECTOR_RELEVANCE_WEIGHT * float(entry["vector_relevance"])
+                    + BM25_RELEVANCE_WEIGHT * bm25_relevance
+                )
+            else:
+                relevance = float(entry["vector_relevance"])
+            ranked.append({**entry, "relevance": relevance})
+
+        ranked.sort(key=lambda item: item["relevance"], reverse=True)
+        top = ranked[:VECTOR_SEARCH_LIMIT]
+
+    except Exception as e:
+        memory_logger.error(
+            "[Retrieval] Understanding 检索失败: agent=%s, error=%s",
+            agent_name,
+            e,
+        )
+        return ""
+    finally:
+        if conn is not None:
+            conn.close()
+
+    parts = [
+        formatted for item in top if (formatted := _format_retrieved_understanding(item))
+    ]
+    return "\n\n---\n\n".join(parts) if parts else ""
