@@ -18,10 +18,8 @@ class CharacterOutput(BaseModel):
     content: str
     memory: str
     status: dict[str, str] = Field(default_factory=dict)
-    player: dict[str, str] = Field(default_factory=dict)
     triggered: list[str] = Field(default_factory=list)
     add_event: list[str] = Field(default_factory=list)
-    relations: dict[str, str] = Field(default_factory=dict)
 
 
 class NarratorStatus(BaseModel):
@@ -53,7 +51,7 @@ class NewCharacterProfile(BaseModel):
     """character_factory agent 的结构化输出：一次返回完整骨架种子。
 
     character_id 由 character_factory 生成，是最终目录名 / agent 标识。
-    display_name 是最终展示名，会写入 soul.md / status.md / relations.md。
+    display_name 是最终展示名，会写入 soul.md / status.md。
     soul 分成五段（identity / goal / dynamic / behavior / voice），和模板对齐。
 
     schedule 是新角色的默认日程（可空），用于 state_updater 的 schedule_snapshot 兜底。
@@ -195,31 +193,6 @@ class EpisodeClosureOutput(RootModel[dict[str, list[EpisodeClosureBoundary]]]):
     空数组表示该角色无边界。RootModel 让 dict 直接做根 schema。访问内部 dict 用 `.root`。
     消费方通常取每个数组里 end_turn 最大的边界作为本轮可归并的闭合点。
     """
-
-
-class GrowthEntryPatch(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    dimension: str
-    content: str
-
-
-class GrowthPatchOutput(BaseModel):
-    add: list[GrowthEntryPatch] = Field(default_factory=list)
-    update: dict[str, GrowthEntryPatch] = Field(default_factory=dict)
-    remove: list[str] = Field(default_factory=list)
-
-    @field_validator("remove", mode="before")
-    @classmethod
-    def clean_remove_ids(cls, value: object) -> list[str]:
-        if not isinstance(value, list):
-            return []
-        return [str(item).strip() for item in value if str(item).strip()]
-
-    @field_validator("update", mode="before")
-    @classmethod
-    def clean_update_ids(cls, value: object) -> object:
-        return _strip_dict_keys(value)
 
 
 class UnderstandingEntry(BaseModel):

@@ -58,23 +58,12 @@ def _mock_llm_infra(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_build_migration_input_includes_all_sources(monkeypatch):
     monkeypatch.setattr(
         migrate,
-        "read_growth_entries",
-        lambda agent_name: {
-            "P001": {
-                "dimension": "对玩家：克制关心→主动靠近",
-                "content": "[2024-04-25] 此后会更直接地靠近玩家。",
-            }
-        },
-    )
-    monkeypatch.setattr(
-        migrate,
         "read_agent_file",
-        lambda agent_name, filename: "# 我眼中的玩家\n\n## 对方是什么人\n玩家很敏锐。",
-    )
-    monkeypatch.setattr(
-        migrate,
-        "read_relations",
-        lambda agent_name: {"莉莉丝": "同班同学，会留意玩家的异常。"},
+        lambda agent_name, filename: {
+            "growth.md": "[P001|对玩家：克制关心→主动靠近] [2024-04-25] 此后会更直接地靠近玩家。",
+            "user.md": "# 我眼中的玩家\n\n## 对方是什么人\n玩家很敏锐。",
+            "relations.md": "## 莉莉丝\n同班同学，会留意玩家的异常。",
+        }[filename],
     )
 
     result = migrate._build_migration_input("mitsuki")
@@ -91,15 +80,13 @@ def test_build_migration_input_includes_all_sources(monkeypatch):
 def test_build_migration_input_empty_relations_omitted(monkeypatch):
     monkeypatch.setattr(
         migrate,
-        "read_growth_entries",
-        lambda agent_name: {
-            "P001": {"dimension": "对玩家：A→B", "content": "成长内容。"}
-        },
+        "read_agent_file",
+        lambda agent_name, filename: {
+            "growth.md": "[P001|对玩家：A→B] 成长内容。",
+            "user.md": "玩家档案。",
+            "relations.md": "",
+        }[filename],
     )
-    monkeypatch.setattr(
-        migrate, "read_agent_file", lambda agent_name, filename: "玩家档案。"
-    )
-    monkeypatch.setattr(migrate, "read_relations", lambda agent_name: {})
 
     result = migrate._build_migration_input("mitsuki")
 
@@ -110,9 +97,11 @@ def test_build_migration_input_empty_relations_omitted(monkeypatch):
 
 
 def test_build_migration_input_returns_none_when_no_sources(monkeypatch):
-    monkeypatch.setattr(migrate, "read_growth_entries", lambda agent_name: {})
-    monkeypatch.setattr(migrate, "read_agent_file", lambda agent_name, filename: "")
-    monkeypatch.setattr(migrate, "read_relations", lambda agent_name: {})
+    monkeypatch.setattr(
+        migrate,
+        "read_agent_file",
+        lambda agent_name, filename: "",
+    )
 
     result = migrate._build_migration_input("mitsuki")
     assert result is None
@@ -218,11 +207,11 @@ async def test_migrate_agent_returns_zero_on_llm_failure(monkeypatch):
     _mock_llm_infra(monkeypatch)
     monkeypatch.setattr(migrate, "vector_store", FakeVectorStore())
     monkeypatch.setattr(migrate, "read_understandings", lambda agent_name: {})
-    monkeypatch.setattr(
-        migrate,
-        "_build_migration_input",
-        lambda agent_name: "input",
-    )
+
+    def fake_build_input(agent_name: str) -> str | None:
+        return "input"
+
+    monkeypatch.setattr(migrate, "_build_migration_input", fake_build_input)
 
     async def fake_run_structured_agent(**kwargs):
         raise RuntimeError("LLM unavailable")

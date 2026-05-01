@@ -38,7 +38,7 @@ agentgal-memos/
 ├── world/                      # World model (time / location)
 │   └── schedule.py             # Character schedule queries, game time parsing, time-slot matching
 ├── consolidation/              # Background memory consolidation (independent process)
-│   ├── flow.py                 # Consolidation orchestration: EpisodeMemoryGenerator / growth / user refinement
+│   ├── flow.py                 # Consolidation orchestration: EpisodeMemoryGenerator / understanding patch
 │   └── inputs.py               # Consolidation prompt assembly (memory_owner / raw_dialogue)
 ├── llm/
 │   ├── providers.py            # Provider configuration and URL parsing (returns provider/api_url/api_key/model/temperature)
@@ -59,7 +59,7 @@ agentgal-memos/
 │   ├── save_manager.py         # Save / load / reset / opening load
 │   └── vector_store.py         # sqlite-vec vector storage (write/delete + raw candidate retrieval)
 ├── prompts/                    # Prompt constant modules grouped by lifecycle
-│   ├── consolidation_prompts.py  # Background consolidation: EpisodeClosureDetector / EpisodeMemoryGenerator / growth / user
+│   ├── consolidation_prompts.py  # Background consolidation: EpisodeClosureDetector / EpisodeMemoryGenerator / understanding
 │   ├── runtime_prompts.py        # Main dialogue: character / narrator / choices / state_updater
 │   ├── worldgen_prompts.py       # Character incubation
 │   └── opening_intro.txt         # Gameplay intro text (player-facing)
@@ -96,8 +96,8 @@ server.py        ← all
 - `understanding.jsonl`: Stable understandings formed by the character, one structured `Understanding` per line (`id / memory_owner / subject / keywords / content / linked_episodes`); unlike `EpisodeMemory`, this records durable beliefs or interaction patterns rather than single events
 - `status.md`: Current status; characters contain "Intentions" and "Relationship with Player", narrator contains "Pending Events", "Character Locations", and the derived field "Relationship with Player" (summarized from each character's status as `- Character Display Name: Relationship`, maintained by code, narrator does not generate it)
 - `user.md`: Character's perception of the player (characters only, not `narrator`)
-- `tmp_user.md`: Working draft of `user.md`; copies the official file on first write, deleted after consolidation
-- `growth.md`: Behavioral drift records, maintained by the consolidator and injected into character prompts (characters only); each entry has a dimension tag (`Toward X: A→B` behavioral drift axis), format `[P001|Toward X: A→B] [Date] ...`, max 15 entries
+- `tmp_user.md`: Working draft of `user.md`; copies the official file on first write, appended to each round via `output.player`, no longer refined by consolidation
+- `growth.md`: Behavioral drift records, injected into character prompts (characters only); created by character_factory but no longer patched by consolidation
 - `relations.md`: Character's current perspective on other characters (excluding `player`); one section per `## {character}`; each round `output.relations[character]` overwrites the entire section (characters only)
 
 ### History Files
@@ -182,7 +182,7 @@ All structured agents use pydantic-ai's `PromptedOutput` structured output, no l
 
 - `output.memory` → append one record tagged with current global turn number to `memory_draft.jsonl` (after `EpisodeClosureDetector` determines closure turn, consolidation slices by `until_turn` to produce `EpisodeMemory` appended to `memory.jsonl`, merged entries removed from draft)
 - `output.status` → overwrite corresponding fields in `status.md`
-- `output.player` → append to corresponding fields in `tmp_user.md`; on first write, copy `user.md` as working draft first, then write back to `user.md` after consolidation
+- `output.player` → append to corresponding fields in `tmp_user.md`; on first write, copy `user.md` as working draft first
 - `output.triggered` → remove executed entries from `status.md`
 - `output.add_event` → insert new entries into `status.md`
 - `output.relations` → overwrite the `## {target}` section in `relations.md` (target must be another character's display name, not self or `player`; long-term perspective on player goes through `user.md` and `status.md`'s "Relationship with Player", not written to relations; invalid targets are skipped with a warning logged)
@@ -212,7 +212,7 @@ Where:
 
 1. `<my_schedule>` (renders character's `schedule.json`; most stable throughout the story period, placed first to anchor prompt cache)
 2. `growth.md`
-3. `user.md` (`tmp_user.md` only participates in consolidation as working draft, not directly injected into prompt)
+3. `user.md` (written by runtime writeback, not directly injected via tmp_user.md)
 4. Recent visible dialogue history (built from raw JSONL; filtered by `visible_to`; high/low water mark truncation; history contains all narrator messages)
 5. `status.md`
 6. `<relations>` (directly injects the character's own `relations.md`, covering all known major characters, regardless of presence. Player perspective does not go through relations)
@@ -266,11 +266,7 @@ After each round of character responses, `generate_choices()` is called to gener
 
 - Triggered as a background task by `detect_and_consolidate(current_turn)` at the end of each round (concurrent with `state_updater`): first scans characters with `memory_draft.jsonl` as candidates, calls `EpisodeClosureDetector` to determine which characters have closed episodes this round (returns `{agent_name: closed_at_turn}`); closed characters execute `consolidate_agent(name, until_turn=closed_at_turn)` in parallel
 - `consolidate_agent` slices draft entries + raw dialogue for the corresponding turn range from `memory_draft.jsonl` by `until_turn`, hands to `EpisodeMemoryGenerator` to produce a single structured `EpisodeMemory`; flow layer injects `memory_owner` and `raw_dialogue`, then appends to `memory.jsonl`. Merged entries are removed from draft; unclosed turn entries are retained. On failure, entire draft is retained for retry next round
-- Growth stage uses the consolidated `EpisodeMemory` JSON array as LLM input, no longer pre-rendering to markdown
-- Patches `growth.md` (add/update/remove, constrained 1:1 by dimension; update can update dimension along the same object/relationship axis of gradual change) (characters only)
 - Patches `understanding.jsonl` from the new `EpisodeMemory`, preserving existing linked episode ids and syncing changed Understanding records to the vector store
-- Also refines `user.md` (characters only)
-- Syncs vector index by progress
 
 `narrator` does not maintain `memory.jsonl`, nor does it participate in consolidation.
 

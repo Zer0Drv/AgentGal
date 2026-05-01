@@ -183,12 +183,6 @@ def _write_relations_md(
     ):
         sections[relation_to_display] = spec.relation_description.strip()
 
-    lines = ["# 我眼中的其他人", ""]
-    for target, body in sections.items():
-        lines.append(f"## {target}")
-        lines.append(body)
-        lines.append("")
-    (agent_dir / "relations.md").write_text("\n".join(lines), encoding="utf-8")
 
 
 def _format_bulleted_block(items: list[str]) -> str:
@@ -261,18 +255,14 @@ def _write_bootstrap_files(
     spec: NewCharacterRequest,
     creation: NewCharacterProfile,
     soul_content: str,
-    scene_characters: list[str],
 ) -> None:
     agent_dir = CHARACTERS_DIR / creation.character_id
     agent_dir.mkdir(parents=True, exist_ok=True)
 
     (agent_dir / "soul.md").write_text(soul_content, encoding="utf-8")
     (agent_dir / "memory.md").write_text("", encoding="utf-8")
-    (agent_dir / "growth.md").write_text("# 心路历程\n\n", encoding="utf-8")
-    (agent_dir / "user.md").write_text(_USER_MD_SKELETON, encoding="utf-8")
 
     _write_status_md(agent_dir, creation.initial_status, spec, creation.display_name)
-    _write_relations_md(agent_dir, creation.initial_relations, spec, scene_characters)
 
     if not _write_schedule_json(agent_dir, creation.schedule):
         routing_logger.warning(
@@ -327,7 +317,7 @@ async def create_character(
 
     soul_content = _build_soul_md(creation)
     try:
-        _write_bootstrap_files(spec, creation, soul_content, scene_characters or [])
+        _write_bootstrap_files(spec, creation, soul_content)
     except Exception as e:
         routing_logger.error(f"[character_factory] 写入 {creation.character_id!r} 文件失败: {e}")
         return None

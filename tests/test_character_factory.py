@@ -407,18 +407,9 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
     assert "- 美月：教室" in narrator_status
     assert "- 桥本志津：教室走廊" in narrator_status
 
-    relations = (agent_dir / "relations.md").read_text(encoding="utf-8")
-    # relations.md 按 display_name 作为 section 标题（soul 首行 `# 美月` → "美月"）
-    assert "## 美月" in relations
-    assert "女儿，最近显得疲惫" in relations
-    assert "路人甲" not in relations
-    # 对玩家的视角走 status."和玩家的关系"，不再出现在 relations.md
-    assert "## player" not in relations
     assert "## 和玩家的关系\n听说过" in status
 
     assert (agent_dir / "memory.md").exists()
-    assert (agent_dir / "growth.md").read_text(encoding="utf-8").startswith("# 心路历程")
-    assert (agent_dir / "user.md").read_text(encoding="utf-8").startswith("# 眼中的玩家")
 
     import json as _json
 
@@ -505,92 +496,6 @@ async def test_create_character_validates_before_calling_llm(character_dir, monk
     created = await character_factory_module.create_character(spec)
     assert created is None
     assert called is False
-
-
-@pytest.mark.asyncio
-async def test_create_character_seeds_relation_to_when_llm_omits(character_dir, monkeypatch):
-    _seed(character_dir, "mitsuki")
-    _seed(character_dir, "narrator", status="## 当前时间\n4月3日 星期一 8:23\n")
-
-    async def fake_run_structured_agent(**_kwargs):
-        return NewCharacterProfile(
-            character_id="fallbackchar",
-            display_name="林晚",
-            identity="美月的邻居。",
-            goal="你希望邻里日子安静，谁都不欠谁。",
-            dynamic="你偶尔撞见美月从家里出来，会打个招呼，但没熟到能聊天。",
-            behavior=["撞见邻居时先点头笑一下，再决定要不要搭话"],
-            voice=["今天回得早呀。"],
-            initial_status={"身份": "x", "心境": "x", "和玩家的关系": "x"},
-            initial_relations={"player": "陌生人"},
-        )
-
-    monkeypatch.setattr(character_factory_module, "run_structured_agent", fake_run_structured_agent)
-    monkeypatch.setattr(character_factory_module, "get_character_factory_agent", lambda: object())
-    monkeypatch.setattr(
-        character_factory_module,
-        "get_character_factory_llm_config",
-        lambda: {"model": "test"},
-    )
-    monkeypatch.setattr(character_factory_module, "reload_conversation_agent", lambda _name: None)
-
-    spec = NewCharacterRequest(
-        relation_to="mitsuki",
-        relation_description="美月的邻居",
-    )
-    created = await character_factory_module.create_character(
-        spec, scene_characters=["mitsuki"]
-    )
-    assert created == CreatedCharacterInfo(
-        character_id="fallbackchar",
-        display_name="林晚",
-        identity="美月的邻居。",
-    )
-
-    relations = (character_dir / "fallbackchar" / "relations.md").read_text(encoding="utf-8")
-    assert "## mitsuki" in relations
-    assert "美月的邻居" in relations  # fallback 描述进入 relations.md
-
-
-@pytest.mark.asyncio
-async def test_create_character_does_not_seed_relation_to_outside_scene_characters(
-    character_dir, monkeypatch
-):
-    _seed(character_dir, "mitsuki")
-    _seed(character_dir, "narrator", status="## 当前时间\n4月3日 星期一 8:23\n")
-
-    async def fake_run_structured_agent(**_kwargs):
-        return NewCharacterProfile(
-            character_id="fallbackchar",
-            display_name="林晚",
-            identity="美月的邻居。",
-            goal="你希望邻里日子安静，谁都不欠谁。",
-            dynamic="你偶尔撞见美月从家里出来，会打个招呼。",
-            behavior=["撞见邻居时先点头笑一下"],
-            voice=["今天回得早呀。"],
-            initial_status={"身份": "x", "心境": "x", "和玩家的关系": "x"},
-            initial_relations={},
-        )
-
-    monkeypatch.setattr(character_factory_module, "run_structured_agent", fake_run_structured_agent)
-    monkeypatch.setattr(character_factory_module, "get_character_factory_agent", lambda: object())
-    monkeypatch.setattr(
-        character_factory_module,
-        "get_character_factory_llm_config",
-        lambda: {"model": "test"},
-    )
-    monkeypatch.setattr(character_factory_module, "reload_conversation_agent", lambda _name: None)
-
-    spec = NewCharacterRequest(
-        relation_to="mitsuki",
-        relation_description="美月的邻居",
-    )
-    created = await character_factory_module.create_character(spec, scene_characters=[])
-    assert created is not None
-
-    relations = (character_dir / "fallbackchar" / "relations.md").read_text(encoding="utf-8")
-    assert "## mitsuki" not in relations
-    assert "美月的邻居" not in relations
 
 
 @pytest.mark.asyncio

@@ -50,7 +50,6 @@ def _event(date: str, slot: str, content: str) -> str:
 
 def test_prepare_slice_returns_none_when_draft_empty(tmp_path, monkeypatch):
     """memory_draft.jsonl 不存在或切片为空时返回 None。"""
-    monkeypatch.setattr(consolidator_module, "character_path", _make_character_path(tmp_path))
     monkeypatch.setattr(agent_files_module, "character_path", _make_character_path(tmp_path))
     consolidator = MemoryConsolidationFlow()
 
@@ -60,7 +59,6 @@ def test_prepare_slice_returns_none_when_draft_empty(tmp_path, monkeypatch):
 
 def test_prepare_slice_skips_entries_beyond_until_turn(tmp_path, monkeypatch):
     """只取 turn <= until_turn 的 draft 条目，后续 turn 留在 remaining。"""
-    monkeypatch.setattr(consolidator_module, "character_path", _make_character_path(tmp_path))
     monkeypatch.setattr(agent_files_module, "character_path", _make_character_path(tmp_path))
 
     agent_files_module.append_memory_draft("chenxiao", 3, "- 第三轮 draft")
@@ -86,7 +84,6 @@ def test_prepare_slice_skips_entries_beyond_until_turn(tmp_path, monkeypatch):
 
 def test_prepare_slice_returns_none_when_no_entries_within_turn(tmp_path, monkeypatch):
     """Draft 非空但所有条目 turn 都大于 until_turn 时跳过。"""
-    monkeypatch.setattr(consolidator_module, "character_path", _make_character_path(tmp_path))
     monkeypatch.setattr(agent_files_module, "character_path", _make_character_path(tmp_path))
     agent_files_module.append_memory_draft("chenxiao", 10, "- 未来轮 draft")
 
@@ -96,86 +93,6 @@ def test_prepare_slice_returns_none_when_no_entries_within_turn(tmp_path, monkey
     )
 
     assert result is None
-
-
-def test_update_player_bootstraps_tmp_user_from_current_profile(tmp_path, monkeypatch):
-    agent_name = "chenxiao"
-    path_helper = _make_character_path(tmp_path)
-
-    monkeypatch.setattr(agent_files_module, "character_path", path_helper)
-
-    agent_dir = tmp_path / agent_name
-    agent_dir.mkdir(parents=True, exist_ok=True)
-    (agent_dir / "user.md").write_text(
-        "\n".join(
-            [
-                "# 角色眼中的玩家",
-                "",
-                "## 基本信息",
-                "- 姓名：李小明",
-                "",
-                "## 对方是什么人",
-                "（暂无）",
-                "",
-                "## 我们怎么相处",
-                "（暂无）",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    result = agent_files_module.update_player(agent_name, "对方是什么人", "- 很直接")
-    tmp_content = (agent_dir / "tmp_user.md").read_text(encoding="utf-8")
-
-    assert result == {
-        "file": "tmp_user.md",
-        "target": "对方是什么人",
-        "operation": "append",
-        "appended": "- 很直接",
-    }
-    assert "## 基本信息" in tmp_content
-    assert "- 姓名：李小明" in tmp_content
-    assert "## 对方是什么人" in tmp_content
-    assert "- 很直接" in tmp_content
-    assert "## 我们怎么相处" in tmp_content
-    assert "（暂无）" in tmp_content
-
-
-def test_update_player_keeps_existing_tmp_user_draft(tmp_path, monkeypatch):
-    agent_name = "chenxiao"
-    path_helper = _make_character_path(tmp_path)
-
-    monkeypatch.setattr(agent_files_module, "character_path", path_helper)
-
-    agent_dir = tmp_path / agent_name
-    agent_dir.mkdir(parents=True, exist_ok=True)
-    (agent_dir / "user.md").write_text(
-        "\n".join(
-            [
-                "# 角色眼中的玩家",
-                "",
-                "## 基本信息",
-                "- 姓名：李小明",
-                "",
-                "## 对方是什么人",
-                "（暂无）",
-                "",
-                "## 我们怎么相处",
-                "（暂无）",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    agent_files_module.update_player(agent_name, "对方是什么人", "- 很直接")
-    agent_files_module.update_player(agent_name, "对方是什么人", "- 很细心")
-    tmp_content = (agent_dir / "tmp_user.md").read_text(encoding="utf-8")
-
-    assert tmp_content.count("## 对方是什么人") == 1
-    assert "- 很直接" in tmp_content
-    assert "- 很细心" in tmp_content
 
 
 def test_agent_file_updates_return_structured_json_items(tmp_path, monkeypatch):
@@ -234,125 +151,6 @@ def test_agent_file_updates_return_structured_json_items(tmp_path, monkeypatch):
         "operation": "remove",
         "removed": "- [ ] 【去天台】午休去天台找玩家",
     }
-
-
-@pytest.mark.asyncio
-async def test_consolidate_player_profile_uses_single_draft_profile(tmp_path, monkeypatch):
-    consolidator = MemoryConsolidationFlow()
-    agent_name = "chenxiao"
-    path_helper = _make_character_path(tmp_path)
-
-    monkeypatch.setattr(consolidator_module, "character_path", path_helper)
-    monkeypatch.setattr(agent_files_module, "character_path", path_helper)
-    monkeypatch.setattr(consolidator_module, "backup_file", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(consolidator_module, "get_player_profile_agent", lambda: object())
-    monkeypatch.setattr(
-        consolidator_module,
-        "get_consolidation_llm_config",
-        lambda temperature=None: {"model": "test-model"},
-    )
-
-    captured: dict[str, object] = {}
-
-    async def fake_run_text_agent(
-        *,
-        agent,
-        user_input,
-        **kwargs,
-    ):
-        captured["agent"] = agent
-        captured["user"] = user_input
-        assert kwargs["usage_phase"] == "consolidation.player_profile"
-        return "\n".join(
-            [
-                "# 角色眼中的玩家",
-                "",
-                "## 基本信息",
-                "- 姓名：李小明",
-                "",
-                "## 对方是什么人",
-                "- 稳定判断",
-                "",
-                "## 我们怎么相处",
-                "- 稳定互动",
-                "",
-            ]
-        )
-
-    monkeypatch.setattr(consolidator_module, "run_text_agent", fake_run_text_agent)
-
-    agent_dir = tmp_path / agent_name
-    agent_dir.mkdir(parents=True, exist_ok=True)
-    user_content = "\n".join(
-        [
-            "# 角色眼中的玩家",
-            "",
-            "## 基本信息",
-            "- 姓名：李小明",
-            "",
-            "## 对方是什么人",
-            "- 原有判断",
-            "",
-            "## 我们怎么相处",
-            "- 原有互动",
-            "",
-        ]
-    )
-    draft_content = "\n".join(
-        [
-            "# 角色眼中的玩家",
-            "",
-            "## 基本信息",
-            "- 姓名：李小明",
-            "",
-            "## 对方是什么人",
-            "- 原有判断",
-            "- 新增判断",
-            "",
-            "## 我们怎么相处",
-            "- 原有互动",
-            "",
-        ]
-    )
-    (agent_dir / "user.md").write_text(user_content, encoding="utf-8")
-    (agent_dir / "tmp_user.md").write_text(draft_content, encoding="utf-8")
-
-    before_len, after_len = await consolidator._consolidate_player_profile(agent_name)
-    draft_input = captured["user"]
-
-    assert before_len == len(user_content)
-    assert after_len > 0
-    assert "<draft_profile>" in draft_input
-    assert "<current_profile>" not in draft_input
-    assert "<staged_updates>" not in draft_input
-    assert "- 原有判断" in draft_input
-    assert "- 新增判断" in draft_input
-    assert (agent_dir / "user.md").read_text(encoding="utf-8").strip().endswith("- 稳定互动")
-    assert not (agent_dir / "tmp_user.md").exists()
-
-
-def test_enforce_user_section_limits_preserves_custom_sections():
-    existing_content = "\n".join(
-        [
-            "# 角色眼中的玩家",
-            "",
-            "## 基本信息",
-            "- 姓名：李小明",
-            "",
-            "## 特殊雷区",
-            "- 讨厌被突然碰手腕",
-            "",
-            "## 我们怎么相处",
-            "- 会先观察我的情绪",
-            "",
-        ]
-    )
-
-    rendered = consolidator_module._enforce_user_section_limits(existing_content)
-
-    assert "## 特殊雷区" in rendered
-    assert "- 讨厌被突然碰手腕" in rendered
-    assert rendered.count("## 特殊雷区") == 1
 
 
 @pytest.mark.asyncio
@@ -415,31 +213,6 @@ async def test_merge_memory_blocks_uses_episode_memory_generator(monkeypatch):
     assert episode.title == "餐厅晚饭"
     # raw_dialogue 由流程注入，不由 LLM 输出
     assert episode.raw_dialogue == "raw 对话原文"
-
-
-def test_enforce_user_section_limits_trims_to_configured_caps():
-    content = "\n".join(
-        [
-            "# 角色眼中的玩家",
-            "",
-            "## 基本信息",
-            "- 姓名：李小明",
-            "",
-            "## 对方是什么人",
-            *[f"- 判断{i}" for i in range(1, 11)],
-            "",
-            "## 我们怎么相处",
-            *[f"- 相处{i}" for i in range(1, 8)],
-            "",
-        ]
-    )
-
-    trimmed = consolidator_module._enforce_user_section_limits(content)
-
-    assert trimmed.count("- 判断") == 8
-    assert trimmed.count("- 相处") == 5
-    assert "- 判断9" not in trimmed
-    assert "- 相处6" not in trimmed
 
 
 def test_apply_understanding_patch_updates_and_adds(monkeypatch):
@@ -509,15 +282,11 @@ async def test_apply_pipeline_assigns_episode_id_before_understanding_patch(monk
             memory_owner="chenxiao",
         )
 
-    async def fake_growth(_self, _agent_name, _episode):
-        return None
-
     async def fake_understanding(_self, _agent_name, episode):
         captured["id"] = episode.id
 
     monkeypatch.setattr(consolidator_module.uuid, "uuid4", lambda: FakeUUID())
     monkeypatch.setattr(MemoryConsolidationFlow, "_merge_memory_blocks", fake_merge)
-    monkeypatch.setattr(MemoryConsolidationFlow, "_patch_growth_entries", fake_growth)
     monkeypatch.setattr(
         MemoryConsolidationFlow, "_patch_understandings", fake_understanding
     )
@@ -543,7 +312,6 @@ async def test_patch_understandings_writes_file_and_syncs_vectors(tmp_path, monk
     sentinel_agent = object()
 
     monkeypatch.setattr(consolidator_module.uuid, "uuid4", lambda: FakeUUID())
-    monkeypatch.setattr(consolidator_module, "character_path", path_helper)
     monkeypatch.setattr(parser_module, "character_path", path_helper)
     monkeypatch.setattr(agent_files_module, "character_path", path_helper)
     monkeypatch.setattr(
@@ -656,7 +424,6 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     agent_name = "chenxiao"
     path_helper = _make_character_path(tmp_path)
 
-    monkeypatch.setattr(consolidator_module, "character_path", path_helper)
     monkeypatch.setattr(agent_files_module, "character_path", path_helper)
     monkeypatch.setattr(parser_module, "character_path", path_helper)
     monkeypatch.setattr(
@@ -678,11 +445,6 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
         ],
     )
     monkeypatch.setattr(consolidator_module, "backup_file", lambda *_args, **_kwargs: None)
-
-    async def fake_profile(_self, _agent_name):
-        return 0, 0
-
-    monkeypatch.setattr(MemoryConsolidationFlow, "_consolidate_player_profile", fake_profile)
 
     agent_dir = tmp_path / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
@@ -744,8 +506,6 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     result = await consolidator.consolidate_agent(agent_name, until_turn=4)
 
     assert result is not None
-    assert result.days == 1
-    assert result.date_range == "10月6日~10月6日"
 
     # append-only: 存量 1 条 + 新增 1 条 = 2 条，并按 append 顺序排列
     records = read_memory_jsonl(agent_name)

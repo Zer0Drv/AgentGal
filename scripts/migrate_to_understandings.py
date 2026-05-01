@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Seed understanding.jsonl from growth.md, user.md, and relations.md using LLM.
+"""Seed understanding.jsonl from legacy growth.md, user.md, and relations.md using LLM.
 
-Run before removing those files from the character prompt. The migration is
-idempotent at the agent level: agents that already have understanding.jsonl are
-skipped.
+One-time migration: reads old file-based storage (growth.md / user.md / relations.md)
+that characters may still have on disk from before those files were removed from the
+runtime, and converts them to understanding.jsonl entries.
+
+Idempotent: agents that already have understanding.jsonl are skipped.
 """
 
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -33,8 +36,43 @@ from shared.config import (
     CONSOLIDATION_TEMPERATURE,
     get_agent_names,
 )
-from storage.agent_files import read_agent_file, read_growth_entries, read_relations
+from storage.agent_files import read_agent_file
 from storage.vector_store import vector_store
+
+
+# ---------------------------------------------------------------------------
+# Inline parsers for legacy file formats
+# ---------------------------------------------------------------------------
+
+_GROWTH_LINE_RE = re.compile(r"^\[(P\d+)\|(.+?)\]\s*(.+)$")
+
+
+def _parse_growth_md(content: str) -> list[dict[str, str]]:
+    """Parse legacy growth.md format: [P001|dimension] content"""
+    entries: list[dict[str, str]] = []
+    for line in content.splitlines():
+        m = _GROWTH_LINE_RE.match(line.strip())
+        if m:
+            entries.append({"id": m.group(1), "dimension": m.group(2).strip(), "content": m.group(3).strip()})
+    return entries
+
+
+def _parse_relations_md(content: str) -> dict[str, str]:
+    """Parse legacy relations.md format: ## Target\ncontent"""
+    sections: dict[str, str] = {}
+    current_target = ""
+    current_lines: list[str] = []
+    for line in content.splitlines():
+        if line.startswith("## "):
+            if current_target and current_lines:
+                sections[current_target] = "\n".join(current_lines).strip()
+            current_target = line[3:].strip()
+            current_lines = []
+        elif current_target:
+            current_lines.append(line)
+    if current_target and current_lines:
+        sections[current_target] = "\n".join(current_lines).strip()
+    return sections
 
 
 # ---------------------------------------------------------------------------
@@ -132,29 +170,33 @@ class MigrationOutput(BaseModel):
 
 
 def _build_migration_input(agent_name: str) -> str | None:
-    """Build LLM input from agent's growth/user/relations files. Returns None if no source data."""
+    """Build LLM input from agent's legacy growth/user/relations files. Returns None if no source data."""
     parts: list[str] = []
 
-    growth = read_growth_entries(agent_name)
-    if growth:
-        lines = ["<growth>"]
-        for eid, entry in growth.items():
-            lines.append(f"[{eid}|{entry['dimension']}] {entry['content']}")
-        lines.append("</growth>")
-        parts.append("\n".join(lines))
+    growth_content = read_agent_file(agent_name, "growth.md").strip()
+    if growth_content:
+        entries = _parse_growth_md(growth_content)
+        if entries:
+            lines = ["<growth>"]
+            for entry in entries:
+                lines.append(f"[{entry['id']}|{entry['dimension']}] {entry['content']}")
+            lines.append("</growth>")
+            parts.append("\n".join(lines))
 
     user_content = read_agent_file(agent_name, "user.md").strip()
     if user_content:
         parts.append(f"<user_profile>\n{user_content}\n</user_profile>")
 
-    relations = read_relations(agent_name)
-    if relations:
-        lines = ["<relations>"]
-        for target, content in relations.items():
-            if content.strip():
-                lines.append(f"## {target}\n{content}")
-        lines.append("</relations>")
-        parts.append("\n".join(lines))
+    relations_content = read_agent_file(agent_name, "relations.md").strip()
+    if relations_content:
+        relations = _parse_relations_md(relations_content)
+        if relations:
+            lines = ["<relations>"]
+            for target, content in relations.items():
+                if content.strip():
+                    lines.append(f"## {target}\n{content}")
+            lines.append("</relations>")
+            parts.append("\n".join(lines))
 
     return "\n\n".join(parts) if parts else None
 

@@ -49,8 +49,6 @@ from storage.agent_files import (
     mark_event_triggered,
     read_agent_file,
     read_turn_counter,
-    update_player,
-    update_relations,
     update_status,
     update_status_allow_new_field,
 )
@@ -205,18 +203,6 @@ class Character(BaseEntity):
         return read_agent_file(self.name, "memory.md")
 
     @property
-    def relations(self) -> str:
-        return read_agent_file(self.name, "relations.md")
-
-    @property
-    def user_profile(self) -> str:
-        return read_agent_file(self.name, "user.md")
-
-    @property
-    def growth(self) -> str:
-        return read_agent_file(self.name, "growth.md")
-
-    @property
     def schedule(self) -> CharacterSchedule:
         return load_character_schedule(self.name)
 
@@ -243,23 +229,6 @@ class Character(BaseEntity):
             )
         except Exception as e:
             routing_logger.error(f"[{self.name}] memory_draft 写入失败: {e}")
-            return None
-
-    def set_user_profile_fields(self, fields: dict[str, Any]) -> list[FileUpdateResult]:
-        """批量追加到 tmp_user.md 的各字段（首次写入时从 user.md 复制草稿）。"""
-        results: list[FileUpdateResult] = []
-        for field, content in fields.items():
-            try:
-                results.append(update_player(self.name, field, str(content)))
-            except Exception as e:
-                routing_logger.error(f"[{self.name}] player[{field}] 失败: {e}")
-        return results
-
-    def set_relation(self, target_display: str, content: str) -> FileUpdateResult | None:
-        try:
-            return update_relations(self.name, target_display, str(content))
-        except Exception as e:
-            routing_logger.error(f"[{self.name}] relations[{target_display}] 失败: {e}")
             return None
 
     # ── 对话主流程 ──
@@ -329,7 +298,6 @@ class Character(BaseEntity):
                 results.append(r)
 
         results.extend(self.set_status_fields(output.status))
-        results.extend(self.set_user_profile_fields(output.player))
 
         for event_name in output.triggered:
             r = self.mark_triggered(event_name)
@@ -338,24 +306,6 @@ class Character(BaseEntity):
 
         for event_desc in output.add_event:
             r = self.add_event(event_desc)
-            if r is not None:
-                results.append(r)
-
-        valid_relation_targets = {
-            get_display_name(name, read_agent_file(name, "soul.md"))
-            for name in get_agent_names(include_narrator=False)
-            if name != self.name
-        }
-        for target, content in output.relations.items():
-            target_clean = target.strip()
-            if not target_clean or target_clean == "player":
-                continue
-            if target_clean not in valid_relation_targets:
-                routing_logger.warning(
-                    "[%s] 忽略 relations 中的未知目标: %s", self.name, target_clean
-                )
-                continue
-            r = self.set_relation(target_clean, content)
             if r is not None:
                 results.append(r)
 

@@ -182,28 +182,13 @@ def build_system_prompt(agent_name: str, soul_content: str) -> str:
         for field in get_allowed_fields(agent_name, "status")
         if field not in excluded_status_fields
     )
-    player_fields = "、".join(get_allowed_fields(agent_name, "user"))
     display_name = get_display_name(agent_name, soul_content)
-    relation_targets: list[str] = []
-    seen_targets: set[str] = set()
-    for target_name in get_agent_names(include_narrator=False):
-        if target_name == agent_name:
-            continue
-        target_soul = read_agent_file(target_name, "soul.md")
-        target_display = get_display_name(target_name, target_soul)
-        if target_display in seen_targets:
-            continue
-        seen_targets.add(target_display)
-        relation_targets.append(target_display)
-    valid_targets = ", ".join(relation_targets)
 
     return CHARACTER.format(
         agent_name=agent_name,
         display_name=display_name,
         soul=soul_content,
         status_fields=status_fields,
-        player_fields=player_fields,
-        valid_targets=valid_targets,
     )
 
 
@@ -280,16 +265,6 @@ def build_characters_block(tag: str = "characters") -> str:
     return f"<{tag}>\n" + "\n".join(rows) + f"\n</{tag}>"
 
 
-def build_relations_block(audience: str) -> str:
-    """character 专用：直接把 audience 的 relations.md 整块注入 <relations>。"""
-    if audience == "narrator":
-        return ""
-    content = read_agent_file(audience, "relations.md").strip()
-    if not content:
-        return ""
-    return f"<relations>\n{content}\n</relations>"
-
-
 def build_user_message(
     agent_name: str,
     latest_user_input: str,
@@ -301,24 +276,16 @@ def build_user_message(
     parts: list[str] = []
 
     is_narrator = agent_name == "narrator"
-    growth_content = read_agent_file(agent_name, "growth.md") if not is_narrator else ""
-    user_content = read_agent_file(agent_name, "user.md") if not is_narrator else ""
     history, was_truncated = build_history_transcript(agent_name, raw_messages or [])
     status_content = read_agent_file(agent_name, "status.md")
     my_schedule = build_my_schedule_block(agent_name) if not is_narrator else ""
-    relations = "" if is_narrator else build_relations_block(agent_name)
 
     parts.append(my_schedule)
-    parts.append(f"<growth>\n{growth_content.strip()}\n</growth>" if growth_content else "")
-    parts.append(
-        f"<user_profile>\n{user_content.strip()}\n</user_profile>" if user_content else ""
-    )
     parts.append(build_characters_block(tag="fields") if is_narrator else "")
     parts.append(f"最近对话历史:\n\n{history}" if history else "")
     parts.append(
         f"<status>\n{status_content.strip()}\n</status>" if status_content.strip() else ""
     )
-    parts.append(relations)
     parts.append(memory_prefix if memory_prefix else "")
     parts.append(understandings_prefix if understandings_prefix else "")
     parts.append(f"玩家新消息: {latest_user_input}")
