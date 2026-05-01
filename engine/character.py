@@ -291,17 +291,21 @@ class Character(BaseEntity):
         """组装角色 user message（含记忆与长期判断召回前缀）。"""
         memory_query = build_search_query(self.name, user_input)
         understanding_query = build_understanding_query(self.name, user_input)
-        try:
-            memory_qvec: list[float] | None = embed_sync([memory_query])[0]
-        except Exception:
-            memory_qvec = None
+
         if understanding_query == memory_query:
-            understanding_qvec = memory_qvec
+            try:
+                qvec = embed_sync([memory_query])[0]
+                memory_qvec = understanding_qvec = qvec
+            except Exception:
+                memory_qvec = understanding_qvec = None
         else:
             try:
-                understanding_qvec: list[float] | None = embed_sync([understanding_query])[0]
+                vecs = embed_sync([memory_query, understanding_query])
+                memory_qvec = vecs[0]
+                understanding_qvec = vecs[1]
             except Exception:
-                understanding_qvec = None
+                memory_qvec = understanding_qvec = None
+
         relevant_memories = search_memories(self.name, memory_query, qvec=memory_qvec)
         relevant_understandings = search_understandings(
             self.name, understanding_query, qvec=understanding_qvec

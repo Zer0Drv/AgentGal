@@ -71,6 +71,15 @@ _GROWTH_MAX_ENTRIES = 15
 _GROWTH_DIMENSION_PATTERN = re.compile(r"^对[^:：]+[:：].+$")
 
 
+@dataclass
+class _UnderstandingPatchResult:
+    updated: dict[str, Understanding] = field(default_factory=dict)
+    logs: list[str] = field(default_factory=list)
+    links_only_ids: list[str] = field(default_factory=list)
+    full_replace_ids: list[str] = field(default_factory=list)
+    added_ids: list[str] = field(default_factory=list)
+
+
 def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:
     return {
         "id": episode.id,
@@ -103,7 +112,7 @@ def _apply_understanding_patch(
     agent_name: str,
     understandings: dict[str, Understanding],
     patch: UnderstandingPatchOutput,
-) -> tuple[dict[str, Understanding], list[str], list[str], list[str], list[str]]:
+) -> _UnderstandingPatchResult:
     updated = dict(understandings)
     logs: list[str] = []
     links_only_ids: list[str] = []
@@ -163,7 +172,13 @@ def _apply_understanding_patch(
         added_ids.append(new_id)
         logs.append(f"ADD {new_id}")
 
-    return updated, logs, links_only_ids, full_replace_ids, added_ids
+    return _UnderstandingPatchResult(
+        updated=updated,
+        logs=logs,
+        links_only_ids=links_only_ids,
+        full_replace_ids=full_replace_ids,
+        added_ids=added_ids,
+    )
 
 
 def _sorted_growth_ids(entries: dict[str, GrowthEntry]) -> list[str]:
@@ -526,25 +541,25 @@ class MemoryConsolidationFlow:
             user=user,
         )
 
-        updated_understandings, logs, links_only_ids, full_replace_ids, added_ids = _apply_understanding_patch(
+        result = _apply_understanding_patch(
             agent_name, current_understandings, output
         )
-        if not logs:
+        if not result.logs:
             memory_logger.debug(f"[整理器] {agent_name} 无 Understanding 更新")
             return
 
-        write_understandings(agent_name, updated_understandings)
+        write_understandings(agent_name, result.updated)
         memory_logger.info(
-            f"[整理器] {agent_name} understanding patch 完成: {';'.join(logs)}"
+            f"[整理器] {agent_name} understanding patch 完成: {';'.join(result.logs)}"
         )
 
-        for uid in links_only_ids:
-            await vector_store.update_understanding_links(uid, updated_understandings[uid].linked_episodes)
-        for uid in full_replace_ids:
+        for uid in result.links_only_ids:
+            await vector_store.update_understanding_links(uid, result.updated[uid].linked_episodes)
+        for uid in result.full_replace_ids:
             await vector_store.delete_understanding(uid)
-            await vector_store.add_understanding(updated_understandings[uid])
-        for uid in added_ids:
-            await vector_store.add_understanding(updated_understandings[uid])
+            await vector_store.add_understanding(result.updated[uid])
+        for uid in result.added_ids:
+            await vector_store.add_understanding(result.updated[uid])
 
     async def _apply_consolidation_pipeline(
         self,

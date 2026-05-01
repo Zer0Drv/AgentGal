@@ -479,16 +479,16 @@ def test_apply_understanding_patch_updates_and_adds(monkeypatch):
         }
     )
 
-    updated, logs, links_only_ids, full_replace_ids, added_ids = consolidator_module._apply_understanding_patch(
+    result = consolidator_module._apply_understanding_patch(
         "chenxiao", existing, patch
     )
 
-    assert logs == ["UPDATE u1", "ADD new-understanding-id"]
-    assert updated["u1"].subject == "对玩家的认知"
-    assert updated["u1"].keywords == ["玩家", "保护"]
-    assert updated["u1"].linked_episodes == ["e0", "e1"]
-    assert updated["new-understanding-id"].memory_owner == "chenxiao"
-    assert updated["new-understanding-id"].content == "玩家会用行动解释。"
+    assert result.logs == ["UPDATE u1", "ADD new-understanding-id"]
+    assert result.updated["u1"].subject == "对玩家的认知"
+    assert result.updated["u1"].keywords == ["玩家", "保护"]
+    assert result.updated["u1"].linked_episodes == ["e0", "e1"]
+    assert result.updated["new-understanding-id"].memory_owner == "chenxiao"
+    assert result.updated["new-understanding-id"].content == "玩家会用行动解释。"
 
 
 @pytest.mark.asyncio

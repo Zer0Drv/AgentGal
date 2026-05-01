@@ -154,6 +154,16 @@ CREATE TABLE IF NOT EXISTS Understanding (
 """
 
 
+def _make_embed_text(name: str, keywords: list[str], content: str) -> str:
+    """[名称/标题, 关键词, 正文] join 为 embed 文本，空段过滤。"""
+    parts = [
+        name.strip(),
+        "、".join(filter(None, (k.strip() for k in keywords))),
+        content.strip(),
+    ]
+    return "\n".join(p for p in parts if p)
+
+
 class VectorStore:
     """sqlite-vec 本地向量库（EpisodeMemory + Understanding）。
 
@@ -369,12 +379,18 @@ class VectorStore:
     @staticmethod
     def _embed_text(episode: EpisodeMemory) -> str:
         """决定拿哪些高密度字段去 embed，避免只靠抽象标题丢失检索锚点。"""
-        parts = [
-            episode.title.strip(),
-            "、".join(filter(None, (k.strip() for k in episode.keywords))),
-            episode.content.strip(),
-        ]
-        return "\n".join(p for p in parts if p)
+        return _make_embed_text(
+            episode.title, episode.keywords, episode.content
+        )
+
+    @staticmethod
+    def _understanding_embed_text(understanding: object) -> str:
+        """subject + keywords + content 作为 embed 文本。"""
+        return _make_embed_text(
+            getattr(understanding, "subject", ""),
+            getattr(understanding, "keywords", []),
+            getattr(understanding, "content", ""),
+        )
 
     def _prepare_episode_index(
         self,
@@ -580,18 +596,6 @@ class VectorStore:
         return inserted_total
 
     # ----------------------------- Understanding 写入 -----------------------------
-
-    @staticmethod
-    def _understanding_embed_text(understanding: object) -> str:
-        """subject + keywords + content 作为 embed 文本。"""
-        parts = [
-            getattr(understanding, "subject", "").strip(),
-            "、".join(
-                filter(None, (k.strip() for k in getattr(understanding, "keywords", [])))
-            ),
-            getattr(understanding, "content", "").strip(),
-        ]
-        return "\n".join(p for p in parts if p)
 
     async def add_understanding(self, understanding: object) -> None:
         """将单条 Understanding 写入向量库（已存在时先删后插）。"""

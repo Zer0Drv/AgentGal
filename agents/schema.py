@@ -129,6 +129,17 @@ class ChoicesOutput(BaseModel):
         ]
 
 
+def _strip_dict_keys(value: object) -> object:
+    """Strip whitespace from dict keys; shared by patch output types."""
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(k).strip(): item
+        for k, item in value.items()
+        if str(k).strip()
+    }
+
+
 # ---------------------------------------------------------------------------
 # 记忆整理类
 # ---------------------------------------------------------------------------
@@ -208,13 +219,7 @@ class GrowthPatchOutput(BaseModel):
     @field_validator("update", mode="before")
     @classmethod
     def clean_update_ids(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return {}
-        return {
-            str(entry_id).strip(): item
-            for entry_id, item in value.items()
-            if str(entry_id).strip()
-        }
+        return _strip_dict_keys(value)
 
 
 class UnderstandingEntry(BaseModel):
@@ -233,13 +238,7 @@ class UnderstandingPatchOutput(BaseModel):
     @field_validator("update", mode="before")
     @classmethod
     def clean_update_ids(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return {}
-        return {
-            str(entry_id).strip(): item
-            for entry_id, item in value.items()
-            if str(entry_id).strip()
-        }
+        return _strip_dict_keys(value)
 
 
 # ---------------------------------------------------------------------------

@@ -118,6 +118,47 @@ def _row_to_doc(row: tuple) -> dict[str, Any]:
     return doc
 
 
+def _compute_hybrid_scores(
+    candidates: dict[Any, dict[str, Any]],
+    use_hybrid: bool,
+) -> list[dict[str, Any]]:
+    """计算 relevance 分并按降序排列。
+
+    use_hybrid=True: 对 vector_relevance + bm25_raw 做 min-max 归一化后加权融合。
+    use_hybrid=False: 直接使用 vector_relevance。
+    """
+    bm25_min = bm25_max = 0.0
+    if use_hybrid:
+        bm25_values = [
+            float(entry["bm25_raw"])
+            for entry in candidates.values()
+            if entry.get("bm25_raw") is not None
+        ]
+        bm25_min = min(bm25_values) if bm25_values else 0.0
+        bm25_max = max(bm25_values) if bm25_values else 0.0
+
+    ranked: list[dict[str, Any]] = []
+    for entry in candidates.values():
+        if use_hybrid:
+            bm25_raw = entry.get("bm25_raw")
+            if bm25_raw is None:
+                bm25_relevance = 0.0
+            elif bm25_max > bm25_min:
+                bm25_relevance = (float(bm25_raw) - bm25_min) / (bm25_max - bm25_min)
+            else:
+                bm25_relevance = 1.0
+            relevance = (
+                VECTOR_RELEVANCE_WEIGHT * float(entry["vector_relevance"])
+                + BM25_RELEVANCE_WEIGHT * bm25_relevance
+            )
+        else:
+            relevance = float(entry["vector_relevance"])
+        ranked.append({**entry, "relevance": relevance})
+
+    ranked.sort(key=lambda item: item["relevance"], reverse=True)
+    return ranked
+
+
 def hybrid_fusion(
     vec_rows: list[tuple],
     bm25_rows: list[tuple],
@@ -144,28 +185,12 @@ def hybrid_fusion(
         entry["content"] = row[1]
         entry["bm25_raw"] = abs(float(row[2]))
 
-    bm25_values = [float(entry["bm25_raw"]) for entry in docs.values() if entry["bm25_raw"] is not None]
-    bm25_min = min(bm25_values) if bm25_values else 0.0
-    bm25_max = max(bm25_values) if bm25_values else 0.0
-
     results: list[dict[str, Any]] = []
-    for entry in docs.values():
-        bm25_raw = entry["bm25_raw"]
-        if bm25_raw is None:
-            bm25_relevance = 0.0
-        elif bm25_max > bm25_min:
-            bm25_relevance = (float(bm25_raw) - bm25_min) / (bm25_max - bm25_min)
-        else:
-            bm25_relevance = 1.0
-
-        relevance = (
-            VECTOR_RELEVANCE_WEIGHT * float(entry["vector_relevance"])
-            + BM25_RELEVANCE_WEIGHT * bm25_relevance
-        )
+    for entry in _compute_hybrid_scores(docs, use_hybrid=True):
         result_entry = {
             "id": entry["id"],
             "content": entry["content"],
-            "relevance": relevance,
+            "relevance": entry["relevance"],
             "date": entry["date"],
             "last_recalled_at": entry["last_recalled_at"],
             "importance": int(entry.get("importance", 3) or 3),
@@ -174,7 +199,7 @@ def hybrid_fusion(
             result_entry[field] = entry.get(field, "")
         results.append(result_entry)
 
-    return sorted(results, key=lambda item: item["relevance"], reverse=True)
+    return results
 
 
 def apply_recency(
@@ -403,6 +428,7 @@ def search_understandings(agent_name: str, query: str, qvec: list[float] | None 
             }
 
         use_hybrid = False
+        bm25_rows: list[tuple] = []
         if HYBRID_SEARCH_ENABLED:
             bm25_rows = vector_store.get_understanding_bm25_candidates(
                 conn, agent_name, query, BM25_CANDIDATE_LIMIT
@@ -425,34 +451,22 @@ def search_understandings(agent_name: str, query: str, qvec: list[float] | None 
                 )
                 entry["bm25_raw"] = abs(float(row[5]))
 
-        bm25_values = [
-            float(entry["bm25_raw"])
-            for entry in candidates.values()
-            if entry["bm25_raw"] is not None
-        ]
-        bm25_min = min(bm25_values) if bm25_values else 0.0
-        bm25_max = max(bm25_values) if bm25_values else 0.0
-
-        ranked: list[dict[str, Any]] = []
-        for entry in candidates.values():
-            if use_hybrid:
-                bm25_raw = entry["bm25_raw"]
-                if bm25_raw is None:
-                    bm25_relevance = 0.0
-                elif bm25_max > bm25_min:
-                    bm25_relevance = (float(bm25_raw) - bm25_min) / (bm25_max - bm25_min)
-                else:
-                    bm25_relevance = 1.0
-                relevance = (
-                    VECTOR_RELEVANCE_WEIGHT * float(entry["vector_relevance"])
-                    + BM25_RELEVANCE_WEIGHT * bm25_relevance
-                )
-            else:
-                relevance = float(entry["vector_relevance"])
-            ranked.append({**entry, "relevance": relevance})
-
-        ranked.sort(key=lambda item: item["relevance"], reverse=True)
+        ranked = _compute_hybrid_scores(candidates, use_hybrid)
         top = ranked[:VECTOR_SEARCH_LIMIT]
+
+        log_retrieval_results(
+            agent_name=agent_name,
+            query=query,
+            ranked=top,
+            limit=VECTOR_SEARCH_LIMIT,
+            hybrid_enabled=HYBRID_SEARCH_ENABLED,
+            vector_candidate_count=len(vec_rows),
+            bm25_candidate_count=len(bm25_rows),
+            candidate_count=len(candidates),
+            rerank_enabled=False,
+            rerank_applied=False,
+            rerank_model=None,
+        )
 
     except Exception as e:
         memory_logger.error(
