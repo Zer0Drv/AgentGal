@@ -208,10 +208,10 @@ Where:
 
 `user` message is assembled into a **single large message** in the following order:
 
-1. `<my_schedule>` (renders character's `schedule.json`; most stable throughout the story period, placed first to anchor prompt cache)
-2. `growth.md`
-3. `user.md` (`tmp_user.md` only participates in consolidation as working draft, not directly injected into prompt)
-4. Recent visible dialogue history (built from raw JSONL; filtered by `visible_to`; high/low water mark truncation; history contains all narrator messages)
+1. `<my_schedule>` (renders character's `schedule.json`; stable, anchors prompt cache)
+2. Recent visible dialogue history (built from raw JSONL; filtered by `visible_to`; high/low water mark truncation; history contains all narrator messages). Placed second because history is append-only — its prefix is stable between rounds, so system prompt + schedule + most of history stays cached even when later blocks change.
+3. `growth.md`
+4. `user.md` (`tmp_user.md` only participates in consolidation as working draft, not directly injected into prompt)
 5. `status.md`
 6. `<relations>` (directly injects the character's own `relations.md`, covering all known major characters, regardless of presence. Player perspective does not go through relations)
 7. `<relevant_memories>` (long-term memory recall from `memory.jsonl`, vector store side still renders as markdown for LLM reading)
@@ -227,8 +227,9 @@ Where:
 `user` message is assembled into a **single large message** in the following order:
 
 1. Recent dialogue history (narrator keeps only the last entry)
-2. `status.md`
-3. Current round player input
+2. `<fields>` (list of all active characters)
+3. `status.md`
+4. Current round player input
 
 `narrator` does not use vector recall; it relies on scene, narrative focus, pending events, and "Relationship with Player" in `status.md` to advance the current round. Pending events are primarily synced by `state_updater` from character "Intentions", event names preserve character names (e.g. `【Mitsuki: Promise to Walk Together】`). "Relationship with Player" is summarized from each character's status by code, format `- Mitsuki: Lover`.
 

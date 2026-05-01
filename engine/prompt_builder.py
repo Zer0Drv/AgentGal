@@ -282,7 +282,7 @@ def build_user_message(
     memory_prefix: str,
     raw_messages: list[dict] | None = None,
 ) -> tuple[str, bool]:
-    """构建单条大 user message，按稳定度排序上下文。返回 (消息文本, 是否触发历史截断)。"""
+    """构建单条大 user message。返回 (消息文本, 是否触发历史截断)。"""
     parts: list[str] = []
 
     is_narrator = agent_name == "narrator"
@@ -294,12 +294,12 @@ def build_user_message(
     relations = "" if is_narrator else build_relations_block(agent_name)
 
     parts.append(my_schedule)
+    parts.append(f"最近对话历史:\n\n{history}" if history else "")
     parts.append(f"<growth>\n{growth_content.strip()}\n</growth>" if growth_content else "")
     parts.append(
         f"<user_profile>\n{user_content.strip()}\n</user_profile>" if user_content else ""
     )
     parts.append(build_characters_block(tag="fields") if is_narrator else "")
-    parts.append(f"最近对话历史:\n\n{history}" if history else "")
     parts.append(
         f"<status>\n{status_content.strip()}\n</status>" if status_content.strip() else ""
     )
