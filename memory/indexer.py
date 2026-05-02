@@ -7,6 +7,7 @@ from log_config.memory import memory_logger as logger
 from memory.parser import (
     memory_jsonl_path,
     read_memory_jsonl,
+    read_understandings,
 )
 from shared.config import get_agent_names
 from storage.vector_store import vector_store
@@ -46,6 +47,9 @@ async def rebuild_memory_index(
 
         logger.info("[indexer] %s 索引完成：records=%s, inserted=%s", agent, len(records), inserted)
 
+    if clear_existing:
+        await _rebuild_understanding_index_for_agents(agents)
+
 
 async def rebuild_understanding_index(
     agent_name: str | None = None,
@@ -55,14 +59,15 @@ async def rebuild_understanding_index(
     Args:
         agent_name: 指定角色时只重建该角色；为 None 时重建所有非 narrator 角色。
     """
-    from memory.parser import read_understandings
-
     agents = (
         [agent_name]
         if agent_name is not None
         else get_agent_names(include_narrator=False)
     )
+    await _rebuild_understanding_index_for_agents(agents)
 
+
+async def _rebuild_understanding_index_for_agents(agents: list[str]) -> None:
     for agent in agents:
         understandings = read_understandings(agent)
         if not understandings:

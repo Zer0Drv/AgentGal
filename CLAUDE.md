@@ -258,7 +258,7 @@ After each round of character responses, `generate_choices()` is called to gener
 - Recall ranking: vector relevance and BM25 relevance are fused first, rerank (optional) replaces relevance signal, then in-game time recency is layered on top
 - When Logfire is configured, memory retrieval logs each round's query and top hit summary for debugging recall quality
 - `last_recalled_at` is updated to DB on hit; `.memory_recall_state.json` is only exported from DB on save, used as fallback data source on load rebuild
-- `memory/indexer.rebuild_memory_index()` combines `.consolidation_state.json` to restore long-term memory index; recall state is read from DB first, falls back to `.memory_recall_state.json` when DB is empty. `rebuild_understanding_index()` restores the separate Understanding index on load
+- `memory/indexer.rebuild_memory_index()` combines `.consolidation_state.json` to restore the long-term memory index; when `clear_existing=True` (the default, used on load), it also rebuilds the Understanding index via the shared `_rebuild_understanding_index_for_agents` helper. Recall state is read from DB first, falls back to `.memory_recall_state.json` when DB is empty. `rebuild_understanding_index()` is still available as a standalone function for targeted rebuilds (e.g. after consolidation patches a single agent's understandings)
 
 ## Memory Consolidation
 

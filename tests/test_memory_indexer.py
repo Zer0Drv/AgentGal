@@ -49,6 +49,20 @@ def _patch_character_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(parser_module, "character_path", _character_path)
 
 
+def _write_single_understanding(agent: str, uid: str = "u1") -> None:
+    write_understandings(
+        agent,
+        {
+            uid: Understanding(
+                id=uid,
+                memory_owner=agent,
+                subject="对玩家的认知",
+                content="玩家会解释误会。",
+            )
+        },
+    )
+
+
 @pytest.mark.asyncio
 async def test_rebuild_memory_index_uses_batch_add_many(tmp_path, monkeypatch):
     records = [
@@ -57,6 +71,7 @@ async def test_rebuild_memory_index_uses_batch_add_many(tmp_path, monkeypatch):
     ]
     _write_memory_jsonl(tmp_path, "alice", records)
     _patch_character_path(tmp_path, monkeypatch)
+    _write_single_understanding("alice")
 
     fake_store = FakeVectorStore()
     monkeypatch.setattr(indexer, "vector_store", fake_store)
@@ -71,6 +86,7 @@ async def test_rebuild_memory_index_uses_batch_add_many(tmp_path, monkeypatch):
         "第一条批量重建记忆。",
         "第二条批量重建记忆。",
     ]
+    assert [u.id for u in fake_store.added_understandings] == ["u1"]
 
 
 @pytest.mark.asyncio
@@ -91,6 +107,28 @@ async def test_rebuild_memory_index_can_skip_clear_existing(tmp_path, monkeypatc
     assert fake_store.deleted_all == []
     assert fake_store.deleted_agents == []
     assert len(fake_store.added_records) == 1
+    assert fake_store.added_understandings == []
+
+
+@pytest.mark.asyncio
+async def test_rebuild_memory_index_restores_understandings_for_single_agent(tmp_path, monkeypatch):
+    _write_memory_jsonl(
+        tmp_path,
+        "alice",
+        [EpisodeMemory(date="4月3日", content="完整重建情节记忆。", memory_owner="alice")],
+    )
+    _patch_character_path(tmp_path, monkeypatch)
+    _write_single_understanding("alice")
+
+    fake_store = FakeVectorStore()
+    monkeypatch.setattr(indexer, "vector_store", fake_store)
+
+    await indexer.rebuild_memory_index(agent_name="alice")
+
+    assert fake_store.deleted_agents == ["alice"]
+    assert fake_store.deleted_all == []
+    assert len(fake_store.added_records) == 1
+    assert [u.id for u in fake_store.added_understandings] == ["u1"]
 
 
 @pytest.mark.asyncio
