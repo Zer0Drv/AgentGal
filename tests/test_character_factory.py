@@ -220,7 +220,6 @@ def test_new_character_creation_rejects_invalid_character_id_format(character_id
             behavior=["被女儿嫌弃时，先退一步再绕回来"],
             voice=["美月，你脸色怎么这么差？"],
             initial_status={},
-            initial_relations={},
         )
 
 
@@ -234,7 +233,6 @@ def test_new_character_creation_normalizes_identity_to_single_line():
         behavior=["被女儿嫌弃时，先退一步再绕回来"],
         voice=["美月，你脸色怎么这么差？"],
         initial_status={},
-        initial_relations={},
     )
     assert creation.identity == "美月的妈妈， 来学校接她放学的家长。"
 
@@ -250,7 +248,6 @@ def test_new_character_creation_rejects_blank_goal():
             behavior=["被女儿嫌弃时，先退一步再绕回来"],
             voice=["美月，你脸色怎么这么差？"],
             initial_status={},
-            initial_relations={},
         )
 
 
@@ -267,17 +264,13 @@ def test_build_factory_user_message_omits_empty_optional_fields(character_dir):
             relation_to="mitsuki",
             relation_description="美月的妈妈",
         ),
-        scene_characters=["mitsuki"],
     )
 
     assert "character_id:" not in message
     assert "name_hint:" not in message
     assert "initial_location:" not in message
     assert "relation_to: mitsuki" in message
-    assert "已有角色" not in message
-    assert "本轮 scene_characters" in message
-    assert "- 美月" in message
-    assert "- mitsuki / 美月" not in message
+    assert "scene_characters" not in message
 
 
 # ---------------------------------------------------------------------------
@@ -329,11 +322,6 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
                 "在意的事": "女儿练习太累",
                 "打算": "- [ ] 【等美月】在教室外等她下课",
             },
-            initial_relations={
-                "美月": "女儿，最近显得疲惫",
-                "路人甲": "不在本轮 scene_characters，不应写入",
-                "player": "女儿同班同学，还没正式认识",
-            },
             schedule=CharacterSchedule(
                 periods=[
                     CharacterSchedulePeriod(
@@ -381,9 +369,7 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
         relation_description="美月的妈妈",
         initial_location="教室走廊",
     )
-    created = await character_factory_module.create_character(
-        spec, scene_characters=["mitsuki"]
-    )
+    created = await character_factory_module.create_character(spec)
     assert created == CreatedCharacterInfo(
         character_id="mitsukimom",
         display_name="桥本志津",
@@ -434,7 +420,6 @@ async def test_create_character_skips_schedule_when_llm_omits(character_dir, mon
             behavior=["撞见邻居时先点头笑一下"],
             voice=["今天回得早呀。"],
             initial_status={"身份": "邻居", "心境": "随和", "和玩家的关系": "陌生人"},
-            initial_relations={},
             schedule=None,
         )
 
@@ -451,9 +436,7 @@ async def test_create_character_skips_schedule_when_llm_omits(character_dir, mon
         relation_to="mitsuki",
         relation_description="美月的邻居",
     )
-    created = await character_factory_module.create_character(
-        spec, scene_characters=["mitsuki"]
-    )
+    created = await character_factory_module.create_character(spec)
     assert created is not None
 
     agent_dir = character_dir / "neighbor"
@@ -478,7 +461,6 @@ async def test_create_character_validates_before_calling_llm(character_dir, monk
             behavior=["x"],
             voice=["x"],
             initial_status={},
-            initial_relations={},
         )
 
     monkeypatch.setattr(
@@ -510,7 +492,6 @@ async def test_create_character_rejects_invalid_generated_character_id(character
             behavior=["见到女儿就会停下脚步"],
             voice=["路上小心。"],
             initial_status={},
-            initial_relations={},
         )
 
     monkeypatch.setattr(character_factory_module, "run_structured_agent", fake_run_structured_agent)
@@ -536,8 +517,7 @@ async def test_create_character_rejects_invalid_generated_character_id(character
 
 @pytest.mark.asyncio
 async def test_bootstrap_new_characters_keeps_only_targeted_successes(monkeypatch):
-    async def fake_create_character(spec, scene_characters=None):
-        assert scene_characters == ["mitsuki"]
+    async def fake_create_character(spec):
         if spec.name_hint == "坏角色":
             return None
         character_id = "goodone" if spec.name_hint == "好角色1" else "goodtwo"
@@ -564,8 +544,7 @@ async def test_bootstrap_new_characters_keeps_only_targeted_successes(monkeypatc
 
 @pytest.mark.asyncio
 async def test_bootstrap_new_characters_auto_targets_created(monkeypatch):
-    async def fake_create_character(spec, scene_characters=None):
-        assert scene_characters == ["mitsuki"]
+    async def fake_create_character(spec):
         return CreatedCharacterInfo(
             character_id="goodone",
             display_name="Good One",

@@ -65,7 +65,6 @@ class NewCharacterProfile(BaseModel):
     behavior: list[str] = Field(default_factory=list)
     voice: list[str] = Field(default_factory=list)
     initial_status: dict[str, str] = Field(default_factory=dict)
-    initial_relations: dict[str, str] = Field(default_factory=dict)
     schedule: "CharacterSchedule | None" = None
 
     @field_validator(

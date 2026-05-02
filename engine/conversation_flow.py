@@ -62,7 +62,7 @@ async def bootstrap_new_characters(
 
     created: list[CreatedCharacterInfo] = []
     for spec in specs:
-        created_info = await create_character(spec, scene_characters=targets)
+        created_info = await create_character(spec)
         if created_info:
             created.append(created_info)
 
