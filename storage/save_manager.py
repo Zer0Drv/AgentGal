@@ -211,12 +211,13 @@ def delete_save_archive(save_filename: str) -> bool:
         routing_logger.warning("[delete_save] 非法文件名: %s", save_filename)
         return False
     save_path = PROJECT_ROOT / "saves" / save_filename
-    if not save_path.exists():
+    try:
+        save_path.unlink()
+        routing_logger.info("[delete_save] 已删除存档: %s", save_filename)
+        return True
+    except FileNotFoundError:
         routing_logger.warning("[delete_save] 存档文件不存在: %s", save_path)
         return False
-    save_path.unlink()
-    routing_logger.info("[delete_save] 已删除存档: %s", save_filename)
-    return True
 
 
 async def import_save_archive(save_filename: str) -> bool:
