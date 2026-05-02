@@ -246,6 +246,23 @@ def apply_recency(
 
 # ----------------------------- 主检索入口 -----------------------------
 
+def _try_rerank(
+    query: str,
+    candidates: list[dict[str, Any]],
+    agent_name: str,
+    label: str = "",
+) -> tuple[list[dict[str, Any]], bool]:
+    """尝试 rerank，失败时降级保留原结果。返回 (candidates, rerank_applied)。"""
+    if not RERANK_MODEL or not candidates:
+        return candidates, False
+    try:
+        return rerank(query, candidates, top_n=RERANK_TOP_N), True
+    except Exception as e:
+        prefix = f"[Retrieval] {label} " if label else "[Retrieval] "
+        memory_logger.warning(f"{prefix}rerank 失败，降级为 fusion 结果: agent={agent_name}, error={e}")
+        return candidates, False
+
+
 def _vec_rows_to_candidates(rows: list[tuple]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for row in rows:
@@ -337,15 +354,7 @@ def search_memories(agent_name: str, query: str, qvec: list[float] | None = None
         else:
             candidates = _vec_rows_to_candidates(vec_rows)
         candidate_count = len(candidates)
-
-        # Step 3: rerank（可选）— 替换 relevance 分，rerank 失败时降级保留 fusion 结果
-        rerank_applied = False
-        if RERANK_MODEL and candidates:
-            try:
-                candidates = rerank(query, candidates, top_n=RERANK_TOP_N)
-                rerank_applied = True
-            except Exception as e:
-                memory_logger.warning(f"[Retrieval] rerank 失败，降级为 fusion 结果: agent={agent_name}, error={e}")
+        candidates, rerank_applied = _try_rerank(query, candidates, agent_name)
 
         # Step 4: recency 加权排序，截取最终返回数
         current_game_date = _load_current_game_date()
@@ -452,6 +461,7 @@ def search_understandings(agent_name: str, query: str, qvec: list[float] | None 
                 entry["bm25_raw"] = abs(float(row[5]))
 
         ranked = _compute_hybrid_scores(candidates, use_hybrid)
+        ranked, rerank_applied = _try_rerank(query, ranked, agent_name, label="Understanding")
         top = ranked[:VECTOR_SEARCH_LIMIT]
 
         log_retrieval_results(
@@ -462,10 +472,10 @@ def search_understandings(agent_name: str, query: str, qvec: list[float] | None 
             hybrid_enabled=HYBRID_SEARCH_ENABLED,
             vector_candidate_count=len(vec_rows),
             bm25_candidate_count=len(bm25_rows),
-            candidate_count=len(candidates),
-            rerank_enabled=False,
-            rerank_applied=False,
-            rerank_model=None,
+            candidate_count=len(ranked),
+            rerank_enabled=bool(RERANK_MODEL),
+            rerank_applied=rerank_applied,
+            rerank_model=RERANK_MODEL,
         )
 
     except Exception as e:
