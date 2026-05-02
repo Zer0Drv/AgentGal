@@ -44,6 +44,7 @@ def _retrieval_result_items(ranked: list[dict[str, Any]]) -> list[dict[str, Any]
 
 def log_retrieval_results(
     *,
+    source: str,
     agent_name: str,
     query: str,
     ranked: list[dict[str, Any]],
@@ -62,12 +63,14 @@ def log_retrieval_results(
     results = _retrieval_result_items(ranked)
     result_ids = [item["id"] for item in results]
     memory_logger.info(
-        "[Retrieval] Top结果: agent=%s, hits=%s, ids=%s",
+        "[Retrieval][%s] Top结果: agent=%s, hits=%s, ids=%s",
+        source,
         agent_name,
         len(results),
         ", ".join(result_ids) if result_ids else "无",
         extra={
             "event.name": _RETRIEVAL_RESULTS_EVENT,
+            "retrieval.source": source,
             "retrieval.agent": agent_name,
             "retrieval.query": query,
             "retrieval.limit": limit,

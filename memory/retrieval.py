@@ -371,6 +371,7 @@ def search_memories(agent_name: str, query: str, qvec: list[float] | None = None
                 memory_logger.warning("[Retrieval] 更新 last_recalled_at 失败: %s", e)
 
         log_retrieval_results(
+            source="episode",
             agent_name=agent_name,
             query=query,
             ranked=ranked,
@@ -466,6 +467,7 @@ def search_understandings(agent_name: str, query: str, qvec: list[float] | None 
         top = ranked[:UNDERSTANDING_SEARCH_LIMIT]
 
         log_retrieval_results(
+            source="understanding",
             agent_name=agent_name,
             query=query,
             ranked=top,
