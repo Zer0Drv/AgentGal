@@ -21,7 +21,8 @@ with open(PROJECT_ROOT / "config.toml", "rb") as _f:
 CONSOLIDATION_TEMPERATURE: float = _cfg["consolidation"]["temperature"]
 CONSOLIDATION_MAX_TOKENS: int | None = _cfg["consolidation"]["max_tokens"] or None
 # 向量检索
-VECTOR_SEARCH_LIMIT: int = _cfg["vector"]["search_limit"]
+EPISODE_SEARCH_LIMIT: int = _cfg["vector"]["episode_search_limit"]
+UNDERSTANDING_SEARCH_LIMIT: int = _cfg["vector"]["understanding_search_limit"]
 VECTOR_CANDIDATE_LIMIT: int = _cfg["vector"]["vector_candidate_limit"]
 RERANK_TOP_N: int = _cfg["vector"]["rerank_top_n"]
 RELEVANCE_WEIGHT: float = _cfg["vector"]["relevance_weight"]
