@@ -2,7 +2,7 @@
 EPISODE_CLOSURE_DETECTOR = r"""<task>
 你是互动主题切分器。
 
-阅读 recent_history，按“适合独立记忆的互动主题”切分每个角色参与的互动。
+阅读 recent_history，按"适合独立记忆的互动主题"切分每个角色参与的互动。
 
 你要找的是：一段互动在意义上完成了一个主题，并进入了另一个主题的位置。
 </task>
@@ -180,7 +180,7 @@ EPISODE_MEMORY_GENERATOR = r"""<role>
 - importance 表示这件事有多重要，根据 1-5 的等级打分，标准如下：
   - 1 = 只记录了普通互动、氛围、照顾、吃饭、玩笑、寒暄。删掉后，基本不影响以后理解角色关系。
   - 2 = 有一点具体内容，但主要是在重复已有相处模式。例如：又一次照顾、又一次害羞、又一次打趣、又一次同行。以后即使不检索，也不太影响判断。
-  - 3 = 明确新信息。留下了一个可复用的新事实、新偏好、新解释、新小心结、新相处方式。以后可能会被再次提起，或帮助理解某个反应。但它只是在“补充理解”，还没有明显改变后续行为策略、关系边界或剧情方向。
+  - 3 = 明确新信息。留下了一个可复用的新事实、新偏好、新解释、新小心结、新相处方式。以后可能会被再次提起，或帮助理解某个反应。但它只是在"补充理解"，还没有明显改变后续行为策略、关系边界或剧情方向。
   - 4 = 重要变化。这条会明显影响后续相处、判断、边界或剧情安排。例如：明确约定、关系边界、持续误会被解开、重要秘密/底线暴露、关系进入新阶段。
   - 5 = 核心锚点。长期关系或主线剧情的关键节点。例如：第一次确认关系、重大承诺、重大误会、重大和解、重大背叛、长期身份变化、主线事件开启或结束。
 </metadata_rules>
@@ -222,10 +222,10 @@ EPISODE_MEMORY_GENERATOR = r"""<role>
 
 
 UNDERSTANDING_PATCH = r"""<task>
-你维护角色对某人、某段关系或某种互动规律的稳定认知（Understanding）。
+你维护角色对人、关系、互动模式的稳定认知（Understanding）。
 每条 Understanding 是一个信念节点，每条 EpisodeMemory 是它的证据。
 
-你的工作：把新记录挂到合适的节点上，并在必要时更新节点内容。
+你的工作：从新记录中提取所有值得形成认知的方面，挂到已有节点上或创建新节点。
 </task>
 
 <inputs>
@@ -236,52 +236,49 @@ UNDERSTANDING_PATCH = r"""<task>
 <decision>
 按顺序处理：
 
-1. 扫描 existing_entries，找与新记录相关的节点。
-   相关 = 同一个人、同一段关系、同一种互动方式或行为规律。
+1. 从新记录中提取所有值得形成稳定认知的方面——出现了哪些人、产生了哪些关系变化、展现了哪些行为模式。
 
-2. 对每个相关节点：
-   - 新记录带来新角度、修正、例外或深化 → update：更新 content，linked_episodes 填新记录 id
-   - 新记录只是再次印证 → update：content 不变，linked_episodes 填新记录 id
-
-3. 新记录有某个方面在 existing_entries 里没有覆盖 → add 新节点。
-
-4. 只有新记录对任何节点都无贡献时才输出空（例如纯环境描写、无角色互动）。
+2. 对每个方面，在 existing_entries 中找相关节点（同一个人、同一段关系、同一种互动模式）：
+   - 找到了且新记录带来新角度、修正、例外或深化 → update：更新 content，linked_episodes 填新记录 id
+   - 找到了且新记录只是再次印证 → update：content 不变，linked_episodes 填新记录 id
+   - 没找到 → add 新节点
 </decision>
 
 <write_rules>
-- content 写”以后判断人、关系、互动方式时有用的一句稳定认知”，不描述事件经过
+- content 写**以后判断人、关系、互动方式时有用的一句稳定认知**，不描述事件经过
 - content 40-80 个中文字符，最多 120 个中文字符
 - subject 可以是人、关系、互动模式或行为规律
-- 新记录触及多个独立方面时，分别 add/update 各自节点；不把不同主题合并进同一节点
+- keywords 描述这条理解"在什么时候有用"，即它覆盖的情境主题或关系维度等等抽象层面。控制在 3-5 个词。
+- 新记录触及多个独立方面时（例如同时涉及多个人、多段关系、多种互动模式），分别 add/update 各自节点，保持主题的独立性
 - linked_episodes 只填 new_record.id；系统自动合并旧链接
 - update 必须使用已有 id；不新增内容相近的重复节点
-- 不删除节点；旧判断需要修正时用 update 改写
+- 必须输出至少一个 add 或 update；不允许空输出
 </write_rules>
 
 <examples>
-例 1：无相关节点，首次观察到新规律。
+例 1：无已有节点，首次观察到新规律。
 existing_entries：（尚无）
 new_record：id=e1，两人第一次一起吃饭，气氛轻松，沉默时他也不显得不安。
 输出：
-{“add”:[{“subject”:”我们的日常相处节奏”,”keywords”:[“相处”,”沉默”,”轻松”],”content”:”他和我在一起时不需要一直说话，沉默对他来说不是负担；我们的相处不需要持续维系。”,”linked_episodes”:[“e1”]}],”update”:{}}
+{"add":[{"subject":"我们的日常相处节奏","keywords":["相处","日常","独处"],"content":"他和我在一起时不需要一直说话，沉默对他来说不是负担；我们的相处不需要持续维系。","linked_episodes":["e1"]}],"update":{}}
 
 例 2：有相关节点，新记录带来新角度，更新 content。
 existing_entries：[u1] subject='我们的日常相处节奏' linked_episodes=[e1] content='他和我在一起时不需要一直说话，沉默对他来说不是负担。'
-new_record：id=e2，他主动提议一起吃饭，选了安静的地方，说”跟你在一起不用表演”。
+new_record：id=e2，他主动提议一起吃饭，选了安静的地方，说"跟你在一起不用表演"。
 输出：
-{“add”:[],”update”:{“u1”:{“subject”:”我们的日常相处节奏”,”keywords”:[“相处”,”沉默”,”轻松”,”主动”],”content”:”他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担；他会主动寻找这种放松的方式。”,”linked_episodes”:[“e2”]}}}
+{"add":[],"update":{"u1":{"subject":"我们的日常相处节奏","keywords":["相处","日常","独处"],"content":"他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担；他会主动寻找这种放松的方式。","linked_episodes":["e2"]}}}
 
 例 3：有相关节点，新记录只是再次印证，content 不变，只挂链接。
 existing_entries：[u1] subject='我们的日常相处节奏' linked_episodes=[e1,e2] content='他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担；他会主动寻找这种放松的方式。'
 new_record：id=e3，又一次一起吃午饭，平静，他没说什么特别的。
 输出：
-{“add”:[],”update”:{“u1”:{“subject”:”我们的日常相处节奏”,”keywords”:[“相处”,”沉默”,”轻松”,”主动”],”content”:”他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担；他会主动寻找这种放松的方式。”,”linked_episodes”:[“e3”]}}}
+{"add":[],"update":{"u1":{"subject":"我们的日常相处节奏","keywords":["相处","日常","独处"],"content":"他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担；他会主动寻找这种放松的方式。","linked_episodes":["e3"]}}}
 
 例 4：新记录触及多个独立方面，分别处理。
 existing_entries：[u1] subject='玩家在压力下的保护方式' linked_episodes=[e0] content='玩家遇到冲突时会先确认我的安全，再用行动替我分担压力。'
 new_record：id=e4，冲突中他先替我挡住对方，事后主动问我有没有受伤；我发现他向来先行动后解释。
 输出：
-{“add”:[{“subject”:”他处理事情的默认节奏”,”keywords”:[“行动”,”解释”,”风格”],”content”:”他倾向于先行动再解释，不会在压力下停下来讨论；这是他面对突发情况的默认节奏。”,”linked_episodes”:[“e4”]}],”update”:{“u1”:{“subject”:”玩家在压力下的保护方式”,”keywords”:[“压力”,”保护”,”行动”],”content”:”玩家在压力下会先用行动替我分担，而不是先问我意见；事后才会确认我的状态。”,”linked_episodes”:[“e4”]}}}
+{"add":[{"subject":"他处理事情的默认节奏","keywords":["突发事件","冲突","应对方式"],"content":"他倾向于先行动再解释，不会在压力下停下来讨论；这是他面对突发情况的默认节奏。","linked_episodes":["e4"]}],"update":{"u1":{"subject":"玩家在压力下的保护方式","keywords":["压力","冲突","保护"],"content":"玩家在压力下会先用行动替我分担，而不是先问我意见；事后才会确认我的状态。","linked_episodes":["e4"]}}}
 
 例 5：新记录同时印证多个已有节点，分别挂链接。
 existing_entries：
@@ -289,18 +286,17 @@ existing_entries：
 [u2] subject='他在公开场合的行为方式' linked_episodes=[e3] content='在人多的地方他会不动声色地把我护在里侧，但不会特别说出来。'
 new_record：id=e5，在人来人往的商场里一起吃饭，他把靠走道的位置让给自己，整顿饭气氛轻松，没有特别提这件事。
 输出：
-{“add”:[],”update”:{“u1”:{“subject”:”我们的日常相处节奏”,”keywords”:[“相处”,”沉默”,”轻松”,”主动”],”content”:”他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担。”,”linked_episodes”:[“e5”]},”u2”:{“subject”:”他在公开场合的行为方式”,”keywords”:[“公开场合”,”保护”,”不声张”],”content”:”在人多的地方他会不动声色地把我护在里侧，但不会特别说出来。”,”linked_episodes”:[“e5”]}}}
+{"add":[],"update":{"u1":{"subject":"我们的日常相处节奏","keywords":["相处","日常","独处"],"content":"他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担。","linked_episodes":["e5"]},"u2":{"subject":"他在公开场合的行为方式","keywords":["公开场合","社交","保护"],"content":"在人多的地方他会不动声色地把我护在里侧，但不会特别说出来。","linked_episodes":["e5"]}}}
 
-例 6：纯环境描写，无角色互动，真正无贡献。
-existing_entries：（尚无）
-new_record：id=e6，旁白描述天气骤变，无角色出现。
+例 6：新记录中出现新角色，且已有节点中的认知也被涉及，同时 add + update。
+existing_entries：
+[u1] subject='玩家对我的关注方式' linked_episodes=[e1,e2] content='他会留意到我细微的表情变化，但不会当场追问，而是等独处时才提起。'
+new_record：id=e6，放学后在校门口把奶茶给他时，他注意到树荫下有个学妹一直在看这边。学妹跑过来害羞地要签名，说是我粉丝。他笑着走开留我们说话。
 输出：
-{“add”:[],”update”:{}}
+{"add":[{"subject":"佐藤铃","keywords":["粉丝","后辈","学校","签名"],"content":"有个叫佐藤铃的学妹是我的粉丝，会特意来看我；她在陌生人面前很害羞，但对自己想要的东西会鼓起勇气行动。","linked_episodes":["e6"]}]},"update":{"u1":{"subject":"玩家对我的关注方式","keywords":["关注","观察","细节","独处"],"content":"他会留意到我身边的细微动静（包括其他人的存在），但不会当场介入，而是留出空间让我自己处理。","linked_episodes":["e6"]}}}
 </examples>
 
 <output_format>
 严格 JSON，无 markdown：
-{“add”:[{“subject”:”...”,”keywords”:[“词1”],”content”:”一句稳定认知。”,”linked_episodes”:[“new_record_id”]}],”update”:{“<id>”:{“subject”:”...”,”keywords”:[...],”content”:”...”,”linked_episodes”:[“new_record_id”]}}}
-无变更：{“add”:[],”update”:{}}
-</output_format>
+{"add":[{"subject":"...","keywords":["情境主题1","情境主题2"],"content":"一句稳定认知。","linked_episodes":["new_record_id"]}],"update":{"<id>":{"subject":"...","keywords":[...],"content":"...","linked_episodes":["new_record_id"]}}}</output_format>
 """
