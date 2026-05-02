@@ -409,8 +409,6 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
 
     assert "## 和玩家的关系\n听说过" in status
 
-    assert (agent_dir / "memory.md").exists()
-
     import json as _json
 
     schedule_path = agent_dir / "schedule.json"

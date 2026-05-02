@@ -1,7 +1,7 @@
 """动态生成新角色：narrator 请求时给新人搭骨架。
 
 流程：校验锚点 → 调 character_factory agent 生成
-character_id/role/identity/goal/dynamic/behavior/voice/status/relations/schedule → 写文件。
+character_id/role/identity/goal/dynamic/behavior/voice/status/schedule → 写文件。
 """
 
 from __future__ import annotations
@@ -37,13 +37,6 @@ _STATUS_ORDER = [
     "在意的事",
     "打算",
 ]
-_USER_MD_SKELETON = (
-    "# 眼中的玩家\n\n"
-    "## 基本信息\n- 姓名：\n- 年龄：\n- 性别/称呼：\n- 身份：\n\n"
-    "## 对方是什么人\n\n\n"
-    "## 我们怎么相处\n"
-)
-
 
 @dataclass(frozen=True, slots=True)
 class CreatedCharacterInfo:
@@ -151,38 +144,6 @@ def _write_status_md(
     (agent_dir / "status.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-def _write_relations_md(
-    agent_dir: Path,
-    relations: dict[str, str],
-    spec: NewCharacterRequest,
-    scene_characters: list[str],
-) -> None:
-    relation_to_display = (
-        get_display_name(spec.relation_to, read_agent_file(spec.relation_to, "soul.md"))
-        if spec.relation_to != "player"
-        else None
-    )
-    sections: dict[str, str] = {}
-    valid_relation_targets = {
-        get_display_name(name, read_agent_file(name, "soul.md"))
-        for name in scene_characters
-        if name != agent_dir.name
-    }
-    for k, v in relations.items():
-        target_clean = k.strip()
-        if not target_clean or not v or not v.strip() or target_clean == "player":
-            continue
-        if target_clean not in valid_relation_targets:
-            continue
-        sections[target_clean] = v.strip()
-
-    if (
-        relation_to_display
-        and relation_to_display in valid_relation_targets
-        and relation_to_display not in sections
-    ):
-        sections[relation_to_display] = spec.relation_description.strip()
-
 
 
 def _format_bulleted_block(items: list[str]) -> str:
@@ -260,7 +221,6 @@ def _write_bootstrap_files(
     agent_dir.mkdir(parents=True, exist_ok=True)
 
     (agent_dir / "soul.md").write_text(soul_content, encoding="utf-8")
-    (agent_dir / "memory.md").write_text("", encoding="utf-8")
 
     _write_status_md(agent_dir, creation.initial_status, spec, creation.display_name)
 

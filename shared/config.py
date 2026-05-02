@@ -66,8 +66,8 @@ def character_path(character_name: str, *subpaths: str) -> str:
         完整路径字符串
 
     Example:
-        >>> character_path("lilith", "memory.md")
-        "/abs/path/to/data/characters/lilith/memory.md"
+        >>> character_path("lilith", "soul.md")
+        "/abs/path/to/data/characters/lilith/soul.md"
     """
     return str(CHARACTERS_DIR / character_name / Path(*subpaths))
 

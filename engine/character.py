@@ -199,10 +199,6 @@ class Character(BaseEntity):
     # ── Character 独有的动态文件（全部实时读）──
 
     @property
-    def memory(self) -> str:
-        return read_agent_file(self.name, "memory.md")
-
-    @property
     def schedule(self) -> CharacterSchedule:
         return load_character_schedule(self.name)
 

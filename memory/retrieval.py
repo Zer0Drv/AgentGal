@@ -73,7 +73,7 @@ def _recency_score(
 
 
 def _importance_score(raw_importance: Any) -> float:
-    """将 memory.md 的 1-5 重要度归一化到 [0, 1]。"""
+    """将 EpisodeMemory 的 1-5 重要度归一化到 [0, 1]。"""
     try:
         importance = int(raw_importance)
     except (TypeError, ValueError):
@@ -323,7 +323,7 @@ def search_memories(agent_name: str, query: str, qvec: list[float] | None = None
     2. hybrid: 若启用则叠加 BM25 候选，按 75/25 权重融合 relevance；
                否则直接用 vector distance 转换 relevance
     3. rerank（可选）: 用 rerank API 分替换 relevance，min-max 归一化到 [0,1]
-    4. score: 叠加游戏内时间衰减与 memory.md 重要度，计算最终 score 并截取 EPISODE_SEARCH_LIMIT 条
+    4. score: 叠加游戏内时间衰减与 EpisodeMemory 重要度，计算最终 score 并截取 EPISODE_SEARCH_LIMIT 条
     5. 更新命中条目的 last_recalled_at（DB）
     """
     if not query or not query.strip():
