@@ -181,7 +181,6 @@ svg {
 .ghost-btn,
 .primary-btn,
 .story-card,
-.resume-button,
 .new-save-button,
 .save-card,
 .save-action,
@@ -197,8 +196,7 @@ svg {
 }
 
 .ghost-btn,
-.primary-btn,
-.resume-button {
+.primary-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -214,7 +212,6 @@ svg {
 }
 
 .ghost-btn:hover,
-.resume-button:hover,
 .new-save-button:hover,
 .save-action:hover,
 .choice-chip:hover,
@@ -225,7 +222,6 @@ svg {
 
 .ghost-btn:active,
 .primary-btn:active,
-.resume-button:active,
 .new-save-button:active,
 .save-action:active,
 .choice-chip:active,
@@ -1350,12 +1346,6 @@ svg {
   width: 100%;
 }
 
-.resume-button {
-  background: rgba(180, 90, 100, 0.08);
-  color: var(--accent);
-  border-color: rgba(180, 90, 100, 0.2);
-}
-
 .confirm-shell {
   width: min(480px, 100%);
   padding: 28px;
@@ -1779,8 +1769,7 @@ svg {
   }
 
   .ghost-btn,
-  .primary-btn,
-  .resume-button {
+  .primary-btn {
     min-height: 38px;
     padding: 0 12px;
   }
@@ -2178,10 +2167,10 @@ svg {
         <div class="story-side">
           <div class="resume-panel" x-show="hasSave">
             <div class="resume-label">当前进度</div>
-            <div class="resume-title">继续上次游戏</div>
-            <div class="resume-copy">先回到已经展开的这一幕。下面是离开前的最后片段和可接上的行动。</div>
+            <div class="resume-title">当前游戏进度</div>
+            <div class="resume-copy">这里是当前对话的最近片段和可接上的行动。</div>
             <div class="resume-preview">
-              <div class="resume-preview-label">上次停在这里</div>
+              <div class="resume-preview-label">最近停在这里</div>
               <div class="resume-copy" x-text="recentPreview()"></div>
             </div>
             <div class="resume-choice-list" x-show="initialChoices.length">
@@ -2200,7 +2189,6 @@ svg {
               </div>
             </div>
             <div class="resume-actions">
-              <button type="button" class="resume-button" @click="continueGame(initialRecent, initialChoices)">继续上次游戏</button>
               <button type="button" class="ghost-btn" x-show="canDismissStoryModal()" @click="closeStoryModal()">返回当前对话</button>
             </div>
           </div>
@@ -2448,7 +2436,6 @@ document.addEventListener("alpine:init", () => {
     async init() {
       this.setupViewportListener();
       this.setupVisualViewportListener();
-      this.storyModalOpen = true;
       this.resizeComposer();
 
       try {
@@ -2463,8 +2450,14 @@ document.addEventListener("alpine:init", () => {
         this.hasSave = Boolean(initState.has_save);
         this.initialRecent = initState.recent || [];
         this.initialChoices = initState.last_choices || [];
+        if (this.hasSave) {
+          this.continueGame(this.initialRecent, this.initialChoices, { silent: true });
+        } else {
+          this.storyModalOpen = true;
+        }
       } catch (error) {
         this.setNotice("初始化失败，部分功能可能暂时不可用。", "error", true);
+        this.storyModalOpen = true;
       }
 
       await this.refreshSaves({ quiet: true });
@@ -2972,13 +2965,15 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    continueGame(recent, lastChoices) {
+    continueGame(recent, lastChoices, { silent = false } = {}) {
       this.storyModalOpen = false;
       this.resetConversation();
       this.addHistory(recent);
       this.choices = lastChoices || [];
       if (this.isCompact) this.closeDrawer();
-      this.setNotice("已恢复最近进度。", "success");
+      if (!silent) {
+        this.setNotice("已恢复最近进度。", "success");
+      }
     },
 
     submitCurrentInput() {
