@@ -7,10 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Noto+Serif+SC:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/memory_graph.css?v=5">
+<link rel="stylesheet" href="/static/memory_graph.css?v=10">
 <script src="/static/marked.min.js"></script>
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
-<script src="/static/memory_graph.js?v=5"></script>
+<script src="/static/memory_graph.js?v=10"></script>
 <script defer src="/static/alpine.min.js"></script>
 <style>
 :root {
@@ -2264,9 +2264,8 @@ svg {
     </div>
   </div>
 
-  <div class="overlay" x-show="memoryGraphOpen">
-    <div class="modal-surface memory-graph-modal">
-      <div class="memory-graph-shell">
+  <div class="memory-graph-page" x-show="memoryGraphOpen">
+    <div class="memory-graph-shell">
         <div class="memory-graph-head">
           <div class="memory-graph-title-wrap">
             <div class="story-eyebrow">Memory Graph</div>
@@ -2329,6 +2328,30 @@ svg {
               x-show="!memoryGraphLoading && !memoryGraphError && memoryGraphNodes.length"
             ></div>
             <div
+              class="memory-graph-zoom"
+              x-show="!memoryGraphLoading && !memoryGraphError && memoryGraphNodes.length"
+              @click.stop
+              @mousedown.stop
+              @pointerdown.stop
+            >
+              <svg class="memory-graph-zoom-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"/>
+                <path d="m20 20-3.8-3.8"/>
+                <path d="M11 8v6"/>
+                <path d="M8 11h6"/>
+              </svg>
+              <input
+                class="memory-graph-zoom-slider"
+                type="range"
+                min="0.2"
+                max="2.5"
+                step="0.05"
+                :value="memoryGraphZoom"
+                aria-label="缩放图谱"
+                @input="setMemoryGraphZoom($event.target.value)"
+              >
+            </div>
+            <div
               class="memory-graph-empty"
               x-show="memoryGraphLoading || memoryGraphError || !memoryGraphNodes.length"
               x-text="memoryGraphEmptyText()"
@@ -2363,7 +2386,6 @@ svg {
             </template>
           </aside>
         </div>
-      </div>
     </div>
   </div>
 
