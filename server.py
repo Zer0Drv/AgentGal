@@ -23,6 +23,12 @@ from engine.conversation_flow import (
     generate_choices,
     run_agent_in_scene,
 )
+from memory.parser import (
+    EpisodeMemory,
+    Understanding,
+    read_memory_jsonl,
+    read_understandings,
+)
 from storage.save_manager import (
     export_save_archive_with_detail,
     has_existing_save,
@@ -47,6 +53,9 @@ STATIC_DIR = Path(__file__).parent / "static"
 _LAST_CHOICES_FILE = CHARACTERS_DIR / "last_choices.json"
 _pending_state_update_task: asyncio.Task[None] | None = None
 _RECENT_HISTORY_LIMIT = 12
+_MEMORY_GRAPH_LABEL_LIMIT = 42
+_MEMORY_GRAPH_DETAIL_LIMIT = 260
+_MEMORY_GRAPH_RAW_LIMIT = 360
 
 
 # =============================================================================
@@ -77,6 +86,154 @@ def _get_agent_display_name(agent_name: str) -> str:
 
     soul_content = read_agent_file(agent_name, "soul.md")
     return get_display_name(agent_name, soul_content) if soul_content else agent_name
+
+
+def _clip_text(value: str, limit: int) -> str:
+    text = " ".join((value or "").split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 1]}…"
+
+
+def _memory_graph_agents() -> list[dict]:
+    agents: list[dict] = []
+    for agent_name in get_agent_names(include_narrator=False):
+        episodes = read_memory_jsonl(agent_name)
+        understandings = read_understandings(agent_name)
+        edge_count = sum(len(u.linked_episodes) for u in understandings.values())
+        agents.append(
+            {
+                "name": agent_name,
+                "display_name": _get_agent_display_name(agent_name),
+                "episode_count": len(episodes),
+                "understanding_count": len(understandings),
+                "edge_count": edge_count,
+            }
+        )
+    return agents
+
+
+def _episode_node(agent_name: str, episode: EpisodeMemory, index: int) -> dict:
+    episode_key = episode.id or f"row-{index}"
+    label_source = episode.title or episode.content or episode_key
+    full_source = f"{episode.date} · {label_source}" if episode.date else label_source
+    label = _clip_text(full_source, _MEMORY_GRAPH_LABEL_LIMIT)
+    return {
+        "id": f"episode:{episode_key}",
+        "label": label,
+        "group": "episode",
+        "value": max(2, episode.importance),
+        "meta": {
+            "id": episode_key,
+            "agent": agent_name,
+            "type": "episode",
+            "type_label": "Episode",
+            "title": episode.title or "未命名记忆",
+            "date": episode.date,
+            "time": episode.time,
+            "location": episode.location,
+            "participants": episode.participants,
+            "keywords": episode.keywords,
+            "importance": episode.importance,
+            "content": episode.content,
+            "content_preview": _clip_text(episode.content, _MEMORY_GRAPH_DETAIL_LIMIT),
+            "raw_dialogue_preview": _clip_text(
+                episode.raw_dialogue, _MEMORY_GRAPH_RAW_LIMIT
+            ),
+        },
+    }
+
+
+def _understanding_node(
+    agent_name: str,
+    understanding: Understanding,
+    index: int,
+) -> dict:
+    understanding_key = understanding.id or f"row-{index}"
+    label_source = understanding.subject or understanding.content or understanding_key
+    return {
+        "id": f"understanding:{understanding_key}",
+        "label": _clip_text(label_source, _MEMORY_GRAPH_LABEL_LIMIT),
+        "group": "understanding",
+        "value": max(3, len(understanding.linked_episodes)),
+        "meta": {
+            "id": understanding_key,
+            "agent": agent_name,
+            "type": "understanding",
+            "type_label": "Understanding",
+            "title": understanding.subject or "未命名理解",
+            "keywords": understanding.keywords,
+            "linked_episodes": understanding.linked_episodes,
+            "content": understanding.content,
+            "content_preview": _clip_text(understanding.content, _MEMORY_GRAPH_DETAIL_LIMIT),
+        },
+    }
+
+
+def _missing_episode_node(agent_name: str, episode_id: str) -> dict:
+    short_id = _clip_text(episode_id, 10)
+    return {
+        "id": f"episode:{episode_id}",
+        "label": f"缺失 · {short_id}",
+        "group": "missing_episode",
+        "value": 1,
+        "meta": {
+            "id": episode_id,
+            "agent": agent_name,
+            "type": "missing_episode",
+            "type_label": "Missing Episode",
+            "title": "缺失 Episode",
+            "keywords": [],
+            "content": f"understanding.jsonl 引用了这个 episode id，但当前 memory.jsonl 中没有对应记录：{episode_id}",
+            "content_preview": "",
+        },
+    }
+
+
+def _build_memory_graph(agent_name: str, display_name: str) -> dict:
+    episodes = read_memory_jsonl(agent_name)
+    understandings = list(read_understandings(agent_name).values())
+
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    episode_node_ids: set[str] = set()
+
+    for index, episode in enumerate(episodes):
+        node = _episode_node(agent_name, episode, index)
+        nodes.append(node)
+        episode_node_ids.add(node["id"])
+
+    missing_episode_node_ids: set[str] = set()
+    for index, understanding in enumerate(understandings):
+        understanding_node = _understanding_node(agent_name, understanding, index)
+        nodes.append(understanding_node)
+        for link_index, episode_id in enumerate(understanding.linked_episodes):
+            if not episode_id:
+                continue
+            episode_node_id = f"episode:{episode_id}"
+            if episode_node_id not in episode_node_ids and episode_node_id not in missing_episode_node_ids:
+                nodes.append(_missing_episode_node(agent_name, episode_id))
+                missing_episode_node_ids.add(episode_node_id)
+            edges.append(
+                {
+                    "id": f"{understanding_node['id']}->{episode_node_id}:{link_index}",
+                    "from": understanding_node["id"],
+                    "to": episode_node_id,
+                }
+            )
+
+    return {
+        "selected_agent": agent_name,
+        "selected_display_name": display_name,
+        "nodes": nodes,
+        "edges": edges,
+        "stats": {
+            "episode_count": len(episodes),
+            "understanding_count": len(understandings),
+            "edge_count": len(edges),
+            "missing_episode_count": len(missing_episode_node_ids),
+        },
+    }
 
 
 def _sse_event(event_type: str, data: dict) -> str:
@@ -185,6 +342,42 @@ async def api_stories() -> JSONResponse:
         },
     ]
     return JSONResponse({"stories": stories})
+
+
+# =============================================================================
+# /api/memory-graph
+# =============================================================================
+
+
+@app.get("/api/memory-graph")
+async def api_memory_graph(agent: str | None = None) -> JSONResponse:
+    """返回指定角色的 understanding ↔ episode 可视化数据。"""
+    agents = _memory_graph_agents()
+    agent_names = {item["name"] for item in agents}
+    if not agents:
+        return JSONResponse(
+            {
+                "agents": [],
+                "selected_agent": "",
+                "selected_display_name": "",
+                "nodes": [],
+                "edges": [],
+                "stats": {
+                    "episode_count": 0,
+                    "understanding_count": 0,
+                    "edge_count": 0,
+                    "missing_episode_count": 0,
+                },
+            }
+        )
+
+    selected_agent = agent or agents[0]["name"]
+    if selected_agent not in agent_names:
+        return JSONResponse({"detail": "角色不存在。"}, status_code=404)
+
+    selected_display_name = next(item["display_name"] for item in agents if item["name"] == selected_agent)
+    graph = _build_memory_graph(selected_agent, selected_display_name)
+    return JSONResponse({"agents": agents, **graph})
 
 
 # =============================================================================
