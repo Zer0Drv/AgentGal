@@ -38,7 +38,7 @@ agentgal-memos/
 ├── world/                      # World model (time / location)
 │   └── schedule.py             # Character schedule queries, game time parsing, time-slot matching
 ├── consolidation/              # Background memory consolidation (independent process)
-│   ├── flow.py                 # Consolidation orchestration: EpisodeMemoryGenerator / growth / user refinement
+│   ├── flow.py                 # Consolidation orchestration: EpisodeMemoryGenerator / understanding patch
 │   └── inputs.py               # Consolidation prompt assembly (memory_owner / raw_dialogue)
 ├── llm/
 │   ├── providers.py            # Provider configuration and URL parsing (returns provider/api_url/api_key/model/temperature)
@@ -208,7 +208,8 @@ Where:
 2. Recent visible dialogue history (built from raw JSONL; filtered by `visible_to`; high/low water mark truncation; history contains all narrator messages)
 3. `status.md`
 4. `<relevant_memories>` (long-term memory recall from `memory.jsonl`, vector store side still renders as markdown for LLM reading)
-5. Current round player input
+5. `<relevant_understandings>` (stable understanding recall from `understanding.jsonl`; relevance-only ranking, no recency or recall-state update)
+6. Current round player input
 
 ### Narrator Agent
 
@@ -220,8 +221,9 @@ Where:
 `user` message is assembled into a **single large message** in the following order:
 
 1. Recent dialogue history (narrator keeps only the last entry)
-2. `status.md`
-3. Current round player input
+2. `<fields>` (list of all active characters)
+3. `status.md`
+4. Current round player input
 
 `narrator` does not use vector recall; it relies on scene, narrative focus, pending events, and "Relationship with Player" in `status.md` to advance the current round. Pending events are primarily synced by `state_updater` from character "Intentions", event names preserve character names (e.g. `【Mitsuki: Promise to Walk Together】`). "Relationship with Player" is summarized from each character's status by code, format `- Mitsuki: Lover`.
 
@@ -241,14 +243,14 @@ After each round of character responses, `generate_choices()` is called to gener
 ## Long-Term Memory Retrieval
 
 - Vector store indexes long-term memory events from `memory.jsonl` and stable understandings from `understanding.jsonl` in separate tables; owner scope is fixed to current character
-- Default retrieval path is memory-only; non-memory retrieval is disabled
+- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); the embedding vector is computed once and shared between both searches
 - `memory/retrieval.py` handles the full retrieval pipeline: embedding → vector/BM25 candidates → hybrid fusion → (optional) rerank → recency sort → recall state update
 - `storage/vector_store.py` is storage layer only: provides raw candidates for EpisodeMemory and Understanding tables, pipeline logic is not here
 - `memory/indexer.py` reads `EpisodeMemory` records from `memory.jsonl` and `Understanding` records from `understanding.jsonl`, then appends them to the vector store
 - Recall ranking: vector relevance and BM25 relevance are fused first, rerank (optional) replaces relevance signal, then in-game time recency is layered on top
 - When Logfire is configured, memory retrieval logs each round's query and top hit summary for debugging recall quality
 - `last_recalled_at` is updated to DB on hit; `.memory_recall_state.json` is only exported from DB on save, used as fallback data source on load rebuild
-- `memory/indexer.rebuild_memory_index()` combines `.consolidation_state.json` to restore long-term memory index; recall state is read from DB first, falls back to `.memory_recall_state.json` when DB is empty. `rebuild_understanding_index()` restores the separate Understanding index on load
+- `memory/indexer.rebuild_memory_index()` combines `.consolidation_state.json` to restore the long-term memory index; when `clear_existing=True` (the default, used on load), it also rebuilds the Understanding index via the shared `_rebuild_understanding_index_for_agents` helper. Recall state is read from DB first, falls back to `.memory_recall_state.json` when DB is empty. `rebuild_understanding_index()` is still available as a standalone function for targeted rebuilds (e.g. after consolidation patches a single agent's understandings)
 
 ## Memory Consolidation
 
