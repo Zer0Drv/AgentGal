@@ -12,8 +12,10 @@ max_tokens = 0
 player_profile_max_tokens = 2048
 
 [vector]
-# 向量检索返回条数
-search_limit = 3
+# episode memory 检索返回条数
+episode_search_limit = 3
+# understanding 检索返回条数
+understanding_search_limit = 3
 # 向量检索固定候选数
 vector_candidate_limit = 15
 # rerank 后保留条数，再做 recency

@@ -20,19 +20,9 @@ with open(PROJECT_ROOT / "config.toml", "rb") as _f:
 # 记忆整理
 CONSOLIDATION_TEMPERATURE: float = _cfg["consolidation"]["temperature"]
 CONSOLIDATION_MAX_TOKENS: int | None = _cfg["consolidation"]["max_tokens"] or None
-CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS: int | None = (
-    _cfg["consolidation"].get("player_profile_max_tokens") or 2048
-)
-if (
-    CONSOLIDATION_MAX_TOKENS is not None
-    and CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS is not None
-):
-    CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS = min(
-        CONSOLIDATION_MAX_TOKENS,
-        CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS,
-    )
 # 向量检索
-VECTOR_SEARCH_LIMIT: int = _cfg["vector"]["search_limit"]
+EPISODE_SEARCH_LIMIT: int = _cfg["vector"]["episode_search_limit"]
+UNDERSTANDING_SEARCH_LIMIT: int = _cfg["vector"]["understanding_search_limit"]
 VECTOR_CANDIDATE_LIMIT: int = _cfg["vector"]["vector_candidate_limit"]
 RERANK_TOP_N: int = _cfg["vector"]["rerank_top_n"]
 RELEVANCE_WEIGHT: float = _cfg["vector"]["relevance_weight"]
@@ -76,8 +66,8 @@ def character_path(character_name: str, *subpaths: str) -> str:
         完整路径字符串
 
     Example:
-        >>> character_path("lilith", "memory.md")
-        "/abs/path/to/data/characters/lilith/memory.md"
+        >>> character_path("lilith", "soul.md")
+        "/abs/path/to/data/characters/lilith/soul.md"
     """
     return str(CHARACTERS_DIR / character_name / Path(*subpaths))
 

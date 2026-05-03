@@ -24,7 +24,8 @@ from shared.config import (
     BM25_RELEVANCE_WEIGHT,
     VECTOR_CANDIDATE_LIMIT,
     RERANK_TOP_N,
-    VECTOR_SEARCH_LIMIT,
+    EPISODE_SEARCH_LIMIT,
+    UNDERSTANDING_SEARCH_LIMIT,
     character_path,
 )
 from log_config.memory import log_retrieval_results, memory_logger
@@ -72,7 +73,7 @@ def _recency_score(
 
 
 def _importance_score(raw_importance: Any) -> float:
-    """将 memory.md 的 1-5 重要度归一化到 [0, 1]。"""
+    """将 EpisodeMemory 的 1-5 重要度归一化到 [0, 1]。"""
     try:
         importance = int(raw_importance)
     except (TypeError, ValueError):
@@ -118,6 +119,47 @@ def _row_to_doc(row: tuple) -> dict[str, Any]:
     return doc
 
 
+def _compute_hybrid_scores(
+    candidates: dict[Any, dict[str, Any]],
+    use_hybrid: bool,
+) -> list[dict[str, Any]]:
+    """计算 relevance 分并按降序排列。
+
+    use_hybrid=True: 对 vector_relevance + bm25_raw 做 min-max 归一化后加权融合。
+    use_hybrid=False: 直接使用 vector_relevance。
+    """
+    bm25_min = bm25_max = 0.0
+    if use_hybrid:
+        bm25_values = [
+            float(entry["bm25_raw"])
+            for entry in candidates.values()
+            if entry.get("bm25_raw") is not None
+        ]
+        bm25_min = min(bm25_values) if bm25_values else 0.0
+        bm25_max = max(bm25_values) if bm25_values else 0.0
+
+    ranked: list[dict[str, Any]] = []
+    for entry in candidates.values():
+        if use_hybrid:
+            bm25_raw = entry.get("bm25_raw")
+            if bm25_raw is None:
+                bm25_relevance = 0.0
+            elif bm25_max > bm25_min:
+                bm25_relevance = (float(bm25_raw) - bm25_min) / (bm25_max - bm25_min)
+            else:
+                bm25_relevance = 1.0
+            relevance = (
+                VECTOR_RELEVANCE_WEIGHT * float(entry["vector_relevance"])
+                + BM25_RELEVANCE_WEIGHT * bm25_relevance
+            )
+        else:
+            relevance = float(entry["vector_relevance"])
+        ranked.append({**entry, "relevance": relevance})
+
+    ranked.sort(key=lambda item: item["relevance"], reverse=True)
+    return ranked
+
+
 def hybrid_fusion(
     vec_rows: list[tuple],
     bm25_rows: list[tuple],
@@ -144,28 +186,12 @@ def hybrid_fusion(
         entry["content"] = row[1]
         entry["bm25_raw"] = abs(float(row[2]))
 
-    bm25_values = [float(entry["bm25_raw"]) for entry in docs.values() if entry["bm25_raw"] is not None]
-    bm25_min = min(bm25_values) if bm25_values else 0.0
-    bm25_max = max(bm25_values) if bm25_values else 0.0
-
     results: list[dict[str, Any]] = []
-    for entry in docs.values():
-        bm25_raw = entry["bm25_raw"]
-        if bm25_raw is None:
-            bm25_relevance = 0.0
-        elif bm25_max > bm25_min:
-            bm25_relevance = (float(bm25_raw) - bm25_min) / (bm25_max - bm25_min)
-        else:
-            bm25_relevance = 1.0
-
-        relevance = (
-            VECTOR_RELEVANCE_WEIGHT * float(entry["vector_relevance"])
-            + BM25_RELEVANCE_WEIGHT * bm25_relevance
-        )
+    for entry in _compute_hybrid_scores(docs, use_hybrid=True):
         result_entry = {
             "id": entry["id"],
             "content": entry["content"],
-            "relevance": relevance,
+            "relevance": entry["relevance"],
             "date": entry["date"],
             "last_recalled_at": entry["last_recalled_at"],
             "importance": int(entry.get("importance", 3) or 3),
@@ -174,7 +200,7 @@ def hybrid_fusion(
             result_entry[field] = entry.get(field, "")
         results.append(result_entry)
 
-    return sorted(results, key=lambda item: item["relevance"], reverse=True)
+    return results
 
 
 def apply_recency(
@@ -221,6 +247,23 @@ def apply_recency(
 
 # ----------------------------- 主检索入口 -----------------------------
 
+def _try_rerank(
+    query: str,
+    candidates: list[dict[str, Any]],
+    agent_name: str,
+    label: str = "",
+) -> tuple[list[dict[str, Any]], bool]:
+    """尝试 rerank，失败时降级保留原结果。返回 (candidates, rerank_applied)。"""
+    if not RERANK_MODEL or not candidates:
+        return candidates, False
+    try:
+        return rerank(query, candidates, top_n=RERANK_TOP_N), True
+    except Exception as e:
+        prefix = f"[Retrieval] {label} " if label else "[Retrieval] "
+        memory_logger.warning(f"{prefix}rerank 失败，降级为 fusion 结果: agent={agent_name}, error={e}")
+        return candidates, False
+
+
 def _vec_rows_to_candidates(rows: list[tuple]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for row in rows:
@@ -261,7 +304,18 @@ def _format_retrieved_memory(item: dict[str, Any]) -> str:
     return f"## {date}\n{body}"
 
 
-def search_memories(agent_name: str, query: str) -> str:
+def _format_retrieved_understanding(item: dict[str, Any]) -> str:
+    """将召回的长期判断格式化为 LLM 可读块。"""
+    content = str(item.get("content", "")).strip()
+    if not content:
+        return ""
+    subject = str(item.get("subject", "")).strip()
+    if subject:
+        return f"## {subject}\n{content}"
+    return content
+
+
+def search_memories(agent_name: str, query: str, qvec: list[float] | None = None) -> str:
     """执行完整检索 pipeline 并格式化记忆块。
 
     pipeline 顺序：
@@ -269,7 +323,7 @@ def search_memories(agent_name: str, query: str) -> str:
     2. hybrid: 若启用则叠加 BM25 候选，按 75/25 权重融合 relevance；
                否则直接用 vector distance 转换 relevance
     3. rerank（可选）: 用 rerank API 分替换 relevance，min-max 归一化到 [0,1]
-    4. score: 叠加游戏内时间衰减与 memory.md 重要度，计算最终 score 并截取 VECTOR_SEARCH_LIMIT 条
+    4. score: 叠加游戏内时间衰减与 EpisodeMemory 重要度，计算最终 score 并截取 EPISODE_SEARCH_LIMIT 条
     5. 更新命中条目的 last_recalled_at（DB）
     """
     if not query or not query.strip():
@@ -277,7 +331,8 @@ def search_memories(agent_name: str, query: str) -> str:
 
     # Step 1: 计算查询向量
     try:
-        qvec = embed_sync([query])[0]
+        if qvec is None:
+            qvec = embed_sync([query])[0]
     except Exception as e:
         memory_logger.error("[Retrieval] 查询嵌入失败: agent=%s, error=%s", agent_name, e)
         return "（无相关记忆）"
@@ -300,19 +355,11 @@ def search_memories(agent_name: str, query: str) -> str:
         else:
             candidates = _vec_rows_to_candidates(vec_rows)
         candidate_count = len(candidates)
-
-        # Step 3: rerank（可选）— 替换 relevance 分，rerank 失败时降级保留 fusion 结果
-        rerank_applied = False
-        if RERANK_MODEL and candidates:
-            try:
-                candidates = rerank(query, candidates, top_n=RERANK_TOP_N)
-                rerank_applied = True
-            except Exception as e:
-                memory_logger.warning(f"[Retrieval] rerank 失败，降级为 fusion 结果: agent={agent_name}, error={e}")
+        candidates, rerank_applied = _try_rerank(query, candidates, agent_name)
 
         # Step 4: recency 加权排序，截取最终返回数
         current_game_date = _load_current_game_date()
-        ranked = apply_recency(candidates, current_game_date)[:VECTOR_SEARCH_LIMIT]
+        ranked = apply_recency(candidates, current_game_date)[:EPISODE_SEARCH_LIMIT]
 
         # Step 5: 更新命中条目的 last_recalled_at
         recalled_ids = [r["id"] for r in ranked if r["id"]]
@@ -324,10 +371,11 @@ def search_memories(agent_name: str, query: str) -> str:
                 memory_logger.warning("[Retrieval] 更新 last_recalled_at 失败: %s", e)
 
         log_retrieval_results(
+            source="episode",
             agent_name=agent_name,
             query=query,
             ranked=ranked,
-            limit=VECTOR_SEARCH_LIMIT,
+            limit=EPISODE_SEARCH_LIMIT,
             hybrid_enabled=HYBRID_SEARCH_ENABLED,
             vector_candidate_count=len(vec_rows),
             bm25_candidate_count=len(bm25_rows),
@@ -346,3 +394,105 @@ def search_memories(agent_name: str, query: str) -> str:
 
     memories = [formatted for r in ranked if (formatted := _format_retrieved_memory(r))]
     return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
+
+
+def search_understandings(agent_name: str, query: str, qvec: list[float] | None = None) -> str:
+    """检索角色长期判断，返回格式化文本。
+
+    Understanding 不做 recency 排序，也不更新 recall 状态；只按相关性取前若干条。
+    """
+    if not query or not query.strip():
+        return ""
+
+    try:
+        if qvec is None:
+            qvec = embed_sync([query])[0]
+    except Exception as e:
+        memory_logger.error(
+            "[Retrieval] Understanding 查询嵌入失败: agent=%s, error=%s",
+            agent_name,
+            e,
+        )
+        return ""
+
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        VectorStore._load_sqlite_vec_sync(conn)
+
+        vec_rows = vector_store.get_understanding_vector_candidates(
+            conn, agent_name, qvec, VECTOR_CANDIDATE_LIMIT
+        )
+
+        candidates: dict[str, dict[str, Any]] = {}
+        for row in vec_rows:
+            uid = str(row[1] or "")
+            if not uid:
+                continue
+            candidates[uid] = {
+                "id": uid,
+                "subject": str(row[2] or ""),
+                "content": str(row[3] or ""),
+                "keywords": str(row[4] or ""),
+                "vector_relevance": _distance_to_relevance(float(row[5])),
+                "bm25_raw": None,
+            }
+
+        use_hybrid = False
+        bm25_rows: list[tuple] = []
+        if HYBRID_SEARCH_ENABLED:
+            bm25_rows = vector_store.get_understanding_bm25_candidates(
+                conn, agent_name, query, BM25_CANDIDATE_LIMIT
+            )
+            use_hybrid = bool(bm25_rows)
+            for row in bm25_rows:
+                uid = str(row[1] or "")
+                if not uid:
+                    continue
+                entry = candidates.setdefault(
+                    uid,
+                    {
+                        "id": uid,
+                        "subject": str(row[2] or ""),
+                        "content": str(row[3] or ""),
+                        "keywords": str(row[4] or ""),
+                        "vector_relevance": 0.0,
+                        "bm25_raw": None,
+                    },
+                )
+                entry["bm25_raw"] = abs(float(row[5]))
+
+        ranked = _compute_hybrid_scores(candidates, use_hybrid)
+        ranked, rerank_applied = _try_rerank(query, ranked, agent_name, label="Understanding")
+        top = ranked[:UNDERSTANDING_SEARCH_LIMIT]
+
+        log_retrieval_results(
+            source="understanding",
+            agent_name=agent_name,
+            query=query,
+            ranked=top,
+            limit=UNDERSTANDING_SEARCH_LIMIT,
+            hybrid_enabled=HYBRID_SEARCH_ENABLED,
+            vector_candidate_count=len(vec_rows),
+            bm25_candidate_count=len(bm25_rows),
+            candidate_count=len(ranked),
+            rerank_enabled=bool(RERANK_MODEL),
+            rerank_applied=rerank_applied,
+            rerank_model=RERANK_MODEL,
+        )
+
+    except Exception as e:
+        memory_logger.error(
+            "[Retrieval] Understanding 检索失败: agent=%s, error=%s",
+            agent_name,
+            e,
+        )
+        return ""
+    finally:
+        if conn is not None:
+            conn.close()
+
+    parts = [
+        formatted for item in top if (formatted := _format_retrieved_understanding(item))
+    ]
+    return "\n\n---\n\n".join(parts) if parts else ""

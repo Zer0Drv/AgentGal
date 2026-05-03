@@ -14,7 +14,7 @@ except ModuleNotFoundError as exc:
     pytest.skip(f"skip prompt builder tests: missing dependency ({exc})", allow_module_level=True)
 
 
-_TEMPLATE_VARS = "{agent_name} {display_name} {soul} {status_fields} {player_fields} {valid_targets}"
+_TEMPLATE_VARS = "{agent_name} {display_name} {soul} {status_fields}"
 
 
 def _patch_templates(monkeypatch, character: str, narrator: str) -> None:
@@ -60,24 +60,5 @@ def test_narrator_system_prompt_reads_narrator_template(monkeypatch):
     assert result == "NARRATOR # 旁白"
 
 
-def test_character_system_prompt_uses_other_character_display_names_for_relations(monkeypatch):
-    _patch_templates(monkeypatch, "{valid_targets}", "{valid_targets}")
-    monkeypatch.setattr(prompt_builder_module, "get_allowed_fields", lambda agent_name, field: [])
-    monkeypatch.setattr(
-        prompt_builder_module,
-        "get_agent_names",
-        lambda include_narrator=False: ["mitsuki", "lilith"],
-    )
-    monkeypatch.setattr(
-        prompt_builder_module,
-        "read_agent_file",
-        lambda agent_name, filename: {"mitsuki": "# 美月\n", "lilith": "# 莉莉丝\n"}.get(
-            agent_name, ""
-        ),
-    )
-
-    result = prompt_builder_module.build_system_prompt("mitsuki", "# 美月")
-
-    assert result == "莉莉丝"
 
 

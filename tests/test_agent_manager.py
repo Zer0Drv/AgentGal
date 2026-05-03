@@ -374,16 +374,6 @@ async def test_apply_response_updates_logs_structured_file_updates(monkeypatch, 
     )
     monkeypatch.setattr(
         character_module,
-        "update_player",
-        lambda agent, field, content: {
-            "file": "tmp_user.md",
-            "target": field,
-            "operation": "append",
-            "appended": content,
-        },
-    )
-    monkeypatch.setattr(
-        character_module,
         "mark_event_triggered",
         lambda agent, event, section: {
             "file": "status.md",
@@ -426,7 +416,6 @@ async def test_apply_response_updates_logs_structured_file_updates(monkeypatch, 
             "- **内容**：玩家主动替我解围。"
         ),
         status={"场景": "图书馆二楼靠窗座位"},
-        player={"对方是什么人": "- 很直接\n- 会主动推进话题"},
         triggered=["去天台"],
         add_event=["【新计划】去图书馆", "【重复】去图书馆"],
     )
@@ -434,11 +423,11 @@ async def test_apply_response_updates_logs_structured_file_updates(monkeypatch, 
     await Character("lilith")._apply_updates(output)
 
     args, kwargs = logs[0]
-    assert args == ("[FileUpdate] 文件更新: agent=%s, count=%s", "lilith", 6)
+    assert args == ("[FileUpdate] 文件更新: agent=%s, count=%s", "lilith", 5)
     extra = kwargs["extra"]
     assert extra["event.name"] == "agentgal.routing.file_updates"
     assert extra["file_update.agent"] == "lilith"
-    assert extra["file_update.count"] == 6
+    assert extra["file_update.count"] == 5
     assert "file_update.items" not in extra
     assert extra["file_update.updates"] == [
         {
@@ -453,12 +442,6 @@ async def test_apply_response_updates_logs_structured_file_updates(monkeypatch, 
             "operation": "replace",
             "before": "旧场景",
             "after": "图书馆二楼靠窗座位",
-        },
-        {
-            "file": "tmp_user.md",
-            "target": "对方是什么人",
-            "operation": "append",
-            "appended": "- 很直接\n- 会主动推进话题",
         },
         {
             "file": "status.md",

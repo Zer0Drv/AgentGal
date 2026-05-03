@@ -18,10 +18,8 @@ class CharacterOutput(BaseModel):
     content: str
     memory: str
     status: dict[str, str] = Field(default_factory=dict)
-    player: dict[str, str] = Field(default_factory=dict)
     triggered: list[str] = Field(default_factory=list)
     add_event: list[str] = Field(default_factory=list)
-    relations: dict[str, str] = Field(default_factory=dict)
 
 
 class NarratorStatus(BaseModel):
@@ -53,7 +51,7 @@ class NewCharacterProfile(BaseModel):
     """character_factory agent 的结构化输出：一次返回完整骨架种子。
 
     character_id 由 character_factory 生成，是最终目录名 / agent 标识。
-    display_name 是最终展示名，会写入 soul.md / status.md / relations.md。
+    display_name 是最终展示名，会写入 soul.md / status.md。
     soul 分成五段（identity / goal / dynamic / behavior / voice），和模板对齐。
 
     schedule 是新角色的默认日程（可空），用于 state_updater 的 schedule_snapshot 兜底。
@@ -67,7 +65,6 @@ class NewCharacterProfile(BaseModel):
     behavior: list[str] = Field(default_factory=list)
     voice: list[str] = Field(default_factory=list)
     initial_status: dict[str, str] = Field(default_factory=dict)
-    initial_relations: dict[str, str] = Field(default_factory=dict)
     schedule: "CharacterSchedule | None" = None
 
     @field_validator(
@@ -129,6 +126,17 @@ class ChoicesOutput(BaseModel):
         ]
 
 
+def _strip_dict_keys(value: object) -> object:
+    """Strip whitespace from dict keys; shared by patch output types."""
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(k).strip(): item
+        for k, item in value.items()
+        if str(k).strip()
+    }
+
+
 # ---------------------------------------------------------------------------
 # 记忆整理类
 # ---------------------------------------------------------------------------
@@ -186,35 +194,23 @@ class EpisodeClosureOutput(RootModel[dict[str, list[EpisodeClosureBoundary]]]):
     """
 
 
-class GrowthEntryPatch(BaseModel):
+class UnderstandingEntry(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    dimension: str
-    content: str
+    subject: str = ""
+    keywords: list[str] = Field(default_factory=list)
+    content: str = ""
+    linked_episodes: list[str] = Field(default_factory=list)
 
 
-class GrowthPatchOutput(BaseModel):
-    add: list[GrowthEntryPatch] = Field(default_factory=list)
-    update: dict[str, GrowthEntryPatch] = Field(default_factory=dict)
-    remove: list[str] = Field(default_factory=list)
-
-    @field_validator("remove", mode="before")
-    @classmethod
-    def clean_remove_ids(cls, value: object) -> list[str]:
-        if not isinstance(value, list):
-            return []
-        return [str(item).strip() for item in value if str(item).strip()]
+class UnderstandingPatchOutput(BaseModel):
+    add: list[UnderstandingEntry] = Field(default_factory=list)
+    update: dict[str, UnderstandingEntry] = Field(default_factory=dict)
 
     @field_validator("update", mode="before")
     @classmethod
     def clean_update_ids(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return {}
-        return {
-            str(entry_id).strip(): item
-            for entry_id, item in value.items()
-            if str(entry_id).strip()
-        }
+        return _strip_dict_keys(value)
 
 
 # ---------------------------------------------------------------------------

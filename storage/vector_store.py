@@ -1,6 +1,6 @@
 """本地向量存储（sqlite-vec）。
 
-仅持久化 memory 层的长期记忆事件，提供原始候选检索接口。
+持久化长期记忆事件与稳定理解，提供原始候选检索接口。
 Pipeline 逻辑（融合/rerank/recency）由 retrieval.py 负责。
 """
 
@@ -141,9 +141,31 @@ CREATE TABLE IF NOT EXISTS EpisodeMemory (
 )
 """
 
+_UNDERSTANDING_SCHEMA = """
+CREATE TABLE IF NOT EXISTS Understanding (
+    db_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT UNIQUE NOT NULL,
+    memory_owner TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL,
+    keywords TEXT NOT NULL DEFAULT '',
+    linked_episodes TEXT NOT NULL DEFAULT '[]'
+)
+"""
+
+
+def _make_embed_text(name: str, keywords: list[str], content: str) -> str:
+    """[名称/标题, 关键词, 正文] join 为 embed 文本，空段过滤。"""
+    parts = [
+        name.strip(),
+        "、".join(filter(None, (k.strip() for k in keywords))),
+        content.strip(),
+    ]
+    return "\n".join(p for p in parts if p)
+
 
 class VectorStore:
-    """sqlite-vec 本地向量库（memory-only）。
+    """sqlite-vec 本地向量库（EpisodeMemory + Understanding）。
 
     表结构：
     - EpisodeMemory(id PK, memory_owner, game_date, title, time, location,
@@ -151,6 +173,10 @@ class VectorStore:
                     last_recalled_at)
     - EpisodeMemory_vec USING vec0(embedding F32[EMBED_DIM])  -- rowid = EpisodeMemory.id
     - EpisodeMemory_fts USING fts5(content, keywords)
+    - Understanding(db_id PK, id UNIQUE, memory_owner, subject, content, keywords,
+                    linked_episodes)
+    - Understanding_vec USING vec0(embedding F32[EMBED_DIM])  -- rowid = Understanding.db_id
+    - Understanding_fts USING fts5(content, keywords)
     """
 
     def __init__(self):
@@ -315,6 +341,22 @@ class VectorStore:
             )
             """
         )
+        await db.execute(_UNDERSTANDING_SCHEMA)
+        await db.execute(
+            f"""
+            CREATE VIRTUAL TABLE IF NOT EXISTS Understanding_vec USING vec0(
+                embedding F32[{EMBED_DIM}]
+            )
+            """
+        )
+        await db.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS Understanding_fts USING fts5(
+                content, keywords,
+                tokenize='unicode61'
+            )
+            """
+        )
         await db.commit()
 
     async def _delete_chunks(
@@ -337,12 +379,18 @@ class VectorStore:
     @staticmethod
     def _embed_text(episode: EpisodeMemory) -> str:
         """决定拿哪些高密度字段去 embed，避免只靠抽象标题丢失检索锚点。"""
-        parts = [
-            episode.title.strip(),
-            "、".join(filter(None, (k.strip() for k in episode.keywords))),
-            episode.content.strip(),
-        ]
-        return "\n".join(p for p in parts if p)
+        return _make_embed_text(
+            episode.title, episode.keywords, episode.content
+        )
+
+    @staticmethod
+    def _understanding_embed_text(understanding: object) -> str:
+        """subject + keywords + content 作为 embed 文本。"""
+        return _make_embed_text(
+            getattr(understanding, "subject", ""),
+            getattr(understanding, "keywords", []),
+            getattr(understanding, "content", ""),
+        )
 
     def _prepare_episode_index(
         self,
@@ -547,6 +595,150 @@ class VectorStore:
         )
         return inserted_total
 
+    # ----------------------------- Understanding 写入 -----------------------------
+
+    async def add_understanding(self, understanding: object) -> None:
+        """将单条 Understanding 写入向量库（已存在时先删后插）。"""
+        uid: str = getattr(understanding, "id", "")
+        if not uid:
+            return
+
+        embed_text = self._understanding_embed_text(understanding)
+        if not embed_text.strip():
+            return
+        try:
+            embedding = (await embed_async([embed_text]))[0]
+        except Exception as e:
+            memory_logger.error(
+                "[VectorStore] Understanding embedding 失败: id=%s, error=%s",
+                uid, e,
+            )
+            return
+
+        keywords_str = "、".join(getattr(understanding, "keywords", []))
+        linked_str = json.dumps(
+            getattr(understanding, "linked_episodes", []), ensure_ascii=False
+        )
+        memory_owner: str = getattr(understanding, "memory_owner", "")
+        subject: str = getattr(understanding, "subject", "")
+        content: str = getattr(understanding, "content", "")
+
+        async with self._get_write_lock():
+            await self._ensure_tables()
+            db = await self._get_db()
+            try:
+                await db.execute("BEGIN")
+                existing = await (
+                    await db.execute(
+                        "SELECT db_id FROM Understanding WHERE id = ?", (uid,)
+                    )
+                ).fetchone()
+                if existing:
+                    old_db_id: int = existing[0]
+                    await db.execute(
+                        "DELETE FROM Understanding_fts WHERE rowid = ?", (old_db_id,)
+                    )
+                    await db.execute(
+                        "DELETE FROM Understanding_vec WHERE rowid = ?", (old_db_id,)
+                    )
+                cur = await db.execute(
+                    "INSERT OR REPLACE INTO Understanding"
+                    "(id, memory_owner, subject, content, keywords, linked_episodes) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (uid, memory_owner, subject, content, keywords_str, linked_str),
+                )
+                db_id = int(cur.lastrowid or 0)
+                if db_id:
+                    await db.execute(
+                        "INSERT OR REPLACE INTO Understanding_vec(rowid, embedding) "
+                        "VALUES (?, ?)",
+                        (db_id, self._to_vec_blob(embedding)),
+                    )
+                    await db.execute(
+                        "INSERT OR REPLACE INTO Understanding_fts"
+                        "(rowid, content, keywords) VALUES (?, ?, ?)",
+                        (
+                            db_id,
+                            _tokenize_for_fts(content),
+                            _tokenize_for_fts(keywords_str),
+                        ),
+                    )
+                await db.commit()
+                memory_logger.debug(
+                    "[VectorStore] Understanding 写入完成: id=%s, owner=%s",
+                    uid, memory_owner,
+                )
+            except Exception as e:
+                try:
+                    await db.execute("ROLLBACK")
+                except Exception:
+                    pass
+                memory_logger.error(
+                    "[VectorStore] Understanding 写入失败: id=%s, error=%s",
+                    uid, e,
+                )
+
+    async def update_understanding_links(
+        self, understanding_id: str, linked_episodes: list[str]
+    ) -> None:
+        """仅更新 linked_episodes 字段，不触碰向量或 FTS 索引。"""
+        linked_str = json.dumps(linked_episodes, ensure_ascii=False)
+        async with self._get_write_lock():
+            await self._ensure_tables()
+            db = await self._get_db()
+            try:
+                await db.execute("BEGIN")
+                await db.execute(
+                    "UPDATE Understanding SET linked_episodes = ? WHERE id = ?",
+                    (linked_str, understanding_id),
+                )
+                await db.commit()
+            except Exception as e:
+                try:
+                    await db.execute("ROLLBACK")
+                except Exception:
+                    pass
+                memory_logger.error(
+                    "[VectorStore] Understanding links 更新失败: id=%s, error=%s",
+                    understanding_id, e,
+                )
+
+    async def delete_understanding(self, understanding_id: str) -> None:
+        """从三张 Understanding 表删除指定条目。id 不存在时静默返回。"""
+        async with self._get_write_lock():
+            await self._ensure_tables()
+            db = await self._get_db()
+            try:
+                row = await (
+                    await db.execute(
+                        "SELECT db_id FROM Understanding WHERE id = ?",
+                        (understanding_id,),
+                    )
+                ).fetchone()
+                if row is None:
+                    return
+                db_id: int = row[0]
+                await db.execute("BEGIN")
+                await db.execute(
+                    "DELETE FROM Understanding_fts WHERE rowid = ?", (db_id,)
+                )
+                await db.execute(
+                    "DELETE FROM Understanding_vec WHERE rowid = ?", (db_id,)
+                )
+                await db.execute(
+                    "DELETE FROM Understanding WHERE id = ?", (understanding_id,)
+                )
+                await db.commit()
+            except Exception as e:
+                try:
+                    await db.execute("ROLLBACK")
+                except Exception:
+                    pass
+                memory_logger.error(
+                    "[VectorStore] Understanding 删除失败: id=%s, error=%s",
+                    understanding_id, e,
+                )
+
     # ----------------------------- 原始检索 -----------------------------
 
     def get_vector_candidates(
@@ -620,6 +812,77 @@ class VectorStore:
             memory_logger.warning("[VectorStore] BM25 检索失败（降级跳过）: %s", e)
             return []
 
+    def get_understanding_vector_candidates(
+        self,
+        conn: sqlite3.Connection,
+        memory_owner: str,
+        query_vec: list[float],
+        limit: int,
+    ) -> list[tuple]:
+        """Understanding 向量近邻检索。
+
+        返回 (db_id, id, subject, content, keywords, distance) 列表。
+        """
+        candidate_limit = max(limit * 10, 50)
+        sql = """
+        WITH scope AS (
+          SELECT db_id FROM Understanding WHERE memory_owner = ?
+        ),
+        vec_results AS (
+          SELECT rowid, distance FROM Understanding_vec
+          WHERE embedding MATCH ?
+          LIMIT ?
+        )
+        SELECT u.db_id, u.id, u.subject, u.content, u.keywords, v.distance
+        FROM vec_results v
+        JOIN scope s ON s.db_id = v.rowid
+        JOIN Understanding u ON u.db_id = v.rowid
+        ORDER BY v.distance
+        LIMIT ?
+        """
+        return conn.execute(
+            sql,
+            (memory_owner, self._to_vec_blob(query_vec), candidate_limit, limit),
+        ).fetchall()
+
+    @staticmethod
+    def get_understanding_bm25_candidates(
+        conn: sqlite3.Connection,
+        memory_owner: str,
+        query_text: str,
+        limit: int,
+    ) -> list[tuple]:
+        """Understanding BM25 检索。
+
+        返回 (db_id, id, subject, content, keywords, bm25_rank) 列表。
+        """
+        fts_query = _build_fts_match_query(query_text)
+        if not fts_query:
+            return []
+        sql = """
+        WITH scope AS (
+          SELECT db_id FROM Understanding WHERE memory_owner = ?
+        ),
+        fts_hits AS (
+          SELECT rowid, bm25(Understanding_fts, 1.0, 3.0) AS rank
+          FROM Understanding_fts
+          WHERE Understanding_fts MATCH ?
+        )
+        SELECT u.db_id, u.id, u.subject, u.content, u.keywords, f.rank
+        FROM fts_hits f
+        JOIN scope s ON s.db_id = f.rowid
+        JOIN Understanding u ON u.db_id = f.rowid
+        ORDER BY f.rank
+        LIMIT ?
+        """
+        try:
+            return conn.execute(sql, (memory_owner, fts_query, limit)).fetchall()
+        except Exception as e:
+            memory_logger.warning(
+                "[VectorStore] Understanding BM25 检索失败（降级跳过）: %s", e
+            )
+            return []
+
     def update_recall_timestamps(
         self,
         conn: sqlite3.Connection,
@@ -648,6 +911,19 @@ class VectorStore:
             db = await self._get_db()
             async with self._get_write_lock():
                 await self._delete_chunks(db, memory_owner)
+                await db.execute(
+                    "DELETE FROM Understanding_fts WHERE rowid IN "
+                    "(SELECT db_id FROM Understanding WHERE memory_owner = ?)",
+                    (memory_owner,),
+                )
+                await db.execute(
+                    "DELETE FROM Understanding_vec WHERE rowid IN "
+                    "(SELECT db_id FROM Understanding WHERE memory_owner = ?)",
+                    (memory_owner,),
+                )
+                await db.execute(
+                    "DELETE FROM Understanding WHERE memory_owner = ?", (memory_owner,)
+                )
                 await db.commit()
             memory_logger.info("[VectorStore] 已清空 %s 的记忆索引", memory_owner)
             return True
@@ -671,6 +947,9 @@ class VectorStore:
                     await db.execute("DELETE FROM EpisodeMemory_vec")
                     await db.execute("DELETE FROM EpisodeMemory_fts")
                     await db.execute("DELETE FROM EpisodeMemory")
+                    await db.execute("DELETE FROM Understanding_vec")
+                    await db.execute("DELETE FROM Understanding_fts")
+                    await db.execute("DELETE FROM Understanding")
                     await db.commit()
                 memory_logger.info("[VectorStore] delete_all_agents 命中全角色，已全量清空记忆索引")
                 return {name: True for name in unique_names}

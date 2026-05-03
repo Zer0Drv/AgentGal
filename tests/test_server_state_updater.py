@@ -140,6 +140,90 @@ async def test_api_save_catches_unhandled_exception(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_api_memory_graph_links_understandings_to_episodes(monkeypatch):
+    monkeypatch.setattr(
+        server_module,
+        "get_agent_names",
+        lambda include_narrator=True: ["alice"] if not include_narrator else ["alice", "narrator"],
+    )
+    monkeypatch.setattr(
+        server_module,
+        "_get_agent_display_name",
+        lambda agent_name: "Alice" if agent_name == "alice" else agent_name,
+    )
+    monkeypatch.setattr(
+        server_module,
+        "read_memory_jsonl",
+        lambda agent_name: [
+            server_module.EpisodeMemory(
+                id="e1",
+                date="4月3日",
+                title="旧阅览室",
+                content="她请求玩家保密。",
+                importance=4,
+                keywords=["保密"],
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        server_module,
+        "read_understandings",
+        lambda agent_name: {
+            "u1": server_module.Understanding(
+                id="u1",
+                subject="玩家值得信任",
+                content="玩家会认真履行约定。",
+                keywords=["信任"],
+                linked_episodes=["e1", "missing-e2"],
+            )
+        },
+    )
+
+    response = await server_module.api_memory_graph("alice")
+    body = json.loads(response.body)
+
+    assert response.status_code == 200
+    assert body["agents"] == [
+        {
+            "name": "alice",
+            "display_name": "Alice",
+            "episode_count": 1,
+            "understanding_count": 1,
+            "edge_count": 2,
+        }
+    ]
+    assert body["selected_agent"] == "alice"
+    assert body["stats"] == {
+        "episode_count": 1,
+        "understanding_count": 1,
+        "edge_count": 2,
+        "missing_episode_count": 1,
+    }
+    assert {node["id"] for node in body["nodes"]} == {
+        "episode:e1",
+        "understanding:u1",
+        "episode:missing-e2",
+    }
+    assert {edge["to"] for edge in body["edges"]} == {"episode:e1", "episode:missing-e2"}
+
+
+@pytest.mark.asyncio
+async def test_api_memory_graph_rejects_unknown_agent(monkeypatch):
+    monkeypatch.setattr(
+        server_module,
+        "get_agent_names",
+        lambda include_narrator=True: ["alice"] if not include_narrator else ["alice", "narrator"],
+    )
+    monkeypatch.setattr(server_module, "read_memory_jsonl", lambda agent_name: [])
+    monkeypatch.setattr(server_module, "read_understandings", lambda agent_name: {})
+
+    response = await server_module.api_memory_graph("bob")
+
+    assert response.status_code == 404
+    assert json.loads(response.body) == {"detail": "角色不存在。"}
+
+
+@pytest.mark.asyncio
 async def test_chat_stream_emits_created_character_identity(monkeypatch):
     async def fake_settle_pending_state_update(*, cancel=False):
         return None

@@ -1,4 +1,4 @@
-"""角色目录文件操作 - 读写 soul/memory/status/user/growth/sidecar 等文件"""
+"""角色目录文件操作 - 读写 soul/memory/status/relations/sidecar 等文件"""
 
 import json
 import os
@@ -12,7 +12,6 @@ from shared.config import CHARACTERS_DIR, character_path
 from log_config.routing import routing_logger
 
 _EMPTY_PLACEHOLDER = "（暂无）"
-_GROWTH_TITLE = "# 心路历程"
 
 
 _FileUpdateOperation = Literal["append", "replace", "remove", "add", "skip"]
@@ -33,9 +32,6 @@ class FileUpdateResult(_FileUpdateResultBase, total=False):
     reason: str
 
 
-class GrowthEntry(TypedDict):
-    dimension: str
-    content: str
 
 
 # ===== 通用文件读取 =====
@@ -478,47 +474,6 @@ def add_pending_event(
     )
 
 
-# ===== Growth 文件 =====
-
-
-def read_growth_entries(agent_name: str) -> dict[str, GrowthEntry]:
-    """读取 growth.md，返回 {id: {dimension, content}} 字典，文件不存在返回空字典。
-
-    格式：[P001|dimension] 内容（支持多行）。
-    """
-    path = Path(character_path(agent_name, "growth.md"))
-    if not path.exists():
-        return {}
-
-    content = path.read_text(encoding="utf-8")
-    entries: dict[str, GrowthEntry] = {}
-    pattern = r"\[(\w+)\|([^\]]+)\]\s*(.+?)(?=\n\[\w+\|[^\]]+\]|$)"
-    for m in re.finditer(pattern, content, re.DOTALL):
-        entries[m.group(1)] = {
-            "dimension": m.group(2).strip(),
-            "content": m.group(3).strip(),
-        }
-    return entries
-
-
-def write_growth_entries(agent_name: str, entries: dict[str, GrowthEntry]) -> None:
-    """将 {id: {dimension, content}} 字典写回 growth.md，按 ID 数字部分排序。"""
-    path = Path(character_path(agent_name, "growth.md"))
-    sorted_ids = sorted(entries.keys(), key=growth_id_sort_key)
-
-    lines = [_GROWTH_TITLE, ""]
-    for entry_id in sorted_ids:
-        entry = entries[entry_id]
-        dimension = entry["dimension"]
-        content = entry["content"]
-        lines.append(f"[{entry_id}|{dimension}] {content}")
-        lines.append("")
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines), encoding="utf-8")
-
-
-
 # ===== 备份 =====
 
 
@@ -555,15 +510,9 @@ def backup_file(src: Path, agent_name: str, prefix: str, max_backups: int = 10) 
     return bak_path
 
 
-# ===== Agent 响应写回（memory / status / user） =====
+# ===== Agent 响应写回（memory / status） =====
 
 
-def growth_id_sort_key(value: str) -> int:
-    """提取 growth ID 中的数字部分用于排序，无数字时返回 0。"""
-    try:
-        return int(re.sub(r"[^0-9]", "", value))
-    except ValueError:
-        return 0
 
 
 def update_status(agent_name: str, field: str, content: str) -> FileUpdateResult:
@@ -607,79 +556,3 @@ def update_status_allow_new_field(agent_name: str, field: str, content: str) -> 
         _read_title(status_path, "# 我的状态"),
     )
 
-
-_RELATIONS_TITLE = "# 我眼中的其他人"
-
-
-def read_relations(agent_name: str) -> dict[str, str]:
-    """读取 relations.md 为 {target: content}，保留原顺序；文件不存在返回空字典。"""
-    path = character_path(agent_name, "relations.md")
-    if not os.path.exists(path):
-        return {}
-    return _parse_section_file(path, [], fill_missing_sections=False)
-
-
-def read_relations_section(agent_name: str, target: str) -> str:
-    """读取 relations.md 中 `## {target}` section 的内容，缺失返回空字符串。"""
-    return read_relations(agent_name).get(target, "")
-
-
-def update_relations(agent_name: str, target: str, content: str) -> FileUpdateResult:
-    """覆盖或新增 relations.md 中的 `## {target}` section。
-
-    与 status/user 不同，relations 没有固定白名单 —— target 是动态角色名。
-    """
-    target_clean = target.strip()
-    if not target_clean:
-        return FileUpdateResult(
-            file="relations.md", target=target, operation="skip", reason="target 为空"
-        )
-    normalized = content.replace("\\n", "\n").strip()
-    if not normalized:
-        return FileUpdateResult(
-            file="relations.md", target=target_clean, operation="skip", reason="内容为空，跳过"
-        )
-
-    path = character_path(agent_name, "relations.md")
-    sections = read_relations(agent_name)
-    before = sections.get(target_clean, "")
-    sections[target_clean] = normalized
-
-    title = _read_title(path, _RELATIONS_TITLE)
-    _write_section_file(path, sections, list(sections.keys()), title)
-
-    if before:
-        return FileUpdateResult(
-            file="relations.md",
-            target=target_clean,
-            operation="replace",
-            before=before,
-            after=normalized,
-        )
-    return FileUpdateResult(
-        file="relations.md",
-        target=target_clean,
-        operation="append",
-        appended=normalized,
-    )
-
-
-def update_player(agent_name: str, field: str, content: str) -> FileUpdateResult:
-    """追加更新 tmp_user.md 的指定字段。
-
-    tmp_user.md 是 user.md 的工作草稿：首次写入时先复制正式档案，再叠加本轮增量。
-    """
-    allowed = get_allowed_fields(agent_name, "user")
-    user_path = character_path(agent_name, "user.md")
-    tmp_path = character_path(agent_name, "tmp_user.md")
-    title_line = _read_title(user_path, "# 玩家档案")
-    _bootstrap_section_file_from_source(user_path, tmp_path, allowed, title_line)
-    return _update_section_file(
-        tmp_path,
-        field,
-        content,
-        allowed,
-        title_line,
-        append=True,
-        fill_missing_sections=True,
-    )

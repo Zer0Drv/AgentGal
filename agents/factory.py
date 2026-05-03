@@ -13,10 +13,10 @@ from agents.schema import (
     ChoicesOutput,
     EpisodeClosureOutput,
     EpisodeMemoryBlock,
-    GrowthPatchOutput,
     NarratorOutput,
     NewCharacterProfile,
     StateUpdaterOutput,
+    UnderstandingPatchOutput,
 )
 from engine.prompt_builder import build_system_prompt
 from llm.providers import (
@@ -30,14 +30,12 @@ from llm.providers import (
 from prompts.consolidation_prompts import (
     EPISODE_CLOSURE_DETECTOR,
     EPISODE_MEMORY_GENERATOR,
-    GROWTH_PATCH,
-    PLAYER_PROFILE,
+    UNDERSTANDING_PATCH,
 )
 from prompts.runtime_prompts import CHOICES, STATE_UPDATER
 from prompts.worldgen_prompts import CHARACTER_FACTORY
 from shared.config import (
     CONSOLIDATION_MAX_TOKENS,
-    CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS,
     CONSOLIDATION_TEMPERATURE,
     get_agent_names,
 )
@@ -45,13 +43,12 @@ from storage.agent_files import read_agent_file
 
 ConversationAgent = Agent[None, CharacterOutput | NarratorOutput]
 StructuredAgent = Agent[None, object]
-TextAgent = Agent[None, str]
 
 _conversation_agents: dict[str, ConversationAgent] = {}
 _choices_agent: Agent[None, ChoicesOutput] | None = None
 _state_updater_agent: Agent[None, StateUpdaterOutput] | None = None
 _character_factory_agent: Agent[None, NewCharacterProfile] | None = None
-_consolidation_agents: dict[str, StructuredAgent | TextAgent] = {}
+_consolidation_agents: dict[str, StructuredAgent] = {}
 _OPENROUTER_SAFE_DEFAULT_MAX_TOKENS = 4096
 
 
@@ -86,16 +83,15 @@ def _build_agent(
     name: str,
     instructions: str,
     config: dict,
-    output_type: type | None = None,
+    output_type: type,
     max_tokens: int | None = None,
-) -> Agent[None, object] | Agent[None, str]:
-    agent_output = PromptedOutput(output_type) if output_type is not None else str
+) -> StructuredAgent:
     return Agent(
         _make_sdk_model(config),
         name=name,
         instructions=instructions,
         model_settings=_build_model_settings(config, max_tokens=max_tokens),
-        output_type=agent_output,
+        output_type=PromptedOutput(output_type),
     )
 
 
@@ -189,10 +185,6 @@ def _ensure_consolidation_agents() -> None:
         config,
         CONSOLIDATION_MAX_TOKENS,
     )
-    player_profile_max_tokens = _resolve_openrouter_safe_max_tokens(
-        config,
-        CONSOLIDATION_PLAYER_PROFILE_MAX_TOKENS,
-    )
     _consolidation_agents["episode_memory_generator"] = _build_agent(
         name="episode_memory_generator",
         instructions=EPISODE_MEMORY_GENERATOR,
@@ -214,22 +206,16 @@ def _ensure_consolidation_agents() -> None:
         output_type=EpisodeClosureOutput,
         max_tokens=closure_max_tokens,
     )
-    _consolidation_agents["growth_patch"] = _build_agent(
-        name="growth_patch",
-        instructions=GROWTH_PATCH,
+    _consolidation_agents["understanding_patch"] = _build_agent(
+        name="understanding_patch",
+        instructions=UNDERSTANDING_PATCH,
         config=config,
-        output_type=GrowthPatchOutput,
+        output_type=UnderstandingPatchOutput,
         max_tokens=consolidation_max_tokens,
     )
-    _consolidation_agents["player_profile"] = _build_agent(
-        name="player_profile",
-        instructions=PLAYER_PROFILE,
-        config=config,
-        max_tokens=player_profile_max_tokens,
-    )
 
 
-def _get_consolidation_agent(key: str) -> StructuredAgent | TextAgent:
+def _get_consolidation_agent(key: str) -> StructuredAgent:
     _ensure_consolidation_agents()
     return _consolidation_agents[key]
 
@@ -242,9 +228,5 @@ def get_episode_closure_detector_agent() -> Agent[None, EpisodeClosureOutput]:
     return _get_consolidation_agent("episode_closure_detector")
 
 
-def get_growth_patch_agent() -> Agent[None, GrowthPatchOutput]:
-    return _get_consolidation_agent("growth_patch")
-
-
-def get_player_profile_agent() -> TextAgent:
-    return _get_consolidation_agent("player_profile")
+def get_understanding_patch_agent() -> Agent[None, UnderstandingPatchOutput]:
+    return _get_consolidation_agent("understanding_patch")

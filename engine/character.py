@@ -27,12 +27,14 @@ from engine.prompt_builder import (
     build_characters_block,
     build_schedule_snapshot,
     build_search_query,
+    build_understanding_query,
     build_user_message,
 )
+from llm.embedding import embed_sync
 from llm.providers import get_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field, normalize
-from memory.retrieval import search_memories
+from memory.retrieval import search_memories, search_understandings
 from shared.config import AGENT_RUN_TIMEOUT_SECONDS, HISTORY_RAW_SCAN_TURNS, get_agent_names
 from shared.text_utils import (
     clean_response,
@@ -47,8 +49,6 @@ from storage.agent_files import (
     mark_event_triggered,
     read_agent_file,
     read_turn_counter,
-    update_player,
-    update_relations,
     update_status,
     update_status_allow_new_field,
 )
@@ -60,6 +60,10 @@ _FILE_UPDATES_EVENT = "agentgal.routing.file_updates"
 
 # 由 add_event / mark_triggered 逐条维护，禁止通过 set_status_fields 整段覆写
 _EVENT_SECTION_FIELDS = {"打算", "待触发事件"}
+
+
+def _wrap_block(tag: str, content: str) -> str:
+    return f"<{tag}>\n{content}\n</{tag}>" if content else ""
 
 
 def _log_file_updates(agent_name: str, results: list[FileUpdateResult]) -> None:
@@ -195,22 +199,6 @@ class Character(BaseEntity):
     # ── Character 独有的动态文件（全部实时读）──
 
     @property
-    def memory(self) -> str:
-        return read_agent_file(self.name, "memory.md")
-
-    @property
-    def relations(self) -> str:
-        return read_agent_file(self.name, "relations.md")
-
-    @property
-    def user_profile(self) -> str:
-        return read_agent_file(self.name, "user.md")
-
-    @property
-    def growth(self) -> str:
-        return read_agent_file(self.name, "growth.md")
-
-    @property
     def schedule(self) -> CharacterSchedule:
         return load_character_schedule(self.name)
 
@@ -239,23 +227,6 @@ class Character(BaseEntity):
             routing_logger.error(f"[{self.name}] memory_draft 写入失败: {e}")
             return None
 
-    def set_user_profile_fields(self, fields: dict[str, Any]) -> list[FileUpdateResult]:
-        """批量追加到 tmp_user.md 的各字段（首次写入时从 user.md 复制草稿）。"""
-        results: list[FileUpdateResult] = []
-        for field, content in fields.items():
-            try:
-                results.append(update_player(self.name, field, str(content)))
-            except Exception as e:
-                routing_logger.error(f"[{self.name}] player[{field}] 失败: {e}")
-        return results
-
-    def set_relation(self, target_display: str, content: str) -> FileUpdateResult | None:
-        try:
-            return update_relations(self.name, target_display, str(content))
-        except Exception as e:
-            routing_logger.error(f"[{self.name}] relations[{target_display}] 失败: {e}")
-            return None
-
     # ── 对话主流程 ──
 
     async def run(
@@ -282,19 +253,33 @@ class Character(BaseEntity):
     def _build_prompt(
         self, user_input: str, raw_messages: list[dict]
     ) -> str:
-        """组装角色 user message（含记忆召回前缀）。"""
-        relevant_memories = search_memories(
-            self.name, build_search_query(self.name, user_input)
-        )
-        memory_prefix = (
-            f"<relevant_memories>\n{relevant_memories}\n</relevant_memories>"
-            if relevant_memories
-            else ""
+        """组装角色 user message（含记忆与长期判断召回前缀）。"""
+        memory_query = build_search_query(self.name, user_input)
+        understanding_query = build_understanding_query(self.name, user_input)
+
+        if understanding_query == memory_query:
+            try:
+                qvec = embed_sync([memory_query])[0]
+                memory_qvec = understanding_qvec = qvec
+            except Exception:
+                memory_qvec = understanding_qvec = None
+        else:
+            try:
+                vecs = embed_sync([memory_query, understanding_query])
+                memory_qvec = vecs[0]
+                understanding_qvec = vecs[1]
+            except Exception:
+                memory_qvec = understanding_qvec = None
+
+        relevant_memories = search_memories(self.name, memory_query, qvec=memory_qvec)
+        relevant_understandings = search_understandings(
+            self.name, understanding_query, qvec=understanding_qvec
         )
         message, _ = build_user_message(
             self.name,
             user_input,
-            memory_prefix,
+            _wrap_block("relevant_memories", relevant_memories),
+            understandings_prefix=_wrap_block("relevant_understandings", relevant_understandings),
             raw_messages=raw_messages,
         )
         return message
@@ -309,7 +294,6 @@ class Character(BaseEntity):
                 results.append(r)
 
         results.extend(self.set_status_fields(output.status))
-        results.extend(self.set_user_profile_fields(output.player))
 
         for event_name in output.triggered:
             r = self.mark_triggered(event_name)
@@ -318,24 +302,6 @@ class Character(BaseEntity):
 
         for event_desc in output.add_event:
             r = self.add_event(event_desc)
-            if r is not None:
-                results.append(r)
-
-        valid_relation_targets = {
-            get_display_name(name, read_agent_file(name, "soul.md"))
-            for name in get_agent_names(include_narrator=False)
-            if name != self.name
-        }
-        for target, content in output.relations.items():
-            target_clean = target.strip()
-            if not target_clean or target_clean == "player":
-                continue
-            if target_clean not in valid_relation_targets:
-                routing_logger.warning(
-                    "[%s] 忽略 relations 中的未知目标: %s", self.name, target_clean
-                )
-                continue
-            r = self.set_relation(target_clean, content)
             if r is not None:
                 results.append(r)
 

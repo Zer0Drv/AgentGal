@@ -5,7 +5,7 @@ import pytest
 import memory.indexer as indexer
 import memory.parser as parser_module
 import storage.vector_store as vector_store_module
-from memory.parser import EpisodeMemory, serialize_episode
+from memory.parser import EpisodeMemory, Understanding, serialize_episode, write_understandings
 from storage.vector_store import VectorStore
 
 
@@ -14,6 +14,7 @@ class FakeVectorStore:
         self.deleted_agents: list[str] = []
         self.deleted_all: list[list[str]] = []
         self.added_records: list[EpisodeMemory] = []
+        self.added_understandings: list[Understanding] = []
         self.batch_sizes: list[int] = []
 
     async def delete(self, agent_name: str) -> bool:
@@ -28,6 +29,9 @@ class FakeVectorStore:
         self.added_records.extend(records)
         self.batch_sizes.append(batch_size)
         return len(records)
+
+    async def add_understanding(self, understanding: Understanding) -> None:
+        self.added_understandings.append(understanding)
 
 
 def _write_memory_jsonl(tmp_path: Path, agent_name: str, records: list[EpisodeMemory]) -> None:
@@ -45,6 +49,20 @@ def _patch_character_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(parser_module, "character_path", _character_path)
 
 
+def _write_single_understanding(agent: str, uid: str = "u1") -> None:
+    write_understandings(
+        agent,
+        {
+            uid: Understanding(
+                id=uid,
+                memory_owner=agent,
+                subject="对玩家的认知",
+                content="玩家会解释误会。",
+            )
+        },
+    )
+
+
 @pytest.mark.asyncio
 async def test_rebuild_memory_index_uses_batch_add_many(tmp_path, monkeypatch):
     records = [
@@ -53,6 +71,7 @@ async def test_rebuild_memory_index_uses_batch_add_many(tmp_path, monkeypatch):
     ]
     _write_memory_jsonl(tmp_path, "alice", records)
     _patch_character_path(tmp_path, monkeypatch)
+    _write_single_understanding("alice")
 
     fake_store = FakeVectorStore()
     monkeypatch.setattr(indexer, "vector_store", fake_store)
@@ -67,6 +86,7 @@ async def test_rebuild_memory_index_uses_batch_add_many(tmp_path, monkeypatch):
         "第一条批量重建记忆。",
         "第二条批量重建记忆。",
     ]
+    assert [u.id for u in fake_store.added_understandings] == ["u1"]
 
 
 @pytest.mark.asyncio
@@ -87,6 +107,28 @@ async def test_rebuild_memory_index_can_skip_clear_existing(tmp_path, monkeypatc
     assert fake_store.deleted_all == []
     assert fake_store.deleted_agents == []
     assert len(fake_store.added_records) == 1
+    assert fake_store.added_understandings == []
+
+
+@pytest.mark.asyncio
+async def test_rebuild_memory_index_restores_understandings_for_single_agent(tmp_path, monkeypatch):
+    _write_memory_jsonl(
+        tmp_path,
+        "alice",
+        [EpisodeMemory(date="4月3日", content="完整重建情节记忆。", memory_owner="alice")],
+    )
+    _patch_character_path(tmp_path, monkeypatch)
+    _write_single_understanding("alice")
+
+    fake_store = FakeVectorStore()
+    monkeypatch.setattr(indexer, "vector_store", fake_store)
+
+    await indexer.rebuild_memory_index(agent_name="alice")
+
+    assert fake_store.deleted_agents == ["alice"]
+    assert fake_store.deleted_all == []
+    assert len(fake_store.added_records) == 1
+    assert [u.id for u in fake_store.added_understandings] == ["u1"]
 
 
 @pytest.mark.asyncio
@@ -121,3 +163,34 @@ async def test_vector_store_add_many_batches_embedding_requests(tmp_path, monkey
     assert inserted == 3
     assert [len(call) for call in embedding_calls] == [2, 1]
     assert inserted_batches == [2, 1]
+
+
+@pytest.mark.asyncio
+async def test_rebuild_understanding_index_adds_each_understanding(tmp_path, monkeypatch):
+    _patch_character_path(tmp_path, monkeypatch)
+    write_understandings(
+        "alice",
+        {
+            "u1": Understanding(
+                id="u1",
+                memory_owner="alice",
+                subject="对玩家的认知",
+                content="玩家在紧张时会先确认她是否安全。",
+            ),
+            "u2": Understanding(
+                id="u2",
+                memory_owner="alice",
+                subject="互动模式",
+                content="直接提问更容易得到真实回应。",
+            ),
+        },
+    )
+
+    fake_store = FakeVectorStore()
+    monkeypatch.setattr(indexer, "vector_store", fake_store)
+    monkeypatch.setattr(indexer, "get_agent_names", lambda include_narrator=False: ["alice"])
+
+    await indexer.rebuild_understanding_index()
+
+    assert [u.id for u in fake_store.added_understandings] == ["u1", "u2"]
+    assert [u.memory_owner for u in fake_store.added_understandings] == ["alice", "alice"]

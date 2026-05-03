@@ -12,6 +12,7 @@ sys.path.insert(0, str(project_root))
 from consolidation.inputs import (
     build_episode_closure_payload,
     build_episode_memory_generator_payload,
+    build_understanding_patch_payload,
     render_raw_history,
 )
 
@@ -108,3 +109,16 @@ def test_build_episode_memory_generator_payload_includes_owner_before_memory(mon
     assert "- 我 = 陈晓" in payload
     assert "- 他 = 玩家" in payload
     assert "旁白：**时间**：10月6日 星期五 11:42" in payload
+
+
+def test_build_understanding_patch_payload_includes_entries_and_record():
+    payload = build_understanding_patch_payload(
+        "[u1] subject='对玩家的认知'\n  content: 旧理解",
+        '{"id":"e1","content":"新事件"}',
+    )
+
+    assert "<existing_entries>" in payload
+    assert "[u1] subject='对玩家的认知'" in payload
+    assert "<new_record>" in payload
+    assert '"id":"e1"' in payload
+    assert "<profile>" not in payload

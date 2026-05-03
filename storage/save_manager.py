@@ -293,6 +293,12 @@ async def import_save_archive(save_filename: str) -> bool:
         from memory.indexer import rebuild_memory_index
         await rebuild_memory_index(clear_existing=False)
         log_step("重建向量库")
+
+        print("[读档] 重建 Understanding 向量库...", flush=True)
+        from memory.indexer import rebuild_understanding_index
+        await rebuild_understanding_index()
+        log_step("重建 Understanding 向量库")
+
         print(f"[读档] 读档完成: {save_filename}", flush=True)
         return True
 
@@ -316,8 +322,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
     core_files = ["soul.md", "status.md"]
     if agent_name != "narrator":
         core_files.extend([
-            "memory.jsonl", "memory_draft.jsonl", "user.md", "tmp_user.md", "growth.md",
-            "relations.md", "schedule.json",
+            "memory.jsonl", "memory_draft.jsonl", "understanding.jsonl", "schedule.json",
         ])
 
     for filename in core_files:

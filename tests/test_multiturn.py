@@ -205,10 +205,7 @@ class TestBuildUserMessage:
 
         def fake_read(agent_name: str, filename: str) -> str:
             data = {
-                "growth.md": "成长内容",
-                "user.md": "玩家画像",
                 "status.md": "当前状态",
-                "relations.md": "",
             }
             return data[filename]
 
@@ -223,8 +220,6 @@ class TestBuildUserMessage:
                 raw_messages=msgs,
             )
 
-        assert result.index("<growth>") < result.index("<user_profile>")
-        assert result.index("<user_profile>") < result.index("最近对话历史:")
         assert result.index("最近对话历史:") < result.index("<status>")
         assert result.index("<status>") < result.index("记忆内容")
         assert result.index("记忆内容") < result.index("玩家新消息: 你好")
@@ -232,10 +227,7 @@ class TestBuildUserMessage:
     def test_character_includes_user_profile_status_memories_input_without_history(self):
         def fake_read(agent_name: str, filename: str) -> str:
             data = {
-                "growth.md": "",
-                "user.md": "玩家画像",
                 "status.md": "当前状态",
-                "relations.md": "",
             }
             return data[filename]
 
@@ -251,12 +243,11 @@ class TestBuildUserMessage:
             )
 
         assert "最近对话历史:" not in result
-        assert "<user_profile>" in result
         assert "当前状态" in result
         assert "记忆内容" in result
         assert "玩家新消息: 你好" in result
 
-    def test_narrator_uses_single_big_user_message_without_growth(self):
+    def test_narrator_uses_single_big_user_message_with_status_and_input(self):
         msgs = [
             {"role": "player", "content": "旧消息", "visible_to": ["narrator"]},
             {"role": "narrator", "content": "旧场景", "visible_to": ["narrator"]},
@@ -266,8 +257,6 @@ class TestBuildUserMessage:
         with patch("engine.prompt_builder.read_agent_file", return_value="故事状态"):
             result, _ = build_user_message("narrator", "新输入", "", raw_messages=msgs)
 
-        assert "<growth>" not in result
-        assert "<user_profile>" not in result
         assert "最近对话历史:" in result
         assert "玩家: 旧消息" in result
         assert "旁白: 旧场景" in result

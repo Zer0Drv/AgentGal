@@ -1,7 +1,7 @@
 """动态生成新角色：narrator 请求时给新人搭骨架。
 
 流程：校验锚点 → 调 character_factory agent 生成
-character_id/role/identity/goal/dynamic/behavior/voice/status/relations/schedule → 写文件。
+character_id/role/identity/goal/dynamic/behavior/voice/status/schedule → 写文件。
 """
 
 from __future__ import annotations
@@ -37,13 +37,6 @@ _STATUS_ORDER = [
     "在意的事",
     "打算",
 ]
-_USER_MD_SKELETON = (
-    "# 眼中的玩家\n\n"
-    "## 基本信息\n- 姓名：\n- 年龄：\n- 性别/称呼：\n- 身份：\n\n"
-    "## 对方是什么人\n\n\n"
-    "## 我们怎么相处\n"
-)
-
 
 @dataclass(frozen=True, slots=True)
 class CreatedCharacterInfo:
@@ -52,24 +45,10 @@ class CreatedCharacterInfo:
     identity: str
 
 
-def _format_scene_characters(scene_characters: list[str]) -> str:
-    rows: list[str] = []
-    for character_name in scene_characters:
-        soul = read_agent_file(character_name, "soul.md")
-        if not soul:
-            continue
-        rows.append(f"- {get_display_name(character_name, soul)}")
-    return "\n".join(rows) if rows else "（无）"
-
-
-def _build_factory_user_message(
-    spec: NewCharacterRequest,
-    scene_characters: list[str] | None = None,
-) -> str:
+def _build_factory_user_message(spec: NewCharacterRequest) -> str:
     narrator_status = read_agent_file("narrator", "status.md")
     current_time = extract_status_field(narrator_status, "当前时间").strip() or "（未知）"
     scene = extract_status_field(narrator_status, "场景").strip() or "（未知）"
-    scene_character_names = _format_scene_characters(scene_characters or [])
     story_setting = read_agent_file("narrator", "soul.md").strip()
 
     spec_lines = [
@@ -92,7 +71,6 @@ def _build_factory_user_message(
         "<world_now>\n"
         f"当前时间：{current_time}\n"
         f"当前场景：{scene}\n"
-        f"本轮 scene_characters（仅显示名，initial_relations 只能使用这些名称作为 key）：{scene_character_names}\n"
         "</world_now>"
     )
     return "\n\n".join(blocks)
@@ -151,44 +129,6 @@ def _write_status_md(
     (agent_dir / "status.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-def _write_relations_md(
-    agent_dir: Path,
-    relations: dict[str, str],
-    spec: NewCharacterRequest,
-    scene_characters: list[str],
-) -> None:
-    relation_to_display = (
-        get_display_name(spec.relation_to, read_agent_file(spec.relation_to, "soul.md"))
-        if spec.relation_to != "player"
-        else None
-    )
-    sections: dict[str, str] = {}
-    valid_relation_targets = {
-        get_display_name(name, read_agent_file(name, "soul.md"))
-        for name in scene_characters
-        if name != agent_dir.name
-    }
-    for k, v in relations.items():
-        target_clean = k.strip()
-        if not target_clean or not v or not v.strip() or target_clean == "player":
-            continue
-        if target_clean not in valid_relation_targets:
-            continue
-        sections[target_clean] = v.strip()
-
-    if (
-        relation_to_display
-        and relation_to_display in valid_relation_targets
-        and relation_to_display not in sections
-    ):
-        sections[relation_to_display] = spec.relation_description.strip()
-
-    lines = ["# 我眼中的其他人", ""]
-    for target, body in sections.items():
-        lines.append(f"## {target}")
-        lines.append(body)
-        lines.append("")
-    (agent_dir / "relations.md").write_text("\n".join(lines), encoding="utf-8")
 
 
 def _format_bulleted_block(items: list[str]) -> str:
@@ -261,18 +201,13 @@ def _write_bootstrap_files(
     spec: NewCharacterRequest,
     creation: NewCharacterProfile,
     soul_content: str,
-    scene_characters: list[str],
 ) -> None:
     agent_dir = CHARACTERS_DIR / creation.character_id
     agent_dir.mkdir(parents=True, exist_ok=True)
 
     (agent_dir / "soul.md").write_text(soul_content, encoding="utf-8")
-    (agent_dir / "memory.md").write_text("", encoding="utf-8")
-    (agent_dir / "growth.md").write_text("# 心路历程\n\n", encoding="utf-8")
-    (agent_dir / "user.md").write_text(_USER_MD_SKELETON, encoding="utf-8")
 
     _write_status_md(agent_dir, creation.initial_status, spec, creation.display_name)
-    _write_relations_md(agent_dir, creation.initial_relations, spec, scene_characters)
 
     if not _write_schedule_json(agent_dir, creation.schedule):
         routing_logger.warning(
@@ -284,10 +219,7 @@ def _write_bootstrap_files(
         _append_to_narrator_locations(creation.display_name, spec.initial_location.strip())
 
 
-async def create_character(
-    spec: NewCharacterRequest,
-    scene_characters: list[str] | None = None,
-) -> CreatedCharacterInfo | None:
+async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | None:
     """孵化新角色；成功返回 CreatedCharacterInfo，失败返回 None 并记录日志。"""
     error = _validate_spec(spec)
     if error:
@@ -299,7 +231,7 @@ async def create_character(
     try:
         creation = await run_structured_agent(
             agent=get_character_factory_agent(),
-            user_input=_build_factory_user_message(spec, scene_characters or []),
+            user_input=_build_factory_user_message(spec),
             output_type=NewCharacterProfile,
             timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
             workflow_name="agentgal_character_factory",
@@ -327,7 +259,7 @@ async def create_character(
 
     soul_content = _build_soul_md(creation)
     try:
-        _write_bootstrap_files(spec, creation, soul_content, scene_characters or [])
+        _write_bootstrap_files(spec, creation, soul_content)
     except Exception as e:
         routing_logger.error(f"[character_factory] 写入 {creation.character_id!r} 文件失败: {e}")
         return None
