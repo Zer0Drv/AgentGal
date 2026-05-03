@@ -83,7 +83,7 @@
     return Math.min(2.5, Math.max(0.2, scale));
   }
 
-  function createNetwork({ container, nodes, edges, onSelect, onZoom }) {
+  function createNetwork({ container, nodes, edges, onSelect, onBlank, onZoom }) {
     if (!isReady()) {
       throw new Error("vis-network is not available");
     }
@@ -100,6 +100,10 @@
       const nodeId = params.nodes[0] || network.getNodeAt(params.pointer.DOM);
       if (nodeId && onSelect) {
         onSelect(nodeId);
+        return;
+      }
+      if (onBlank) {
+        onBlank();
       }
     });
     const fireZoom = scale => onZoom && onZoom(clampZoom(scale));
@@ -144,6 +148,7 @@
       memoryGraphSelected: null,
       memoryGraphNetwork: null,
       memoryGraphZoom: 1,
+      memoryGraphDetailCollapsed: false,
 
       async openMemoryGraph() {
         if (this.isCompact) {
@@ -157,6 +162,10 @@
       closeMemoryGraph() {
         this.memoryGraphOpen = false;
         this.destroyMemoryGraphNetwork();
+      },
+
+      toggleMemoryGraphDetail() {
+        this.memoryGraphDetailCollapsed = !this.memoryGraphDetailCollapsed;
       },
 
       destroyMemoryGraphNetwork() {
@@ -183,16 +192,26 @@
         const item = this.memoryGraphSelected;
         if (!item) return [];
         const pills = [];
-        if (item.id) pills.push(item.id);
-        if (item.date) pills.push(item.time ? `${item.date} ${item.time}` : item.date);
         if (item.location) pills.push(item.location);
         if (item.participants) pills.push(item.participants);
-        if (item.importance) pills.push(`importance ${item.importance}`);
         if (Array.isArray(item.linked_episodes)) {
           pills.push(`${item.linked_episodes.length} linked episodes`);
         }
         (item.keywords || []).slice(0, 8).forEach(keyword => pills.push(keyword));
         return pills;
+      },
+
+      memoryGraphEpisodeFacts() {
+        const item = this.memoryGraphSelected;
+        if (!item || item.type !== "episode") return [];
+        const facts = [];
+        const date = String(item.date || "").trim();
+        const time = String(item.time || "").trim();
+        const dateLabel =
+          date && time ? (time.startsWith(date) ? time : `${date} · ${time}`) : date || time;
+        if (dateLabel) facts.push(dateLabel);
+        if (item.importance) facts.push(`importance ${item.importance}`);
+        return facts;
       },
 
       async loadMemoryGraph(agentName = null) {
@@ -239,6 +258,9 @@
           nodes: this.memoryGraphNodes,
           edges: this.memoryGraphEdges,
           onSelect: nodeId => this.selectMemoryGraphNode(nodeId),
+          onBlank: () => {
+            this.memoryGraphDetailCollapsed = true;
+          },
           onZoom: scale => {
             if (scale !== this.memoryGraphZoom) this.memoryGraphZoom = scale;
           },
@@ -256,6 +278,9 @@
       selectMemoryGraphNode(nodeId) {
         const node = this.memoryGraphNodes.find(item => item.id === nodeId);
         this.memoryGraphSelected = node ? node.meta : null;
+        if (node) {
+          this.memoryGraphDetailCollapsed = false;
+        }
       },
 
       setMemoryGraphZoom(value) {

@@ -158,10 +158,12 @@ async def test_api_memory_graph_links_understandings_to_episodes(monkeypatch):
             server_module.EpisodeMemory(
                 id="e1",
                 date="4月3日",
+                time="4月3日 16:10",
                 title="旧阅览室",
                 content="她请求玩家保密。",
                 importance=4,
                 keywords=["保密"],
+                raw_dialogue="[turn=12] 玩家: 我会保密 [turn=12] 旁白: **时间**：4月3日 16:10",
             )
         ],
     )
@@ -204,6 +206,12 @@ async def test_api_memory_graph_links_understandings_to_episodes(monkeypatch):
         "understanding:u1",
         "episode:missing-e2",
     }
+    episode = next(node for node in body["nodes"] if node["id"] == "episode:e1")
+    assert episode["meta"]["date"] == "4月3日"
+    assert episode["meta"]["time"] == "4月3日 16:10"
+    assert "[turn=" not in episode["meta"]["raw_dialogue_preview"]
+    assert "旁白" not in episode["meta"]["raw_dialogue_preview"]
+    assert episode["meta"]["raw_dialogue_preview"] == "玩家：我会保密"
     assert {edge["to"] for edge in body["edges"]} == {"episode:e1", "episode:missing-e2"}
 
 

@@ -7,10 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Noto+Serif+SC:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/memory_graph.css?v=11">
+<link rel="stylesheet" href="/static/memory_graph.css?v=12">
 <script src="/static/marked.min.js"></script>
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
-<script src="/static/memory_graph.js?v=11"></script>
+<script src="/static/memory_graph.js?v=12"></script>
 <script defer src="/static/alpine.min.js"></script>
 <style>
 :root {
@@ -2253,7 +2253,7 @@ svg {
   </div>
 
   <div class="memory-graph-page" x-show="memoryGraphOpen">
-    <div class="memory-graph-shell">
+    <div class="memory-graph-shell" :class="{ 'is-detail-collapsed': memoryGraphDetailCollapsed }">
         <div class="memory-graph-canvas-wrap">
           <div
             class="memory-graph-network"
@@ -2346,11 +2346,34 @@ svg {
           </div>
         </div>
 
-        <aside class="memory-graph-detail" aria-label="记忆节点详情">
+        <button
+          type="button"
+          class="memory-graph-detail-toggle"
+          :title="memoryGraphDetailCollapsed ? '展开详情' : '收起详情'"
+          :aria-label="memoryGraphDetailCollapsed ? '展开详情侧边栏' : '收起详情侧边栏'"
+          :aria-expanded="!memoryGraphDetailCollapsed"
+          @click="toggleMemoryGraphDetail()"
+        >
+          <svg x-show="!memoryGraphDetailCollapsed" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m9 18 6-6-6-6"/>
+          </svg>
+          <svg x-show="memoryGraphDetailCollapsed" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m15 18-6-6 6-6"/>
+          </svg>
+        </button>
+
+        <aside class="memory-graph-detail" aria-label="记忆节点详情" x-show="!memoryGraphDetailCollapsed">
           <template x-if="memoryGraphSelected">
-            <div>
+            <div class="memory-graph-detail-inner">
               <div class="memory-graph-detail-kicker" x-text="memoryGraphSelected.type_label"></div>
               <div class="memory-graph-detail-title" x-text="memoryGraphSelected.title"></div>
+              <template x-if="memoryGraphEpisodeFacts().length">
+                <div class="memory-graph-detail-facts">
+                  <template x-for="item in memoryGraphEpisodeFacts()" :key="item">
+                    <span class="memory-graph-detail-fact" x-text="item"></span>
+                  </template>
+                </div>
+              </template>
 
               <div class="memory-graph-detail-meta">
                 <template x-for="item in memoryGraphMetaPills()" :key="item">
@@ -2363,7 +2386,7 @@ svg {
               <template x-if="memoryGraphSelected.raw_dialogue_preview">
                 <div>
                   <div class="memory-graph-section-title">Raw</div>
-                  <div class="memory-graph-detail-content" x-text="memoryGraphSelected.raw_dialogue_preview"></div>
+                  <pre class="memory-graph-raw-block" x-text="memoryGraphSelected.raw_dialogue_preview"></pre>
                 </div>
               </template>
             </div>

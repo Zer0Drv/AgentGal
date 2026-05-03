@@ -73,6 +73,7 @@
 
 .memory-graph-control-panel,
 .memory-graph-stats,
+.memory-graph-detail-toggle,
 .memory-graph-detail {
   position: absolute;
   z-index: 3;
@@ -237,12 +238,62 @@
   right: 20px;
   bottom: 20px;
   width: clamp(320px, 29vw, 398px);
+  background:
+    linear-gradient(180deg, rgba(255, 252, 248, 0.97), rgba(255, 248, 242, 0.94)),
+    rgba(250, 244, 237, 0.96);
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 20px;
   border-radius: 28px;
+}
+
+.memory-graph-detail-toggle {
+  top: 50%;
+  right: calc(clamp(320px, 29vw, 398px) + 19px);
+  width: 26px;
+  height: 72px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-right: none;
+  border-radius: 18px 0 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-soft);
+  background:
+    linear-gradient(180deg, rgba(255, 252, 248, 0.88), rgba(255, 248, 242, 0.72)),
+    rgba(250, 244, 237, 0.68);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    -10px 14px 26px -24px rgba(38, 25, 26, 0.42);
+  backdrop-filter: blur(18px) saturate(1.08);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    transform 0.28s var(--easing),
+    right 0.28s var(--easing),
+    border-color 0.28s var(--easing),
+    background-color 0.28s var(--easing),
+    color 0.28s var(--easing);
+}
+
+.memory-graph-detail-toggle:hover {
+  transform: translateY(-50%) translateX(-1px);
+  border-color: rgba(180, 90, 100, 0.28);
+  color: var(--text);
+}
+
+.memory-graph-detail-toggle:active {
+  transform: translateY(-50%) scale(0.985);
+}
+
+.memory-graph-shell.is-detail-collapsed .memory-graph-detail-toggle {
+  right: 0;
+}
+
+.memory-graph-detail-inner {
+  min-height: 100%;
 }
 
 .memory-graph-detail .memory-graph-empty {
@@ -265,6 +316,27 @@
   letter-spacing: -0.04em;
   line-height: 1.16;
   text-wrap: pretty;
+}
+
+.memory-graph-detail-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.memory-graph-detail-fact {
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 1px solid rgba(180, 90, 100, 0.16);
+  border-radius: 12px;
+  background: rgba(180, 90, 100, 0.08);
+  color: var(--accent-strong);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .memory-graph-detail-meta {
@@ -291,6 +363,23 @@
   color: var(--text-soft);
   line-height: 1.74;
   white-space: pre-wrap;
+}
+
+.memory-graph-raw-block {
+  margin: 0;
+  padding: 13px 14px;
+  border: 1px solid rgba(113, 84, 74, 0.14);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(47, 35, 36, 0.035), rgba(47, 35, 36, 0.02)),
+    rgba(255, 251, 247, 0.54);
+  color: var(--text-soft);
+  font-family: "JetBrains Mono", "PingFang SC", "Hiragino Sans GB", monospace;
+  font-size: 12px;
+  line-height: 1.72;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
 }
 
 .memory-graph-section-title {
@@ -381,6 +470,32 @@
     max-height: min(34dvh, 270px);
     padding: 16px;
     border-radius: 24px;
+  }
+
+  .memory-graph-detail-toggle {
+    top: auto;
+    right: 12px;
+    bottom: calc(min(34dvh, 270px) + 24px);
+    width: 68px;
+    height: 24px;
+    border-right: 1px solid rgba(255, 255, 255, 0.38);
+    border-bottom: none;
+    border-radius: 16px 16px 0 0;
+    transform: none;
+  }
+
+  .memory-graph-detail-toggle svg {
+    transform: rotate(90deg);
+  }
+
+  .memory-graph-shell.is-detail-collapsed .memory-graph-detail-toggle {
+    right: 12px;
+    bottom: 0;
+  }
+
+  .memory-graph-detail-toggle:hover,
+  .memory-graph-detail-toggle:active {
+    transform: none;
   }
 
   .memory-graph-empty--overlay {

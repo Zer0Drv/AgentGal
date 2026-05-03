@@ -7,6 +7,7 @@ load_dotenv()
 
 import asyncio
 import json
+import re
 import traceback
 from pathlib import Path
 
@@ -56,7 +57,7 @@ _pending_state_update_task: asyncio.Task[None] | None = None
 _RECENT_HISTORY_LIMIT = 12
 _MEMORY_GRAPH_LABEL_LIMIT = 42
 _MEMORY_GRAPH_DETAIL_LIMIT = 260
-_MEMORY_GRAPH_RAW_LIMIT = 360
+_MEMORY_GRAPH_RAW_LIMIT = 12000
 
 
 # =============================================================================
@@ -94,6 +95,39 @@ def _clip_text(value: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return f"{text[: limit - 1]}…"
+
+
+def _clip_preserving_lines(value: str, limit: int) -> str:
+    text = (value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 1].rstrip()}…"
+
+
+def _format_raw_dialogue_preview(raw_dialogue: str, limit: int) -> str:
+    text = (raw_dialogue or "").strip()
+    if not text:
+        return ""
+    text = text[: limit * 3]
+
+    entries: list[str] = []
+    for segment in re.split(r"\s*(?=\[turn=\d+\]\s*)", text):
+        cleaned = re.sub(r"^\[turn=\d+\]\s*", "", segment.strip())
+        cleaned = re.sub(r"\*\*(.*?)\*\*", r"\1", cleaned)
+        cleaned = " ".join(cleaned.split())
+        if not cleaned:
+            continue
+
+        speaker, separator, body = cleaned.partition(":")
+        if separator and speaker and len(speaker) <= 18:
+            speaker_name = speaker.strip()
+            if speaker_name.lower() in {"旁白", "narrator"}:
+                continue
+            entries.append(f"{speaker_name}：{body.strip()}")
+        else:
+            entries.append(cleaned)
+
+    return _clip_preserving_lines("\n\n".join(entries), limit)
 
 
 def _memory_graph_agents() -> list[dict]:
@@ -138,7 +172,7 @@ def _episode_node(agent_name: str, episode: EpisodeMemory, index: int) -> dict:
             "importance": episode.importance,
             "content": episode.content,
             "content_preview": _clip_text(episode.content, _MEMORY_GRAPH_DETAIL_LIMIT),
-            "raw_dialogue_preview": _clip_text(
+            "raw_dialogue_preview": _format_raw_dialogue_preview(
                 episode.raw_dialogue, _MEMORY_GRAPH_RAW_LIMIT
             ),
         },
