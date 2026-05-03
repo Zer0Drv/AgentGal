@@ -69,7 +69,7 @@ cp .env.example .env
 ```bash
 LLM_PROVIDER=deepseek
 LLM_API_KEY=你的 API Key
-LLM_MODEL_ID=deepseek-chat
+LLM_MODEL_ID=deepseek-v4-pro
 ```
 
 如果使用其他模型服务，按 `.env.example` 里的注释调整 provider、URL 和模型名。
