@@ -58,14 +58,18 @@
     physics: {
       enabled: true,
       solver: "forceAtlas2Based",
+      maxVelocity: 14,
+      minVelocity: 0.45,
+      adaptiveTimestep: true,
       forceAtlas2Based: {
-        gravitationalConstant: -62,
-        centralGravity: 0.012,
-        springLength: 120,
-        springConstant: 0.08,
+        gravitationalConstant: -42,
+        centralGravity: 0.006,
+        springLength: 145,
+        springConstant: 0.045,
+        damping: 0.78,
         avoidOverlap: 0.45,
       },
-      stabilization: { enabled: true, iterations: 160, fit: true },
+      stabilization: { enabled: true, iterations: 260, fit: true },
     },
   };
 
@@ -101,6 +105,7 @@
     const fireZoom = scale => onZoom && onZoom(clampZoom(scale));
     network.on("zoom", params => fireZoom(params.scale));
     network.once("stabilizationIterationsDone", () => {
+      network.stopSimulation();
       syncNetworkSize(network, container);
       fireZoom(network.getScale());
     });

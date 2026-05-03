@@ -7,10 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Noto+Serif+SC:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/memory_graph.css?v=10">
+<link rel="stylesheet" href="/static/memory_graph.css?v=11">
 <script src="/static/marked.min.js"></script>
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
-<script src="/static/memory_graph.js?v=10"></script>
+<script src="/static/memory_graph.js?v=11"></script>
 <script defer src="/static/alpine.min.js"></script>
 <style>
 :root {
@@ -2254,126 +2254,125 @@ svg {
 
   <div class="memory-graph-page" x-show="memoryGraphOpen">
     <div class="memory-graph-shell">
-        <div class="memory-graph-head">
+        <div class="memory-graph-canvas-wrap">
+          <div
+            class="memory-graph-network"
+            x-ref="memoryGraphNetwork"
+            x-show="!memoryGraphLoading && !memoryGraphError && memoryGraphNodes.length"
+          ></div>
+          <div
+            class="memory-graph-empty memory-graph-empty--overlay"
+            x-show="memoryGraphLoading || memoryGraphError || !memoryGraphNodes.length"
+            x-text="memoryGraphEmptyText()"
+          ></div>
+        </div>
+
+        <section class="memory-graph-control-panel" aria-label="记忆图谱控制">
           <div class="memory-graph-title-wrap">
             <div class="story-eyebrow">Memory Graph</div>
             <div class="memory-graph-title">记忆图谱</div>
             <div class="memory-graph-subtitle" x-text="memoryGraphSubtitle()"></div>
           </div>
+        </section>
 
-          <div class="memory-graph-controls">
-            <select
-              class="memory-graph-select"
-              x-model="memoryGraphAgent"
-              :disabled="memoryGraphLoading || !memoryGraphAgents.length"
-              @change="loadMemoryGraph(memoryGraphAgent)"
+        <div class="memory-graph-top-actions" aria-label="记忆图谱操作">
+          <select
+            class="memory-graph-select"
+            x-model="memoryGraphAgent"
+            :disabled="memoryGraphLoading || !memoryGraphAgents.length"
+            @change="loadMemoryGraph(memoryGraphAgent)"
+          >
+            <template x-for="agent in memoryGraphAgents" :key="agent.name">
+              <option :value="agent.name" x-text="agent.display_name"></option>
+            </template>
+          </select>
+
+          <div
+            class="memory-graph-zoom"
+            x-show="!memoryGraphLoading && !memoryGraphError && memoryGraphNodes.length"
+            @click.stop
+            @mousedown.stop
+            @pointerdown.stop
+          >
+            <svg class="memory-graph-zoom-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"/>
+              <path d="m20 20-3.8-3.8"/>
+              <path d="M11 8v6"/>
+              <path d="M8 11h6"/>
+            </svg>
+            <input
+              class="memory-graph-zoom-slider"
+              type="range"
+              min="0.2"
+              max="2.5"
+              step="0.05"
+              :value="memoryGraphZoom"
+              aria-label="缩放图谱"
+              @input="setMemoryGraphZoom($event.target.value)"
             >
-              <template x-for="agent in memoryGraphAgents" :key="agent.name">
-                <option :value="agent.name" x-text="agent.display_name"></option>
-              </template>
-            </select>
+          </div>
 
-            <button type="button" class="icon-btn" title="刷新图谱" :disabled="memoryGraphLoading" @click="loadMemoryGraph(memoryGraphAgent)">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 11a8 8 0 1 0-2.34 5.66"/>
-                <path d="M20 4v7h-7"/>
-              </svg>
-            </button>
+          <button type="button" class="icon-btn" title="刷新图谱" :disabled="memoryGraphLoading" @click="loadMemoryGraph(memoryGraphAgent)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 11a8 8 0 1 0-2.34 5.66"/>
+              <path d="M20 4v7h-7"/>
+            </svg>
+          </button>
 
-            <button type="button" class="icon-btn" title="关闭图谱" @click="closeMemoryGraph()">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 6 18 18"/>
-                <path d="m18 6-12 12"/>
-              </svg>
-            </button>
+          <button type="button" class="icon-btn" title="关闭图谱" @click="closeMemoryGraph()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 6 18 18"/>
+              <path d="m18 6-12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="memory-graph-stats" aria-label="记忆图谱统计">
+          <div class="memory-graph-stat">
+            <div class="memory-graph-stat-label">Episodes</div>
+            <div class="memory-graph-stat-value" x-text="memoryGraphStats.episode_count || 0"></div>
+          </div>
+          <div class="memory-graph-stat">
+            <div class="memory-graph-stat-label">Understand</div>
+            <div class="memory-graph-stat-value" x-text="memoryGraphStats.understanding_count || 0"></div>
+          </div>
+          <div class="memory-graph-stat">
+            <div class="memory-graph-stat-label">Links</div>
+            <div class="memory-graph-stat-value" x-text="memoryGraphStats.edge_count || 0"></div>
+          </div>
+          <div class="memory-graph-stat">
+            <div class="memory-graph-stat-label">Missing</div>
+            <div class="memory-graph-stat-value" x-text="memoryGraphStats.missing_episode_count || 0"></div>
           </div>
         </div>
 
-        <div class="memory-graph-body">
-          <div class="memory-graph-canvas-wrap">
-            <div class="memory-graph-stats">
-              <div class="memory-graph-stat">
-                <div class="memory-graph-stat-label">Episodes</div>
-                <div class="memory-graph-stat-value" x-text="memoryGraphStats.episode_count || 0"></div>
-              </div>
-              <div class="memory-graph-stat">
-                <div class="memory-graph-stat-label">Understand</div>
-                <div class="memory-graph-stat-value" x-text="memoryGraphStats.understanding_count || 0"></div>
-              </div>
-              <div class="memory-graph-stat">
-                <div class="memory-graph-stat-label">Links</div>
-                <div class="memory-graph-stat-value" x-text="memoryGraphStats.edge_count || 0"></div>
-              </div>
-              <div class="memory-graph-stat">
-                <div class="memory-graph-stat-label">Missing</div>
-                <div class="memory-graph-stat-value" x-text="memoryGraphStats.missing_episode_count || 0"></div>
-              </div>
-            </div>
+        <aside class="memory-graph-detail" aria-label="记忆节点详情">
+          <template x-if="memoryGraphSelected">
+            <div>
+              <div class="memory-graph-detail-kicker" x-text="memoryGraphSelected.type_label"></div>
+              <div class="memory-graph-detail-title" x-text="memoryGraphSelected.title"></div>
 
-            <div
-              class="memory-graph-network"
-              x-ref="memoryGraphNetwork"
-              x-show="!memoryGraphLoading && !memoryGraphError && memoryGraphNodes.length"
-            ></div>
-            <div
-              class="memory-graph-zoom"
-              x-show="!memoryGraphLoading && !memoryGraphError && memoryGraphNodes.length"
-              @click.stop
-              @mousedown.stop
-              @pointerdown.stop
-            >
-              <svg class="memory-graph-zoom-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="11" cy="11" r="7"/>
-                <path d="m20 20-3.8-3.8"/>
-                <path d="M11 8v6"/>
-                <path d="M8 11h6"/>
-              </svg>
-              <input
-                class="memory-graph-zoom-slider"
-                type="range"
-                min="0.2"
-                max="2.5"
-                step="0.05"
-                :value="memoryGraphZoom"
-                aria-label="缩放图谱"
-                @input="setMemoryGraphZoom($event.target.value)"
-              >
-            </div>
-            <div
-              class="memory-graph-empty"
-              x-show="memoryGraphLoading || memoryGraphError || !memoryGraphNodes.length"
-              x-text="memoryGraphEmptyText()"
-            ></div>
-          </div>
-
-          <aside class="memory-graph-detail">
-            <template x-if="memoryGraphSelected">
-              <div>
-                <div class="memory-graph-detail-kicker" x-text="memoryGraphSelected.type_label"></div>
-                <div class="memory-graph-detail-title" x-text="memoryGraphSelected.title"></div>
-
-                <div class="memory-graph-detail-meta">
-                  <template x-for="item in memoryGraphMetaPills()" :key="item">
-                    <span class="memory-graph-pill" x-text="item"></span>
-                  </template>
-                </div>
-
-                <div class="memory-graph-detail-content" x-text="memoryGraphSelected.content"></div>
-
-                <template x-if="memoryGraphSelected.raw_dialogue_preview">
-                  <div>
-                    <div class="memory-graph-section-title">Raw</div>
-                    <div class="memory-graph-detail-content" x-text="memoryGraphSelected.raw_dialogue_preview"></div>
-                  </div>
+              <div class="memory-graph-detail-meta">
+                <template x-for="item in memoryGraphMetaPills()" :key="item">
+                  <span class="memory-graph-pill" x-text="item"></span>
                 </template>
               </div>
-            </template>
 
-            <template x-if="!memoryGraphSelected">
-              <div class="memory-graph-empty">选择一个节点查看详情。</div>
-            </template>
-          </aside>
-        </div>
+              <div class="memory-graph-detail-content" x-text="memoryGraphSelected.content"></div>
+
+              <template x-if="memoryGraphSelected.raw_dialogue_preview">
+                <div>
+                  <div class="memory-graph-section-title">Raw</div>
+                  <div class="memory-graph-detail-content" x-text="memoryGraphSelected.raw_dialogue_preview"></div>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <template x-if="!memoryGraphSelected">
+            <div class="memory-graph-empty">选择一个节点查看详情。</div>
+          </template>
+        </aside>
     </div>
   </div>
 
