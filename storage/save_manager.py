@@ -205,6 +205,21 @@ def list_save_archives() -> list[dict]:
     return saves
 
 
+def delete_save_archive(save_filename: str) -> bool:
+    """删除指定存档文件，文件名非法或不存在时返回 False。"""
+    if not _is_safe_save_filename(save_filename):
+        routing_logger.warning("[delete_save] 非法文件名: %s", save_filename)
+        return False
+    save_path = PROJECT_ROOT / "saves" / save_filename
+    try:
+        save_path.unlink()
+        routing_logger.info("[delete_save] 已删除存档: %s", save_filename)
+        return True
+    except FileNotFoundError:
+        routing_logger.warning("[delete_save] 存档文件不存在: %s", save_path)
+        return False
+
+
 async def import_save_archive(save_filename: str) -> bool:
     """从指定存档文件恢复游戏状态
 

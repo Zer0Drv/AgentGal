@@ -30,6 +30,7 @@ from memory.parser import (
     read_understandings,
 )
 from storage.save_manager import (
+    delete_save_archive,
     export_save_archive_with_detail,
     has_existing_save,
     import_save_archive,
@@ -573,6 +574,20 @@ async def api_load(req: LoadRequest) -> JSONResponse:
         last_choices = _load_last_choices()
         return JSONResponse({"ok": True, "recent": recent, "last_choices": last_choices})
     return JSONResponse({"ok": False}, status_code=500)
+
+
+# =============================================================================
+# /api/save/{filename} DELETE
+# =============================================================================
+
+
+@app.delete("/api/save/{filename}")
+async def api_delete_save(filename: str) -> JSONResponse:
+    """删除指定存档文件。"""
+    ok = delete_save_archive(filename)
+    if ok:
+        return JSONResponse({"ok": True})
+    return JSONResponse({"ok": False, "detail": "存档不存在或文件名非法。"}, status_code=404)
 
 
 # =============================================================================
