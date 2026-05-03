@@ -26,6 +26,7 @@
   --danger: #a25858;
   --shadow: 0 20px 45px -24px rgba(83, 49, 45, 0.22);
   --shadow-soft: 0 14px 34px -22px rgba(83, 49, 45, 0.18);
+  --line-soft: rgba(138, 112, 104, 0.16);
   --radius-lg: 22px;
   --easing: cubic-bezier(0.16, 1, 0.3, 1);
   --drawer-width: clamp(300px, 28vw, 360px);
@@ -1095,7 +1096,7 @@ svg {
 
 .story-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
   min-height: min(72dvh, 700px);
 }
 
@@ -1108,7 +1109,7 @@ svg {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 18px;
-  border-right: 1px solid var(--line);
+  border-left: 1px solid var(--line);
 }
 
 .story-eyebrow {
@@ -1136,8 +1137,8 @@ svg {
 
 .story-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-auto-rows: minmax(260px, auto);
+  grid-template-columns: 1fr;
+  grid-auto-rows: minmax(190px, auto);
   gap: 16px;
   min-height: 0;
   align-content: start;
@@ -1171,7 +1172,7 @@ svg {
 }
 
 .story-card.choice-card {
-  min-height: 300px;
+  min-height: 220px;
 }
 
 .story-card.choice-card.warm {
@@ -1186,14 +1187,6 @@ svg {
     radial-gradient(circle at 84% 18%, rgba(91, 125, 134, 0.11), transparent 24%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(248, 243, 238, 0.9)),
     rgba(255, 251, 247, 0.9);
-}
-
-.story-card.return-card {
-  grid-column: 1 / -1;
-  min-height: 150px;
-  background:
-    linear-gradient(180deg, rgba(250, 244, 238, 0.96), rgba(246, 239, 232, 0.92)),
-    rgba(255, 251, 247, 0.88);
 }
 
 .story-card-shell {
@@ -1219,7 +1212,7 @@ svg {
 }
 
 .story-card.choice-card .story-card-title {
-  font-size: clamp(28px, 3.3vw, 42px);
+  font-size: clamp(26px, 2.8vw, 38px);
   line-height: 0.98;
   letter-spacing: -0.05em;
 }
@@ -1262,12 +1255,6 @@ svg {
   font-weight: 500;
 }
 
-.return-card-copy {
-  color: var(--text-soft);
-  line-height: 1.68;
-  font-size: 14px;
-}
-
 .story-side {
   display: flex;
   flex-direction: column;
@@ -1279,14 +1266,18 @@ svg {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 20px;
+  padding: 26px;
   border-radius: 30px;
   border: 1px solid var(--line);
-  background: rgba(255, 251, 247, 0.9);
+  background:
+    radial-gradient(circle at 88% 8%, rgba(180, 90, 100, 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(255, 252, 248, 0.98), rgba(255, 248, 243, 0.94)),
+    rgba(255, 251, 247, 0.96);
+  box-shadow: var(--shadow-soft);
 }
 
 .resume-label {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   color: var(--text-muted);
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
@@ -1295,29 +1286,71 @@ svg {
 }
 
 .resume-title {
-  margin-bottom: 12px;
-  font-size: 18px;
+  margin-bottom: 14px;
+  font-size: clamp(32px, 3.2vw, 48px);
   font-weight: 600;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.06em;
+  line-height: 0.98;
 }
 
 .resume-copy {
-  flex: 1;
   color: var(--text-soft);
   line-height: 1.72;
-  font-size: 14px;
+  font-size: 15px;
+}
+
+.resume-preview {
+  margin-top: 22px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.resume-preview-label {
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.resume-choice-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.resume-choice {
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  color: var(--text-soft);
+  background: rgba(255, 251, 247, 0.72);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .resume-meta {
-  margin: 18px 0 20px;
+  margin: auto 0 20px;
+  padding-top: 24px;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
-.resume-button {
+.resume-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.resume-actions button {
   width: 100%;
-  justify-content: center;
+}
+
+.resume-button {
   background: rgba(180, 90, 100, 0.08);
   color: var(--accent);
   border-color: rgba(180, 90, 100, 0.2);
@@ -1596,8 +1629,8 @@ svg {
   }
 
   .story-main {
-    border-right: none;
-    border-bottom: 1px solid var(--line);
+    border-left: none;
+    border-top: 1px solid var(--line);
   }
 
   .story-main-head {
@@ -1610,8 +1643,7 @@ svg {
     grid-template-rows: auto;
   }
 
-  .story-card.choice-card,
-  .story-card.return-card {
+  .story-card.choice-card {
     grid-column: auto;
     min-height: auto;
   }
@@ -1700,7 +1732,6 @@ svg {
   }
 
   .story-card-copy,
-  .return-card-copy,
   .resume-copy {
     font-size: 13px;
     line-height: 1.6;
@@ -1713,15 +1744,29 @@ svg {
 
   .resume-title {
     margin-bottom: 10px;
-    font-size: 16px;
+    font-size: 28px;
   }
 
-  .resume-copy {
+  .resume-preview .resume-copy {
     flex: 0 1 auto;
     display: -webkit-box;
     -webkit-line-clamp: 5;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .resume-preview {
+    margin-top: 16px;
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .resume-choice-list {
+    margin-top: 12px;
+  }
+
+  .resume-choice {
+    border-radius: 16px;
   }
 
   .resume-meta {
@@ -2130,10 +2175,47 @@ svg {
   <div class="overlay" x-show="storyModalOpen">
     <div class="modal-surface">
       <div class="story-shell">
+        <div class="story-side">
+          <div class="resume-panel" x-show="hasSave">
+            <div class="resume-label">当前进度</div>
+            <div class="resume-title">继续上次游戏</div>
+            <div class="resume-copy">先回到已经展开的这一幕。下面是离开前的最后片段和可接上的行动。</div>
+            <div class="resume-preview">
+              <div class="resume-preview-label">上次停在这里</div>
+              <div class="resume-copy" x-text="recentPreview()"></div>
+            </div>
+            <div class="resume-choice-list" x-show="initialChoices.length">
+              <template x-for="choice in initialChoices.slice(0, 3)" :key="choice">
+                <div class="resume-choice" x-text="choice"></div>
+              </template>
+            </div>
+            <div class="resume-meta">
+              <div class="meta-chip">
+                <span class="meta-chip-label">近期对话</span>
+                <span class="meta-chip-value" x-text="`${initialRecent.length} 条近期消息`"></span>
+              </div>
+              <div class="meta-chip">
+                <span class="meta-chip-label">建议行动</span>
+                <span class="meta-chip-value" x-text="`${initialChoices.length} 个建议行动`"></span>
+              </div>
+            </div>
+            <div class="resume-actions">
+              <button type="button" class="resume-button" @click="continueGame(initialRecent, initialChoices)">继续上次游戏</button>
+              <button type="button" class="ghost-btn" x-show="canDismissStoryModal()" @click="closeStoryModal()">返回当前对话</button>
+            </div>
+          </div>
+
+          <div class="resume-panel" x-show="!hasSave">
+            <div class="resume-label">当前进度</div>
+            <div class="resume-title">还没有可继续的进度</div>
+            <div class="resume-copy">先从右侧挑一个开场。开始后，这里会变成可直接接上的进度入口。</div>
+          </div>
+        </div>
+
         <div class="story-main">
           <div class="story-main-head">
-            <div class="story-eyebrow">选择故事</div>
-            <div class="story-headline">从一个合适的开场进入。</div>
+            <div class="story-eyebrow">重新开场</div>
+            <div class="story-headline">或者从新的故事进入。</div>
           </div>
 
           <div class="story-grid">
@@ -2160,50 +2242,9 @@ svg {
               </template>
             </template>
 
-            <template x-if="canDismissStoryModal()">
-              <button type="button" class="story-card return-card" @click="closeStoryModal()">
-                <div class="story-card-shell">
-                  <div class="story-card-top">
-                    <div class="story-card-tagline">当前进度</div>
-                    <div class="story-card-title">返回当前对话</div>
-                  </div>
-                  <div class="return-card-copy">不重新开局，继续当前已经展开的这一幕。</div>
-                  <div class="story-card-foot">
-                    <span class="story-card-cue">继续当前场面</span>
-                    <span class="story-card-enter">返回 →</span>
-                  </div>
-                </div>
-              </button>
-            </template>
-
             <template x-if="!stories.length">
               <div class="drawer-empty">故事列表加载失败或为空，请稍后重试。</div>
             </template>
-          </div>
-        </div>
-
-        <div class="story-side">
-          <div class="resume-panel" x-show="hasSave">
-            <div class="resume-label">可继续的进度</div>
-            <div class="resume-title">继续上次进度</div>
-            <div class="resume-copy" x-text="recentPreview()"></div>
-            <div class="resume-meta">
-              <div class="meta-chip">
-                <span class="meta-chip-label">近期对话</span>
-                <span class="meta-chip-value" x-text="`${initialRecent.length} 条近期消息`"></span>
-              </div>
-              <div class="meta-chip">
-                <span class="meta-chip-label">建议行动</span>
-                <span class="meta-chip-value" x-text="`${initialChoices.length} 个建议行动`"></span>
-              </div>
-            </div>
-            <button type="button" class="resume-button" @click="continueGame(initialRecent, initialChoices)">继续上次游戏</button>
-          </div>
-
-          <div class="resume-panel" x-show="!hasSave">
-            <div class="resume-label">新的开始</div>
-            <div class="resume-title">还没有可继续的进度</div>
-            <div class="resume-copy">从左侧挑一个故事，直接进入新的开场。</div>
           </div>
         </div>
       </div>
