@@ -50,7 +50,7 @@
       dragNodes: true,
       hover: true,
       multiselect: false,
-      selectable: false,
+      selectable: true,
       selectConnectedEdges: false,
       zoomView: true,
       dragView: true,
