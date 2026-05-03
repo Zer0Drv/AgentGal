@@ -73,12 +73,16 @@
     return Boolean(window.vis && window.vis.Network && window.vis.DataSet);
   }
 
-  function createNetwork({ container, nodes, edges, onSelect }) {
+  function clampZoom(value) {
+    const scale = Number(value);
+    if (!Number.isFinite(scale)) return 1;
+    return Math.min(2.5, Math.max(0.2, scale));
+  }
+
+  function createNetwork({ container, nodes, edges, onSelect, onZoom }) {
     if (!isReady()) {
       throw new Error("vis-network is not available");
     }
-    ensureContainerSize(container);
-
     const network = new window.vis.Network(
       container,
       {
@@ -89,29 +93,23 @@
     );
 
     network.on("click", params => {
-      if (params.nodes.length && onSelect) {
-        onSelect(params.nodes[0]);
+      const nodeId = params.nodes[0] || network.getNodeAt(params.pointer.DOM);
+      if (nodeId && onSelect) {
+        onSelect(nodeId);
       }
     });
+    const fireZoom = scale => onZoom && onZoom(clampZoom(scale));
+    network.on("zoom", params => fireZoom(params.scale));
     network.once("stabilizationIterationsDone", () => {
       syncNetworkSize(network, container);
+      fireZoom(network.getScale());
     });
 
     return network;
   }
 
-  function ensureContainerSize(container) {
-    const rect = container.getBoundingClientRect();
-    if (rect.height < 120) {
-      container.style.height = "480px";
-    }
-  }
-
   function syncNetworkSize(network, container) {
-    const rect = container.getBoundingClientRect();
-    const width = Math.max(320, Math.floor(rect.width || container.clientWidth || 0));
-    const height = Math.max(360, Math.floor(rect.height || container.clientHeight || 0));
-    network.setSize(`${width}px`, `${height}px`);
+    network.setSize("100%", "100%");
     fitNetwork(network);
   }
 
@@ -140,6 +138,7 @@
       memoryGraphEdges: [],
       memoryGraphSelected: null,
       memoryGraphNetwork: null,
+      memoryGraphZoom: 1,
 
       async openMemoryGraph() {
         if (this.isCompact) {
@@ -195,6 +194,7 @@
         this.memoryGraphLoading = true;
         this.memoryGraphError = "";
         this.memoryGraphSelected = null;
+        this.memoryGraphZoom = 1;
         this.destroyMemoryGraphNetwork();
 
         try {
@@ -234,6 +234,9 @@
           nodes: this.memoryGraphNodes,
           edges: this.memoryGraphEdges,
           onSelect: nodeId => this.selectMemoryGraphNode(nodeId),
+          onZoom: scale => {
+            if (scale !== this.memoryGraphZoom) this.memoryGraphZoom = scale;
+          },
         });
         afterPaint(() => {
           if (this.memoryGraphNetwork) {
@@ -248,6 +251,13 @@
       selectMemoryGraphNode(nodeId) {
         const node = this.memoryGraphNodes.find(item => item.id === nodeId);
         this.memoryGraphSelected = node ? node.meta : null;
+      },
+
+      setMemoryGraphZoom(value) {
+        if (!this.memoryGraphNetwork) return;
+        const scale = clampZoom(value);
+        this.memoryGraphZoom = scale;
+        this.memoryGraphNetwork.moveTo({ scale, animation: false });
       },
     };
   }
