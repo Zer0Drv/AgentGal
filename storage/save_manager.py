@@ -1,6 +1,8 @@
 """存档与游戏状态管理"""
 
+import asyncio
 import glob
+import hashlib
 import json
 import os
 import re
@@ -16,7 +18,12 @@ from shared.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agen
 from log_config.routing import routing_logger
 from storage.agent_files import read_agent_file
 from storage.history import append_message, load_conversation_history
-from memory.parser import extract_status_field
+from memory.parser import (
+    canonical_cn_date,
+    extract_status_field,
+    parse_jsonl_line,
+    serialize_episode,
+)
 
 TEMPLATES_DIR = PROJECT_ROOT / "data" / "templates"
 
@@ -335,11 +342,7 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
         if os.path.exists(filepath):
             files.append(filepath)
 
-    hidden_files = [".history_window_state.json"]
-    if agent_name != "narrator":
-        hidden_files.append(".memory_recall_state.json")
-
-    for hidden_file in hidden_files:
+    for hidden_file in [".history_window_state.json"]:
         hidden_path = f"{base}/{hidden_file}"
         if os.path.exists(hidden_path):
             files.append(hidden_path)
@@ -416,6 +419,56 @@ def _read_archive_save_id(save_path: Path) -> str:
     return stem.rsplit("_", 1)[-1] if "_" in stem else stem
 
 
+def _recall_state_by_content_hash(
+    recall_state: dict[str, dict[str, str]],
+) -> dict[tuple[str, str], str]:
+    result: dict[tuple[str, str], str] = {}
+    for entry in recall_state.values():
+        date = canonical_cn_date(str(entry.get("date", ""))) or str(
+            entry.get("date", "")
+        ).strip()
+        content_hash = str(entry.get("content_hash", "")).strip()
+        recalled_at = canonical_cn_date(str(entry.get("last_recalled_at", ""))) or str(
+            entry.get("last_recalled_at", "")
+        ).strip()
+        if date and content_hash and recalled_at:
+            result[(date, content_hash)] = recalled_at
+    return result
+
+
+def _memory_jsonl_archive_payload(
+    agent_name: str,
+    recall_state: dict[str, dict[str, str]],
+) -> str | None:
+    """返回写入存档的 memory.jsonl 内容，并合并 DB 中最新 recall 状态。"""
+    memory_path = Path(character_path(agent_name, "memory.jsonl"))
+    if not memory_path.exists():
+        return None
+
+    raw_text = memory_path.read_text(encoding="utf-8")
+    if not recall_state:
+        return raw_text
+
+    recall_by_hash = _recall_state_by_content_hash(recall_state)
+    output_lines: list[str] = []
+
+    for line in raw_text.splitlines():
+        record = parse_jsonl_line(line)
+        if record is None:
+            output_lines.append(line)
+            continue
+
+        date = canonical_cn_date(record.date) or record.date
+        content_hash = hashlib.sha1(record.content.encode("utf-8")).hexdigest()
+        recalled_at = recall_by_hash.get((date, content_hash), record.last_recalled_at)
+        recalled_at = canonical_cn_date(recalled_at) or recalled_at or date
+        output_lines.append(
+            serialize_episode(record.model_copy(update={"last_recalled_at": recalled_at}))
+        )
+
+    return "\n".join(output_lines) + "\n"
+
+
 def _build_new_save_path(theme: str, save_dir: Path) -> tuple[str, Path, str]:
     """为新档位生成不冲突的 uuid 文件名。"""
     for _ in range(20):
@@ -468,15 +521,17 @@ async def export_save_archive_with_detail(
     temp_path = save_dir / f".{filename}.{uuid.uuid4().hex}.tmp"
 
     try:
-        # 存档前从 DB 导出 recall 状态写入 sidecar（运行期不维护 sidecar）
+        # 运行期 recall 真值在 DB；存档时合并进 zip 内的 memory.jsonl。
         from storage.vector_store import vector_store
-        from storage.agent_files import write_sidecar_json
-        for agent_name in all_agents:
-            if agent_name == "narrator":
-                continue
-            recall_state = await vector_store.export_recall_state(agent_name)
-            if recall_state:
-                write_sidecar_json(agent_name, ".memory_recall_state.json", recall_state)
+
+        character_agents = [a for a in all_agents if a != "narrator"]
+        export_results = await asyncio.gather(
+            *(
+                vector_store.export_recall_state(agent_name)
+                for agent_name in character_agents
+            )
+        )
+        recall_states = dict(zip(character_agents, export_results))
 
         with zipfile.ZipFile(str(temp_path), "w", zipfile.ZIP_DEFLATED) as zf:
             metadata = {
@@ -506,6 +561,18 @@ async def export_save_archive_with_detail(
                 for filepath in agent_files:
                     if os.path.exists(filepath):
                         arcname = os.path.relpath(filepath, start=str(CHARACTERS_DIR))
+                        if (
+                            agent_name != "narrator"
+                            and os.path.basename(filepath) == "memory.jsonl"
+                        ):
+                            payload = _memory_jsonl_archive_payload(
+                                agent_name,
+                                recall_states.get(agent_name, {}),
+                            )
+                            if payload is not None:
+                                zf.writestr(arcname, payload)
+                                print(f"[存档] 已添加: {filepath} (merged recall)")
+                                continue
                         zf.write(filepath, arcname)
                         print(f"[存档] 已添加: {filepath}")
 

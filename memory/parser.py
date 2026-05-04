@@ -33,6 +33,10 @@ class EpisodeMemory(BaseModel):
     memory_owner: str = ""
     title: str = ""
     raw_dialogue: str = ""
+    last_recalled_at: str = Field(
+        default_factory=lambda data: canonical_cn_date(str(data.get("date", "")))
+        or str(data.get("date", "")).strip()
+    )
 
     @field_validator("keywords", mode="before")
     @classmethod

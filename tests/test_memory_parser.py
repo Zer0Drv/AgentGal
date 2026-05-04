@@ -38,6 +38,13 @@ def test_append_memory_records_assigns_episode_ids(tmp_path, monkeypatch):
     assert [record.id for record in persisted] == [written[0].id, "stable-id"]
 
 
+def test_episode_memory_defaults_last_recalled_at_to_event_date():
+    record = EpisodeMemory(date="4月3日 09:00", content="默认召回日期。")
+
+    assert record.last_recalled_at == "4月3日"
+    assert "last_recalled_at" not in record.model_fields_set
+
+
 def test_understanding_jsonl_round_trips_and_skips_bad_lines(tmp_path, monkeypatch):
     def _character_path(agent_name: str, *subpaths: str) -> str:
         return str(tmp_path / agent_name / Path(*subpaths))

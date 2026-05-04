@@ -951,6 +951,49 @@ class TestHybridSearch:
         assert row[0] == "4月8日"
 
     @pytest.mark.asyncio
+    async def test_rebuild_restores_recall_from_memory_jsonl(self, clean_store, tmp_path, monkeypatch):
+        """rebuild() 应优先从 memory.jsonl 的 last_recalled_at 恢复 DB 状态。"""
+        import importlib
+        from memory.parser import serialize_episode
+
+        vs_mod = importlib.import_module("storage.vector_store")
+        store = clean_store
+        monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(parser_module, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
+
+        agent_dir = tmp_path / "lilith"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        episode = EpisodeMemory(
+            date="4月3日",
+            time="4月3日 08:00",
+            location="教室",
+            participants="莉莉丝",
+            keywords=["教室", "recall", "恢复"],
+            importance=3,
+            content="这是会从 memory.jsonl 恢复 recall 的记忆。",
+            memory_owner="lilith",
+            last_recalled_at="4月7日",
+        )
+        (agent_dir / "memory.jsonl").write_text(
+            serialize_episode(episode) + "\n",
+            encoding="utf-8",
+        )
+
+        from memory.indexer import rebuild_memory_index
+        monkeypatch.setattr("memory.indexer.vector_store", store)
+        monkeypatch.setattr("memory.indexer.get_agent_names", lambda **_: ["lilith"])
+        await rebuild_memory_index()
+
+        conn = __import__("sqlite3").connect(test_db_path)
+        row = conn.execute(
+            "SELECT last_recalled_at FROM EpisodeMemory WHERE memory_owner = ? AND content = ?",
+            ("lilith", "这是会从 memory.jsonl 恢复 recall 的记忆。"),
+        ).fetchone()
+        conn.close()
+        assert row[0] == "4月7日"
+
+    @pytest.mark.asyncio
     async def test_rebuild_restores_recall_from_sidecar(self, clean_store, tmp_path, monkeypatch):
         """rebuild() DB 为空时应从 sidecar 降级恢复 last_recalled_at。"""
         import importlib
@@ -979,6 +1022,11 @@ class TestHybridSearch:
         # 否则 rebuild 读回 JSONL 后与 sidecar 对不上、无法恢复 last_recalled_at
         expected_episode = _read_episodes(tmp_path, "lilith")[0]
         content_hash = hashlib.sha1(expected_episode.content.encode("utf-8")).hexdigest()
+        legacy_payload = expected_episode.model_dump(exclude={"last_recalled_at"})
+        (tmp_path / "lilith" / "memory.jsonl").write_text(
+            json.dumps(legacy_payload, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
         (tmp_path / "lilith" / ".memory_recall_state.json").write_text(
             json.dumps(
                 {

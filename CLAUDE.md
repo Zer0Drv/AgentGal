@@ -91,7 +91,7 @@ server.py        ← all
 ### Character Files
 
 - `soul.md`: Handwritten character definition, read-only; divided into five sections: `<identity>` / `<goal>` / `<dynamic>` / `<behavior>` / `<voice>`. The `<goal>` section describes the character's concrete long-term objectives for the story period (externally verifiable milestones + optional relationship vision), largely unchanged throughout the story period
-- `memory.jsonl`: Character long-term memory, one structured `EpisodeMemory` per line (`id / date / time / location / participants / keywords / importance / content / memory_owner / title / raw_dialogue`), append-only, characters only; `id` is a stable UUID, and old data can be backfilled with `scripts/backfill_episode_ids.py`
+- `memory.jsonl`: Character long-term memory, one structured `EpisodeMemory` per line (`id / date / time / location / participants / keywords / importance / content / memory_owner / title / raw_dialogue / last_recalled_at`), append-only, characters only; `id` is a stable UUID, `last_recalled_at` defaults to the event date and is refreshed from SQLite into saved archives, and old data can be backfilled with `scripts/backfill_episode_ids.py`
 - `memory_draft.jsonl`: On-disk buffer for each round's `output.memory` (characters only), each line is `{"turn": int, "text": str}`; after consolidation's `EpisodeClosureDetector` determines closure, slices are read by `until_turn` to produce structured `EpisodeMemory` appended to `memory.jsonl`. Merged entries are removed from draft; unclosed turn entries are retained
 - `understanding.jsonl`: Stable understandings formed by the character, one structured `Understanding` per line (`id / memory_owner / subject / keywords / content / linked_episodes`); unlike `EpisodeMemory`, this records durable beliefs or interaction patterns rather than single events
 - `status.md`: Current status; characters contain "Intentions" and "Relationship with Player", narrator contains "Pending Events", "Character Locations", and the derived field "Relationship with Player" (summarized from each character's status as `- Character Display Name: Relationship`, maintained by code, narrator does not generate it)
@@ -109,7 +109,7 @@ server.py        ← all
 - `data/characters/narrator/tasks.md`: Optional story seed file; current main flow primarily syncs "Pending Events" from character "Intentions" via `state_updater`
 - `data/characters/*/.history_window_state.json`: Per-agent dialogue history high/low water mark window sidecar
 - `data/characters/*/.consolidation_state.json`: Character memory consolidation progress sidecar
-- `data/characters/*/.memory_recall_state.json`: Character long-term memory recall snapshot (only generated from DB on save; not maintained at runtime)
+- `data/characters/*/.memory_recall_state.json`: Legacy character long-term memory recall snapshot; new saves do not generate it, but old saves may still load it as a fallback when `memory.jsonl` lacks `last_recalled_at`
 
 ## Message Routing
 
@@ -249,8 +249,8 @@ After each round of character responses, `generate_choices()` is called to gener
 - `memory/indexer.py` reads `EpisodeMemory` records from `memory.jsonl` and `Understanding` records from `understanding.jsonl`, then appends them to the vector store
 - Recall ranking: vector relevance and BM25 relevance are fused first, rerank (optional) replaces relevance signal, then in-game time recency is layered on top
 - When Logfire is configured, memory retrieval logs each round's query and top hit summary for debugging recall quality
-- `last_recalled_at` is updated to DB on hit; `.memory_recall_state.json` is only exported from DB on save, used as fallback data source on load rebuild
-- `memory/indexer.rebuild_memory_index()` combines `.consolidation_state.json` to restore the long-term memory index; when `clear_existing=True` (the default, used on load), it also rebuilds the Understanding index via the shared `_rebuild_understanding_index_for_agents` helper. Recall state is read from DB first, falls back to `.memory_recall_state.json` when DB is empty. `rebuild_understanding_index()` is still available as a standalone function for targeted rebuilds (e.g. after consolidation patches a single agent's understandings)
+- `last_recalled_at` is updated in SQLite on hit; save export merges the latest DB value into the archived `memory.jsonl`, while the working `memory.jsonl` remains append-only
+- `memory/indexer.rebuild_memory_index()` reads `memory.jsonl.last_recalled_at` to restore the long-term memory index; when `clear_existing=True` (the default, used on load), it also rebuilds the Understanding index via the shared `_rebuild_understanding_index_for_agents` helper. Legacy `.memory_recall_state.json` is only a fallback for old saves whose `memory.jsonl` lacks `last_recalled_at`. `rebuild_understanding_index()` is still available as a standalone function for targeted rebuilds (e.g. after consolidation patches a single agent's understandings)
 
 ## Memory Consolidation
 
@@ -288,14 +288,13 @@ Handled by `storage/save_manager.py`, exposed via FastAPI endpoints:
 Save includes:
 
 - Character markdown / jsonl files (`narrator` does not include `memory.jsonl` / `memory_draft.jsonl`)
-- Character `memory.jsonl` (structured long-term memory, one `EpisodeMemory` per line, includes stable `id` and `raw_dialogue` trace field)
+- Character `memory.jsonl` (structured long-term memory, one `EpisodeMemory` per line, includes stable `id`, `raw_dialogue` trace field, and archive-refreshed `last_recalled_at`)
 - Character `memory_draft.jsonl` (when present; each line `{"turn": int, "text": str}`, ensuring unclosed merge memories are not lost on save)
 - Character `understanding.jsonl` (when present; stable beliefs linked back to EpisodeMemory ids)
 - Character `schedule.json` (when present)
 - Narrator raw history (each entry carries turn number)
 - Per-agent `.history_window_state.json`
 - Character `.consolidation_state.json`
-- Character `.memory_recall_state.json`
 - `last_choices.json`
 - `.turn_counter.json` (global turn counter)
 

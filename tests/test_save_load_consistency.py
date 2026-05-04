@@ -34,6 +34,7 @@ except ImportError:
 try:
     import importlib
     import storage.vector_store
+    import storage.save_manager as save_manager_module
     import memory.retrieval
     import memory.parser as parser_module
     vector_store_module = importlib.import_module("storage.vector_store")
@@ -222,6 +223,7 @@ class TestSaveLoadConsistency:
             await store._db.close()
         store._db = None
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(save_manager_module, "character_path", make_character_path(tmp_path))
 
         try:
             await store.init_tables()
@@ -252,7 +254,20 @@ class TestSaveLoadConsistency:
             assert len(snapshot_before["EpisodeMemory"]) == 2, "应该有 2 条记忆"
             assert len(snapshot_before["EpisodeMemory_vec"]) == 2, "应该有 2 条向量"
 
-            # 模拟 save-load 循环：清空数据库
+            # 模拟 save：把 DB 中最新 last_recalled_at 合并进 archive 里的 memory.jsonl
+            for agent_name in ["lilith", "mitsuki"]:
+                recall_state = await store.export_recall_state(agent_name)
+                payload = save_manager_module._memory_jsonl_archive_payload(
+                    agent_name,
+                    recall_state,
+                )
+                if payload is not None:
+                    (tmp_path / agent_name / "memory.jsonl").write_text(
+                        payload,
+                        encoding="utf-8",
+                    )
+
+            # 模拟 load：清空数据库后从 archive 内容重建
             db = await store._get_db()
             await db.execute("DELETE FROM EpisodeMemory_vec")
             await db.execute("DELETE FROM EpisodeMemory")

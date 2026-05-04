@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import zipfile
 from pathlib import Path
 
@@ -70,6 +71,16 @@ def test_missing_schedule_is_omitted(character_dir: Path):
     assert "understanding.jsonl" in basenames
 
 
+def test_character_save_files_omit_legacy_recall_sidecar(character_dir: Path):
+    agent_dir = _seed_character(character_dir, "mitsuki")
+    (agent_dir / ".memory_recall_state.json").write_text("{}", encoding="utf-8")
+
+    files = save_manager._get_agent_save_files("mitsuki")
+    basenames = {Path(f).name for f in files}
+
+    assert ".memory_recall_state.json" not in basenames
+
+
 def test_narrator_does_not_include_character_only_sidecars(character_dir: Path):
     narrator_dir = character_dir / "narrator"
     narrator_dir.mkdir(parents=True, exist_ok=True)
@@ -85,6 +96,50 @@ def test_narrator_does_not_include_character_only_sidecars(character_dir: Path):
     assert "schedule.json" not in basenames
     assert ".memory_recall_state.json" not in basenames
     assert "soul.md" in basenames
+
+
+def test_memory_jsonl_archive_payload_merges_db_recall_state(
+    character_dir: Path,
+    monkeypatch,
+):
+    from memory.parser import EpisodeMemory, parse_jsonl_line, serialize_episode
+
+    def _character_path(agent_name: str, *parts: str) -> str:
+        return str(character_dir / agent_name / Path(*parts))
+
+    monkeypatch.setattr(save_manager, "character_path", _character_path)
+
+    agent_dir = character_dir / "mitsuki"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    episode = EpisodeMemory(
+        date="4月3日",
+        content="需要合并最新召回日期的记忆。",
+        memory_owner="mitsuki",
+    )
+    (agent_dir / "memory.jsonl").write_text(
+        serialize_episode(episode) + "\n",
+        encoding="utf-8",
+    )
+    content_hash = hashlib.sha1(episode.content.encode("utf-8")).hexdigest()
+
+    payload = save_manager._memory_jsonl_archive_payload(
+        "mitsuki",
+        {
+            "1": {
+                "date": "4月3日",
+                "content_hash": content_hash,
+                "last_recalled_at": "4月8日",
+            }
+        },
+    )
+
+    assert payload is not None
+    archived = parse_jsonl_line(payload)
+    assert archived is not None
+    assert archived.last_recalled_at == "4月8日"
+    original = parse_jsonl_line((agent_dir / "memory.jsonl").read_text(encoding="utf-8"))
+    assert original is not None
+    assert original.last_recalled_at == "4月3日"
 
 
 @pytest.mark.asyncio

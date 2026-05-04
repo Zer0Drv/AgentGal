@@ -212,9 +212,9 @@ class VectorStore:
         agent_name: str,
         date: str,
     ) -> dict[str, str]:
-        """从 sidecar 文件读取 {content_hash → last_recalled_at}。
+        """从旧版 sidecar 文件读取 {content_hash → last_recalled_at}。
 
-        仅用于 load 后 DB 为空时的降级 fallback。
+        仅用于旧存档 load 后 DB 为空时的降级 fallback。
         """
         state = self._read_memory_recall_state(agent_name)
         result: dict[str, str] = {}
@@ -420,13 +420,18 @@ class VectorStore:
 
         content_hash = hashlib.sha1(episode.content.encode("utf-8")).hexdigest()
         cache_key = (memory_owner, date)
-        if sidecar_cache is None:
-            sidecar_recall = self._sidecar_recall_by_hash(memory_owner, date)
-        else:
-            if cache_key not in sidecar_cache:
-                sidecar_cache[cache_key] = self._sidecar_recall_by_hash(memory_owner, date)
-            sidecar_recall = sidecar_cache[cache_key]
-        recalled_at = sidecar_recall.get(content_hash, date)
+        recalled_at = canonical_cn_date(episode.last_recalled_at) or date
+        if "last_recalled_at" not in episode.model_fields_set:
+            if sidecar_cache is None:
+                sidecar_recall = self._sidecar_recall_by_hash(memory_owner, date)
+            else:
+                if cache_key not in sidecar_cache:
+                    sidecar_cache[cache_key] = self._sidecar_recall_by_hash(
+                        memory_owner,
+                        date,
+                    )
+                sidecar_recall = sidecar_cache[cache_key]
+            recalled_at = sidecar_recall.get(content_hash, recalled_at)
         return _PreparedEpisode(
             episode=episode,
             memory_owner=memory_owner,
