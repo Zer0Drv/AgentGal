@@ -159,6 +159,14 @@ def _apply_understanding_patch(
             )
             continue
         new_id = uuid.uuid4().hex
+        history = [
+            UnderstandingHistoryEntry(
+                episode_id=episode.id if episode else "",
+                date=episode.date if episode else "",
+                title=episode.title if episode else "",
+                content=entry.content,
+            )
+        ]
         updated[new_id] = Understanding(
             id=new_id,
             memory_owner=agent_name,
@@ -166,6 +174,7 @@ def _apply_understanding_patch(
             keywords=entry.keywords,
             content=entry.content,
             linked_episodes=entry.linked_episodes,
+            history=history,
         )
         added_ids.append(new_id)
         logs.append(f"ADD {new_id}")

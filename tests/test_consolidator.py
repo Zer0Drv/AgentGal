@@ -342,7 +342,11 @@ def test_apply_understanding_patch_updates_and_adds(monkeypatch):
     assert result.updated["u1"].history[-1].content == "玩家在压力下会先确认她是否安全。"
     assert result.updated["new-understanding-id"].memory_owner == "chenxiao"
     assert result.updated["new-understanding-id"].content == "玩家会用行动解释。"
-    assert result.updated["new-understanding-id"].history == []
+    assert len(result.updated["new-understanding-id"].history) == 1
+    assert result.updated["new-understanding-id"].history[0].episode_id == "e1"
+    assert result.updated["new-understanding-id"].history[0].date == "10月19日"
+    assert result.updated["new-understanding-id"].history[0].title == "餐厅晚饭"
+    assert result.updated["new-understanding-id"].history[0].content == "玩家会用行动解释。"
 
 
 def test_apply_understanding_patch_does_not_append_history_for_link_only_update():
@@ -533,7 +537,10 @@ async def test_patch_understandings_writes_file_and_syncs_vectors(tmp_path, monk
     assert updated["u1"].history[0].date == "10月19日"
     assert updated["u1"].history[0].content == "玩家在压力下会先确认她是否安全。"
     assert updated["new-understanding-id"].content == "玩家会用行动解释误会。"
-    assert updated["new-understanding-id"].history == []
+    assert len(updated["new-understanding-id"].history) == 1
+    assert updated["new-understanding-id"].history[0].episode_id == "e1"
+    assert updated["new-understanding-id"].history[0].date == "10月19日"
+    assert updated["new-understanding-id"].history[0].content == "玩家会用行动解释误会。"
     assert deleted_ids == ["u1"]
     assert added_ids == ["u1", "new-understanding-id"]
 
