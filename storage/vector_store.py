@@ -29,7 +29,7 @@ from llm.embedding import (
 from memory.parser import EpisodeMemory, canonical_cn_date
 from shared.config import (
     character_path,
-    PROJECT_ROOT,
+    RUNTIME_DIR,
     get_agent_names,
 )
 
@@ -47,7 +47,7 @@ class _PreparedEpisode(NamedTuple):
 
 # ----------------------------- 配置与常量 -----------------------------
 
-DB_PATH = str(PROJECT_ROOT / "data" / "vectors.sqlite")
+DB_PATH = str(RUNTIME_DIR / "vectors.sqlite")
 
 __all__ = [
     "VectorStore",

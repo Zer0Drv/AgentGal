@@ -111,7 +111,7 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
             await vector_store.delete_all_agents(all_agents)
 
         # 2. 删除整个 characters 目录（如果存在）
-        characters_dir = "data/characters"
+        characters_dir = str(CHARACTERS_DIR)
         if os.path.exists(characters_dir):
             try:
                 shutil.rmtree(characters_dir)

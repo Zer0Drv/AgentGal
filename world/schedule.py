@@ -1,6 +1,6 @@
 """每个角色的 schedule.json 解析与查询（纯函数，便于单测）。
 
-每个角色在 data/characters/{name}/schedule.json 自维护一份作息。
+每个角色在 data/runtime/characters/{name}/schedule.json 自维护一份作息。
 schedule 只提供"此时段默认在哪"的参考值，供 state_updater 综合判断后写入
 `narrator/status.md` 的「角色位置」字段；narrator/status.md 始终是现时真相。
 """

@@ -33,7 +33,7 @@ from memory.parser import (  # noqa: E402
 )
 
 
-CHARACTERS_DIR = PROJECT_ROOT / "data" / "characters"
+CHARACTERS_DIR = PROJECT_ROOT / "data" / "runtime" / "characters"
 
 
 # ===== 旧 memory.md 解析工具（仅此迁移脚本使用） =====

@@ -23,9 +23,10 @@ agentgal-memos/
 ├── server.py                   # FastAPI entry point (UI adapter layer)
 ├── config.toml                 # Non-secret runtime parameters
 ├── data/
-│   ├── characters/             # Runtime character data
+│   ├── runtime/                # Runtime state (ignored by git)
+│   │   ├── characters/         # Runtime character data
+│   │   └── vectors.sqlite      # Vector store
 │   ├── templates/              # Story templates (school / modern)
-│   └── vectors.sqlite          # Vector store
 ├── engine/                     # Dialogue runtime orchestration
 │   ├── character.py            # Character / Narrator runtime wrapper and typed output writeback
 │   ├── character_factory.py    # New character incubation
@@ -98,18 +99,18 @@ server.py        ← all
 
 ### History Files
 
-- Current dialogue history is **only written** to `data/characters/narrator/raw/YYYY-MM-DD.jsonl`
+- Current dialogue history is **only written** to `data/runtime/characters/narrator/raw/YYYY-MM-DD.jsonl`
 - Each message carries `visible_to`
 - When characters read context, they filter messages by visibility
 
 ### Other Runtime Files
 
-- `data/characters/last_choices.json`: Latest set of player options, restored on load, cleared on reset
-- `data/characters/.turn_counter.json`: Global narrator-turn counter, incremented by 1 for each narrator message; a turn starts with one narrator message and continues through character responses plus the next player input, until the following narrator message starts a new turn. Raw JSONL and `memory_draft.jsonl` entries carry turn numbers for `EpisodeClosureDetector` closure detection; reset clears with characters directory, and the opening narrator message writes the first turn
-- `data/characters/narrator/tasks.md`: Optional story seed file; current main flow primarily syncs "Pending Events" from character "Intentions" via `state_updater`
-- `data/characters/*/.history_window_state.json`: Per-agent dialogue history high/low water mark window sidecar
-- `data/characters/*/.consolidation_state.json`: Character memory consolidation progress sidecar
-- `data/characters/*/.memory_recall_state.json`: Legacy character long-term memory recall snapshot; new saves do not generate it, but old saves may still load it as a fallback when `memory.jsonl` lacks `last_recalled_at`
+- `data/runtime/characters/last_choices.json`: Latest set of player options, restored on load, cleared on reset
+- `data/runtime/characters/.turn_counter.json`: Global narrator-turn counter, incremented by 1 for each narrator message; a turn starts with one narrator message and continues through character responses plus the next player input, until the following narrator message starts a new turn. Raw JSONL and `memory_draft.jsonl` entries carry turn numbers for `EpisodeClosureDetector` closure detection; reset clears with characters directory, and the opening narrator message writes the first turn
+- `data/runtime/characters/narrator/tasks.md`: Optional story seed file; current main flow primarily syncs "Pending Events" from character "Intentions" via `state_updater`
+- `data/runtime/characters/*/.history_window_state.json`: Per-agent dialogue history high/low water mark window sidecar
+- `data/runtime/characters/*/.consolidation_state.json`: Character memory consolidation progress sidecar
+- `data/runtime/characters/*/.memory_recall_state.json`: Legacy character long-term memory recall snapshot; new saves do not generate it, but old saves may still load it as a fallback when `memory.jsonl` lacks `last_recalled_at`
 
 ## Message Routing
 

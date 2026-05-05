@@ -144,7 +144,7 @@ def test_memory_jsonl_archive_payload_merges_db_recall_state(
 
 @pytest.mark.asyncio
 async def test_export_new_save_uses_fresh_slot_filename(tmp_path: Path, monkeypatch):
-    characters_dir = tmp_path / "data" / "characters"
+    characters_dir = tmp_path / "data" / "runtime" / "characters"
     narrator_dir = characters_dir / "narrator"
     narrator_dir.mkdir(parents=True)
     (characters_dir / ".story_id").write_text("school", encoding="utf-8")

@@ -55,7 +55,7 @@ pytestmark = pytest.mark.skipif(
 
 
 # 使用测试数据库路径，避免污染真实数据
-test_db_path = str(project_root / "data" / "test_vectors.sqlite")
+test_db_path = str(project_root / "data" / "runtime" / "test_vectors.sqlite")
 
 
 @pytest_asyncio.fixture

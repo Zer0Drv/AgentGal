@@ -12,7 +12,8 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CHARACTERS_DIR = PROJECT_ROOT / "data" / "characters"
+RUNTIME_DIR = PROJECT_ROOT / "data" / "runtime"
+CHARACTERS_DIR = RUNTIME_DIR / "characters"
 
 with open(PROJECT_ROOT / "config.toml", "rb") as _f:
     _cfg = tomllib.load(_f)
@@ -67,13 +68,13 @@ def character_path(character_name: str, *subpaths: str) -> str:
 
     Example:
         >>> character_path("lilith", "soul.md")
-        "/abs/path/to/data/characters/lilith/soul.md"
+        "/abs/path/to/data/runtime/characters/lilith/soul.md"
     """
     return str(CHARACTERS_DIR / character_name / Path(*subpaths))
 
 
 def get_agent_names(include_narrator: bool = True) -> list[str]:
-    """获取角色名称列表（每次动态扫描 data/characters/）
+    """获取角色名称列表（每次动态扫描 data/runtime/characters/）
 
     Args:
         include_narrator: 是否包含 narrator，默认 True
