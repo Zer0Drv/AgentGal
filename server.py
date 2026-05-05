@@ -252,9 +252,14 @@ def _build_memory_graph(agent_name: str, display_name: str) -> dict:
                 missing_episode_node_ids.add(episode_node_id)
             edges.append(
                 {
-                    "id": f"{understanding_node['id']}->{episode_node_id}:{link_index}",
-                    "from": understanding_node["id"],
-                    "to": episode_node_id,
+                    "id": f"{episode_node_id}->{understanding_node['id']}:{link_index}",
+                    "from": episode_node_id,
+                    "to": understanding_node["id"],
+                    "meta": {
+                        "type": "edge",
+                        "episode_id": episode_id,
+                        "understanding_id": understanding_node["meta"]["id"],
+                    },
                 }
             )
 

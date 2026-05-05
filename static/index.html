@@ -2362,7 +2362,7 @@ svg {
           </svg>
         </button>
 
-        <aside class="memory-graph-detail" aria-label="记忆节点详情" x-show="!memoryGraphDetailCollapsed">
+        <aside class="memory-graph-detail" aria-label="记忆图谱详情" x-show="!memoryGraphDetailCollapsed">
           <template x-if="memoryGraphSelected">
             <div class="memory-graph-detail-inner">
               <div class="memory-graph-detail-kicker" x-text="memoryGraphSelected.type_label"></div>
@@ -2381,7 +2381,9 @@ svg {
                 </template>
               </div>
 
-              <div class="memory-graph-detail-content" x-text="memoryGraphSelected.content"></div>
+              <template x-if="memoryGraphSelected.content">
+                <div class="memory-graph-detail-content" x-text="memoryGraphSelected.content"></div>
+              </template>
 
               <template x-if="memoryGraphSelected.type === 'understanding' && memoryGraphSelected.history && memoryGraphSelected.history.length">
                 <div>
@@ -2398,6 +2400,17 @@ svg {
                 </div>
               </template>
 
+              <template x-if="memoryGraphSelected.type === 'edge' && memoryGraphEdgeDiffSegments().length">
+                <div>
+                  <div class="memory-graph-section-title">Diff</div>
+                  <pre class="memory-graph-raw-block memory-graph-diff-block"><span class="memory-graph-code-heading" x-text="memoryGraphHistoryHeading(memoryGraphSelected.history_entry)"></span><template x-for="(segment, segmentIndex) in memoryGraphEdgeDiffSegments()" :key="segment.type + '-' + segmentIndex"><span
+                        class="memory-graph-diff-line"
+                        :class="'is-' + segment.type"
+                        x-text="segment.text"
+                      ></span></template></pre>
+                </div>
+              </template>
+
               <template x-if="memoryGraphSelected.raw_dialogue_preview">
                 <div>
                   <div class="memory-graph-section-title">Raw</div>
@@ -2408,7 +2421,7 @@ svg {
           </template>
 
           <template x-if="!memoryGraphSelected">
-            <div class="memory-graph-empty">选择一个节点查看详情。</div>
+            <div class="memory-graph-empty">选择一个节点或连线查看详情。</div>
           </template>
         </aside>
     </div>

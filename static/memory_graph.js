@@ -94,7 +94,7 @@
     const previous = splitHistoryClauses(previousText);
     const current = splitHistoryClauses(currentText);
     if (!previous.length) {
-      return current.map(text => ({ type: "current", text }));
+      return current.map(text => ({ type: "added", text }));
     }
     if (!current.length) return [];
 
@@ -137,7 +137,7 @@
     return diff;
   }
 
-  function createNetwork({ container, nodes, edges, onSelect, onBlank, onZoom }) {
+  function createNetwork({ container, nodes, edges, onSelectNode, onSelectEdge, onBlank, onZoom }) {
     if (!isReady()) {
       throw new Error("vis-network is not available");
     }
@@ -152,8 +152,13 @@
 
     network.on("click", params => {
       const nodeId = params.nodes[0] || network.getNodeAt(params.pointer.DOM);
-      if (nodeId && onSelect) {
-        onSelect(nodeId);
+      if (nodeId && onSelectNode) {
+        onSelectNode(nodeId);
+        return;
+      }
+      const edgeId = params.edges[0] || network.getEdgeAt(params.pointer.DOM);
+      if (edgeId && onSelectEdge) {
+        onSelectEdge(edgeId);
         return;
       }
       if (onBlank) {
@@ -245,6 +250,12 @@
       memoryGraphMetaPills() {
         const item = this.memoryGraphSelected;
         if (!item) return [];
+        if (item.type === "edge") {
+          const pills = [];
+          if (item.episode_id) pills.push(`episode ${item.episode_id}`);
+          if (item.understanding_id) pills.push(`understanding ${item.understanding_id}`);
+          return pills;
+        }
         const pills = [];
         if (item.location) pills.push(item.location);
         if (item.participants) pills.push(item.participants);
@@ -257,14 +268,16 @@
 
       memoryGraphEpisodeFacts() {
         const item = this.memoryGraphSelected;
-        if (!item || item.type !== "episode") return [];
+        if (!item || !["episode", "edge"].includes(item.type)) return [];
+        const source = item.type === "edge" ? item.episode : item;
+        if (!source) return [];
         const facts = [];
-        const date = String(item.date || "").trim();
-        const time = String(item.time || "").trim();
+        const date = String(source.date || "").trim();
+        const time = String(source.time || "").trim();
         const dateLabel =
           date && time ? (time.startsWith(date) ? time : `${date} · ${time}`) : date || time;
         if (dateLabel) facts.push(dateLabel);
-        if (item.importance) facts.push(`importance ${item.importance}`);
+        if (source.importance) facts.push(`importance ${source.importance}`);
         return facts;
       },
 
@@ -285,6 +298,12 @@
             diff: diffHistoryClauses(index > 0 ? entries[index - 1].content : "", entry.content),
           }))
           .reverse();
+      },
+
+      memoryGraphEdgeDiffSegments() {
+        const item = this.memoryGraphSelected;
+        if (!item || item.type !== "edge" || !Array.isArray(item.diff)) return [];
+        return item.diff;
       },
 
       async loadMemoryGraph(agentName = null) {
@@ -330,7 +349,8 @@
           container: this.$refs.memoryGraphNetwork,
           nodes: this.memoryGraphNodes,
           edges: this.memoryGraphEdges,
-          onSelect: nodeId => this.selectMemoryGraphNode(nodeId),
+          onSelectNode: nodeId => this.selectMemoryGraphNode(nodeId),
+          onSelectEdge: edgeId => this.selectMemoryGraphEdge(edgeId),
           onBlank: () => {
             this.memoryGraphDetailCollapsed = true;
           },
@@ -354,6 +374,57 @@
         if (node) {
           this.memoryGraphDetailCollapsed = false;
         }
+      },
+
+      selectMemoryGraphEdge(edgeId) {
+        const edge = this.memoryGraphEdges.find(item => item.id === edgeId);
+        if (!edge) {
+          this.memoryGraphSelected = null;
+          return;
+        }
+        const fromNode = this.memoryGraphNodes.find(item => item.id === edge.from);
+        const toNode = this.memoryGraphNodes.find(item => item.id === edge.to);
+        const candidates = [fromNode, toNode].filter(Boolean);
+        const episodeNode = candidates.find(item =>
+          ["episode", "missing_episode"].includes(item.meta && item.meta.type),
+        );
+        const understandingNode = candidates.find(item => item.meta && item.meta.type === "understanding");
+        if (!episodeNode || !understandingNode) {
+          this.memoryGraphSelected = null;
+          return;
+        }
+
+        const episode = episodeNode.meta;
+        const understanding = understandingNode.meta;
+        const episodeId = (edge.meta && edge.meta.episode_id) || episode.id;
+        const historyEntries = Array.isArray(understanding.history)
+          ? understanding.history.filter(entry => String(entry.content || "").trim())
+          : [];
+        const historyIndex = historyEntries.findIndex(
+          entry => String(entry.episode_id || "") === String(episodeId || ""),
+        );
+        const historyEntry = historyIndex >= 0 ? historyEntries[historyIndex] : null;
+        const diff = historyEntry
+          ? diffHistoryClauses(
+              historyIndex > 0 ? historyEntries[historyIndex - 1].content : "",
+              historyEntry.content,
+            )
+          : [];
+        const hasVisibleDiff = diff.some(segment => segment.type !== "same");
+
+        this.memoryGraphSelected = {
+          id: edge.id,
+          type: "edge",
+          type_label: "Episode Impact",
+          title: [episode.title, understanding.title].filter(Boolean).join(" / "),
+          episode,
+          understanding,
+          episode_id: episodeId,
+          understanding_id: (edge.meta && edge.meta.understanding_id) || understanding.id,
+          history_entry: historyEntry,
+          diff: hasVisibleDiff ? diff : [],
+        };
+        this.memoryGraphDetailCollapsed = false;
       },
 
       setMemoryGraphZoom(value) {

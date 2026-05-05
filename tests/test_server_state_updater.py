@@ -229,7 +229,13 @@ async def test_api_memory_graph_links_understandings_to_episodes(monkeypatch):
     assert "[turn=" not in episode["meta"]["raw_dialogue_preview"]
     assert "旁白" not in episode["meta"]["raw_dialogue_preview"]
     assert episode["meta"]["raw_dialogue_preview"] == "玩家：我会保密"
-    assert {edge["to"] for edge in body["edges"]} == {"episode:e1", "episode:missing-e2"}
+    assert {edge["from"] for edge in body["edges"]} == {"episode:e1", "episode:missing-e2"}
+    assert {edge["to"] for edge in body["edges"]} == {"understanding:u1"}
+    assert next(edge for edge in body["edges"] if edge["from"] == "episode:e1")["meta"] == {
+        "type": "edge",
+        "episode_id": "e1",
+        "understanding_id": "u1",
+    }
 
 
 @pytest.mark.asyncio
