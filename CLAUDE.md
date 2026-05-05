@@ -221,7 +221,7 @@ Where:
 
 `user` message is assembled into a **single large message** in the following order:
 
-1. Recent dialogue history (narrator keeps only the last entry)
+1. Recent dialogue history (narrator keeps all recent messages in the active history window, including narrator messages)
 2. `<fields>` (list of all active characters)
 3. `status.md`
 4. Current round player input

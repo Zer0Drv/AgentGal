@@ -37,7 +37,7 @@ def fake_history_window_state():
 class TestBuildHistoryTranscript:
     """历史文本构建"""
 
-    def test_returns_history_with_only_last_visible_narrator_message(self):
+    def test_returns_all_visible_messages_in_window(self):
         msgs = [
             {"role": "player", "content": "你好", "visible_to": ["narrator", "lilith"]},
             {"role": "narrator", "content": "旧场景描述", "visible_to": ["narrator", "lilith"]},
@@ -47,8 +47,7 @@ class TestBuildHistoryTranscript:
 
         result, _ = build_history_transcript("lilith", msgs)
 
-        assert result == "玩家: 你好\n\nmitsuki: mitsuki 回复\n\n旁白: 新场景描述"
-        assert "旧场景描述" not in result
+        assert result == "玩家: 你好\n\n旁白: 旧场景描述\n\nmitsuki: mitsuki 回复\n\n旁白: 新场景描述"
 
     def test_character_only_sees_visible_messages(self):
         msgs = [
@@ -76,7 +75,7 @@ class TestBuildHistoryTranscript:
         assert "mitsuki 私密场景" not in result
         assert "私密回复" not in result
 
-    def test_narrator_sees_last_narrator_message(self):
+    def test_narrator_sees_all_messages_in_window(self):
         msgs = [
             {"role": "player", "content": "公开", "visible_to": ["narrator", "lilith"]},
             {"role": "narrator", "content": "旧场景", "visible_to": ["narrator", "lilith"]},
@@ -86,10 +85,9 @@ class TestBuildHistoryTranscript:
 
         result, _ = build_history_transcript("narrator", msgs)
 
-        assert result == "玩家: 公开\n\nmitsuki: mitsuki\n\n旁白: 最新场景"
-        assert "旧场景" not in result
+        assert result == "玩家: 公开\n\n旁白: 旧场景\n\nmitsuki: mitsuki\n\n旁白: 最新场景"
 
-    def test_prefix_stable_across_turns_while_old_narrator_is_replaced(self):
+    def test_prefix_stable_across_turns_while_old_narrator_is_retained(self):
         msgs_turn_n = [
             {"role": "player", "content": "p1", "visible_to": ["narrator", "lilith"]},
             {"role": "narrator", "content": "n1", "visible_to": ["narrator", "lilith"]},
@@ -104,7 +102,7 @@ class TestBuildHistoryTranscript:
         result_n1, _ = build_history_transcript("lilith", msgs_turn_n1)
 
         assert result_n == "玩家: p1\n\n旁白: n1\n\nlilith: l1"
-        assert result_n1 == "玩家: p1\n\nlilith: l1\n\n玩家: p2\n\n旁白: n2"
+        assert result_n1 == "玩家: p1\n\n旁白: n1\n\nlilith: l1\n\n玩家: p2\n\n旁白: n2"
 
     def test_truncates_when_exceeds_high(self):
         msgs = [
@@ -115,7 +113,7 @@ class TestBuildHistoryTranscript:
         with patch("engine.prompt_builder.HISTORY_HIGH", 30), patch("engine.prompt_builder.HISTORY_LOW", 15):
             result, was_truncated = build_history_transcript("lilith", msgs)
 
-        assert result == "旁白: 消息39"
+        assert result == "\n\n".join(f"旁白: 消息{i}" for i in range(25, 40))
         assert was_truncated is True
 
     def test_true_high_low_window_does_not_slide_every_turn(self):
@@ -136,11 +134,11 @@ class TestBuildHistoryTranscript:
             result_32, truncated_32 = build_history_transcript("lilith", msgs_32)
             result_47, truncated_47 = build_history_transcript("lilith", msgs_47)
 
-        assert result_31 == "旁白: 消息30"
+        assert result_31 == "\n\n".join(f"旁白: 消息{i}" for i in range(16, 31))
         assert truncated_31 is True
-        assert result_32 == "旁白: 消息31"
+        assert result_32 == "\n\n".join(f"旁白: 消息{i}" for i in range(16, 32))
         assert truncated_32 is False
-        assert result_47 == "旁白: 消息46"
+        assert result_47 == "\n\n".join(f"旁白: 消息{i}" for i in range(32, 47))
         assert truncated_47 is True
 
     def test_empty_history_returns_empty(self):
