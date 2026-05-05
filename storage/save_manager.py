@@ -16,7 +16,14 @@ from pathlib import Path
 
 from shared.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
 from log_config.routing import routing_logger
-from storage.agent_files import increment_turn_counter, read_agent_file
+from storage.agent_files import (
+    PLAYER_NAME_FILENAME,
+    extract_player_name,
+    increment_turn_counter,
+    read_agent_file,
+    read_player_name,
+    write_player_name,
+)
 from storage.history import append_message, load_conversation_history
 from memory.parser import (
     canonical_cn_date,
@@ -135,6 +142,8 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
         os.makedirs(raw_dir, exist_ok=True)
         print(f"  已创建: {raw_dir}", flush=True)
 
+        read_player_name.cache_clear()
+
         # 5. 写入 story_id 和 save_id 标记文件
         story_id_path = os.path.join(characters_dir, ".story_id")
         with open(story_id_path, "w", encoding="utf-8") as f:
@@ -228,6 +237,19 @@ def delete_save_archive(save_filename: str) -> bool:
         return False
 
 
+def _restore_player_name_from_raw_history() -> None:
+    """旧存档没有 .player_name 时，从第一条玩家 raw 消息恢复一次。"""
+    if read_player_name():
+        return
+
+    for message in load_conversation_history():
+        if message.get("role") == "player" and (
+            player_name := extract_player_name(message.get("content") or "")
+        ):
+            write_player_name(player_name)
+            return
+
+
 async def import_save_archive(save_filename: str) -> bool:
     """从指定存档文件恢复游戏状态
 
@@ -281,6 +303,10 @@ async def import_save_archive(save_filename: str) -> bool:
                 zf.extract(member, characters_dir)
                 print(f"[读档] 已恢复: {member}", flush=True)
         log_step("解压存档")
+
+        read_player_name.cache_clear()
+        _restore_player_name_from_raw_history()
+        log_step("校验玩家名")
 
         save_id_path = os.path.join(characters_dir, ".save_id")
         if not os.path.exists(save_id_path):
@@ -551,7 +577,7 @@ async def export_save_archive_with_detail(
             zf.writestr(".save_id", save_id)
             print(f"[存档] 已添加: .save_id")
 
-            for marker in [".story_id", ".turn_counter.json"]:
+            for marker in [".story_id", ".turn_counter.json", PLAYER_NAME_FILENAME]:
                 marker_path = CHARACTERS_DIR / marker
                 if marker_path.exists():
                     zf.write(str(marker_path), marker)

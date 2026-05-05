@@ -9,7 +9,9 @@ from pathlib import Path
 
 import pytest
 
+from storage import agent_files as agent_files_module
 from storage import save_manager
+from storage.agent_files import PLAYER_NAME_FILENAME
 
 
 @pytest.fixture
@@ -41,6 +43,25 @@ def _seed_character(
             json.dumps(schedule), encoding="utf-8"
         )
     return agent_dir
+
+
+def test_restore_player_name_from_raw_history(tmp_path: Path, monkeypatch):
+    from shared import config as shared_config
+
+    raw_dir = tmp_path / "narrator" / "raw"
+    raw_dir.mkdir(parents=True)
+    (raw_dir / "2026-05-05.jsonl").write_text(
+        '{"role":"narrator","content":"你叫什么？","turn":1}\n'
+        '{"role":"player","content":"我叫北原悠，是个男生","turn":1}\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(shared_config, "CHARACTERS_DIR", tmp_path)
+    monkeypatch.setattr(agent_files_module, "CHARACTERS_DIR", tmp_path)
+
+    save_manager._restore_player_name_from_raw_history()
+
+    assert (tmp_path / PLAYER_NAME_FILENAME).read_text(encoding="utf-8") == "北原悠"
 
 
 def test_character_save_files_include_schedule(character_dir: Path):
@@ -149,6 +170,7 @@ async def test_export_new_save_uses_fresh_slot_filename(tmp_path: Path, monkeypa
     narrator_dir.mkdir(parents=True)
     (characters_dir / ".story_id").write_text("school", encoding="utf-8")
     (characters_dir / ".turn_counter.json").write_text('{"turn": 3}', encoding="utf-8")
+    (characters_dir / PLAYER_NAME_FILENAME).write_text("北原悠", encoding="utf-8")
     (narrator_dir / "soul.md").write_text("# narrator\n", encoding="utf-8")
     (narrator_dir / "status.md").write_text("## 叙事焦点\n屋顶\n", encoding="utf-8")
 
@@ -175,6 +197,7 @@ async def test_export_new_save_uses_fresh_slot_filename(tmp_path: Path, monkeypa
         assert metadata["filename"] == archive_path.name
         assert metadata["save_id"] == archive_path.stem.rsplit("_", 1)[-1]
         assert zf.read(".save_id").decode("utf-8") == metadata["save_id"]
+        assert zf.read(PLAYER_NAME_FILENAME).decode("utf-8") == "北原悠"
 
     assert (characters_dir / ".save_id").read_text(encoding="utf-8") == metadata[
         "save_id"

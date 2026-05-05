@@ -1,15 +1,17 @@
 """消息路由系统 - 维护每个角色的独立对话历史"""
 
-from shared.config import get_agent_names
-from storage.agent_files import increment_turn_counter, read_turn_counter
+from storage.agent_files import (
+    extract_player_name,
+    increment_turn_counter,
+    read_player_name,
+    read_turn_counter,
+    write_player_name,
+)
 from storage.history import append_message
 
 
 class MessageRouter:
     """消息路由系统 - 维护每个角色的独立对话历史"""
-
-    def __init__(self):
-        self.agents = get_agent_names()
 
     async def _broadcast_message(
         self,
@@ -40,9 +42,19 @@ class MessageRouter:
         targets: list[str],
         content: str,
     ) -> int:
+        turn = read_turn_counter()
+        player_name = read_player_name()
+        if not player_name and turn == 1 and (player_name := extract_player_name(content)):
+            write_player_name(player_name)
+
+        raw_content = f"## {player_name}\n{content.strip()}" if player_name else content
         return await self._broadcast_message(
             targets,
-            {"role": "player", "content": content, "visible_to": targets},
+            {
+                "role": "player",
+                "content": raw_content,
+            },
+            turn=turn,
         )
 
     async def broadcast_agent_response(
@@ -54,11 +66,9 @@ class MessageRouter:
         turn = increment_turn_counter() if agent_name == "narrator" else None
         return await self._broadcast_message(
             targets,
-            {"role": agent_name, "content": content, "visible_to": targets},
+            {"role": agent_name, "content": content},
             turn=turn,
         )
-
-
 
 
 # 全局实例

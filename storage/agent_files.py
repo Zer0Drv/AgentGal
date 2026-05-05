@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 from datetime import datetime
+from functools import cache
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -74,6 +75,29 @@ def write_sidecar_json(agent_name: str, filename: str, data: dict) -> None:
 # ===== 全局 narrator turn 计数（跨角色共享） =====
 
 _TURN_COUNTER_FILENAME = ".turn_counter.json"
+PLAYER_NAME_FILENAME = ".player_name"
+_PLAYER_NAME_RE = re.compile(r"(?:我叫|我的名字是|名字是|叫我)\s*([^\s，,。！？、；;：:\n]+)")
+
+
+def extract_player_name(content: str) -> str:
+    """从玩家自我介绍文本中提取显示名。"""
+    match = _PLAYER_NAME_RE.search(content or "")
+    return match.group(1).strip() if match else ""
+
+
+@cache
+def read_player_name() -> str:
+    """读取全局玩家显示名；不存在返回空字符串。"""
+    return load_text(CHARACTERS_DIR / PLAYER_NAME_FILENAME).strip()
+
+
+def write_player_name(player_name: str) -> None:
+    """写入全局玩家显示名。空值不写入。"""
+    if not (name := player_name.strip()):
+        return
+    CHARACTERS_DIR.mkdir(parents=True, exist_ok=True)
+    (CHARACTERS_DIR / PLAYER_NAME_FILENAME).write_text(name, encoding="utf-8")
+    read_player_name.cache_clear()
 
 
 def read_turn_counter() -> int:
