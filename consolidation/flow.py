@@ -229,6 +229,13 @@ class _ConsolidationResult:
 class MemoryConsolidationFlow:
     def __init__(self):
         self._locks: dict[str, asyncio.Lock] = {}
+        # 跟踪正在执行的 detect_and_consolidate 任务数；存档/读档需在为 0 时才允许进行
+        self._active_count: int = 0
+
+    @property
+    def is_running(self) -> bool:
+        """是否有 detect_and_consolidate 任务正在执行（含其内部的 closure detector / consolidate_agent）。"""
+        return self._active_count > 0
 
     def _get_lock(self, name: str) -> asyncio.Lock:
         if name not in self._locks:
@@ -523,11 +530,8 @@ class MemoryConsolidationFlow:
             cleaned[name] = max(closed_turns)
         return cleaned
 
-    async def detect_and_consolidate(self, current_turn: int) -> None:
-        """回合末入口：扫描候选 → 判定闭合 → 并行归并闭合角色。
-
-        无候选或无闭合时静默返回；失败不影响主流程。
-        """
+    async def _consolidation_pipeline(self, current_turn: int) -> None:
+        """实际整理流程主体：扫描候选 → 判定闭合 → 并行归并闭合角色。"""
         candidates, earliest_draft_turn = self._collect_candidates()
         if not candidates:
             return
@@ -556,6 +560,28 @@ class MemoryConsolidationFlow:
             return_exceptions=True,
         )
         memory_logger.info(f"[整理器] 闭合归并完成 (耗时 {time.monotonic() - t0:.1f}s)")
+
+    async def detect_and_consolidate(self, current_turn: int) -> None:
+        """回合末入口（直接 await 版本）。无候选或无闭合时静默返回；失败不影响主流程。"""
+        self._active_count += 1
+        try:
+            await self._consolidation_pipeline(current_turn)
+        finally:
+            self._active_count -= 1
+
+    def schedule_detect_and_consolidate(self, current_turn: int) -> asyncio.Task:
+        """后台调度入口：返回前同步把 is_running 置为 True，避免 create_task 与
+        SSE done 事件之间的竞态——调用方立刻读 is_running 就能拿到准确状态。
+        """
+        self._active_count += 1
+
+        async def _runner() -> None:
+            try:
+                await self._consolidation_pipeline(current_turn)
+            finally:
+                self._active_count -= 1
+
+        return asyncio.create_task(_runner())
 
 
 memory_consolidation_flow = MemoryConsolidationFlow()

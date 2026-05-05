@@ -433,6 +433,11 @@ class NewGameRequest(BaseModel):
 @app.post("/api/new_game")
 async def api_new_game(req: NewGameRequest) -> JSONResponse:
     """重置并开始新游戏，返回开场内容。"""
+    if memory_consolidation_flow.is_running:
+        return JSONResponse(
+            {"ok": False, "detail": "记忆整理进行中，请稍后再开始新故事。"},
+            status_code=409,
+        )
     await _settle_pending_state_update(cancel=True)
     _clear_last_choices()
     intro_text, opening_text = await reset_game(req.story_id)
@@ -524,14 +529,15 @@ async def _chat_stream(user_input: str):
     # 5. 生成选项；后台并行：state_updater 维护 narrator 状态 + closure detector 检测 episode 闭合
     _start_state_update()
     if current_turn > 0:
-        asyncio.create_task(memory_consolidation_flow.detect_and_consolidate(current_turn))
+        # schedule_* 同步置 is_running=True，避免与下面的 done 事件产生竞态
+        memory_consolidation_flow.schedule_detect_and_consolidate(current_turn)
     if agent_responses:
         choices = await generate_choices(scene_description, agent_responses)
         if choices:
             _save_last_choices(choices)
             yield _sse_event("choices", {"choices": choices})
 
-    yield _sse_event("done", {})
+    yield _sse_event("done", {"consolidating": memory_consolidation_flow.is_running})
 
 
 @app.post("/api/chat")
@@ -541,6 +547,17 @@ async def api_chat(req: ChatRequest) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# =============================================================================
+# /api/status
+# =============================================================================
+
+
+@app.get("/api/status")
+async def api_status() -> JSONResponse:
+    """轻量状态查询。前端在收到 done 后若 consolidating=true 会轮询此接口。"""
+    return JSONResponse({"consolidating": memory_consolidation_flow.is_running})
 
 
 # =============================================================================
@@ -567,6 +584,11 @@ class SaveRequest(BaseModel):
 @app.post("/api/save")
 async def api_save(req: SaveRequest | None = None) -> JSONResponse:
     """导出存档。filename 为空时新建档位，有值时覆盖该档位。"""
+    if memory_consolidation_flow.is_running:
+        return JSONResponse(
+            {"ok": False, "detail": "记忆整理进行中，请稍后再存档。"},
+            status_code=409,
+        )
     try:
         await _settle_pending_state_update()
         request = req or SaveRequest()
@@ -598,6 +620,11 @@ class LoadRequest(BaseModel):
 @app.post("/api/load")
 async def api_load(req: LoadRequest) -> JSONResponse:
     """加载存档。"""
+    if memory_consolidation_flow.is_running:
+        return JSONResponse(
+            {"ok": False, "detail": "记忆整理进行中，请稍后再读档。"},
+            status_code=409,
+        )
     await _settle_pending_state_update(cancel=True)
     success = await import_save_archive(req.filename)
     if success:
@@ -645,6 +672,11 @@ class ResetRequest(BaseModel):
 @app.post("/api/reset")
 async def api_reset(req: ResetRequest) -> JSONResponse:
     """重置游戏。"""
+    if memory_consolidation_flow.is_running:
+        return JSONResponse(
+            {"ok": False, "detail": "记忆整理进行中，请稍后再重置。"},
+            status_code=409,
+        )
     await _settle_pending_state_update(cancel=True)
     _clear_last_choices()
     intro_text, opening_text = await reset_game(req.story_id)

@@ -1890,7 +1890,7 @@ svg {
         <span class="btn-label" x-text="isCompact ? '菜单' : '档案'"></span>
       </button>
 
-      <button type="button" class="ghost-btn danger" x-show="!isCompact" aria-label="重新选择故事" :disabled="busy" @click="showResetConfirmation()">
+      <button type="button" class="ghost-btn danger" x-show="!isCompact" aria-label="重新选择故事" :disabled="busy || consolidating" :title="consolidating ? '记忆整理进行中，请稍后再重开' : ''" @click="showResetConfirmation()">
         <span class="btn-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 12a9 9 0 1 0 2.64-6.36"/>
@@ -2068,6 +2068,8 @@ svg {
       <div class="drawer-body">
         <div class="drawer-copy" x-text="isCompact ? '存档、重开和读档都收在这里。' : '选择一个档位覆盖或读取；新建存档会生成新的档位。'"></div>
 
+        <div class="drawer-copy" x-show="consolidating" style="color: var(--accent-warm, #b07a2c);">记忆整理进行中，存档与读档暂时不可用。</div>
+
         <button type="button" class="new-save-button" @click="openMemoryGraph()">
           <span class="new-save-main">
             <span class="new-save-icon" aria-hidden="true">
@@ -2088,7 +2090,7 @@ svg {
           </span>
         </button>
 
-        <button type="button" class="new-save-button" :disabled="busy || !messages.length" @click="createSave()">
+        <button type="button" class="new-save-button" :disabled="busy || consolidating || !messages.length" :title="consolidating ? '记忆整理进行中，请稍后再存档' : ''" @click="createSave()">
           <span class="new-save-main">
             <span class="new-save-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
@@ -2104,7 +2106,7 @@ svg {
         </button>
 
         <div class="drawer-shortcuts" x-show="isCompact">
-          <button type="button" class="ghost-btn danger" :disabled="busy" @click="resetFromDrawer()">
+          <button type="button" class="ghost-btn danger" :disabled="busy || consolidating" :title="consolidating ? '记忆整理进行中，请稍后再重开' : ''" @click="resetFromDrawer()">
             <span>重开</span>
           </button>
         </div>
@@ -2138,7 +2140,7 @@ svg {
               <div class="save-card-top">
                 <span class="save-card-label" x-text="`档位 ${index + 1}`"></span>
                 <span class="save-card-arrow" x-text="save.filename"></span>
-                <button type="button" class="save-delete-btn" title="删除存档" :disabled="busy" @click.stop="promptDeleteSave(save)">
+                <button type="button" class="save-delete-btn" :title="consolidating ? '记忆整理进行中，暂不可操作' : '删除存档'" :disabled="busy || consolidating" @click.stop="promptDeleteSave(save)">
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                     <path d="M6 2h4M2 4h12M5 4l.5 9h5l.5-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
@@ -2147,10 +2149,10 @@ svg {
               <div class="save-card-time" x-text="save.display"></div>
               <div class="save-card-focus" x-text="save.focus || '未提供额外焦点摘要。'"></div>
               <div class="save-card-actions">
-                <button type="button" class="ghost-btn danger save-action" :disabled="busy" @click="promptOverwriteSave(save)">
+                <button type="button" class="ghost-btn danger save-action" :disabled="busy || consolidating" :title="consolidating ? '记忆整理进行中，请稍后再覆盖' : ''" @click="promptOverwriteSave(save)">
                   <span>覆盖</span>
                 </button>
-                <button type="button" class="primary-btn save-action" :disabled="busy" @click="promptLoadSave(save.filename)">
+                <button type="button" class="primary-btn save-action" :disabled="busy || consolidating" :title="consolidating ? '记忆整理进行中，请稍后再读取' : ''" @click="promptLoadSave(save.filename)">
                   <span>读取</span>
                 </button>
               </div>
@@ -2440,6 +2442,9 @@ marked.setOptions({ breaks: true, gfm: true });
 document.addEventListener("alpine:init", () => {
   Alpine.data("agentGalApp", () => ({
     busy: false,
+    consolidating: false,
+    consolidatingPollTimer: null,
+    consolidatingPollGen: 0,
     noticeText: "",
     noticeTone: "",
     noticeTimer: null,
@@ -2522,6 +2527,7 @@ document.addEventListener("alpine:init", () => {
       }
       this.destroyMemoryGraphNetwork();
       this.cancelActiveStream({ silent: true });
+      this.stopConsolidationPolling();
       if (this.noticeTimer) {
         window.clearTimeout(this.noticeTimer);
       }
@@ -2755,6 +2761,10 @@ document.addEventListener("alpine:init", () => {
     showResetConfirmation() {
       if (this.busy) {
         this.setNotice("请等待当前回合完成后再重开。", "error");
+        return;
+      }
+      if (this.consolidating) {
+        this.setNotice("记忆整理进行中，请稍后再重开。", "error");
         return;
       }
       this.openConfirm({
@@ -2992,6 +3002,10 @@ document.addEventListener("alpine:init", () => {
 
     async startNewGame(storyId) {
       if (this.busy) return;
+      if (this.consolidating) {
+        this.setNotice("记忆整理进行中，请稍后再开始新故事。", "error");
+        return;
+      }
       this.cancelActiveStream({ silent: true });
       this.storyModalOpen = false;
       this.resetConversation();
@@ -3135,9 +3149,55 @@ document.addEventListener("alpine:init", () => {
           } else {
             this.setNotice("这一轮没有预设选项，你可以直接输入下一句。", "success");
           }
+        } else if (event.type === "done") {
+          this.setConsolidating(Boolean(event.consolidating));
         }
       } catch (error) {
         this.setNotice("实时消息解析失败，界面可能没有完整更新。", "error", true);
+      }
+    },
+
+    setConsolidating(running) {
+      this.consolidating = running;
+      if (running) {
+        this.startConsolidationPolling();
+      } else {
+        this.stopConsolidationPolling();
+      }
+    },
+
+    startConsolidationPolling() {
+      if (this.consolidatingPollTimer) return;
+      // 用 generation 序号防止 stop 后正在飞的 tick 在 await 完成后又把自己排进下一轮
+      const gen = (this.consolidatingPollGen || 0) + 1;
+      this.consolidatingPollGen = gen;
+      const tick = async () => {
+        if (this.consolidatingPollGen !== gen) return;
+        try {
+          const response = await fetch("/api/status");
+          if (this.consolidatingPollGen !== gen) return;
+          if (response.ok) {
+            const data = await response.json();
+            if (!data.consolidating) {
+              this.stopConsolidationPolling();
+              this.consolidating = false;
+              return;
+            }
+          }
+        } catch (error) {
+          // 网络抖动忽略，下次再试
+          if (this.consolidatingPollGen !== gen) return;
+        }
+        this.consolidatingPollTimer = setTimeout(tick, 1500);
+      };
+      this.consolidatingPollTimer = setTimeout(tick, 1500);
+    },
+
+    stopConsolidationPolling() {
+      this.consolidatingPollGen = (this.consolidatingPollGen || 0) + 1;
+      if (this.consolidatingPollTimer) {
+        clearTimeout(this.consolidatingPollTimer);
+        this.consolidatingPollTimer = null;
       }
     },
 
@@ -3172,6 +3232,10 @@ document.addEventListener("alpine:init", () => {
         this.setNotice("请等待当前回合结束后再读档。", "error");
         return;
       }
+      if (this.consolidating) {
+        this.setNotice("记忆整理进行中，请稍后再读档。", "error");
+        return;
+      }
       this.openConfirm({
         title: "读取这个存档？",
         body: `当前运行时内容会被 "${filename}" 覆盖。`,
@@ -3187,6 +3251,10 @@ document.addEventListener("alpine:init", () => {
         this.setNotice("请等待当前回合结束后再覆盖存档。", "error");
         return;
       }
+      if (this.consolidating) {
+        this.setNotice("记忆整理进行中，请稍后再覆盖存档。", "error");
+        return;
+      }
       this.openConfirm({
         title: "覆盖这个档位？",
         body: `当前进度会写入 "${save.filename}"，原档位内容会被替换。`,
@@ -3200,6 +3268,10 @@ document.addEventListener("alpine:init", () => {
     promptDeleteSave(save) {
       if (this.busy) {
         this.setNotice("请等待当前回合结束后再删除存档。", "error");
+        return;
+      }
+      if (this.consolidating) {
+        this.setNotice("记忆整理进行中，请稍后再删除存档。", "error");
         return;
       }
       this.openConfirm({
