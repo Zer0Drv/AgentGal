@@ -83,6 +83,60 @@
     return Math.min(2.5, Math.max(0.2, scale));
   }
 
+  function splitHistoryClauses(text) {
+    const normalized = String(text || "").replace(/\s+/g, " ").trim();
+    if (!normalized) return [];
+    const clauses = normalized.match(/[^；;。！？!?，,\n]+[；;。！？!?，,]?/g);
+    return (clauses || [normalized]).map(item => item.trim()).filter(Boolean);
+  }
+
+  function diffHistoryClauses(previousText, currentText) {
+    const previous = splitHistoryClauses(previousText);
+    const current = splitHistoryClauses(currentText);
+    if (!previous.length) {
+      return current.map(text => ({ type: "current", text }));
+    }
+    if (!current.length) return [];
+
+    const dp = Array.from({ length: previous.length + 1 }, () =>
+      Array(current.length + 1).fill(0),
+    );
+    for (let i = previous.length - 1; i >= 0; i -= 1) {
+      for (let j = current.length - 1; j >= 0; j -= 1) {
+        dp[i][j] =
+          previous[i] === current[j]
+            ? dp[i + 1][j + 1] + 1
+            : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+
+    const diff = [];
+    let i = 0;
+    let j = 0;
+    while (i < previous.length && j < current.length) {
+      if (previous[i] === current[j]) {
+        diff.push({ type: "same", text: current[j] });
+        i += 1;
+        j += 1;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        diff.push({ type: "removed", text: previous[i] });
+        i += 1;
+      } else {
+        diff.push({ type: "added", text: current[j] });
+        j += 1;
+      }
+    }
+    while (i < previous.length) {
+      diff.push({ type: "removed", text: previous[i] });
+      i += 1;
+    }
+    while (j < current.length) {
+      diff.push({ type: "added", text: current[j] });
+      j += 1;
+    }
+    return diff;
+  }
+
   function createNetwork({ container, nodes, edges, onSelect, onBlank, onZoom }) {
     if (!isReady()) {
       throw new Error("vis-network is not available");
@@ -212,6 +266,25 @@
         if (dateLabel) facts.push(dateLabel);
         if (item.importance) facts.push(`importance ${item.importance}`);
         return facts;
+      },
+
+      memoryGraphHistoryHeading(entry) {
+        if (!entry) return "";
+        const date = (entry.date || "").trim();
+        const title = (entry.title || "").trim();
+        return [date, title].filter(Boolean).join(" · ");
+      },
+
+      memoryGraphHistoryEntries() {
+        const item = this.memoryGraphSelected;
+        if (!item || !Array.isArray(item.history)) return [];
+        return item.history
+          .filter(entry => String(entry.content || "").trim())
+          .map((entry, index, entries) => ({
+            ...entry,
+            diff: diffHistoryClauses(index > 0 ? entries[index - 1].content : "", entry.content),
+          }))
+          .reverse();
       },
 
       async loadMemoryGraph(agentName = null) {

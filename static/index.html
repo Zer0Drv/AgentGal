@@ -2383,6 +2383,21 @@ svg {
 
               <div class="memory-graph-detail-content" x-text="memoryGraphSelected.content"></div>
 
+              <template x-if="memoryGraphSelected.type === 'understanding' && memoryGraphSelected.history && memoryGraphSelected.history.length">
+                <div>
+                  <div class="memory-graph-section-title">History</div>
+                  <div class="memory-graph-history-list">
+                    <template x-for="(entry, index) in memoryGraphHistoryEntries()" :key="(entry.episode_id || 'history') + '-' + index">
+                      <pre class="memory-graph-raw-block memory-graph-diff-block"><span class="memory-graph-code-heading" x-text="memoryGraphHistoryHeading(entry)"></span><template x-for="(segment, segmentIndex) in entry.diff" :key="segment.type + '-' + segmentIndex"><span
+                            class="memory-graph-diff-line"
+                            :class="'is-' + segment.type"
+                            x-text="segment.text"
+                          ></span></template></pre>
+                    </template>
+                  </div>
+                </div>
+              </template>
+
               <template x-if="memoryGraphSelected.raw_dialogue_preview">
                 <div>
                   <div class="memory-graph-section-title">Raw</div>

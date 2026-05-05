@@ -4,6 +4,7 @@ import memory.parser as parser_module
 from memory.parser import (
     EpisodeMemory,
     Understanding,
+    UnderstandingHistoryEntry,
     append_memory_records,
     read_memory_jsonl,
     read_understandings,
@@ -59,6 +60,14 @@ def test_understanding_jsonl_round_trips_and_skips_bad_lines(tmp_path, monkeypat
             keywords=["玩家", "信任"],
             content="玩家在压力下会先确认她是否安全。",
             linked_episodes=["e1"],
+            history=[
+                UnderstandingHistoryEntry(
+                    episode_id="e1",
+                    date="4月3日",
+                    title="旧阅览室",
+                    content="玩家在压力下会先确认她是否安全。",
+                )
+            ],
         ),
         "u2": Understanding(
             id="u2",
@@ -78,7 +87,10 @@ def test_understanding_jsonl_round_trips_and_skips_bad_lines(tmp_path, monkeypat
     assert list(loaded) == ["u1", "u2"]
     assert loaded["u1"].keywords == ["玩家", "信任"]
     assert loaded["u1"].linked_episodes == ["e1"]
+    assert loaded["u1"].history[0].episode_id == "e1"
+    assert loaded["u1"].history[0].title == "旧阅览室"
     assert loaded["u2"].content == "直接提问时更容易得到真实反应。"
+    assert loaded["u2"].history == []
 
 
 def test_write_understandings_removes_file_when_empty(tmp_path, monkeypatch):

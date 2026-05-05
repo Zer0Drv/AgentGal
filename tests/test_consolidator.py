@@ -20,6 +20,7 @@ try:
     from memory.parser import (
         EpisodeMemory,
         Understanding,
+        UnderstandingHistoryEntry,
         append_memory_records,
         read_memory_jsonl,
         read_understandings,
@@ -229,6 +230,14 @@ def test_apply_understanding_patch_updates_and_adds(monkeypatch):
             keywords=["玩家"],
             content="旧理解。",
             linked_episodes=["e0"],
+            history=[
+                UnderstandingHistoryEntry(
+                    episode_id="e0",
+                    date="10月18日",
+                    title="旧事件",
+                    content="旧理解。",
+                )
+            ],
         ),
     }
     patch = UnderstandingPatchOutput.model_validate(
@@ -253,15 +262,57 @@ def test_apply_understanding_patch_updates_and_adds(monkeypatch):
     )
 
     result = consolidator_module._apply_understanding_patch(
-        "chenxiao", existing, patch
+        "chenxiao",
+        existing,
+        patch,
+        EpisodeMemory(id="e1", date="10月19日", title="餐厅晚饭"),
     )
 
     assert result.logs == ["UPDATE u1", "ADD new-understanding-id"]
     assert result.updated["u1"].subject == "对玩家的认知"
     assert result.updated["u1"].keywords == ["玩家", "保护"]
     assert result.updated["u1"].linked_episodes == ["e0", "e1"]
+    assert [entry.episode_id for entry in result.updated["u1"].history] == ["e0", "e1"]
+    assert result.updated["u1"].history[-1].date == "10月19日"
+    assert result.updated["u1"].history[-1].title == "餐厅晚饭"
+    assert result.updated["u1"].history[-1].content == "玩家在压力下会先确认她是否安全。"
     assert result.updated["new-understanding-id"].memory_owner == "chenxiao"
     assert result.updated["new-understanding-id"].content == "玩家会用行动解释。"
+    assert result.updated["new-understanding-id"].history == []
+
+
+def test_apply_understanding_patch_does_not_append_history_for_link_only_update():
+    existing = {
+        "u1": Understanding(
+            id="u1",
+            memory_owner="chenxiao",
+            subject="对玩家的认知",
+            keywords=["玩家"],
+            content="玩家会认真履行约定。",
+            linked_episodes=["e0"],
+        ),
+    }
+    patch = UnderstandingPatchOutput.model_validate(
+        {
+            "update": {
+                "u1": {
+                    "content": "玩家会认真履行约定。",
+                    "linked_episodes": ["e1"],
+                }
+            }
+        }
+    )
+
+    result = consolidator_module._apply_understanding_patch(
+        "chenxiao",
+        existing,
+        patch,
+        EpisodeMemory(id="e1", date="10月20日", title="再次确认"),
+    )
+
+    assert result.links_only_ids == ["u1"]
+    assert result.updated["u1"].linked_episodes == ["e0", "e1"]
+    assert result.updated["u1"].history == []
 
 
 @pytest.mark.asyncio
@@ -413,7 +464,12 @@ async def test_patch_understandings_writes_file_and_syncs_vectors(tmp_path, monk
     updated = read_understandings(agent_name)
     assert updated["u1"].content == "玩家在压力下会先确认她是否安全。"
     assert updated["u1"].linked_episodes == ["e0", "e1"]
+    assert len(updated["u1"].history) == 1
+    assert updated["u1"].history[0].episode_id == "e1"
+    assert updated["u1"].history[0].date == "10月19日"
+    assert updated["u1"].history[0].content == "玩家在压力下会先确认她是否安全。"
     assert updated["new-understanding-id"].content == "玩家会用行动解释误会。"
+    assert updated["new-understanding-id"].history == []
     assert deleted_ids == ["u1"]
     assert added_ids == ["u1", "new-understanding-id"]
 

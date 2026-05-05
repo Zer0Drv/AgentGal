@@ -177,6 +177,14 @@ async def test_api_memory_graph_links_understandings_to_episodes(monkeypatch):
                 content="玩家会认真履行约定。",
                 keywords=["信任"],
                 linked_episodes=["e1", "missing-e2"],
+                history=[
+                    {
+                        "episode_id": "e1",
+                        "date": "4月3日",
+                        "title": "旧阅览室",
+                        "content": "玩家会认真履行约定。",
+                    }
+                ],
             )
         },
     )
@@ -207,6 +215,15 @@ async def test_api_memory_graph_links_understandings_to_episodes(monkeypatch):
         "episode:missing-e2",
     }
     episode = next(node for node in body["nodes"] if node["id"] == "episode:e1")
+    understanding = next(node for node in body["nodes"] if node["id"] == "understanding:u1")
+    assert understanding["meta"]["history"] == [
+        {
+            "episode_id": "e1",
+            "date": "4月3日",
+            "title": "旧阅览室",
+            "content": "玩家会认真履行约定。",
+        }
+    ]
     assert episode["meta"]["date"] == "4月3日"
     assert episode["meta"]["time"] == "4月3日 16:10"
     assert "[turn=" not in episode["meta"]["raw_dialogue_preview"]

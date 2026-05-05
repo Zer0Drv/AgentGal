@@ -124,6 +124,15 @@ def append_memory_records(
 # ===== Understanding：角色形成的稳定理解 =====
 
 
+class UnderstandingHistoryEntry(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    episode_id: str = ""
+    date: str = ""
+    title: str = ""
+    content: str = ""
+
+
 class Understanding(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -133,6 +142,7 @@ class Understanding(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     content: str = ""
     linked_episodes: list[str] = Field(default_factory=list)
+    history: list[UnderstandingHistoryEntry] = Field(default_factory=list)
 
 
 def understanding_jsonl_path(agent_name: str) -> Path:

@@ -36,6 +36,7 @@ from storage.history import load_conversation_history
 from memory.parser import (
     EpisodeMemory,
     Understanding,
+    UnderstandingHistoryEntry,
     append_memory_records,
     canonical_cn_date,
     memory_jsonl_path,
@@ -96,6 +97,7 @@ def _apply_understanding_patch(
     agent_name: str,
     understandings: dict[str, Understanding],
     patch: UnderstandingPatchOutput,
+    episode: EpisodeMemory | None = None,
 ) -> _UnderstandingPatchResult:
     updated = dict(understandings)
     logs: list[str] = []
@@ -120,6 +122,17 @@ def _apply_understanding_patch(
         linked_episodes = list(
             dict.fromkeys([*existing.linked_episodes, *entry.linked_episodes])
         )
+        content_changed = entry.content != existing.content
+        history = list(existing.history)
+        if content_changed:
+            history.append(
+                UnderstandingHistoryEntry(
+                    episode_id=episode.id if episode else "",
+                    date=episode.date if episode else "",
+                    title=episode.title if episode else "",
+                    content=entry.content,
+                )
+            )
         updated[uid] = Understanding(
             id=uid,
             memory_owner=agent_name,
@@ -127,9 +140,10 @@ def _apply_understanding_patch(
             keywords=new_keywords,
             content=entry.content,
             linked_episodes=linked_episodes,
+            history=history,
         )
         if (
-            entry.content == existing.content
+            not content_changed
             and new_subject == existing.subject
             and new_keywords == existing.keywords
         ):
@@ -290,7 +304,7 @@ class MemoryConsolidationFlow:
         )
 
         result = _apply_understanding_patch(
-            agent_name, current_understandings, output
+            agent_name, current_understandings, output, episode
         )
         if not result.logs:
             memory_logger.debug(f"[整理器] {agent_name} 无 Understanding 更新")

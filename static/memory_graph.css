@@ -365,6 +365,11 @@
   white-space: pre-wrap;
 }
 
+.memory-graph-history-list {
+  display: grid;
+  gap: 10px;
+}
+
 .memory-graph-raw-block {
   margin: 0;
   padding: 13px 14px;
@@ -380,6 +385,61 @@
   white-space: pre-wrap;
   word-break: break-word;
   overflow-x: auto;
+}
+
+.memory-graph-diff-block {
+  white-space: normal;
+}
+
+.memory-graph-code-heading,
+.memory-graph-diff-line {
+  display: block;
+  white-space: pre-wrap;
+}
+
+.memory-graph-code-heading {
+  margin-bottom: 9px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.memory-graph-diff-line {
+  position: relative;
+  padding: 3px 8px 3px 24px;
+  border-radius: 8px;
+}
+
+.memory-graph-diff-line::before {
+  position: absolute;
+  left: 8px;
+  color: rgba(113, 84, 74, 0.48);
+  content: " ";
+}
+
+.memory-graph-diff-line.is-added {
+  background: rgba(112, 134, 93, 0.14);
+  color: #5c6b4e;
+}
+
+.memory-graph-diff-line.is-added::before {
+  color: #6c7f59;
+  content: "+";
+}
+
+.memory-graph-diff-line.is-removed {
+  color: rgba(122, 84, 80, 0.7);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: rgba(147, 68, 78, 0.46);
+}
+
+.memory-graph-diff-line.is-removed::before {
+  color: #93444e;
+  content: "-";
+}
+
+.memory-graph-diff-line.is-same {
+  color: rgba(113, 84, 74, 0.56);
 }
 
 .memory-graph-section-title {

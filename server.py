@@ -201,6 +201,7 @@ def _understanding_node(
             "linked_episodes": understanding.linked_episodes,
             "content": understanding.content,
             "content_preview": _clip_text(understanding.content, _MEMORY_GRAPH_DETAIL_LIMIT),
+            "history": [entry.model_dump() for entry in understanding.history],
         },
     }
 
