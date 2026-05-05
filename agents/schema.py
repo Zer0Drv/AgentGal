@@ -200,7 +200,6 @@ class UnderstandingEntry(BaseModel):
     subject: str = ""
     keywords: list[str] = Field(default_factory=list)
     content: str = ""
-    linked_episodes: list[str] = Field(default_factory=list)
 
 
 class UnderstandingPatchOutput(BaseModel):

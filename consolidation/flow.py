@@ -84,10 +84,8 @@ def _render_understandings_for_prompt(understandings: dict[str, Understanding]) 
     for uid, u in understandings.items():
         keywords = "、".join(u.keywords) if u.keywords else ""
         keywords_part = f"\n  keywords: {keywords}" if keywords else ""
-        linked = ", ".join(u.linked_episodes) if u.linked_episodes else ""
-        linked_part = f"\n  linked_episodes: {linked}" if linked else ""
         lines.append(
-            f"[{uid}] subject={u.subject!r}{keywords_part}{linked_part}\n"
+            f"[{uid}] subject={u.subject!r}{keywords_part}\n"
             f"  content: {u.content}"
         )
     return "\n\n".join(lines)
@@ -105,6 +103,8 @@ def _apply_understanding_patch(
     full_replace_ids: list[str] = []
     added_ids: list[str] = []
 
+    new_episode_id = episode.id if episode and episode.id else ""
+
     for uid, entry in patch.update.items():
         if uid not in updated:
             memory_logger.warning(
@@ -119,8 +119,9 @@ def _apply_understanding_patch(
         existing = updated[uid]
         new_subject = entry.subject if entry.subject else existing.subject
         new_keywords = entry.keywords if entry.keywords else existing.keywords
+        injected = [new_episode_id] if new_episode_id else []
         linked_episodes = list(
-            dict.fromkeys([*existing.linked_episodes, *entry.linked_episodes])
+            dict.fromkeys([*existing.linked_episodes, *injected])
         )
         content_changed = entry.content != existing.content
         history = list(existing.history)
@@ -173,7 +174,7 @@ def _apply_understanding_patch(
             subject=entry.subject,
             keywords=entry.keywords,
             content=entry.content,
-            linked_episodes=entry.linked_episodes,
+            linked_episodes=[new_episode_id] if new_episode_id else [],
             history=history,
         )
         added_ids.append(new_id)

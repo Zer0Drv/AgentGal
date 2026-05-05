@@ -311,7 +311,6 @@ def test_apply_understanding_patch_updates_and_adds(monkeypatch):
                     "subject": "互动模式",
                     "keywords": ["靠近"],
                     "content": "玩家会用行动解释。",
-                    "linked_episodes": ["e1"],
                 }
             ],
             "update": {
@@ -319,7 +318,6 @@ def test_apply_understanding_patch_updates_and_adds(monkeypatch):
                     "subject": "",
                     "keywords": ["玩家", "保护"],
                     "content": "玩家在压力下会先确认她是否安全。",
-                    "linked_episodes": ["e1"],
                 }
             },
         }
@@ -365,7 +363,6 @@ def test_apply_understanding_patch_does_not_append_history_for_link_only_update(
             "update": {
                 "u1": {
                     "content": "玩家会认真履行约定。",
-                    "linked_episodes": ["e1"],
                 }
             }
         }
@@ -471,21 +468,19 @@ async def test_patch_understandings_writes_file_and_syncs_vectors(tmp_path, monk
         assert function_name == "understanding_patch"
         assert '"id": "e1"' in user
         assert "[u1] subject='对玩家的认知'" in user
-        assert "linked_episodes: e0" in user
+        assert "linked_episodes" not in user
         assert "<profile>" not in user
         return UnderstandingPatchOutput.model_validate(
             {
                 "update": {
                     "u1": {
                         "content": "玩家在压力下会先确认她是否安全。",
-                        "linked_episodes": ["e1"],
                     }
                 },
                 "add": [
                     {
                         "subject": "互动模式",
                         "content": "玩家会用行动解释误会。",
-                        "linked_episodes": ["e1"],
                     }
                 ],
             }

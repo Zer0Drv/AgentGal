@@ -66,7 +66,6 @@ def test_understanding_entry_strips_string_fields():
                     "subject": "  对玩家的认知  ",
                     "keywords": ["玩家"],
                     "content": "  玩家会主动解释误会。  ",
-                    "linked_episodes": ["e1"],
                 }
             ]
         }
