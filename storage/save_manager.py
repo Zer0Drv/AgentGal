@@ -16,7 +16,7 @@ from pathlib import Path
 
 from shared.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
 from log_config.routing import routing_logger
-from storage.agent_files import read_agent_file
+from storage.agent_files import increment_turn_counter, read_agent_file
 from storage.history import append_message, load_conversation_history
 from memory.parser import (
     canonical_cn_date,
@@ -168,6 +168,7 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
         "role": "narrator",
         "content": opening_text,
         "visible_to": visible_agents + ["narrator"],
+        "turn": increment_turn_counter(),
     }
     await append_message(opening_message)
 

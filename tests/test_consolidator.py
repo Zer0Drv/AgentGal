@@ -16,7 +16,7 @@ try:
     import consolidation.flow as consolidator_module
     import memory.parser as parser_module
     from consolidation.flow import MemoryConsolidationFlow
-    from agents.schema import EpisodeMemoryBlock, UnderstandingPatchOutput
+    from agents.schema import EpisodeClosureOutput, EpisodeMemoryBlock, UnderstandingPatchOutput
     from memory.parser import (
         EpisodeMemory,
         Understanding,
@@ -94,6 +94,70 @@ def test_prepare_slice_returns_none_when_no_entries_within_turn(tmp_path, monkey
     )
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_detect_closures_does_not_close_latest_open_narrator_turn(monkeypatch):
+    """最新 narrator turn 尚未等到下一条旁白，不能被归并。"""
+    consolidator = MemoryConsolidationFlow()
+    monkeypatch.setattr(
+        consolidator_module,
+        "get_episode_closure_detector_agent",
+        lambda: object(),
+    )
+
+    async def fake_run_consolidation_agent(
+        self_inner,
+        *,
+        agent,
+        output_type,
+        agent_name,
+        function_name,
+        user,
+    ):
+        assert output_type is EpisodeClosureOutput
+        assert function_name == "episode_closure_detector"
+        assert "[turn=4]" in user
+        return EpisodeClosureOutput.model_validate(
+            {
+                "chenxiao": [
+                    {
+                        "end_turn": 3,
+                        "old_theme": "上一段互动",
+                        "new_theme": "当前开放互动",
+                        "reason": "turn 4 开始新互动",
+                    },
+                    {
+                        "end_turn": 4,
+                        "old_theme": "当前开放互动",
+                        "new_theme": "还没有下一条旁白的误判",
+                        "reason": "latest turn must remain open",
+                    },
+                ]
+            }
+        )
+
+    monkeypatch.setattr(
+        MemoryConsolidationFlow,
+        "_run_consolidation_agent",
+        fake_run_consolidation_agent,
+    )
+
+    raw_messages = [
+        {"role": "narrator", "content": "旧场景", "turn": 3, "visible_to": ["chenxiao", "narrator"]},
+        {"role": "chenxiao", "content": "旧回应", "turn": 3, "visible_to": ["chenxiao", "narrator"]},
+        {"role": "narrator", "content": "新场景", "turn": 4, "visible_to": ["chenxiao", "narrator"]},
+        {"role": "chenxiao", "content": "新回应", "turn": 4, "visible_to": ["chenxiao", "narrator"]},
+    ]
+
+    closures = await consolidator._detect_closures(
+        ["chenxiao"],
+        raw_messages,
+        earliest_draft_turn=3,
+        latest_open_turn=4,
+    )
+
+    assert closures == {"chenxiao": 3}
 
 
 def test_agent_file_updates_return_structured_json_items(tmp_path, monkeypatch):

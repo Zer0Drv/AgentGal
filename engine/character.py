@@ -207,7 +207,7 @@ class Character(BaseEntity):
     def append_memory(self, text: str) -> FileUpdateResult | None:
         """把本轮 memory 片段追加到 memory_draft.jsonl，等待后续 consolidation 归并。
 
-        每条 draft 带上当前全局 turn 号，供 EpisodeClosureDetector 确认闭合 turn 后切片归并。
+        每条 draft 带上当前 narrator turn 号，供 EpisodeClosureDetector 确认闭合 turn 后切片归并。
         """
         if not text:
             return None

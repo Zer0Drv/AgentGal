@@ -71,13 +71,13 @@ def write_sidecar_json(agent_name: str, filename: str, data: dict) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-# ===== 全局 turn 计数（跨角色共享） =====
+# ===== 全局 narrator turn 计数（跨角色共享） =====
 
 _TURN_COUNTER_FILENAME = ".turn_counter.json"
 
 
 def read_turn_counter() -> int:
-    """读取全局 turn 计数器；不存在或解析失败返回 0。"""
+    """读取全局 narrator turn 计数器；不存在或解析失败返回 0。"""
     path = CHARACTERS_DIR / _TURN_COUNTER_FILENAME
     if not path.exists():
         return 0
@@ -89,14 +89,14 @@ def read_turn_counter() -> int:
 
 
 def write_turn_counter(turn: int) -> None:
-    """将 turn 计数写入全局 sidecar。"""
+    """将 narrator turn 计数写入全局 sidecar。"""
     CHARACTERS_DIR.mkdir(parents=True, exist_ok=True)
     path = CHARACTERS_DIR / _TURN_COUNTER_FILENAME
     path.write_text(json.dumps({"turn": int(turn)}, ensure_ascii=False), encoding="utf-8")
 
 
 def increment_turn_counter() -> int:
-    """原子递增（单进程足够）并返回新的 turn 号。"""
+    """开启下一段 narrator turn（单进程足够）并返回新的 turn 号。"""
     new_turn = read_turn_counter() + 1
     write_turn_counter(new_turn)
     return new_turn
@@ -555,4 +555,3 @@ def update_status_allow_new_field(agent_name: str, field: str, content: str) -> 
         allowed,
         _read_title(status_path, "# 我的状态"),
     )
-

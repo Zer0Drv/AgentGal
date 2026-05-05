@@ -105,7 +105,7 @@ server.py        ← all
 ### Other Runtime Files
 
 - `data/characters/last_choices.json`: Latest set of player options, restored on load, cleared on reset
-- `data/characters/.turn_counter.json`: Global turn counter, incremented by 1 for each player message; raw JSONL and `memory_draft.jsonl` entries carry turn numbers for `EpisodeClosureDetector` closure detection; reset clears with characters directory, new game starts at 0
+- `data/characters/.turn_counter.json`: Global narrator-turn counter, incremented by 1 for each narrator message; a turn starts with one narrator message and continues through character responses plus the next player input, until the following narrator message starts a new turn. Raw JSONL and `memory_draft.jsonl` entries carry turn numbers for `EpisodeClosureDetector` closure detection; reset clears with characters directory, and the opening narrator message writes the first turn
 - `data/characters/narrator/tasks.md`: Optional story seed file; current main flow primarily syncs "Pending Events" from character "Intentions" via `state_updater`
 - `data/characters/*/.history_window_state.json`: Per-agent dialogue history high/low water mark window sidecar
 - `data/characters/*/.consolidation_state.json`: Character memory consolidation progress sidecar
@@ -176,7 +176,7 @@ All structured agents use pydantic-ai's `PromptedOutput` structured output, no l
 
 ### Writeback Rules
 
-- `output.memory` → append one record tagged with current global turn number to `memory_draft.jsonl` (after `EpisodeClosureDetector` determines closure turn, consolidation slices by `until_turn` to produce `EpisodeMemory` appended to `memory.jsonl`, merged entries removed from draft)
+- `output.memory` → append one record tagged with current narrator turn number to `memory_draft.jsonl` (after `EpisodeClosureDetector` determines closure turn, consolidation slices by `until_turn` to produce `EpisodeMemory` appended to `memory.jsonl`, merged entries removed from draft)
 - `output.status` → overwrite corresponding fields in `status.md`
 - `output.triggered` → remove executed entries from `status.md`
 - `output.add_event` → insert new entries into `status.md`

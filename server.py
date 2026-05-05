@@ -43,7 +43,7 @@ from log_config.routing import routing_logger
 from log_config.logfire import setup_logfire
 from shared.config import CHARACTERS_DIR, get_agent_names
 from shared.text_utils import get_display_name
-from storage.agent_files import increment_turn_counter, read_agent_file
+from storage.agent_files import read_agent_file
 from storage.history import load_conversation_history
 from storage.message_router import message_router
 
@@ -456,8 +456,8 @@ async def _chat_stream(user_input: str):
     """核心游戏循环，通过 SSE 逐步推送结果。"""
     await _settle_pending_state_update()
 
-    # 0. 递增全局 turn 计数；后续写入 history / memory_draft 的所有消息都带这个 turn
-    current_turn = increment_turn_counter()
+    # 0 = 哨兵：本轮还没有 narrator 成功发言，不触发 consolidation
+    current_turn = 0
 
     # 1. narrator 路由
     targets, scene_description, new_character_specs, is_narrator_valid = (
@@ -485,7 +485,9 @@ async def _chat_stream(user_input: str):
     # 旁白失败时不把玩家消息写进 raw，避免下一轮上下文里残留没人回应的玩家话语。
     if is_narrator_valid:
         await message_router.broadcast_player_message(targets, user_input)
-        await message_router.broadcast_agent_response("narrator", targets, scene_description)
+        current_turn = await message_router.broadcast_agent_response(
+            "narrator", targets, scene_description
+        )
     if scene_description:
         yield _sse_event("narrator", {"content": scene_description, "author": "旁白"})
 
@@ -516,7 +518,8 @@ async def _chat_stream(user_input: str):
 
     # 5. 生成选项；后台并行：state_updater 维护 narrator 状态 + closure detector 检测 episode 闭合
     _start_state_update()
-    asyncio.create_task(memory_consolidation_flow.detect_and_consolidate(current_turn))
+    if current_turn > 0:
+        asyncio.create_task(memory_consolidation_flow.detect_and_consolidate(current_turn))
     if agent_responses:
         choices = await generate_choices(scene_description, agent_responses)
         if choices:

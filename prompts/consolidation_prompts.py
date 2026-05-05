@@ -10,7 +10,7 @@ EPISODE_CLOSURE_DETECTOR = r"""<task>
 <inputs>
 <recent_history>
 近期对话，每条消息带有 [turn=N] 标记。
-同一个 turn 中可能包含玩家、旁白、多个角色的发言。
+一个 turn 中可能包含旁白、多个角色、玩家的发言。
 </recent_history>
 </inputs>
 
@@ -32,6 +32,7 @@ end_turn = 上一个互动节点最后仍在进行的 turn。
 
 如果新节点从 turn 79 开始，end_turn 就是 78。
 如果旧节点和新节点在同一个 turn 内交替，end_turn 就是这个 turn。
+如果 recent_history 的最新 turn 后面还没有更大的 turn，说明这一段 narrator turn 仍开放，不要把它作为 end_turn。
 </turn_rule>
 
 <output>
@@ -58,11 +59,13 @@ end_turn = 上一个互动节点最后仍在进行的 turn。
 
 <example_1_no_boundary_same_node>
 history:
-[turn=10] 玩家: 你刚才说的那个规则我还是没懂。
+[turn=10] 旁白: 教室后排只剩你们两个人，美月把草稿纸推到你面前。
 [turn=10] mitsuki: 重点是先判断条件，再看结果。
-[turn=11] 玩家: 所以不是看谁先说，而是看条件是否成立？
+[turn=10] 玩家: 所以不是看谁先说，而是看条件是否成立？
+[turn=11] 旁白: 她用笔尖点了点题干。
 [turn=11] mitsuki: 对，这样理解就对了。
-[turn=12] 玩家: 那我明白了。
+[turn=11] 玩家: 那我明白了。
+[turn=12] 旁白: 窗边的风吹动卷子，题目的最后一步已经写完。
 [turn=12] mitsuki: 嗯，这题就这样。
 output:
 {
@@ -72,11 +75,13 @@ output:
 
 <example_2_goal_done_then_followup_action>
 history:
-[turn=20] 玩家: 我已经把报名表交上去了。
+[turn=20] 旁白: 午休后的办公室门口，报名箱还放在桌边。
 [turn=20] mitsuki: 真的？那就放心了，我还担心你会忘。
-[turn=21] 玩家: 多亏你提醒。
+[turn=20] 玩家: 多亏你提醒。
+[turn=21] 旁白: 她松了一口气，把笔帽扣回笔上。
 [turn=21] mitsuki: 好啦，这件事算解决了。
-[turn=22] 玩家: 那接下来去哪里？
+[turn=21] 玩家: 那接下来去哪里？
+[turn=22] 旁白: 你们走出办公室，校门口的小卖部亮着灯。
 [turn=22] mitsuki: 去便利店吧，我想买点喝的。
 output:
 {
@@ -93,19 +98,25 @@ output:
 
 <example_3_crisis_resolved_then_private_interaction>
 history:
-[turn=30] 玩家: 文件已经恢复了，没有丢。
+[turn=30] 旁白: 会议室的投影重新亮起，恢复后的文件停在最新版本。
 [turn=30] guyining: 太好了，刚才真的吓我一跳。
+[turn=30] 玩家: 文件已经恢复了，没有丢。
+[turn=31] 旁白: 陈晓检查完日志，合上电脑站了起来。
 [turn=31] chenxiao: 那我先去通知其他人，免得大家继续担心。
 [turn=31] guyining: 好，辛苦你。
 [turn=32] 旁白: 陈晓离开会议室，房间里只剩玩家和顾一宁。
 [turn=32] guyining: 刚才谢谢你。要不是你反应快，我可能真要慌了。
-[turn=33] 玩家: 没事，你刚才也反应很快。
+[turn=32] 玩家: 没事，你刚才也反应很快。
+[turn=33] 旁白: 她坐回椅子，指尖还扣着杯沿。
 [turn=33] guyining: 别安慰我了，我手心现在还是凉的。
-[turn=34] 玩家: 那先坐一会儿？
+[turn=33] 玩家: 那先坐一会儿？
+[turn=34] 旁白: 会议室外的脚步声渐渐远了。
 [turn=34] guyining: 嗯……陪我缓一下。
-[turn=35] 玩家: 好，我在这。
+[turn=34] 玩家: 好，我在这。
+[turn=35] 旁白: 她的呼吸慢慢平稳下来。
 [turn=35] guyining: 谢谢。
-[turn=36] 玩家: 等会儿还要继续开会吗？
+[turn=35] 玩家: 等会儿还要继续开会吗？
+[turn=36] 旁白: 她看了一眼已经黑屏的投影，摇了摇头。
 [turn=36] guyining: 不了，今天先到这吧。
 output:
 {
@@ -136,11 +147,13 @@ output:
 
 <example_4_same_workflow_no_boundary>
 history:
-[turn=40] 玩家: 所以第一版先做搜索和收藏？
+[turn=40] 旁白: 白板上已经写满第一版功能，顾一宁把马克笔放在桌边。
 [turn=40] guyining: 对，登录可以放到第二版。
-[turn=41] 玩家: 那这个范围就定了。
+[turn=40] 玩家: 那这个范围就定了。
+[turn=41] 旁白: 她把白板角落的范围线重新描了一遍。
 [turn=41] guyining: 嗯，今天先按这个推进。
-[turn=42] 玩家: 那我晚上把任务拆一下。
+[turn=41] 玩家: 那我晚上把任务拆一下。
+[turn=42] 旁白: 她点开日程，把明早留出一段 review 时间。
 [turn=42] guyining: 好，我明早看你的拆分。
 output:
 {

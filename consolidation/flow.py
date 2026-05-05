@@ -478,6 +478,7 @@ class MemoryConsolidationFlow:
         candidates: list[str],
         raw_messages: list[dict],
         earliest_draft_turn: int | None,
+        latest_open_turn: int | None,
     ) -> dict[str, int]:
         """调 EpisodeClosureDetector，返回 {agent_name: closed_at_turn}。"""
         history_transcript = render_raw_history(raw_messages, turn_ge=earliest_draft_turn)
@@ -502,7 +503,14 @@ class MemoryConsolidationFlow:
         for name, boundaries in output.root.items():
             if name not in candidate_names or not boundaries:
                 continue
-            cleaned[name] = max(b.end_turn for b in boundaries)
+            closed_turns = [
+                b.end_turn
+                for b in boundaries
+                if latest_open_turn is None or b.end_turn < latest_open_turn
+            ]
+            if not closed_turns:
+                continue
+            cleaned[name] = max(closed_turns)
         return cleaned
 
     async def detect_and_consolidate(self, current_turn: int) -> None:
@@ -515,7 +523,12 @@ class MemoryConsolidationFlow:
             return
 
         raw_messages = load_conversation_history()
-        closures = await self._detect_closures(candidates, raw_messages, earliest_draft_turn)
+        closures = await self._detect_closures(
+            candidates,
+            raw_messages,
+            earliest_draft_turn,
+            latest_open_turn=current_turn,
+        )
         if not closures:
             memory_logger.info(
                 f"[整理器] turn={current_turn} 无角色闭合 "
