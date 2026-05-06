@@ -58,6 +58,75 @@ async def test_settle_pending_state_update_cancels_background_task(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_start_state_update_coalesces_while_running(monkeypatch):
+    started = server_module.asyncio.Event()
+    release = server_module.asyncio.Event()
+    calls = 0
+
+    async def fake_update_state(_self, *_args):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            started.set()
+            await release.wait()
+
+    monkeypatch.setattr(server_module.narrator.__class__, "update_state", fake_update_state)
+    server_module._pending_state_update_task = None
+    server_module._pending_state_update_requested = False
+
+    server_module._start_state_update()
+    task = server_module._pending_state_update_task
+    assert task is not None
+    await started.wait()
+
+    server_module._start_state_update()
+    server_module._start_state_update()
+
+    assert server_module._pending_state_update_task is task
+    assert server_module._pending_state_update_requested is True
+
+    release.set()
+    await server_module._settle_pending_state_update()
+
+    assert calls == 2
+    assert server_module._pending_state_update_task is None
+    assert server_module._pending_state_update_requested is False
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_does_not_wait_for_pending_state_update(monkeypatch):
+    release = server_module.asyncio.Event()
+
+    async def blocking_task():
+        await release.wait()
+
+    async def fake_route(_self, _user_input):
+        return [], "", [], False
+
+    task = server_module.asyncio.create_task(blocking_task())
+    server_module._pending_state_update_task = task
+    server_module._pending_state_update_requested = False
+    monkeypatch.setattr(server_module.narrator.__class__, "route", fake_route)
+
+    try:
+        chunks = await server_module.asyncio.wait_for(
+            _collect_stream(server_module._chat_stream("继续")),
+            timeout=0.1,
+        )
+    finally:
+        release.set()
+        await task
+        server_module._pending_state_update_task = None
+        server_module._pending_state_update_requested = False
+
+    assert chunks == ['data: {"type": "done"}\n\n']
+
+
+async def _collect_stream(stream):
+    return [chunk async for chunk in stream]
+
+
+@pytest.mark.asyncio
 async def test_api_save_returns_error_detail(monkeypatch):
     async def fake_export_save_archive_with_detail(*, target_filename=None):
         assert target_filename is None

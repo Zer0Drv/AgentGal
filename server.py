@@ -54,6 +54,7 @@ app = FastAPI(title="AgentGal")
 STATIC_DIR = Path(__file__).parent / "static"
 _LAST_CHOICES_FILE = CHARACTERS_DIR / "last_choices.json"
 _pending_state_update_task: asyncio.Task[None] | None = None
+_pending_state_update_requested = False
 _RECENT_HISTORY_LIMIT = 12
 _MEMORY_GRAPH_LABEL_LIMIT = 42
 _MEMORY_GRAPH_DETAIL_LIMIT = 260
@@ -285,22 +286,43 @@ def _sse_event(event_type: str, data: dict) -> str:
 
 async def _settle_pending_state_update(*, cancel: bool = False) -> None:
     """结清后台 state_updater 任务。cancel=True 时先取消（用于重置/读档）。"""
-    global _pending_state_update_task
+    global _pending_state_update_task, _pending_state_update_requested
     task = _pending_state_update_task
     if task is None:
         return
-    _pending_state_update_task = None
     if cancel and not task.done():
+        _pending_state_update_requested = False
         task.cancel()
     try:
         await task
     except asyncio.CancelledError:
         routing_logger.info("[state_updater] 后台任务已取消")
+    finally:
+        if _pending_state_update_task is task:
+            _pending_state_update_task = None
+
+
+async def _run_state_update_loop() -> None:
+    """串行执行 state_updater；运行期间的新请求合并为最后一次补跑。"""
+    global _pending_state_update_task, _pending_state_update_requested
+    try:
+        while True:
+            _pending_state_update_requested = False
+            await narrator.update_state()
+            if not _pending_state_update_requested:
+                break
+    finally:
+        _pending_state_update_task = None
+        _pending_state_update_requested = False
 
 
 def _start_state_update() -> None:
-    global _pending_state_update_task
-    _pending_state_update_task = asyncio.create_task(narrator.update_state())
+    global _pending_state_update_task, _pending_state_update_requested
+    if _pending_state_update_task is not None and not _pending_state_update_task.done():
+        _pending_state_update_requested = True
+        return
+    _pending_state_update_requested = False
+    _pending_state_update_task = asyncio.create_task(_run_state_update_loop())
 
 
 # =============================================================================
@@ -464,8 +486,6 @@ class ChatRequest(BaseModel):
 
 async def _chat_stream(user_input: str):
     """核心游戏循环，通过 SSE 逐步推送结果。"""
-    await _settle_pending_state_update()
-
     # 0 = 哨兵：本轮还没有 narrator 成功发言，不触发 consolidation
     current_turn = 0
 
@@ -526,16 +546,18 @@ async def _chat_stream(user_input: str):
                 {"content": f"（{_get_agent_display_name(agent_name)}暂时无法回应，请稍后再试）", "author": _get_agent_display_name(agent_name)},
             )
 
-    # 5. 生成选项；后台并行：state_updater 维护 narrator 状态 + closure detector 检测 episode 闭合
-    _start_state_update()
-    if current_turn > 0:
-        # schedule_* 同步置 is_running=True，避免与下面的 done 事件产生竞态
-        memory_consolidation_flow.schedule_detect_and_consolidate(current_turn)
+    # 5. 先生成选项，再启动后台维护，避免后台整理抢当前轮的前台 LLM 请求
     if agent_responses:
         choices = await generate_choices(scene_description, agent_responses)
         if choices:
             _save_last_choices(choices)
             yield _sse_event("choices", {"choices": choices})
+
+    _start_state_update()
+    if current_turn > 0:
+        # 返回的 task 故意丢弃：MemoryConsolidationFlow._scheduled_task 已是强引用，
+        # 任务不会被 GC；新 turn 在已运行任务内 coalesce 成 _pending_turn 补跑。
+        memory_consolidation_flow.schedule_detect_and_consolidate(current_turn)
 
     yield _sse_event("done", {"consolidating": memory_consolidation_flow.is_running})
 

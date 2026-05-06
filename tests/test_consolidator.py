@@ -1,5 +1,6 @@
 """测试尾部窗口整理的纯逻辑与写回行为。"""
 
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -47,6 +48,77 @@ def _event(date: str, slot: str, content: str) -> str:
         "- **在场**：我、他\n"
         f"- **内容**：{content}"
     )
+
+
+@pytest.mark.asyncio
+async def test_schedule_detect_and_consolidate_coalesces_while_running(monkeypatch):
+    """后台整理运行中再次调度时，只补跑最新 turn，不并发跑 closure detector。"""
+    consolidator = MemoryConsolidationFlow()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[int] = []
+    active_count = 0
+    max_active_count = 0
+
+    async def fake_pipeline(_self, current_turn: int) -> None:
+        nonlocal active_count, max_active_count
+        calls.append(current_turn)
+        active_count += 1
+        max_active_count = max(max_active_count, active_count)
+        try:
+            started.set()
+            if current_turn == 10:
+                await release.wait()
+            await asyncio.sleep(0)
+        finally:
+            active_count -= 1
+
+    monkeypatch.setattr(
+        MemoryConsolidationFlow,
+        "_consolidation_pipeline",
+        fake_pipeline,
+    )
+
+    task = consolidator.schedule_detect_and_consolidate(10)
+    await started.wait()
+
+    assert consolidator.schedule_detect_and_consolidate(11) is task
+    assert consolidator.schedule_detect_and_consolidate(12) is task
+    assert consolidator.is_running is True
+
+    release.set()
+    await task
+
+    assert calls == [10, 12]
+    assert max_active_count == 1
+    assert consolidator.is_running is False
+
+
+@pytest.mark.asyncio
+async def test_scheduled_consolidation_swallows_pipeline_exceptions(monkeypatch):
+    """单轮 pipeline 抛异常不应让后台任务以未捕获异常结束，pending turn 仍要补跑。"""
+    consolidator = MemoryConsolidationFlow()
+    calls: list[int] = []
+
+    async def fake_pipeline(_self, current_turn: int) -> None:
+        calls.append(current_turn)
+        if current_turn == 1:
+            raise RuntimeError("模拟 pipeline 失败")
+
+    monkeypatch.setattr(
+        MemoryConsolidationFlow,
+        "_consolidation_pipeline",
+        fake_pipeline,
+    )
+
+    task = consolidator.schedule_detect_and_consolidate(1)
+    consolidator._coalesce_pending_turn(2)
+    await task
+
+    assert calls == [1, 2]
+    assert consolidator.is_running is False
+    assert consolidator._scheduled_task is None
+    assert task.exception() is None
 
 
 def test_prepare_slice_returns_none_when_draft_empty(tmp_path, monkeypatch):

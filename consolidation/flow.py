@@ -231,6 +231,8 @@ class MemoryConsolidationFlow:
         self._locks: dict[str, asyncio.Lock] = {}
         # 跟踪正在执行的 detect_and_consolidate 任务数；存档/读档需在为 0 时才允许进行
         self._active_count: int = 0
+        self._scheduled_task: asyncio.Task[None] | None = None
+        self._pending_turn: int | None = None
 
     @property
     def is_running(self) -> bool:
@@ -562,27 +564,55 @@ class MemoryConsolidationFlow:
         )
         memory_logger.info(f"[整理器] 闭合归并完成 (耗时 {time.monotonic() - t0:.1f}s)")
 
-    async def detect_and_consolidate(self, current_turn: int) -> None:
-        """回合末入口（直接 await 版本）。无候选或无闭合时静默返回；失败不影响主流程。"""
-        self._active_count += 1
+    async def _run_scheduled_consolidation(self, initial_turn: int) -> None:
+        """串行执行后台整理；运行期间收到的新 turn 合并为最后一个 turn 补跑。
+
+        单轮 pipeline 抛出的异常被吞掉只记日志，避免后台任务以未捕获异常结束触发
+        "Task exception was never retrieved" 告警，并让累积的 _pending_turn 仍能补跑。
+        """
+        current_turn = initial_turn
         try:
-            await self._consolidation_pipeline(current_turn)
+            while True:
+                try:
+                    await self._consolidation_pipeline(current_turn)
+                except Exception as e:
+                    memory_logger.error(
+                        f"[整理器] turn={current_turn} pipeline 异常 (已吞，不影响主流程): {e}"
+                    )
+                next_turn = self._pending_turn
+                self._pending_turn = None
+                if next_turn is None or next_turn <= current_turn:
+                    break
+                current_turn = next_turn
         finally:
+            self._scheduled_task = None
             self._active_count -= 1
 
+    def _coalesce_pending_turn(self, current_turn: int) -> None:
+        if self._pending_turn is None or current_turn > self._pending_turn:
+            self._pending_turn = current_turn
+
+    async def detect_and_consolidate(self, current_turn: int) -> None:
+        """回合末入口（直接 await 版本）。无候选或无闭合时静默返回；失败不影响主流程。"""
+        task = self.schedule_detect_and_consolidate(current_turn)
+        await task
+
     def schedule_detect_and_consolidate(self, current_turn: int) -> asyncio.Task:
-        """后台调度入口：返回前同步把 is_running 置为 True，避免 create_task 与
-        SSE done 事件之间的竞态——调用方立刻读 is_running 就能拿到准确状态。
+        """后台调度入口。
+
+        返回前同步把 is_running 置为 True，避免 create_task 与 SSE done 事件之间的竞态。
+        如果已有整理任务在跑，不再新开 closure detector，只记录最新 turn 等当前任务结束后补跑一次。
         """
+        if self._scheduled_task is not None and not self._scheduled_task.done():
+            self._coalesce_pending_turn(current_turn)
+            return self._scheduled_task
+
+        self._pending_turn = None
         self._active_count += 1
-
-        async def _runner() -> None:
-            try:
-                await self._consolidation_pipeline(current_turn)
-            finally:
-                self._active_count -= 1
-
-        return asyncio.create_task(_runner())
+        self._scheduled_task = asyncio.create_task(
+            self._run_scheduled_consolidation(current_turn)
+        )
+        return self._scheduled_task
 
 
 memory_consolidation_flow = MemoryConsolidationFlow()
