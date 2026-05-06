@@ -3181,6 +3181,12 @@ document.addEventListener("alpine:init", () => {
             if (!data.consolidating) {
               this.stopConsolidationPolling();
               this.consolidating = false;
+              if (data.new_episodes && data.new_episodes.length) {
+                for (const ep of data.new_episodes) {
+                  const title = ep.title ? `「${ep.title}」` : "";
+                  this.pushToast(`${ep.display_name}记忆新增事件${title}`, "success");
+                }
+              }
               return;
             }
           }

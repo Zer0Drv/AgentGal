@@ -9,6 +9,7 @@ import asyncio
 import json
 import re
 import traceback
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -81,6 +82,7 @@ def _clear_last_choices() -> None:
     _LAST_CHOICES_FILE.unlink(missing_ok=True)
 
 
+@lru_cache(maxsize=64)
 def _get_agent_display_name(agent_name: str) -> str:
     if agent_name == "narrator":
         return "旁白"
@@ -579,7 +581,21 @@ async def api_chat(req: ChatRequest) -> StreamingResponse:
 @app.get("/api/status")
 async def api_status() -> JSONResponse:
     """轻量状态查询。前端在收到 done 后若 consolidating=true 会轮询此接口。"""
-    return JSONResponse({"consolidating": memory_consolidation_flow.is_running})
+    running = memory_consolidation_flow.is_running
+    payload: dict = {"consolidating": running}
+    if not running and memory_consolidation_flow.last_created_episodes:
+        episodes, memory_consolidation_flow.last_created_episodes = (
+            memory_consolidation_flow.last_created_episodes,
+            [],
+        )
+        payload["new_episodes"] = [
+            {
+                "display_name": _get_agent_display_name(ep.agent_name),
+                "title": ep.title,
+            }
+            for ep in episodes
+        ]
+    return JSONResponse(payload)
 
 
 # =============================================================================

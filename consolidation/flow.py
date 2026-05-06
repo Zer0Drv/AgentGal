@@ -212,6 +212,12 @@ def _normalize_episode_memory_time(time_text: str, date_text: str | None) -> str
 
 
 @dataclass
+class CreatedEpisodeSummary:
+    agent_name: str
+    title: str
+
+
+@dataclass
 class _ConsolidationResult:
     agent_name: str
     original_len: int = 0
@@ -233,6 +239,7 @@ class MemoryConsolidationFlow:
         self._active_count: int = 0
         self._scheduled_task: asyncio.Task[None] | None = None
         self._pending_turn: int | None = None
+        self.last_created_episodes: list[CreatedEpisodeSummary] = []
 
     @property
     def is_running(self) -> bool:
@@ -466,6 +473,9 @@ class MemoryConsolidationFlow:
 
             for ep in appended:
                 await vector_store.add(ep)
+                self.last_created_episodes.append(
+                    CreatedEpisodeSummary(agent_name=agent_name, title=ep.title or "")
+                )
 
             memory_logger.info(
                 f"[整理器] {agent_name} 完成: 归并 {len(taken)} 条 draft → 1 条 EpisodeMemory "
@@ -570,6 +580,7 @@ class MemoryConsolidationFlow:
         单轮 pipeline 抛出的异常被吞掉只记日志，避免后台任务以未捕获异常结束触发
         "Task exception was never retrieved" 告警，并让累积的 _pending_turn 仍能补跑。
         """
+        self.last_created_episodes = []
         current_turn = initial_turn
         try:
             while True:
