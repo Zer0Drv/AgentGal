@@ -356,7 +356,7 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
     monkeypatch.setattr(
         character_factory_module,
         "get_character_factory_llm_config",
-        lambda: {"model": "test"},
+        lambda: {"model_id": "test"},
     )
     monkeypatch.setattr(
         character_factory_module,
@@ -428,7 +428,7 @@ async def test_create_character_skips_schedule_when_llm_omits(character_dir, mon
     monkeypatch.setattr(
         character_factory_module,
         "get_character_factory_llm_config",
-        lambda: {"model": "test"},
+        lambda: {"model_id": "test"},
     )
     monkeypatch.setattr(character_factory_module, "reload_conversation_agent", lambda _name: None)
 
@@ -499,7 +499,7 @@ async def test_create_character_rejects_invalid_generated_character_id(character
     monkeypatch.setattr(
         character_factory_module,
         "get_character_factory_llm_config",
-        lambda: {"model": "test"},
+        lambda: {"model_id": "test"},
     )
 
     spec = NewCharacterRequest(

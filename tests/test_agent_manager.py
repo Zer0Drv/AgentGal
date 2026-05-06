@@ -96,7 +96,7 @@ async def test_character_run_scans_recent_raw_history_by_turns(monkeypatch):
     monkeypatch.setattr(
         character_module,
         "get_llm_config",
-        lambda: {"model": "test-model"},
+        lambda: {"model_id": "test-model"},
     )
 
     async def fake_run_structured(self, **_kwargs):
@@ -489,7 +489,7 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     monkeypatch.setattr(
         character_module,
         "get_narrator_llm_config",
-        lambda: {"model": "test-model"},
+        lambda: {"model_id": "test-model"},
     )
     monkeypatch.setattr(
         character_module,

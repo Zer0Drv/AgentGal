@@ -13,7 +13,7 @@ from pathlib import Path
 from agents.factory import get_character_factory_agent, reload_conversation_agent
 from agents.runner import run_structured_agent
 from agents.schema import CharacterSchedule, NewCharacterProfile, NewCharacterRequest
-from llm.providers import get_character_factory_llm_config
+from llm.config import get_character_factory_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field
 from shared.config import (
@@ -241,7 +241,7 @@ async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | 
             },
             usage_agent="character_factory",
             usage_phase="agent_run",
-            model_name=config["model"],
+            model_name=config["model_id"],
         )
     except Exception as e:
         label = spec.name_hint.strip() or spec.relation_description.strip() or "（未命名新角色）"

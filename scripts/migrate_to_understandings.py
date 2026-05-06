@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 from agents.factory import _build_agent
 from agents.runner import run_structured_agent
 from agents.schema import UnderstandingEntry
-from llm.providers import get_consolidation_llm_config
+from llm.config import get_consolidation_llm_config
 from memory.parser import Understanding, read_understandings, write_understandings
 from shared.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
@@ -234,7 +234,7 @@ async def migrate_agent(agent_name: str) -> int:
             trace_metadata={"agent_name": agent_name},
             usage_agent=agent_name,
             usage_phase="migration.understandings",
-            model_name=config["model"],
+            model_name=config["model_id"],
             error_label=f"{agent_name}.migration",
         )
     except Exception as e:

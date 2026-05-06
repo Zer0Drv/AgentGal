@@ -1,5 +1,5 @@
-"""LLM 模块 - 提供商管理"""
+"""LLM 模块 - 模型配置管理。"""
 
-from .providers import get_llm_config, get_consolidation_llm_config, SUPPORTED_PROVIDERS
+from .config import get_consolidation_llm_config, get_llm_config
 
-__all__ = ["get_llm_config", "get_consolidation_llm_config", "SUPPORTED_PROVIDERS"]
+__all__ = ["get_llm_config", "get_consolidation_llm_config"]

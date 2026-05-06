@@ -39,7 +39,7 @@ def _mock_llm_infra(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         migrate,
         "get_consolidation_llm_config",
-        lambda temperature=None: {"model": "test-model"},
+        lambda temperature=None: {"model_id": "test-model"},
     )
     monkeypatch.setattr(
         migrate,

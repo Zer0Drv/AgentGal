@@ -29,10 +29,9 @@ def reset_agent_caches():
 
 def _fake_config():
     return {
-        "provider": "deepseek",
         "api_url": "https://example.com/v1",
         "api_key": "test-key",
-        "model": "deepseek-chat",
+        "model_id": "deepseek-chat",
         "temperature": 0.2,
     }
 
@@ -75,49 +74,36 @@ def test_auxiliary_structured_agents_use_prompted_output(monkeypatch):
     assert understanding_patch._output_schema.mode == "prompted"
 
 
-def test_openrouter_consolidation_agents_clamp_unbounded_max_tokens(monkeypatch):
+def test_consolidation_agents_use_configured_max_tokens(monkeypatch):
     monkeypatch.setattr(
         agent_factory_module,
         "get_consolidation_llm_config",
-        lambda temperature=None: {
-            **_fake_config(),
-            "provider": "openrouter",
-            "temperature": temperature or 0.2,
-        },
+        lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
     )
     monkeypatch.setattr(
         agent_factory_module,
         "get_episode_closure_detector_llm_config",
-        lambda temperature=None: {
-            **_fake_config(),
-            "provider": "openrouter",
-            "temperature": temperature or 0.2,
-        },
+        lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
     )
-    monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_MAX_TOKENS", None)
+    monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_MAX_TOKENS", 1234)
 
     episode_memory_generator = agent_factory_module.get_episode_memory_generator_agent()
     understanding_patch = agent_factory_module.get_understanding_patch_agent()
 
-    assert (
-        episode_memory_generator.model_settings["max_tokens"]
-        == agent_factory_module._OPENROUTER_SAFE_DEFAULT_MAX_TOKENS
-    )
-    assert (
-        understanding_patch.model_settings["max_tokens"]
-        == agent_factory_module._OPENROUTER_SAFE_DEFAULT_MAX_TOKENS
-    )
+    assert episode_memory_generator.model_settings["max_tokens"] == 1234
+    assert understanding_patch.model_settings["max_tokens"] == 1234
 
 
-def test_make_sdk_model_uses_provider_specific_provider():
+def test_make_sdk_model_uses_configured_openai_compatible_url():
     model = agent_factory_module._make_sdk_model(
         {
-            "provider": "openrouter",
-            "api_url": "https://openrouter.ai/api/v1",
+            "api_url": "https://example.com/v1",
             "api_key": "test-key",
-            "model": "moonshotai/kimi-k2.5",
+            "model_id": "moonshotai/kimi-k2.5",
             "temperature": 0.2,
         }
     )
 
-    assert model._provider.name == "openrouter"
+    assert model._provider.name == "openai"
+    assert str(model._provider.client.base_url) == "https://example.com/v1/"
+    assert model._provider.client.api_key == "test-key"

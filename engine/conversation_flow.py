@@ -10,7 +10,7 @@ from agents.schema import ChoicesOutput, NewCharacterRequest
 from engine.character import get_character, narrator
 from engine.character_factory import CreatedCharacterInfo, create_character
 from engine.prompt_builder import build_history_transcript
-from llm.providers import get_choices_llm_config
+from llm.config import get_choices_llm_config
 from log_config.routing import routing_logger
 from shared.config import CHOICES_RUN_TIMEOUT_SECONDS, HISTORY_RAW_SCAN_TURNS
 from shared.text_utils import clean_response, is_valid_response
@@ -42,7 +42,7 @@ async def generate_choices(
             trace_metadata=None,
             usage_agent="choices",
             usage_phase="agent_run",
-            model_name=config["model"],
+            model_name=config["model_id"],
         )
     except Exception:
         return []

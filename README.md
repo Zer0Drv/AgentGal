@@ -67,12 +67,12 @@ cp .env.example .env
 打开 `.env`，填入模型服务配置。最少需要：
 
 ```bash
-LLM_PROVIDER=deepseek
+LLM_API_URL=https://api.deepseek.com/v1
 LLM_API_KEY=你的 API Key
 LLM_MODEL_ID=deepseek-v4-pro
 ```
 
-如果使用其他模型服务，按 `.env.example` 里的注释调整 provider、URL 和模型名。
+如果使用其他 OpenAI-compatible 模型服务，按 `.env.example` 里的注释调整 URL 和模型名。
 
 启动：
 

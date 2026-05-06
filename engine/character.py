@@ -31,7 +31,7 @@ from engine.prompt_builder import (
     build_user_message,
 )
 from llm.embedding import embed_sync
-from llm.providers import get_llm_config, get_narrator_llm_config
+from llm.config import get_llm_config, get_narrator_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field, normalize
 from memory.retrieval import search_memories, search_understandings
@@ -183,7 +183,7 @@ class BaseEntity:
             trace_metadata={"agent_name": usage_agent or self.name},
             usage_agent=usage_agent or self.name,
             usage_phase="agent_run",
-            model_name=config["model"],
+            model_name=config["model_id"],
         )
 
 

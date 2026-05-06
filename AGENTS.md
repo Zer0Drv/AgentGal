@@ -12,7 +12,7 @@ Multi-Agent Roleplay / Narrative Game Project. The current implementation is bui
 
 - Python 3.11+
 - FastAPI + SSE (Server-Sent Events)
-- pydantic-ai (`pydantic-ai`) — `Agent` / `PromptedOutput` / `OpenAIChatModel` / provider-specific `Provider`
+- pydantic-ai (`pydantic-ai`) — `Agent` / `PromptedOutput` / `OpenAIChatModel`
 - sqlite-vec + aiosqlite
 - asyncio
 
@@ -42,7 +42,7 @@ agentgal-memos/
 │   ├── flow.py                 # Consolidation orchestration: EpisodeMemoryGenerator / understanding patch
 │   └── inputs.py               # Consolidation prompt assembly (memory_owner / raw_dialogue)
 ├── llm/
-│   ├── providers.py            # Provider configuration and URL parsing (returns provider/api_url/api_key/model/temperature)
+│   ├── config.py               # LLM URL configuration parsing (returns api_url/api_key/model_id/temperature)
 │   ├── embedding.py            # Embeddings client (embed_async / embed_sync)
 │   └── rerank.py               # Rerank API client
 ├── log_config/                 # Logfire and business logger configuration
@@ -268,7 +268,7 @@ After each round of character responses, `generate_choices()` is called to gener
 
 ### `.env`
 
-- Holds secrets, model IDs, providers, and external service URLs
+- Holds secrets, model IDs, and external service URLs
 - Rerank calls are only truly enabled when `RERANK_MODEL` is configured
 - narrator / choices / consolidation / character_factory / episode_closure_detector all support their own independent LLM configurations, falling back level by level when not set (`CHARACTER_FACTORY_LLM_*` falls back to narrator; `EPISODE_CLOSURE_DETECTOR_LLM_*` falls back to main LLM)
 

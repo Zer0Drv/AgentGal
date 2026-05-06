@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from openai import AsyncOpenAI
 from pydantic_ai import Agent, PromptedOutput
 from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers import infer_provider_class
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
 from agents.schema import (
@@ -19,7 +18,7 @@ from agents.schema import (
     UnderstandingPatchOutput,
 )
 from engine.prompt_builder import build_system_prompt
-from llm.providers import (
+from llm.config import (
     get_character_factory_llm_config,
     get_choices_llm_config,
     get_consolidation_llm_config,
@@ -49,21 +48,15 @@ _choices_agent: Agent[None, ChoicesOutput] | None = None
 _state_updater_agent: Agent[None, StateUpdaterOutput] | None = None
 _character_factory_agent: Agent[None, NewCharacterProfile] | None = None
 _consolidation_agents: dict[str, StructuredAgent] = {}
-_OPENROUTER_SAFE_DEFAULT_MAX_TOKENS = 4096
 
 
 def _make_sdk_model(config: dict) -> OpenAIChatModel:
-    provider_name = config.get("provider", "openai")
-    provider_class = infer_provider_class(provider_name)
-    provider = provider_class(
-        openai_client=AsyncOpenAI(
+    return OpenAIChatModel(
+        config["model_id"],
+        provider=OpenAIProvider(
             base_url=config["api_url"],
             api_key=config["api_key"],
-        )
-    )
-    return OpenAIChatModel(
-        config["model"],
-        provider=provider,
+        ),
     )
 
 
@@ -93,18 +86,6 @@ def _build_agent(
         model_settings=_build_model_settings(config, max_tokens=max_tokens),
         output_type=PromptedOutput(output_type),
     )
-
-
-def _resolve_openrouter_safe_max_tokens(
-    config: dict,
-    requested_max_tokens: int | None,
-) -> int | None:
-    """避免 OpenRouter 在未显式限制时默认申请超大输出。"""
-    if requested_max_tokens is not None:
-        return requested_max_tokens
-    if config.get("provider") == "openrouter":
-        return _OPENROUTER_SAFE_DEFAULT_MAX_TOKENS
-    return None
 
 
 def initialize_conversation_agents() -> None:
@@ -181,37 +162,29 @@ def _ensure_consolidation_agents() -> None:
         return
 
     config = get_consolidation_llm_config(temperature=CONSOLIDATION_TEMPERATURE)
-    consolidation_max_tokens = _resolve_openrouter_safe_max_tokens(
-        config,
-        CONSOLIDATION_MAX_TOKENS,
-    )
     _consolidation_agents["episode_memory_generator"] = _build_agent(
         name="episode_memory_generator",
         instructions=EPISODE_MEMORY_GENERATOR,
         config=config,
         output_type=EpisodeMemoryBlock,
-        max_tokens=consolidation_max_tokens,
+        max_tokens=CONSOLIDATION_MAX_TOKENS,
     )
     closure_config = get_episode_closure_detector_llm_config(
         temperature=CONSOLIDATION_TEMPERATURE
-    )
-    closure_max_tokens = _resolve_openrouter_safe_max_tokens(
-        closure_config,
-        CONSOLIDATION_MAX_TOKENS,
     )
     _consolidation_agents["episode_closure_detector"] = _build_agent(
         name="episode_closure_detector",
         instructions=EPISODE_CLOSURE_DETECTOR,
         config=closure_config,
         output_type=EpisodeClosureOutput,
-        max_tokens=closure_max_tokens,
+        max_tokens=CONSOLIDATION_MAX_TOKENS,
     )
     _consolidation_agents["understanding_patch"] = _build_agent(
         name="understanding_patch",
         instructions=UNDERSTANDING_PATCH,
         config=config,
         output_type=UnderstandingPatchOutput,
-        max_tokens=consolidation_max_tokens,
+        max_tokens=CONSOLIDATION_MAX_TOKENS,
     )
 
 
