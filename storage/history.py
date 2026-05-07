@@ -120,6 +120,26 @@ def load_history_before(*, before_turn: int, limit: int) -> list[dict]:
 _anchors_cache: dict[str, tuple[tuple[float, int], list[dict]]] = {}
 
 
+def search_history(query: str, *, limit: int) -> list[dict]:
+    """子串搜索（不区分大小写），按时间倒序返回最多 limit 条匹配消息。"""
+    if not query or limit <= 0:
+        return []
+
+    raw_dir = character_path("narrator", "raw")
+    if not os.path.exists(raw_dir):
+        return []
+
+    q_lower = query.lower()
+    matches: list[dict] = []
+    for filepath in sorted(glob.glob(f"{raw_dir}/*.jsonl"), reverse=True):
+        file_msgs = [msg for msg in _iter_jsonl(filepath) if q_lower in (msg.get("content") or "").lower()]
+        for msg in reversed(file_msgs):
+            matches.append(msg)
+            if len(matches) >= limit:
+                return matches
+    return matches
+
+
 def extract_game_date_anchors() -> list[dict]:
     """游戏内日期段（按出现顺序），同一日期中途切走又切回会出现多个段。
 

@@ -49,6 +49,7 @@ from storage.history import (
     extract_game_date_anchors,
     load_conversation_history,
     load_history_before,
+    search_history,
 )
 from storage.message_router import message_router
 
@@ -408,6 +409,14 @@ async def api_history(before_turn: int, limit: int = 30) -> JSONResponse:
 @app.get("/api/history/dates")
 async def api_history_dates() -> JSONResponse:
     return JSONResponse({"anchors": extract_game_date_anchors()})
+
+
+@app.get("/api/history/search")
+async def api_history_search(q: str, limit: int = 50) -> JSONResponse:
+    limit = max(1, min(limit, 200))
+    raw = search_history(q, limit=limit)
+    messages = [m for m in (_format_history_message(item) for item in raw) if m]
+    return JSONResponse({"messages": messages})
 
 
 # =============================================================================

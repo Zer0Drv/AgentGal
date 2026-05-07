@@ -251,6 +251,74 @@ svg {
   color: var(--text-soft);
 }
 
+.date-menu-search {
+  width: 100%;
+  margin: 2px 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 252, 248, 0.9);
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s var(--easing);
+}
+
+.date-menu-search:focus {
+  border-color: rgba(180, 90, 100, 0.4);
+}
+
+.search-result-item {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  transition: background-color 0.2s var(--easing);
+}
+
+.search-result-item:hover {
+  background: rgba(180, 90, 100, 0.08);
+}
+
+.search-result-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.search-result-author {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.search-result-turn {
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
+.search-result-snippet {
+  font-size: 12px;
+  color: var(--text-soft);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.search-result-snippet mark {
+  background: rgba(180, 90, 100, 0.2);
+  color: var(--text);
+  padding: 0 2px;
+  border-radius: 3px;
+}
+
 .history-loading {
   text-align: center;
   font-size: 12px;
@@ -263,6 +331,7 @@ svg {
 .primary-btn,
 .story-card,
 .new-save-button,
+.drawer-reset-btn,
 .save-card,
 .save-action,
 .choice-chip {
@@ -294,6 +363,7 @@ svg {
 
 .ghost-btn:hover,
 .new-save-button:hover,
+.drawer-reset-btn:hover,
 .save-action:hover,
 .choice-chip:hover,
 .story-card:hover {
@@ -304,6 +374,7 @@ svg {
 .ghost-btn:active,
 .primary-btn:active,
 .new-save-button:active,
+.drawer-reset-btn:active,
 .save-action:active,
 .choice-chip:active,
 .story-card:active {
@@ -1432,6 +1503,81 @@ svg {
   margin-top: 26px;
 }
 
+.drawer-pull-tab {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 24;
+  width: 34px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px 0 0 12px;
+  background: rgba(249, 243, 237, 0.92);
+  border: 1px solid var(--line);
+  border-right: none;
+  box-shadow: -4px 0 14px -6px rgba(83, 49, 45, 0.22);
+  color: var(--text-soft);
+  cursor: pointer;
+  transition: right 0.34s var(--easing), background 0.2s, box-shadow 0.2s;
+}
+
+.drawer-pull-tab.is-open {
+  right: var(--drawer-width);
+}
+
+.drawer-pull-tab:hover {
+  background: var(--panel-strong);
+  box-shadow: -6px 0 20px -6px rgba(83, 49, 45, 0.3);
+}
+
+.pull-tab-label {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: currentColor;
+}
+
+.drawer-reset-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-height: 64px;
+  margin-bottom: 10px;
+  padding: 13px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(180, 90, 100, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 251, 247, 0.96), rgba(255, 247, 241, 0.9));
+  color: var(--text);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    var(--shadow-soft);
+  text-align: left;
+}
+
+.drawer-reset-btn:hover:not(:disabled) {
+  border-color: rgba(180, 90, 100, 0.28);
+}
+
+.drawer-reset-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.drawer-reset-icon {
+  border-color: rgba(162, 88, 88, 0.16);
+  background: rgba(162, 88, 88, 0.08);
+  color: var(--danger);
+}
+
 .drawer-backdrop {
   inset: 0;
   z-index: 18;
@@ -1949,56 +2095,98 @@ svg {
           <span class="btn-label">历史</span>
         </button>
         <div class="date-menu" x-show="dateMenuOpen" x-transition.opacity x-ref="dateMenu">
-          <div class="date-menu-title">游戏内日期</div>
-          <template x-if="gameDatesLoading && !gameDates.length">
-            <div class="date-menu-empty">加载中…</div>
+          <input
+            type="text"
+            class="date-menu-search"
+            placeholder="搜索消息内容…"
+            x-model="searchQuery"
+            @input="onSearchInput()"
+          />
+
+          <template x-if="!searchQuery.trim()">
+            <div>
+              <div class="date-menu-title">游戏内日期</div>
+              <template x-if="gameDatesLoading && !gameDates.length">
+                <div class="date-menu-empty">加载中…</div>
+              </template>
+              <template x-if="!gameDatesLoading && !gameDates.length">
+                <div class="date-menu-empty">暂无可跳转的日期</div>
+              </template>
+              <ul class="date-menu-list">
+                <template x-for="(anchor, idx) in gameDates" :key="idx + ':' + anchor.first_turn">
+                  <li>
+                    <button type="button" class="date-menu-item" @click="jumpToTurn(anchor.first_turn)">
+                      <span class="date-menu-date" x-text="anchor.date"></span>
+                      <span class="date-menu-range" x-text="`轮 ${anchor.first_turn}-${anchor.last_turn}`"></span>
+                    </button>
+                  </li>
+                </template>
+              </ul>
+            </div>
           </template>
-          <template x-if="!gameDatesLoading && !gameDates.length">
-            <div class="date-menu-empty">暂无可跳转的日期</div>
+
+          <template x-if="searchQuery.trim()">
+            <div>
+              <div class="date-menu-title" x-text="searchLoading ? '搜索中…' : `搜索结果（${searchResults.length}）`"></div>
+              <template x-if="!searchLoading && !searchResults.length">
+                <div class="date-menu-empty">无匹配消息</div>
+              </template>
+              <ul class="date-menu-list">
+                <template x-for="result in searchResults" :key="result.turn + ':' + result.role">
+                  <li>
+                    <button type="button" class="search-result-item" @click="jumpToTurn(result.turn)">
+                      <div class="search-result-head">
+                        <span class="search-result-author" x-text="result.author || result.role"></span>
+                        <span class="search-result-turn" x-text="`轮 ${result.turn}`"></span>
+                      </div>
+                      <div class="search-result-snippet" x-html="renderSearchSnippet(result.content, searchQuery.trim())"></div>
+                    </button>
+                  </li>
+                </template>
+              </ul>
+            </div>
           </template>
-          <ul class="date-menu-list">
-            <template x-for="(anchor, idx) in gameDates" :key="idx + ':' + anchor.first_turn">
-              <li>
-                <button type="button" class="date-menu-item" @click="jumpToTurn(anchor.first_turn)">
-                  <span class="date-menu-date" x-text="anchor.date"></span>
-                  <span class="date-menu-range" x-text="`轮 ${anchor.first_turn}-${anchor.last_turn}`"></span>
-                </button>
-              </li>
-            </template>
-          </ul>
         </div>
       </div>
 
       <button
         type="button"
         class="ghost-btn menu-btn"
-        :aria-label="isCompact ? '打开菜单' : '打开档案室'"
-        :title="isCompact ? '打开菜单' : '打开档案室'"
+        aria-label="记忆图谱"
+        title="记忆图谱"
+        @click="openMemoryGraph()"
+      >
+        <span class="btn-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="6" cy="7" r="2.2"/>
+            <circle cx="17" cy="5" r="2.2"/>
+            <circle cx="18" cy="17" r="2.2"/>
+            <circle cx="7" cy="18" r="2.2"/>
+            <path d="m8 7 7-1.4"/>
+            <path d="m7.4 9 9.2 6.8"/>
+            <path d="m9.1 17.5 6.8-.4"/>
+          </svg>
+        </span>
+        <span class="btn-label">图谱</span>
+      </button>
+
+      <button
+        type="button"
+        class="ghost-btn menu-btn"
+        x-show="isCompact"
+        aria-label="打开菜单"
+        title="打开菜单"
         :aria-expanded="drawerOpen"
         @click="toggleDrawer()"
       >
         <span class="btn-icon" aria-hidden="true">
-          <svg x-show="!isCompact" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 7.5h7l2 2H21v7.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
-            <path d="M3 7.5v-1A2.5 2.5 0 0 1 5.5 4h4.8a2 2 0 0 1 1.4.58l1.3 1.32"/>
-          </svg>
-          <svg x-show="isCompact" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 7h16"/>
             <path d="M4 12h16"/>
             <path d="M4 17h16"/>
           </svg>
         </span>
-        <span class="btn-label" x-text="isCompact ? '菜单' : '档案'"></span>
-      </button>
-
-      <button type="button" class="ghost-btn danger" x-show="!isCompact" aria-label="重新选择故事" :disabled="busy || consolidating" :title="consolidating ? '记忆整理进行中，请稍后再重开' : ''" @click="showResetConfirmation()">
-        <span class="btn-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 12a9 9 0 1 0 2.64-6.36"/>
-            <path d="M3 4.5v5h5"/>
-          </svg>
-        </span>
-        <span>重开</span>
+        <span class="btn-label">菜单</span>
       </button>
     </div>
   </header>
@@ -2171,26 +2359,27 @@ svg {
       </div>
 
       <div class="drawer-body">
-        <div class="drawer-copy" x-text="isCompact ? '存档、重开和读档都收在这里。' : '选择一个档位覆盖或读取；新建存档会生成新的档位。'"></div>
+        <div class="drawer-copy">选择一个档位覆盖或读取；新建存档会生成新的档位。</div>
 
         <div class="drawer-copy" x-show="consolidating" style="color: var(--accent-warm, #b07a2c);">记忆整理进行中，存档与读档暂时不可用。</div>
 
-        <button type="button" class="new-save-button" @click="openMemoryGraph()">
+        <button
+          type="button"
+          class="drawer-reset-btn"
+          :disabled="busy || consolidating"
+          :title="consolidating ? '记忆整理进行中，请稍后再重开' : '重新选择故事'"
+          @click="resetFromDrawer()"
+        >
           <span class="new-save-main">
-            <span class="new-save-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="6" cy="7" r="2.2"/>
-                <circle cx="17" cy="5" r="2.2"/>
-                <circle cx="18" cy="17" r="2.2"/>
-                <circle cx="7" cy="18" r="2.2"/>
-                <path d="m8 7 7-1.4"/>
-                <path d="m7.4 9 9.2 6.8"/>
-                <path d="m9.1 17.5 6.8-.4"/>
+            <span class="new-save-icon drawer-reset-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 12a9 9 0 1 0 2.64-6.36"/>
+                <path d="M3 4.5v5h5"/>
               </svg>
             </span>
             <span>
-              <span class="new-save-title">记忆图谱</span>
-              <span class="new-save-meta">Understanding / Episode</span>
+              <span class="new-save-title">重新选择故事</span>
+              <span class="new-save-meta" x-text="consolidating ? '记忆整理中暂不可用' : '回到故事模板选择'"></span>
             </span>
           </span>
         </button>
@@ -2209,12 +2398,6 @@ svg {
             </span>
           </span>
         </button>
-
-        <div class="drawer-shortcuts" x-show="isCompact">
-          <button type="button" class="ghost-btn danger" :disabled="busy || consolidating" :title="consolidating ? '记忆整理进行中，请稍后再重开' : ''" @click="resetFromDrawer()">
-            <span>重开</span>
-          </button>
-        </div>
 
         <template x-if="saveLoading">
           <div class="drawer-skeleton">
@@ -2358,6 +2541,18 @@ svg {
       </div>
     </div>
   </div>
+
+  <button
+    type="button"
+    class="drawer-pull-tab"
+    x-show="!isCompact"
+    :class="{ 'is-open': drawerOpen }"
+    :aria-label="drawerOpen ? '关闭档案室' : '打开档案室'"
+    :aria-expanded="drawerOpen"
+    @click="toggleDrawer()"
+  >
+    <span class="pull-tab-label">档案</span>
+  </button>
 
   <div class="memory-graph-page" x-show="memoryGraphOpen">
     <div class="memory-graph-shell" :class="{ 'is-detail-collapsed': memoryGraphDetailCollapsed }">
@@ -2582,6 +2777,10 @@ document.addEventListener("alpine:init", () => {
     gameDatesLoaded: false,
     gameDatesLoading: false,
     dateMenuOpen: false,
+    searchQuery: "",
+    searchResults: [],
+    searchLoading: false,
+    searchTimer: null,
     activeStreamController: null,
     toastTimers: new Map(),
     toasts: [],
@@ -2601,6 +2800,9 @@ document.addEventListener("alpine:init", () => {
     ],
 
     async init() {
+      if ("scrollRestoration" in window.history) {
+        window.history.scrollRestoration = "manual";
+      }
       this.setupViewportListener();
       this.setupVisualViewportListener();
       this.resizeComposer();
@@ -3122,7 +3324,7 @@ document.addEventListener("alpine:init", () => {
       this.scrollToLatest();
     },
 
-    scrollToLatest() {
+    scrollToLatest({ settle = false } = {}) {
       const stick = () => {
         const el = this.$refs.messages;
         if (el) el.scrollTop = el.scrollHeight;
@@ -3133,6 +3335,9 @@ document.addEventListener("alpine:init", () => {
         });
       });
       setTimeout(stick, 250);
+      if (settle) {
+        [80, 500, 1000].forEach(delay => setTimeout(stick, delay));
+      }
     },
 
     prependHistory(messages) {
@@ -3252,6 +3457,54 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
+    onSearchInput() {
+      if (this.searchTimer) clearTimeout(this.searchTimer);
+      const q = this.searchQuery.trim();
+      if (!q) {
+        this.searchResults = [];
+        this.searchLoading = false;
+        return;
+      }
+      this.searchLoading = true;
+      this.searchTimer = setTimeout(() => this.runSearch(q), 250);
+    },
+
+    async runSearch(q) {
+      try {
+        const response = await this.fetchJson(`/api/history/search?q=${encodeURIComponent(q)}&limit=50`);
+        if (this.searchQuery.trim() !== q) return;
+        this.searchResults = response.messages || [];
+      } catch (error) {
+        this.setNotice("搜索失败。", "error");
+      } finally {
+        this.searchLoading = false;
+      }
+    },
+
+    buildSearchSnippet(content, query) {
+      const text = String(content || "");
+      const q = String(query || "");
+      if (!q) return { before: text.slice(0, 60), match: "", after: "" };
+      const idx = text.toLowerCase().indexOf(q.toLowerCase());
+      if (idx === -1) return { before: text.slice(0, 60), match: "", after: "" };
+      const start = Math.max(0, idx - 24);
+      const end = Math.min(text.length, idx + q.length + 36);
+      const beforeBody = text.slice(start, idx).replace(/\s+/g, " ");
+      const matchBody = text.slice(idx, idx + q.length);
+      const afterBody = text.slice(idx + q.length, end).replace(/\s+/g, " ");
+      return {
+        before: (start > 0 ? "…" : "") + beforeBody,
+        match: matchBody,
+        after: afterBody + (end < text.length ? "…" : ""),
+      };
+    },
+
+    renderSearchSnippet(content, query) {
+      const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const { before, match, after } = this.buildSearchSnippet(content, query);
+      return `${esc(before)}<mark>${esc(match)}</mark>${esc(after)}`;
+    },
+
     resetConversation() {
       this.messages = [];
       this.choices = [];
@@ -3263,6 +3516,10 @@ document.addEventListener("alpine:init", () => {
       this.gameDates = [];
       this.gameDatesLoaded = false;
       this.dateMenuOpen = false;
+      this.searchQuery = "";
+      this.searchResults = [];
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
       this.clearNotice();
       this.resetComposer();
     },
@@ -3299,8 +3556,9 @@ document.addEventListener("alpine:init", () => {
     continueGame(recent, lastChoices, { silent = false } = {}) {
       this.storyModalOpen = false;
       this.resetConversation();
-      this.addHistory(recent);
       this.choices = lastChoices || [];
+      this.addHistory(recent);
+      this.scrollToLatest({ settle: true });
       if (this.isCompact) this.closeDrawer();
       if (!silent) {
         this.setNotice("已恢复最近进度。", "success");

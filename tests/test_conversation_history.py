@@ -17,7 +17,7 @@ os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
 from shared.config import character_path
-from storage.history import load_conversation_history
+from storage.history import load_conversation_history, search_history
 
 
 @pytest.fixture
@@ -180,3 +180,36 @@ def test_load_conversation_history_by_turns(temp_raw_dir):
 def test_load_conversation_history_limit_and_turns_mutually_exclusive(temp_raw_dir):
     with pytest.raises(ValueError):
         load_conversation_history(limit=3, turns=1)
+
+
+def test_search_history_case_insensitive_latest_first(temp_raw_dir):
+    """搜索历史按时间倒序返回匹配内容，且不区分大小写。"""
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    with open(temp_raw_dir / f"{yesterday}.jsonl", "w", encoding="utf-8") as f:
+        f.write(json.dumps({"role": "player", "content": "Alpha 旧消息", "turn": 1}, ensure_ascii=False) + "\n")
+        f.write(json.dumps({"role": "narrator", "content": "不匹配", "turn": 2}, ensure_ascii=False) + "\n")
+
+    with open(temp_raw_dir / f"{today}.jsonl", "w", encoding="utf-8") as f:
+        f.write(json.dumps({"role": "player", "content": "alpha 今天较早", "turn": 3}, ensure_ascii=False) + "\n")
+        f.write(json.dumps({"role": "narrator", "content": "ALPHA 今天较晚", "turn": 4}, ensure_ascii=False) + "\n")
+
+    result = search_history("alpha", limit=10)
+
+    assert [item["turn"] for item in result] == [4, 3, 1]
+
+
+def test_search_history_limit(temp_raw_dir):
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    with open(temp_raw_dir / f"{today}.jsonl", "w", encoding="utf-8") as f:
+        for turn in range(1, 5):
+            f.write(
+                json.dumps({"role": "player", "content": f"needle {turn}", "turn": turn}, ensure_ascii=False)
+                + "\n"
+            )
+
+    result = search_history("needle", limit=2)
+
+    assert [item["turn"] for item in result] == [4, 3]
