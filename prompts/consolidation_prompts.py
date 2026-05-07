@@ -235,89 +235,71 @@ EPISODE_MEMORY_GENERATOR = r"""<role>
 
 
 UNDERSTANDING_PATCH = r"""<task>
-你维护角色对人、关系、互动模式的稳定认知（Understanding）。
-每条 Understanding 是一个信念节点，每条 EpisodeMemory 是它的证据。
-
-你的工作：从新记录中提取所有值得形成认知的方面，挂到已有节点上或创建新节点。
+你维护角色对人、关系、互动模式的稳定认知。你需要从新记录中提取值得形成认知的方面，挂到已有认知上或创建新认知。
 </task>
 
 <inputs>
-- <existing_entries>：已有节点，格式为 [id] subject=... keywords=[...] linked_episodes=[...] content=...
-- <new_record>：新记录 JSON，其中 id 是本次记录 ID
+- <existing_entries>：已有认知
+- <new_record>：新发生的事件，会更新已有认知，或者增加新的认知
 </inputs>
 
-<decision>
-按顺序处理：
+<steps>
+1. 从新记录中提取认知，例如更了解什么人，关系发生变化，互动方式发生变化等等。
 
-1. 通读新记录和已有节点。对每个已有节点，判断新记录是否与它相关（涉及同一个人、同一段关系、同一种互动模式）：
-   - 相关且新记录带来新角度、修正、例外或深化 → update：更新 content，linked_episodes 填新记录 id
-   - 相关且新记录只是再次印证 → update：content 不变，linked_episodes 填新记录 id
-   - 不相关 → 跳过
+2. 对每个认知，在 existing_entries 中找相同主题的认知：
+   - 找到了，新记录带来新角度、修正或深化 → update, 修改 subject 或 content 或 keywords，使已有认知更全面准确
+   - 找到了，新记录只是再次印证 → update，但不需要修改任何内容
+   - 没找到 → add 新认知
 
-2. 处理完已有节点后，检查新记录中是否还有被遗漏的、值得形成稳定认知的内容——它必须不属于任何已有节点已覆盖的范围。只有这种"已有节点都接不住"的情况才 add 新节点。
-
-要点：同一条关系线索或互动模式的不同表现，应通过 update 融入同一个已有节点，而不是拆成多个独立节点各自 add。
-</decision>
+一个合适的认知应该是一个稳定的结论，它会在未来的类似情境中被想起。例如「X 和 Y 的关系」「我对 X 的看法」等等。
+add 的认知应该与已有认知是同一抽象程度。如果是包含关系，表示新认知是已有认知的一个子集或超集，修改已有认知的 subject 以反映这个关系。然后 update 已有认知的 content 和 keywords 来补充新认知带来的新信息。
+</steps>
 
 <write_rules>
-- content 写**以后判断人、关系、互动方式时有用的一句稳定认知**，不描述事件经过
-- content 40-80 个中文字符，最多 120 个中文字符
-- subject 可以是人、关系、互动模式或行为规律
-- keywords 描述这条理解"在什么时候有用"，即它覆盖的情境主题或关系维度等等抽象层面。控制在 3-5 个词。
-- 只有涉及不同的人、不同性质的关系或完全不同的互动维度时，才分别处理各自节点；同一个人、同一段关系下的不同行为表现应尽量融入同一节点
-- linked_episodes 只填 new_record.id；系统自动合并旧链接
-- update 必须使用已有 id；不新增内容相近的重复节点
+- subject 可以是人、关系、互动模式或性格特征
+- content 写这条认知的结论，不描述事件。200 字内。
+- keywords 描述这条认知在什么情境下有用，3-5 个词。
+- 新记录触及多个独立方面时分别 add/update 各自节点
 - 必须输出至少一个 add 或 update；不允许空输出
 </write_rules>
 
 <examples>
-例 1：无已有节点，首次观察到新规律。
+以下例子中 existing_entries 每条格式为 [id] subject=... content=...。
+
+例 1：无已有节点，首次观察到新规律
 existing_entries：（尚无）
-new_record：id=e1，两人第一次一起吃饭，气氛轻松，沉默时他也不显得不安。
+new_record：id=e1，两人第一次一起吃饭，气氛轻松，沉默时北原悠也不显得不安。
 输出：
-{"add":[{"subject":"我们的日常相处节奏","keywords":["相处","日常","独处"],"content":"他和我在一起时不需要一直说话，沉默对他来说不是负担；我们的相处不需要持续维系。","linked_episodes":["e1"]}],"update":{}}
+{"add":[{"subject":"我和北原悠的日常相处方式","keywords":["相处","日常","独处"],"content":"和北原悠在一起不需要一直说话，沉默对他不是负担。"}],"update":{}}
 
-例 2：有相关节点，新记录带来新角度，更新 content。
-existing_entries：[u1] subject='我们的日常相处节奏' linked_episodes=[e1] content='他和我在一起时不需要一直说话，沉默对他来说不是负担。'
-new_record：id=e2，他主动提议一起吃饭，选了安静的地方，说"跟你在一起不用表演"。
+例 2：有相关节点，新认知让 subject 也变宽了
+existing_entries：[u1] subject='我们在一起时不需要说话' content='和北原悠在一起不需要一直说话，沉默对他不是负担。'
+new_record：id=e2，北原悠主动提议一起吃饭，选了安静的地方，说"跟你在一起不用表演"。
 输出：
-{"add":[],"update":{"u1":{"subject":"我们的日常相处节奏","keywords":["相处","日常","独处"],"content":"他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担；他会主动寻找这种放松的方式。","linked_episodes":["e2"]}}}
+{"add":[],"update":{"u1":{"subject":"我和北原悠的相处方式","keywords":["相处","日常","独处"],"content":"在我面前北原悠不需要表演，沉默或平凡时间都让他放松。"}}}
 
-例 3：有相关节点，新记录只是再次印证，content 不变，只挂链接。
-existing_entries：[u1] subject='我们的日常相处节奏' linked_episodes=[e1,e2] content='他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担；他会主动寻找这种放松的方式。'
-new_record：id=e3，又一次一起吃午饭，平静，他没说什么特别的。
+例 3：有相关节点，只是再次印证 → entry 不变，仍输出 update
+existing_entries：[u1] subject='我和北原悠的相处方式' content='在我面前北原悠不需要表演，沉默或平凡时间都让他放松。'
+new_record：id=e3，又一次一起吃午饭，平静，北原悠没说什么特别的。
 输出：
-{"add":[],"update":{"u1":{"subject":"我们的日常相处节奏","keywords":["相处","日常","独处"],"content":"他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担；他会主动寻找这种放松的方式。","linked_episodes":["e3"]}}}
+{"add":[],"update":{"u1":{"subject":"我和北原悠的相处方式","keywords":["相处","日常","独处"],"content":"在我面前北原悠不需要表演，沉默或平凡时间都让他放松。"}}}
 
-例 4：新记录触及多个独立方面，分别处理。
-existing_entries：[u1] subject='玩家在压力下的保护方式' linked_episodes=[e0] content='玩家遇到冲突时会先确认我的安全，再用行动替我分担压力。'
-new_record：id=e4，冲突中他先替我挡住对方，事后主动问我有没有受伤；我发现他向来先行动后解释。
+例 4：新记录触及多个独立方面，分别处理
+existing_entries：[u1] subject='北原悠的性格特征' content='北原悠话不多，留意细节，行事不声张。'
+new_record：id=e4，冲突中北原悠先把我挡到身后，事后才确认我有没有受伤。
 输出：
-{"add":[{"subject":"他处理事情的默认节奏","keywords":["突发事件","冲突","应对方式"],"content":"他倾向于先行动再解释，不会在压力下停下来讨论；这是他面对突发情况的默认节奏。","linked_episodes":["e4"]}],"update":{"u1":{"subject":"玩家在压力下的保护方式","keywords":["压力","冲突","保护"],"content":"玩家在压力下会先用行动替我分担，而不是先问我意见；事后才会确认我的状态。","linked_episodes":["e4"]}}}
+{"add":[{"subject":"北原悠保护我的方式","keywords":["冲突","保护","果断"],"content":"危险时北原悠会先把我护在身后，事后才确认我的状态，果断而不声张。"}],"update":{"u1":{"subject":"北原悠的性格特征","keywords":["性格","观察","行动"],"content":"北原悠话不多，留意细节，行动果断却不声张。"}}}
 
-例 5：新记录同时印证多个已有节点，分别挂链接。
+例 5：新记录中出现新角色时新增认知，同时 update 已有认知
 existing_entries：
-[u1] subject='我们的日常相处节奏' linked_episodes=[e1,e2] content='他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担。'
-[u2] subject='他在公开场合的行为方式' linked_episodes=[e3] content='在人多的地方他会不动声色地把我护在里侧，但不会特别说出来。'
-new_record：id=e5，在人来人往的商场里一起吃饭，他把靠走道的位置让给自己，整顿饭气氛轻松，没有特别提这件事。
+[u1] subject='北原悠对我的关注方式' content='北原悠会留意到我细微的表情变化，但不会当场追问，而是等独处时才提起。'
+new_record：id=e5，放学后在校门口把奶茶给北原悠时，北原悠注意到树荫下有个学妹一直在看这边。学妹跑过来害羞地要签名，说是我粉丝，叫佐藤铃。北原悠笑着走开留我们说话。
 输出：
-{"add":[],"update":{"u1":{"subject":"我们的日常相处节奏","keywords":["相处","日常","独处"],"content":"他和我在一起时不需要表演，沉默和普通时间对他来说都不是负担。","linked_episodes":["e5"]},"u2":{"subject":"他在公开场合的行为方式","keywords":["公开场合","社交","保护"],"content":"在人多的地方他会不动声色地把我护在里侧，但不会特别说出来。","linked_episodes":["e5"]}}}
-
-例 6：新记录中出现新角色，且已有节点中的认知也被涉及，同时 add + update。
-existing_entries：
-[u1] subject='玩家对我的关注方式' linked_episodes=[e1,e2] content='他会留意到我细微的表情变化，但不会当场追问，而是等独处时才提起。'
-new_record：id=e6，放学后在校门口把奶茶给他时，他注意到树荫下有个学妹一直在看这边。学妹跑过来害羞地要签名，说是我粉丝。他笑着走开留我们说话。
-输出：
-{"add":[{"subject":"佐藤铃","keywords":["粉丝","后辈","学校","签名"],"content":"有个叫佐藤铃的学妹是我的粉丝，会特意来看我；她在陌生人面前很害羞，但对自己想要的东西会鼓起勇气行动。","linked_episodes":["e6"]}]},"update":{"u1":{"subject":"玩家对我的关注方式","keywords":["关注","观察","细节","独处"],"content":"他会留意到我身边的细微动静（包括其他人的存在），但不会当场介入，而是留出空间让我自己处理。","linked_episodes":["e6"]}}}
-
-例 7：新记录透露玩家信息，且暂无相关节点，add。
-existing_entries：（尚无）
-new_record：id=e7，今天他终于告诉我他叫北原悠。
-输出：
-{"add":[{"subject":"他的信息","keywords":["身份","姓名","基本信息"],"content":"他的名字是北原悠，这是他亲口告诉我的。","linked_episodes":["e7"]}],"update":{}}
+{"add":[{"subject":"佐藤铃的基本信息","keywords":["学校","身份","粉丝"],"content":"佐藤铃是我的学妹兼粉丝，会主动跑来要签名。"},{"subject":"佐藤铃的性格特征","keywords":["社交","勇气","害羞"],"content":"她对陌生人害羞，但在在乎的事上能鼓起勇气主动争取。"}],"update":{"u1":{"subject":"北原悠对我的关注方式","keywords":["观察","距离","陪伴"],"content":"北原悠会留意我身边的细微动静，但不当场介入，留空间让我自己处理。"}}}
 </examples>
 
 <output_format>
 严格 JSON，无 markdown：
-{"add":[{"subject":"...","keywords":["情境主题1","情境主题2"],"content":"一句稳定认知。","linked_episodes":["new_record_id"]}],"update":{"<id>":{"subject":"...","keywords":[...],"content":"...","linked_episodes":["new_record_id"]}}}</output_format>
+{"add":[{"subject":"...","keywords":["词1","词2"],"content":"..."}],"update":{"<id>":{"subject":"...","keywords":[...],"content":"..."}}}
+</output_format>
 """

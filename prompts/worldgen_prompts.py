@@ -16,7 +16,7 @@ CHARACTER_FACTORY = r"""<goal>
 <fields>
 character_id：角色 id，只能包含 ASCII 小写字母，需要基于姓名拼音或常见英文转写（如 `shenzhixia`、`rin`），禁止使用纯关系词如 `classmate`、`manager`；重复 id 会被运行时拒绝。
 display_name：角色最终展示名，使用自然人名；可以参考 name_hint，但不必强制沿用，重点是符合角色和世界观的设定。
-identity：公开标签，包含性别、年龄、外表、社会身份。
+identity：公开标签，包含性别、年龄、外表、社会身份，50 字以内。
 goal（1-2 行）：Ta 的行为长期驱动力，通常一行个人目标加一行关系目标。目标需具体。
 dynamic（2-5 段）：角色运行逻辑，想得到什么，怕失去什么。
 behavior（4-5 条）：每条是「情境 → 具体动作/语气」，不是 trait 形容词。至少 1 条含 flaw，至少 1 条含独有身体语言或口头禅。
