@@ -3,9 +3,24 @@
 import glob
 import json
 import os
+from collections.abc import Iterator
 from datetime import datetime
 
+from memory.parser import canonical_cn_date
 from shared.config import character_path
+
+
+def _iter_jsonl(filepath: str) -> Iterator[dict]:
+    """逐行解析 JSONL，自动跳过空行与解析失败的行。"""
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                yield json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
 
 
 def load_conversation_history(
@@ -72,6 +87,79 @@ def load_conversation_history(
     if turns is not None and threshold_turn is not None:
         return [m for m in collected if int(m.get("turn") or 0) >= threshold_turn]
     return collected
+
+
+def load_history_before(*, before_turn: int, limit: int) -> list[dict]:
+    """游标分页：加载 turn < before_turn 的最近 limit 条消息（按时间正序返回）。
+
+    用于前端聊天框无限上滑加载更早消息，游标取自当前已加载的最旧 turn。
+    """
+    if limit <= 0 or before_turn <= 1:
+        return []
+
+    raw_dir = character_path("narrator", "raw")
+    if not os.path.exists(raw_dir):
+        return []
+
+    jsonl_files = sorted(glob.glob(f"{raw_dir}/*.jsonl"))
+    if not jsonl_files:
+        return []
+
+    collected: list = []
+    for filepath in reversed(jsonl_files):
+        file_messages = [
+            msg for msg in _iter_jsonl(filepath)
+            if int(msg.get("turn") or 0) < before_turn
+        ]
+        collected = file_messages + collected
+        if len(collected) >= limit:
+            return collected[-limit:]
+    return collected
+
+
+_anchors_cache: dict[str, tuple[tuple[float, int], list[dict]]] = {}
+
+
+def extract_game_date_anchors() -> list[dict]:
+    """游戏内日期段（按出现顺序），同一日期中途切走又切回会出现多个段。
+
+    依赖 narrator 消息正文出现 `X月X日` 字样。按 (newest_mtime, file_count)
+    缓存：narrator raw JSONL 是 append-only，新 turn 落盘会刷新最新文件 mtime
+    天然失效缓存。
+    """
+    raw_dir = character_path("narrator", "raw")
+    if not os.path.exists(raw_dir):
+        return []
+
+    jsonl_files = sorted(glob.glob(f"{raw_dir}/*.jsonl"))
+    if not jsonl_files:
+        return []
+
+    cache_key = (max(os.path.getmtime(f) for f in jsonl_files), len(jsonl_files))
+    cached = _anchors_cache.get(raw_dir)
+    if cached and cached[0] == cache_key:
+        return cached[1]
+
+    anchors: list[dict] = []
+    current: dict | None = None
+    for filepath in jsonl_files:
+        for msg in _iter_jsonl(filepath):
+            if msg.get("role") != "narrator":
+                continue
+            turn = int(msg.get("turn") or 0)
+            if turn <= 0:
+                continue
+            date = canonical_cn_date(msg.get("content") or "")
+            if not date:
+                continue
+            if current is None or current["date"] != date:
+                current = {"date": date, "first_turn": turn, "last_turn": turn}
+                anchors.append(current)
+            else:
+                current["last_turn"] = turn
+
+    _anchors_cache[raw_dir] = (cache_key, anchors)
+    return anchors
 
 
 async def append_message(message: dict) -> None:

@@ -45,7 +45,11 @@ from log_config.logfire import setup_logfire
 from shared.config import CHARACTERS_DIR, get_agent_names
 from shared.text_utils import get_display_name
 from storage.agent_files import read_agent_file
-from storage.history import load_conversation_history
+from storage.history import (
+    extract_game_date_anchors,
+    load_conversation_history,
+    load_history_before,
+)
 from storage.message_router import message_router
 
 load_dotenv()
@@ -91,6 +95,19 @@ def _get_agent_display_name(agent_name: str) -> str:
 
     soul_content = read_agent_file(agent_name, "soul.md")
     return get_display_name(agent_name, soul_content) if soul_content else agent_name
+
+
+def _format_history_message(msg: dict) -> dict | None:
+    role = msg.get("role", "")
+    content = (msg.get("content") or "").strip()
+    if not content:
+        return None
+    return {
+        "role": role,
+        "author": _get_agent_display_name(role) if role else "",
+        "content": content,
+        "turn": int(msg.get("turn") or 0),
+    }
 
 
 def _clip_text(value: str, limit: int) -> str:
@@ -367,19 +384,30 @@ async def api_init() -> JSONResponse:
     if has_save:
         raw = load_conversation_history(limit=_RECENT_HISTORY_LIMIT)
         for msg in raw:
-            role = msg.get("role", "")
-            content = msg.get("content", "").strip()
-            if content:
-                recent.append(
-                    {
-                        "role": role,
-                        "author": _get_agent_display_name(role) if role else "",
-                        "content": content,
-                    }
-                )
+            formatted = _format_history_message(msg)
+            if formatted:
+                recent.append(formatted)
         last_choices = _load_last_choices()
 
     return JSONResponse({"has_save": has_save, "recent": recent, "last_choices": last_choices})
+
+
+# =============================================================================
+# /api/history
+# =============================================================================
+
+
+@app.get("/api/history")
+async def api_history(before_turn: int, limit: int = 30) -> JSONResponse:
+    limit = max(1, min(limit, 200))
+    raw = load_history_before(before_turn=before_turn, limit=limit)
+    messages = [m for m in (_format_history_message(item) for item in raw) if m]
+    return JSONResponse({"messages": messages})
+
+
+@app.get("/api/history/dates")
+async def api_history_dates() -> JSONResponse:
+    return JSONResponse({"anchors": extract_game_date_anchors()})
 
 
 # =============================================================================
@@ -670,15 +698,7 @@ async def api_load(req: LoadRequest) -> JSONResponse:
         for name in get_agent_names(include_narrator=True):
             reload_conversation_agent(name)
         raw = load_conversation_history(limit=_RECENT_HISTORY_LIMIT)
-        recent = [
-            {
-                "role": m.get("role", ""),
-                "author": _get_agent_display_name(m.get("role", "")) if m.get("role", "") else "",
-                "content": m.get("content", "").strip(),
-            }
-            for m in raw
-            if m.get("content", "").strip()
-        ]
+        recent = [m for m in (_format_history_message(item) for item in raw) if m]
         last_choices = _load_last_choices()
         return JSONResponse({"ok": True, "recent": recent, "last_choices": last_choices})
     return JSONResponse({"ok": False}, status_code=500)
