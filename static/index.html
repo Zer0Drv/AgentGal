@@ -130,9 +130,9 @@ svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  min-height: 62px;
-  padding: 10px 28px;
+  gap: 18px;
+  min-height: 54px;
+  padding: 7px 28px;
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(18px);
   background: rgba(250, 244, 237, 0.7);
@@ -154,28 +154,22 @@ svg {
 
 .brand-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   min-width: 0;
 }
 
 .brand-title {
-  font-size: clamp(24px, 3vw, 34px);
+  font-size: clamp(24px, 2.55vw, 30px);
   font-weight: 600;
   letter-spacing: -0.04em;
-  line-height: 0.95;
-}
-
-.brand-subtitle {
-  color: var(--text-soft);
-  font-size: 14px;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
+  line-height: 1;
 }
 
 .topbar-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
   flex-shrink: 0;
 }
@@ -414,6 +408,12 @@ svg {
   background: var(--accent-strong);
 }
 
+.topbar .menu-btn {
+  min-height: 38px;
+  padding: 0 15px;
+  gap: 8px;
+}
+
 .main-shell {
   position: relative;
   flex: 1;
@@ -490,88 +490,6 @@ svg {
   margin: 0 auto;
 }
 
-.scene-bar {
-  width: min(920px, calc(100% - 40px));
-  margin: 0 auto 10px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: start;
-  padding: 11px 12px;
-  border: 1px solid rgba(47, 35, 36, 0.08);
-  border-radius: 16px;
-  background: rgba(255, 252, 248, 0.58);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.46);
-}
-
-.scene-bar-main {
-  min-width: 0;
-}
-
-.scene-bar-kicker {
-  margin-bottom: 5px;
-  color: var(--accent);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.scene-bar-title {
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.28;
-  letter-spacing: -0.02em;
-}
-
-.scene-bar-focus {
-  display: -webkit-box;
-  margin-top: 5px;
-  color: var(--text-soft);
-  font-size: 12px;
-  line-height: 1.5;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.scene-bar-meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-  min-width: min(360px, 42vw);
-}
-
-.scene-pill {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 190px;
-  min-height: 28px;
-  padding: 5px 9px;
-  border: 1px solid rgba(47, 35, 36, 0.08);
-  border-radius: 999px;
-  background: rgba(255, 252, 248, 0.66);
-  color: var(--text-soft);
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.scene-pill strong {
-  margin-right: 5px;
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-.scene-pill-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .empty-stage {
   margin: 32px 0 10px;
   padding: 28px 24px;
@@ -592,6 +510,87 @@ svg {
   max-width: 56ch;
   color: var(--text-soft);
   line-height: 1.7;
+}
+
+.story-beat {
+  position: relative;
+  margin-bottom: 28px;
+  padding-left: 22px;
+}
+
+.story-beat::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 34px;
+  bottom: 6px;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(180, 90, 100, 0.3), rgba(180, 90, 100, 0.04));
+}
+
+.story-beat.is-open::before {
+  top: 6px;
+  background: linear-gradient(180deg, rgba(113, 84, 74, 0.12), rgba(113, 84, 74, 0.03));
+}
+
+.beat-divider {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin: 4px 0 18px -22px;
+}
+
+.beat-dot {
+  width: 9px;
+  height: 9px;
+  margin-left: 0;
+  border-radius: 999px;
+  background: rgba(180, 90, 100, 0.72);
+  box-shadow: 0 0 0 5px rgba(180, 90, 100, 0.08);
+}
+
+.beat-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.beat-label {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.beat-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.beat-time {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.story-beat .message-row:last-child {
+  margin-bottom: 0;
+}
+
+.story-beat .message-row.narrator {
+  margin-inline: 0 auto;
 }
 
 .message-row {
@@ -621,7 +620,7 @@ svg {
 }
 
 .narrator-shell {
-  padding: 6px 8px;
+  padding: 2px 8px 6px;
 }
 
 .system-shell {
@@ -1896,17 +1895,13 @@ svg {
   }
 
   .topbar {
-    min-height: 54px;
-    padding: 8px 14px;
+    gap: 10px;
+    min-height: 46px;
+    padding: 6px 12px;
   }
 
   .brand-row {
     gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .brand-subtitle {
-    white-space: normal;
   }
 
   .chat-panel {
@@ -1937,26 +1932,16 @@ svg {
     width: calc(100% - 24px);
   }
 
-  .scene-bar {
-    width: calc(100% - 24px);
-    grid-template-columns: 1fr;
-    gap: 9px;
-    margin-bottom: 8px;
-    padding: 10px;
-    border-radius: 14px;
+  .story-beat {
+    padding-left: 14px;
   }
 
-  .scene-bar-meta {
-    min-width: 0;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    overflow-x: auto;
-    padding-bottom: 1px;
+  .story-beat::before {
+    left: 2px;
   }
 
-  .scene-pill {
-    flex: 0 0 auto;
-    max-width: min(66vw, 240px);
+  .beat-divider {
+    margin-left: -14px;
   }
 
   .feedback-strip,
@@ -1976,8 +1961,8 @@ svg {
   }
 
   .topbar-actions .menu-btn {
-    width: 40px;
-    min-height: 40px;
+    width: 36px;
+    min-height: 36px;
     padding: 0;
   }
 
@@ -2080,8 +2065,8 @@ svg {
 @media (max-width: 640px) {
   .topbar {
     gap: 8px;
-    min-height: 48px;
-    padding: 7px 10px;
+    min-height: 42px;
+    padding: 5px 9px;
   }
 
   .overlay {
@@ -2098,11 +2083,7 @@ svg {
   }
 
   .brand-title {
-    font-size: 22px;
-  }
-
-  .brand-subtitle {
-    display: none;
+    font-size: 21px;
   }
 
   .story-headline {
@@ -2201,12 +2182,28 @@ svg {
     max-width: 100%;
   }
 
-  .scene-bar {
-    width: calc(100% - 16px);
-    margin-bottom: 7px;
+  .story-beat {
+    margin-bottom: 20px;
+    padding-left: 10px;
   }
 
-  .scene-bar-focus {
+  .story-beat::before {
+    display: none;
+  }
+
+  .beat-divider {
+    margin-left: 0;
+  }
+
+  .beat-copy {
+    gap: 7px;
+  }
+
+  .beat-title {
+    font-size: 12px;
+  }
+
+  .beat-time {
     display: none;
   }
 
@@ -2289,7 +2286,6 @@ svg {
     <div class="brand-block">
       <div class="brand-row">
         <div class="brand-title">AgentGal</div>
-        <div class="brand-subtitle">恋爱叙事实验场</div>
       </div>
     </div>
 
@@ -2414,21 +2410,6 @@ svg {
   <div class="main-shell">
     <section class="chat-panel">
       <div class="chat-shell">
-        <section class="scene-bar" x-show="shouldShowSceneBar()" x-transition.opacity>
-          <div class="scene-bar-main">
-            <div class="scene-bar-kicker">当前场景</div>
-            <div class="scene-bar-title" x-text="sceneStatus.scene || '场景未定'"></div>
-            <div class="scene-bar-focus" x-show="sceneStatus.focus" x-text="sceneStatus.focus"></div>
-          </div>
-          <div class="scene-bar-meta" aria-label="当前状态">
-            <span class="scene-pill" x-show="sceneStatus.time">
-              <strong>时间</strong>
-              <span class="scene-pill-text" x-text="sceneStatus.time"></span>
-            </span>
-            <span class="scene-pill" x-show="consolidating">记忆整理中</span>
-          </div>
-        </section>
-
         <div id="messages" class="message-scroll" x-ref="messages" @scroll.passive="handleMessagesScroll()">
           <div class="message-stage">
             <template x-if="!messages.length && !busy">
@@ -2444,45 +2425,59 @@ svg {
               <div class="history-loading">加载中…</div>
             </template>
 
-            <template x-for="message in messages" :key="message.id">
-              <article class="message-row" :class="message.kind" :data-turn="message.turn || ''">
-                <template x-if="message.kind === 'narrator'">
-                  <div class="narrator-shell">
-                    <div class="message-kicker">旁白</div>
-                    <div class="narrator-body markdown-body" x-html="message.html"></div>
-                  </div>
-                </template>
-
-                <template x-if="message.kind === 'system'">
-                  <div class="system-shell">
-                    <div class="message-kicker" x-text="message.title || '系统'"></div>
-                    <div class="system-card">
-                      <div class="system-name" x-text="message.name"></div>
-                      <div class="system-identity" x-show="message.identity" x-text="message.identity"></div>
+            <template x-for="group in messageGroups()" :key="group.key">
+              <section class="story-beat" :class="{ 'is-open': !group.narrator }">
+                <template x-if="group.narrator">
+                  <div class="beat-divider">
+                    <span class="beat-dot" aria-hidden="true"></span>
+                    <div class="beat-copy">
+                      <span class="beat-label" x-text="group.label"></span>
+                      <span class="beat-title" x-text="group.title"></span>
+                      <span class="beat-time" x-show="group.time" x-text="group.time"></span>
                     </div>
                   </div>
                 </template>
 
-                <template x-if="message.kind === 'agent'">
-                  <div>
-                    <div class="message-head">
-                      <span class="speaker-dot" :style="`background:${message.color};`"></span>
-                      <span class="speaker-label" x-text="message.author"></span>
-                    </div>
-                    <div class="message-card markdown-body" x-html="message.html" :style="`background:${message.background};border-color:${message.border};`"></div>
-                  </div>
-                </template>
+                <template x-for="message in group.messages" :key="message.id">
+                  <article class="message-row" :class="message.kind" :data-turn="message.turn || ''">
+                    <template x-if="message.kind === 'narrator'">
+                      <div class="narrator-shell">
+                        <div class="narrator-body markdown-body" x-html="message.html"></div>
+                      </div>
+                    </template>
 
-                <template x-if="message.kind === 'player'">
-                  <div>
-                    <div class="message-head">
-                      <span class="speaker-label" x-text="message.author"></span>
-                      <span class="speaker-dot" :style="`background:${message.color};`"></span>
-                    </div>
-                    <div class="message-card markdown-body" x-html="message.html" :style="`background:${message.background};border-color:${message.border};`"></div>
-                  </div>
+                    <template x-if="message.kind === 'system'">
+                      <div class="system-shell">
+                        <div class="message-kicker" x-text="message.title || '系统'"></div>
+                        <div class="system-card">
+                          <div class="system-name" x-text="message.name"></div>
+                          <div class="system-identity" x-show="message.identity" x-text="message.identity"></div>
+                        </div>
+                      </div>
+                    </template>
+
+                    <template x-if="message.kind === 'agent'">
+                      <div>
+                        <div class="message-head">
+                          <span class="speaker-dot" :style="`background:${message.color};`"></span>
+                          <span class="speaker-label" x-text="message.author"></span>
+                        </div>
+                        <div class="message-card markdown-body" x-html="message.html" :style="`background:${message.background};border-color:${message.border};`"></div>
+                      </div>
+                    </template>
+
+                    <template x-if="message.kind === 'player'">
+                      <div>
+                        <div class="message-head">
+                          <span class="speaker-label" x-text="message.author"></span>
+                          <span class="speaker-dot" :style="`background:${message.color};`"></span>
+                        </div>
+                        <div class="message-card markdown-body" x-html="message.html" :style="`background:${message.background};border-color:${message.border};`"></div>
+                      </div>
+                    </template>
+                  </article>
                 </template>
-              </article>
+              </section>
             </template>
 
             <template x-if="busy">
@@ -3014,11 +3009,6 @@ document.addEventListener("alpine:init", () => {
     messages: [],
     choices: [],
     choiceStatus: "hidden",
-    sceneStatus: {
-      time: "",
-      scene: "",
-      focus: "",
-    },
     saves: [],
     saveLoading: false,
     saveError: "",
@@ -3036,7 +3026,6 @@ document.addEventListener("alpine:init", () => {
     searchResults: [],
     searchLoading: false,
     searchTimer: null,
-    sceneRefreshTimers: [],
     activeStreamController: null,
     toastTimers: new Map(),
     toasts: [],
@@ -3077,9 +3066,7 @@ document.addEventListener("alpine:init", () => {
         this.initialChoices = initState.last_choices || [];
         if (this.hasSave) {
           this.continueGame(this.initialRecent, this.initialChoices, { silent: true });
-          this.applySceneStatus(initState.scene_status);
         } else {
-          this.applySceneStatus(initState.scene_status);
           this.storyModalOpen = true;
         }
       } catch (error) {
@@ -3103,7 +3090,6 @@ document.addEventListener("alpine:init", () => {
       if (this.noticeTimer) {
         window.clearTimeout(this.noticeTimer);
       }
-      this.clearSceneRefreshTimers();
       this.toastTimers.forEach(timeoutId => window.clearTimeout(timeoutId));
       this.toastTimers.clear();
     },
@@ -3179,57 +3165,6 @@ document.addEventListener("alpine:init", () => {
 
     shouldShowChoices() {
       return this.choiceStatus !== "hidden" && !this.isInputMode();
-    },
-
-    shouldShowSceneBar() {
-      return this.messages.length > 0 && !this.storyModalOpen && !this.isInputMode() &&
-        Boolean(this.sceneStatus.scene || this.sceneStatus.time || this.sceneStatus.focus);
-    },
-
-    normalizeSceneStatus(status = {}) {
-      return {
-        time: String(status.time || "").trim(),
-        scene: String(status.scene || "").trim(),
-        focus: String(status.focus || "").trim(),
-      };
-    },
-
-    applySceneStatus(status) {
-      if (!status) return;
-      const next = this.normalizeSceneStatus(status);
-      if (next.time === this.sceneStatus.time && next.scene === this.sceneStatus.scene && next.focus === this.sceneStatus.focus) return;
-      this.sceneStatus = next;
-    },
-
-    async refreshSceneStatus({ quiet = true } = {}) {
-      try {
-        const response = await this.fetchJson("/api/status");
-        this.applySceneStatus(response.scene_status);
-        if (typeof response.consolidating === "boolean") {
-          this.consolidating = response.consolidating;
-        }
-      } catch (error) {
-        if (!quiet) {
-          this.setNotice("当前场景状态加载失败。", "error");
-        }
-      }
-    },
-
-    clearSceneRefreshTimers() {
-      this.sceneRefreshTimers.forEach(timerId => window.clearTimeout(timerId));
-      this.sceneRefreshTimers = [];
-    },
-
-    queueSceneStatusRefresh() {
-      this.clearSceneRefreshTimers();
-      this.refreshSceneStatus({ quiet: true });
-      if (!this.consolidating) {
-        // state_updater writes asynchronously; stagger to catch late writes
-        [700, 1800].forEach(delay => {
-          const timerId = setTimeout(() => this.refreshSceneStatus({ quiet: true }), delay);
-          this.sceneRefreshTimers.push(timerId);
-        });
-      }
     },
 
     choiceRailSubtitle() {
@@ -3463,28 +3398,45 @@ document.addEventListener("alpine:init", () => {
       this.$nextTick(() => this.resizeComposer());
     },
 
+    parseNarratorLine(rawLine) {
+      const line = String(rawLine || "").replace(/\*\*/g, "").trim();
+      const chineseSeparator = line.indexOf("：");
+      const separatorIndex = chineseSeparator >= 0 ? chineseSeparator : line.indexOf(":");
+      if (separatorIndex <= 0) return { key: "", value: "" };
+      return { key: line.slice(0, separatorIndex).trim(), value: line.slice(separatorIndex + 1).trim() };
+    },
+
     normalizeNarratorText(content) {
       const lines = String(content || "").split("\n");
       const normalized = [];
-      let previousWasMeta = false;
+      const hiddenMetaKeys = new Set(["时间", "地点", "场景"]);
 
       for (const rawLine of lines) {
         const line = rawLine.trimEnd();
-        if (!line.trim()) {
+        const trimmed = line.trim();
+
+        if (!trimmed) {
           normalized.push("");
-          previousWasMeta = false;
           continue;
         }
 
-        const isMetaLine = /^(?:\*\*时间\*\*[:：]|\*\*时间[:：]\*\*|时间[:：]|\*\*地点\*\*[:：]|\*\*地点[:：]\*\*|地点[:：]|\*\*在场\*\*[:：]|\*\*在场[:：]\*\*|在场[:：])/.test(line.trim());
-        if (isMetaLine && normalized.length && !previousWasMeta) {
-          normalized.push("");
+        if (trimmed === "旁白" || trimmed === "**旁白**") {
+          continue;
         }
+
+        const { key: metaKey, value: metaValue } = this.parseNarratorLine(line);
+        if (hiddenMetaKeys.has(metaKey)) {
+          continue;
+        }
+        if (metaKey === "在场") {
+          if (metaValue) normalized.push(metaValue);
+          continue;
+        }
+
         normalized.push(line);
-        previousWasMeta = isMetaLine;
       }
 
-      return normalized.join("\n").replace(/\n{3,}/g, "\n\n");
+      return normalized.join("\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+/, "");
     },
 
     isSafeLink(href) {
@@ -3557,6 +3509,54 @@ document.addEventListener("alpine:init", () => {
       return this.sanitizeHtml(marked.parse(source));
     },
 
+    extractNarratorField(content, fields) {
+      const wanted = new Set(fields);
+      for (const rawLine of String(content || "").split("\n")) {
+        const { key, value } = this.parseNarratorLine(rawLine);
+        if (!wanted.has(key)) continue;
+        if (value) return value;
+      }
+      return "";
+    },
+
+    messageGroups() {
+      const groups = [];
+      let current = null;
+      let sceneIndex = 0;
+
+      this.messages.forEach(message => {
+        if (message.kind === "narrator") {
+          sceneIndex += 1;
+          const turn = Number(message.turn) || 0;
+          current = {
+            key: `scene-${message.id}`,
+            label: turn ? `场景 ${turn}` : `场景 ${sceneIndex}`,
+            title: this.extractNarratorField(message.content, ["地点", "场景"]) || "新的场面",
+            time: this.extractNarratorField(message.content, ["时间"]),
+            narrator: message,
+            messages: [message],
+          };
+          groups.push(current);
+          return;
+        }
+
+        if (!current) {
+          current = {
+            key: `open-${message.id}`,
+            label: "当前行动",
+            title: "",
+            time: "",
+            narrator: null,
+            messages: [],
+          };
+          groups.push(current);
+        }
+        current.messages.push(message);
+      });
+
+      return groups;
+    },
+
     getAgentStyle(author) {
       const key = author || "角色";
       if (!this.agentStyleByAuthor[key]) {
@@ -3582,6 +3582,7 @@ document.addEventListener("alpine:init", () => {
         color: style.color,
         border: style.border,
         background: style.background,
+        content: text,
         html: this.renderMarkdown(text, { narrator: kind === "narrator" }),
         turn: Number(turn) || 0,
       };
@@ -3827,7 +3828,6 @@ document.addEventListener("alpine:init", () => {
       this.messages = [];
       this.choices = [];
       this.choiceStatus = "hidden";
-      this.sceneStatus = this.normalizeSceneStatus({});
       this.nextMessageId = 1;
       this.agentStyleByAuthor = {};
       this.oldestLoadedTurn = null;
@@ -3840,7 +3840,6 @@ document.addEventListener("alpine:init", () => {
       this.searchResults = [];
       clearTimeout(this.searchTimer);
       this.searchTimer = null;
-      this.clearSceneRefreshTimers();
       this.clearNotice();
       this.resetComposer();
     },
@@ -3862,7 +3861,6 @@ document.addEventListener("alpine:init", () => {
         if (response.opening) this.addMessage("narrator", "旁白", response.opening);
         this.choices = response.choices || [];
         this.choiceStatus = this.choices.length ? "ready" : "empty";
-        this.applySceneStatus(response.scene_status);
         this.hasSave = true;
         this.initialRecent = [];
         this.initialChoices = this.choices;
@@ -4005,7 +4003,6 @@ document.addEventListener("alpine:init", () => {
           }
         } else if (event.type === "done") {
           this.setConsolidating(Boolean(event.consolidating));
-          this.queueSceneStatusRefresh();
         }
       } catch (error) {
         this.setNotice("实时消息解析失败，界面可能没有完整更新。", "error", true);
@@ -4033,7 +4030,6 @@ document.addEventListener("alpine:init", () => {
           if (this.consolidatingPollGen !== gen) return;
           if (response.ok) {
             const data = await response.json();
-            this.applySceneStatus(data.scene_status);
             if (!data.consolidating) {
               this.stopConsolidationPolling();
               this.consolidating = false;
@@ -4171,7 +4167,6 @@ document.addEventListener("alpine:init", () => {
         this.initialRecent = response.recent || [];
         this.initialChoices = response.last_choices || [];
         this.continueGame(response.recent, response.last_choices);
-        this.applySceneStatus(response.scene_status);
         await this.refreshSaves({ quiet: true });
         this.pushToast("存档已加载", "success");
       } catch (error) {
