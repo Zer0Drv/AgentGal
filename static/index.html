@@ -490,6 +490,88 @@ svg {
   margin: 0 auto;
 }
 
+.scene-bar {
+  width: min(920px, calc(100% - 40px));
+  margin: 0 auto 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  padding: 11px 12px;
+  border: 1px solid rgba(47, 35, 36, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 252, 248, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.46);
+}
+
+.scene-bar-main {
+  min-width: 0;
+}
+
+.scene-bar-kicker {
+  margin-bottom: 5px;
+  color: var(--accent);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.scene-bar-title {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.28;
+  letter-spacing: -0.02em;
+}
+
+.scene-bar-focus {
+  display: -webkit-box;
+  margin-top: 5px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.scene-bar-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: min(360px, 42vw);
+}
+
+.scene-pill {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 190px;
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid rgba(47, 35, 36, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 252, 248, 0.66);
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.scene-pill strong {
+  margin-right: 5px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.scene-pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .empty-stage {
   margin: 32px 0 10px;
   padding: 28px 24px;
@@ -745,7 +827,7 @@ svg {
 }
 
 .choice-rail {
-  padding: 0 24px 16px;
+  padding: 0 24px 9px;
 }
 
 .choice-rail-head {
@@ -753,13 +835,14 @@ svg {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+  padding: 0 2px;
 }
 
 .choice-rail-title {
   color: var(--text-soft);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .choice-rail-subtitle {
@@ -769,27 +852,32 @@ svg {
 
 .choice-list {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding: 1px 2px 3px;
   scroll-snap-type: x proximity;
 }
 
 .choice-chip {
-  min-width: 240px;
-  padding: 14px 16px;
-  border-radius: 20px;
-  border: 1px solid var(--line);
-  background: rgba(255, 251, 247, 0.86);
-  box-shadow: var(--shadow-soft);
+  flex: 1 1 0;
+  max-width: 420px;
+  min-width: 220px;
+  min-height: 42px;
+  padding: 8px 13px;
+  border-radius: 12px;
+  border: 1px solid rgba(47, 35, 36, 0.08);
+  background: rgba(255, 252, 248, 0.6);
+  box-shadow: none;
   color: var(--text-soft);
   text-align: left;
   scroll-snap-align: start;
 }
 
 .choice-chip:hover {
-  background: rgba(180, 90, 100, 0.08);
+  background: rgba(255, 252, 248, 0.92);
+  border-color: rgba(47, 35, 36, 0.16);
   color: var(--text);
+  box-shadow: 0 2px 8px rgba(47, 35, 36, 0.035);
 }
 
 .choice-chip-label {
@@ -803,14 +891,71 @@ svg {
 }
 
 .choice-chip-text {
-  line-height: 1.58;
+  display: block;
+  font-size: 15px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.choice-state {
+  min-height: 42px;
+  padding: 9px 13px;
+  border: 1px solid rgba(47, 35, 36, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 252, 248, 0.52);
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.choice-state.loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.choice-state-bars {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.choice-state-bars span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(180, 90, 100, 0.42);
+  animation: choicePulse 1.1s var(--easing) infinite;
+}
+
+.choice-state-bars span:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.choice-state-bars span:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+@keyframes choicePulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
 }
 
 .composer-shell {
-  padding: 18px 24px calc(20px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--line);
-  background: rgba(248, 242, 236, 0.88);
-  backdrop-filter: blur(20px);
+  margin: 0 24px 18px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .composer-head {
@@ -818,11 +963,11 @@ svg {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
+  margin: 0 2px 7px;
 }
 
 .composer-title {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -841,9 +986,20 @@ svg {
 
 .composer-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: 8px;
   align-items: end;
+  padding: 6px;
+  border: 1px solid rgba(47, 35, 36, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 252, 248, 0.76);
+  transition: border-color 0.28s var(--easing), box-shadow 0.28s var(--easing), background-color 0.28s var(--easing);
+}
+
+.composer-body:focus-within {
+  border-color: rgba(180, 90, 100, 0.28);
+  background: rgba(255, 252, 248, 0.94);
+  box-shadow: 0 0 0 3px rgba(180, 90, 100, 0.06);
 }
 
 .composer-field {
@@ -853,30 +1009,32 @@ svg {
 }
 
 #user-input {
+  display: block;
   width: 100%;
-  min-height: 112px;
-  max-height: 240px;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  background: rgba(255, 252, 248, 0.9);
+  min-height: 80px;
+  height: 80px;
+  max-height: 220px;
+  padding: 16px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   color: var(--text);
+  font-size: 16px;
   resize: none;
   outline: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
-  line-height: 1.72;
+  overflow-y: auto;
+  box-shadow: none;
+  line-height: 1.55;
   transition: border-color 0.28s var(--easing), box-shadow 0.28s var(--easing), background-color 0.28s var(--easing), opacity 0.28s var(--easing);
 }
 
 #user-input::placeholder {
-  color: var(--text-muted);
+  color: rgba(110, 87, 83, 0.66);
 }
 
 #user-input:focus {
-  border-color: rgba(180, 90, 100, 0.3);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    0 0 0 4px rgba(180, 90, 100, 0.08);
+  background: transparent;
+  box-shadow: none;
 }
 
 #user-input:disabled {
@@ -889,8 +1047,33 @@ svg {
   justify-content: flex-end;
 }
 
+.composer-actions .primary-btn {
+  width: 100%;
+  min-height: 80px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border-color: transparent;
+  background: rgba(180, 90, 100, 0.68);
+  box-shadow: none;
+  color: #fffaf5;
+}
+
+.composer-actions .primary-btn:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.composer-actions .primary-btn:disabled {
+  opacity: 1;
+  background: rgba(180, 90, 100, 0.42);
+  color: rgba(255, 250, 245, 0.9);
+}
+
+.composer-actions .send-label {
+  white-space: nowrap;
+}
+
 .composer-foot {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1754,6 +1937,28 @@ svg {
     width: calc(100% - 24px);
   }
 
+  .scene-bar {
+    width: calc(100% - 24px);
+    grid-template-columns: 1fr;
+    gap: 9px;
+    margin-bottom: 8px;
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .scene-bar-meta {
+    min-width: 0;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 1px;
+  }
+
+  .scene-pill {
+    flex: 0 0 auto;
+    max-width: min(66vw, 240px);
+  }
+
   .feedback-strip,
   .choice-rail,
   .composer-shell {
@@ -1762,8 +1967,8 @@ svg {
   }
 
   .composer-body {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 6px;
   }
 
   .composer-tools {
@@ -1781,16 +1986,16 @@ svg {
   }
 
   .composer-shell {
-    padding-top: 12px;
-    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    margin: 0 12px calc(10px + env(safe-area-inset-bottom));
+    padding: 0;
   }
 
   .composer-actions .primary-btn {
-    width: 46px;
-    min-width: 46px;
-    min-height: 46px;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
     padding: 0;
-    border-radius: 16px;
+    border-radius: 10px;
   }
 
   .composer-actions .send-label {
@@ -1996,6 +2201,15 @@ svg {
     max-width: 100%;
   }
 
+  .scene-bar {
+    width: calc(100% - 16px);
+    margin-bottom: 7px;
+  }
+
+  .scene-bar-focus {
+    display: none;
+  }
+
   .message-card {
     padding: 14px 15px;
     border-radius: 18px;
@@ -2010,7 +2224,9 @@ svg {
   }
 
   .choice-chip {
-    min-width: min(82vw, 320px);
+    min-width: min(78vw, 320px);
+    max-width: min(78vw, 320px);
+    border-radius: 10px;
   }
 
   .choice-rail-head {
@@ -2024,7 +2240,8 @@ svg {
   }
 
   .composer-shell {
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    margin: 0 8px calc(8px + env(safe-area-inset-bottom));
+    padding: 0;
   }
 
   .composer-field {
@@ -2032,17 +2249,20 @@ svg {
   }
 
   #user-input {
-    min-height: 46px;
+    min-height: 44px;
+    height: 44px;
     max-height: 132px;
-    padding: 11px 14px;
-    border-radius: 16px;
-    line-height: 1.55;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 16px;
+    line-height: 1.5;
   }
 
   .choice-chip {
     min-width: min(72vw, 280px);
-    padding: 12px 13px;
-    border-radius: 16px;
+    max-width: min(72vw, 280px);
+    padding: 9px 12px;
+    border-radius: 10px;
   }
 
   .drawer-shortcuts {
@@ -2194,6 +2414,21 @@ svg {
   <div class="main-shell">
     <section class="chat-panel">
       <div class="chat-shell">
+        <section class="scene-bar" x-show="shouldShowSceneBar()" x-transition.opacity>
+          <div class="scene-bar-main">
+            <div class="scene-bar-kicker">当前场景</div>
+            <div class="scene-bar-title" x-text="sceneStatus.scene || '场景未定'"></div>
+            <div class="scene-bar-focus" x-show="sceneStatus.focus" x-text="sceneStatus.focus"></div>
+          </div>
+          <div class="scene-bar-meta" aria-label="当前状态">
+            <span class="scene-pill" x-show="sceneStatus.time">
+              <strong>时间</strong>
+              <span class="scene-pill-text" x-text="sceneStatus.time"></span>
+            </span>
+            <span class="scene-pill" x-show="consolidating">记忆整理中</span>
+          </div>
+        </section>
+
         <div id="messages" class="message-scroll" x-ref="messages" @scroll.passive="handleMessagesScroll()">
           <div class="message-stage">
             <template x-if="!messages.length && !busy">
@@ -2272,15 +2507,28 @@ svg {
         <section class="choice-rail" x-show="shouldShowChoices()">
           <div class="choice-rail-head">
             <div class="choice-rail-title">建议行动</div>
-            <div class="choice-rail-subtitle">选项只是建议，也可以直接输入你想说的话。</div>
+            <div class="choice-rail-subtitle" x-text="choiceRailSubtitle()"></div>
           </div>
 
-          <div class="choice-list">
+          <div class="choice-list" x-show="choices.length > 0">
             <template x-for="choice in choices" :key="choice">
               <button type="button" class="choice-chip" @click="submitMessage(choice)">
                 <span class="choice-chip-text" x-text="choice"></span>
               </button>
             </template>
+          </div>
+
+          <div class="choice-state loading" x-show="choiceStatus === 'loading'" aria-live="polite">
+            <span class="choice-state-bars" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+            <span>正在生成建议行动</span>
+          </div>
+
+          <div class="choice-state" x-show="choiceStatus === 'empty'" aria-live="polite">
+            当前无建议行动，你可以直接输入下一句。
           </div>
         </section>
 
@@ -2288,7 +2536,7 @@ svg {
           <div class="composer-head" x-show="!isCompact">
             <div class="composer-title">你的行动</div>
             <div class="composer-tools">
-              <div class="composer-hint" x-text="isCompact ? '手机端使用发送按钮' : 'Enter 发送，Shift + Enter 换行'"></div>
+              <div class="composer-hint">Enter 发送，Shift + Enter 换行</div>
             </div>
           </div>
 
@@ -2298,6 +2546,7 @@ svg {
                 id="user-input"
                 x-ref="composerInput"
                 x-model="inputText"
+                rows="1"
                 :disabled="busy"
                 placeholder="输入台词、动作，或一段压低声音的心思。"
                 @input="handleComposerInput($event)"
@@ -2764,6 +3013,12 @@ document.addEventListener("alpine:init", () => {
     stories: [],
     messages: [],
     choices: [],
+    choiceStatus: "hidden",
+    sceneStatus: {
+      time: "",
+      scene: "",
+      focus: "",
+    },
     saves: [],
     saveLoading: false,
     saveError: "",
@@ -2781,6 +3036,7 @@ document.addEventListener("alpine:init", () => {
     searchResults: [],
     searchLoading: false,
     searchTimer: null,
+    sceneRefreshTimers: [],
     activeStreamController: null,
     toastTimers: new Map(),
     toasts: [],
@@ -2821,7 +3077,9 @@ document.addEventListener("alpine:init", () => {
         this.initialChoices = initState.last_choices || [];
         if (this.hasSave) {
           this.continueGame(this.initialRecent, this.initialChoices, { silent: true });
+          this.applySceneStatus(initState.scene_status);
         } else {
+          this.applySceneStatus(initState.scene_status);
           this.storyModalOpen = true;
         }
       } catch (error) {
@@ -2845,6 +3103,7 @@ document.addEventListener("alpine:init", () => {
       if (this.noticeTimer) {
         window.clearTimeout(this.noticeTimer);
       }
+      this.clearSceneRefreshTimers();
       this.toastTimers.forEach(timeoutId => window.clearTimeout(timeoutId));
       this.toastTimers.clear();
     },
@@ -2919,7 +3178,64 @@ document.addEventListener("alpine:init", () => {
     },
 
     shouldShowChoices() {
-      return this.choices.length > 0 && !this.isInputMode();
+      return this.choiceStatus !== "hidden" && !this.isInputMode();
+    },
+
+    shouldShowSceneBar() {
+      return this.messages.length > 0 && !this.storyModalOpen && !this.isInputMode() &&
+        Boolean(this.sceneStatus.scene || this.sceneStatus.time || this.sceneStatus.focus);
+    },
+
+    normalizeSceneStatus(status = {}) {
+      return {
+        time: String(status.time || "").trim(),
+        scene: String(status.scene || "").trim(),
+        focus: String(status.focus || "").trim(),
+      };
+    },
+
+    applySceneStatus(status) {
+      if (!status) return;
+      const next = this.normalizeSceneStatus(status);
+      if (next.time === this.sceneStatus.time && next.scene === this.sceneStatus.scene && next.focus === this.sceneStatus.focus) return;
+      this.sceneStatus = next;
+    },
+
+    async refreshSceneStatus({ quiet = true } = {}) {
+      try {
+        const response = await this.fetchJson("/api/status");
+        this.applySceneStatus(response.scene_status);
+        if (typeof response.consolidating === "boolean") {
+          this.consolidating = response.consolidating;
+        }
+      } catch (error) {
+        if (!quiet) {
+          this.setNotice("当前场景状态加载失败。", "error");
+        }
+      }
+    },
+
+    clearSceneRefreshTimers() {
+      this.sceneRefreshTimers.forEach(timerId => window.clearTimeout(timerId));
+      this.sceneRefreshTimers = [];
+    },
+
+    queueSceneStatusRefresh() {
+      this.clearSceneRefreshTimers();
+      this.refreshSceneStatus({ quiet: true });
+      if (!this.consolidating) {
+        // state_updater writes asynchronously; stagger to catch late writes
+        [700, 1800].forEach(delay => {
+          const timerId = setTimeout(() => this.refreshSceneStatus({ quiet: true }), delay);
+          this.sceneRefreshTimers.push(timerId);
+        });
+      }
+    },
+
+    choiceRailSubtitle() {
+      if (this.choiceStatus === "loading") return "选项生成中，也可以直接输入你想说的话。";
+      if (this.choiceStatus === "empty") return "这一轮没有预设选项。";
+      return "选项只是建议，也可以直接输入你想说的话。";
     },
 
     trimmedInput() {
@@ -3135,9 +3451,11 @@ document.addEventListener("alpine:init", () => {
     resizeComposer(target = null) {
       const textarea = target || this.$refs?.composerInput;
       if (!textarea) return;
-      textarea.style.height = "auto";
-      const maxHeight = this.isCompact ? 132 : 240;
-      textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+      const baseHeight = this.isCompact ? 44 : 80;
+      const maxHeight = this.isCompact ? 132 : 220;
+      textarea.style.height = `${baseHeight}px`;
+      if (!textarea.value) return;
+      textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, baseHeight), maxHeight)}px`;
     },
 
     resetComposer() {
@@ -3508,6 +3826,8 @@ document.addEventListener("alpine:init", () => {
     resetConversation() {
       this.messages = [];
       this.choices = [];
+      this.choiceStatus = "hidden";
+      this.sceneStatus = this.normalizeSceneStatus({});
       this.nextMessageId = 1;
       this.agentStyleByAuthor = {};
       this.oldestLoadedTurn = null;
@@ -3520,6 +3840,7 @@ document.addEventListener("alpine:init", () => {
       this.searchResults = [];
       clearTimeout(this.searchTimer);
       this.searchTimer = null;
+      this.clearSceneRefreshTimers();
       this.clearNotice();
       this.resetComposer();
     },
@@ -3540,6 +3861,8 @@ document.addEventListener("alpine:init", () => {
         if (response.intro) this.addMessage("narrator", "旁白", response.intro);
         if (response.opening) this.addMessage("narrator", "旁白", response.opening);
         this.choices = response.choices || [];
+        this.choiceStatus = this.choices.length ? "ready" : "empty";
+        this.applySceneStatus(response.scene_status);
         this.hasSave = true;
         this.initialRecent = [];
         this.initialChoices = this.choices;
@@ -3557,6 +3880,7 @@ document.addEventListener("alpine:init", () => {
       this.storyModalOpen = false;
       this.resetConversation();
       this.choices = lastChoices || [];
+      this.choiceStatus = this.choices.length ? "ready" : "hidden";
       this.addHistory(recent);
       this.scrollToLatest({ settle: true });
       if (this.isCompact) this.closeDrawer();
@@ -3596,6 +3920,7 @@ document.addEventListener("alpine:init", () => {
       this.addMessage("player", "你", message);
       this.resetComposer();
       this.choices = [];
+      this.choiceStatus = "loading";
       this.busy = true;
 
       try {
@@ -3606,6 +3931,9 @@ document.addEventListener("alpine:init", () => {
           this.pushToast("发送失败", "error");
         }
       } finally {
+        if (this.choiceStatus === "loading") {
+          this.choiceStatus = "empty";
+        }
         this.busy = false;
         this.activeStreamController = null;
       }
@@ -3669,6 +3997,7 @@ document.addEventListener("alpine:init", () => {
           this.addMessage("agent", event.author, event.content);
         } else if (event.type === "choices") {
           this.choices = event.choices || [];
+          this.choiceStatus = this.choices.length ? "ready" : "empty";
           if (this.choices.length) {
             this.setNotice("这一轮已生成新的建议行动。", "success");
           } else {
@@ -3676,6 +4005,7 @@ document.addEventListener("alpine:init", () => {
           }
         } else if (event.type === "done") {
           this.setConsolidating(Boolean(event.consolidating));
+          this.queueSceneStatusRefresh();
         }
       } catch (error) {
         this.setNotice("实时消息解析失败，界面可能没有完整更新。", "error", true);
@@ -3703,6 +4033,7 @@ document.addEventListener("alpine:init", () => {
           if (this.consolidatingPollGen !== gen) return;
           if (response.ok) {
             const data = await response.json();
+            this.applySceneStatus(data.scene_status);
             if (!data.consolidating) {
               this.stopConsolidationPolling();
               this.consolidating = false;
@@ -3840,6 +4171,7 @@ document.addEventListener("alpine:init", () => {
         this.initialRecent = response.recent || [];
         this.initialChoices = response.last_choices || [];
         this.continueGame(response.recent, response.last_choices);
+        this.applySceneStatus(response.scene_status);
         await this.refreshSaves({ quiet: true });
         this.pushToast("存档已加载", "success");
       } catch (error) {

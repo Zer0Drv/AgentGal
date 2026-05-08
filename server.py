@@ -28,6 +28,7 @@ from engine.conversation_flow import (
 from memory.parser import (
     EpisodeMemory,
     Understanding,
+    extract_status_field,
     read_memory_jsonl,
     read_understandings,
 )
@@ -116,6 +117,18 @@ def _clip_text(value: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return f"{text[: limit - 1]}…"
+
+
+def _current_scene_status() -> dict[str, object]:
+    try:
+        status = read_agent_file("narrator", "status.md")
+    except Exception:
+        status = ""
+    return {
+        "time": extract_status_field(status, "当前时间").strip(),
+        "scene": extract_status_field(status, "场景").strip(),
+        "focus": extract_status_field(status, "叙事焦点").strip(),
+    }
 
 
 def _clip_preserving_lines(value: str, limit: int) -> str:
@@ -390,7 +403,14 @@ async def api_init() -> JSONResponse:
                 recent.append(formatted)
         last_choices = _load_last_choices()
 
-    return JSONResponse({"has_save": has_save, "recent": recent, "last_choices": last_choices})
+    return JSONResponse(
+        {
+            "has_save": has_save,
+            "recent": recent,
+            "last_choices": last_choices,
+            "scene_status": _current_scene_status(),
+        }
+    )
 
 
 # =============================================================================
@@ -511,7 +531,14 @@ async def api_new_game(req: NewGameRequest) -> JSONResponse:
     if choices:
         _save_last_choices(choices)
 
-    return JSONResponse({"intro": intro_text, "opening": opening_text, "choices": choices})
+    return JSONResponse(
+        {
+            "intro": intro_text,
+            "opening": opening_text,
+            "choices": choices,
+            "scene_status": _current_scene_status(),
+        }
+    )
 
 
 # =============================================================================
@@ -619,7 +646,7 @@ async def api_chat(req: ChatRequest) -> StreamingResponse:
 async def api_status() -> JSONResponse:
     """轻量状态查询。前端在收到 done 后若 consolidating=true 会轮询此接口。"""
     running = memory_consolidation_flow.is_running
-    payload: dict = {"consolidating": running}
+    payload: dict = {"consolidating": running, "scene_status": _current_scene_status()}
     if not running and memory_consolidation_flow.last_created_episodes:
         episodes, memory_consolidation_flow.last_created_episodes = (
             memory_consolidation_flow.last_created_episodes,
@@ -709,7 +736,14 @@ async def api_load(req: LoadRequest) -> JSONResponse:
         raw = load_conversation_history(limit=_RECENT_HISTORY_LIMIT)
         recent = [m for m in (_format_history_message(item) for item in raw) if m]
         last_choices = _load_last_choices()
-        return JSONResponse({"ok": True, "recent": recent, "last_choices": last_choices})
+        return JSONResponse(
+            {
+                "ok": True,
+                "recent": recent,
+                "last_choices": last_choices,
+                "scene_status": _current_scene_status(),
+            }
+        )
     return JSONResponse({"ok": False}, status_code=500)
 
 
@@ -756,4 +790,11 @@ async def api_reset(req: ResetRequest) -> JSONResponse:
     if choices:
         _save_last_choices(choices)
 
-    return JSONResponse({"intro": intro_text, "opening": opening_text, "choices": choices})
+    return JSONResponse(
+        {
+            "intro": intro_text,
+            "opening": opening_text,
+            "choices": choices,
+            "scene_status": _current_scene_status(),
+        }
+    )
