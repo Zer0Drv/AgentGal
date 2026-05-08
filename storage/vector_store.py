@@ -176,7 +176,7 @@ class VectorStore:
     - Understanding(db_id PK, id UNIQUE, memory_owner, subject, content, keywords,
                     linked_episodes)
     - Understanding_vec USING vec0(embedding F32[EMBED_DIM])  -- rowid = Understanding.db_id
-    - Understanding_fts USING fts5(content, keywords)
+    - Understanding_fts USING fts5(subject, keywords)
     """
 
     def __init__(self):
@@ -387,10 +387,14 @@ class VectorStore:
                 )
                 """
             )
+            # subject+keywords 比 content+keywords 更能精确匹配"这条 understanding 关于什么"，
+            # 避免 content 里的叙事词（如「分享」「亲密」）跨关系误召回。
+            # IF NOT EXISTS 无法迁移旧 schema，先 DROP 再 CREATE 强制更新。
+            await db.execute("DROP TABLE IF EXISTS Understanding_fts")
             await db.execute(
                 """
                 CREATE VIRTUAL TABLE IF NOT EXISTS Understanding_fts USING fts5(
-                    content, keywords,
+                    subject, keywords,
                     tokenize='unicode61'
                 )
                 """
@@ -701,10 +705,10 @@ class VectorStore:
                     )
                     await db.execute(
                         "INSERT OR REPLACE INTO Understanding_fts"
-                        "(rowid, content, keywords) VALUES (?, ?, ?)",
+                        "(rowid, subject, keywords) VALUES (?, ?, ?)",
                         (
                             db_id,
-                            _tokenize_for_fts(content),
+                            _tokenize_for_fts(subject),
                             _tokenize_for_fts(keywords_str),
                         ),
                     )
