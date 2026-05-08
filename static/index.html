@@ -174,6 +174,91 @@ svg {
   flex-shrink: 0;
 }
 
+.topbar-search-wrap {
+  position: relative;
+}
+
+.topbar-search-popover {
+  position: fixed;
+  width: min(430px, calc(100vw - 24px));
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 251, 247, 0.98);
+  box-shadow: 0 20px 40px -24px rgba(60, 30, 30, 0.24);
+  z-index: 70;
+  isolation: isolate;
+}
+
+.history-search-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(47, 35, 36, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 252, 248, 0.78);
+  box-shadow: 0 10px 24px -24px rgba(83, 49, 45, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  transition: border-color 0.24s var(--easing), background-color 0.24s var(--easing), box-shadow 0.24s var(--easing);
+}
+
+.history-search-control:focus-within {
+  border-color: rgba(180, 90, 100, 0.26);
+  background: rgba(255, 252, 248, 0.94);
+  box-shadow: 0 0 0 3px rgba(180, 90, 100, 0.06), 0 12px 26px -24px rgba(83, 49, 45, 0.34);
+}
+
+.history-search-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.history-search-input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.history-search-input::placeholder {
+  color: rgba(110, 87, 83, 0.62);
+}
+
+.history-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.2s var(--easing), color 0.2s var(--easing);
+}
+
+.history-search-clear:hover {
+  background: rgba(180, 90, 100, 0.08);
+  color: var(--text);
+}
+
+.history-search-panel {
+  margin-top: 8px;
+  max-height: min(360px, 46dvh);
+  overflow-y: auto;
+  padding-top: 8px;
+  border: 1px solid var(--line);
+  border-width: 1px 0 0;
+  background: transparent;
+}
+
 .date-picker-wrap {
   position: relative;
 }
@@ -431,6 +516,7 @@ svg {
 }
 
 .chat-shell {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -483,6 +569,42 @@ svg {
   overscroll-behavior: contain;
   scroll-behavior: smooth;
   padding: 18px 0 20px;
+}
+
+.latest-jump-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 24px 10px;
+}
+
+.latest-jump-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  min-height: 40px;
+  margin-left: auto;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  background: #cb8791;
+  box-shadow: 0 16px 28px -20px rgba(148, 68, 78, 0.72);
+  color: #fffaf5;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  transition: transform 0.24s var(--easing), background-color 0.24s var(--easing), box-shadow 0.24s var(--easing);
+}
+
+.latest-jump-btn:hover {
+  background: var(--accent);
+  transform: translateY(-1px);
+}
+
+.latest-jump-btn:active {
+  transform: translateY(0) scale(0.985);
 }
 
 .message-stage {
@@ -990,10 +1112,10 @@ svg {
 
 .composer-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 124px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
-  align-items: stretch;
-  padding: 8px;
+  align-items: end;
+  padding: 10px;
   border: 1px solid rgba(47, 35, 36, 0.08);
   border-radius: 18px;
   background: rgba(255, 252, 248, 0.78);
@@ -1048,33 +1170,36 @@ svg {
 
 .composer-actions {
   display: flex;
-  align-items: stretch;
+  align-items: flex-end;
   justify-content: flex-end;
+  padding: 0 2px 2px 0;
 }
 
 .composer-actions .primary-btn {
-  width: 100%;
-  min-width: 124px;
-  min-height: 108px;
-  height: 100%;
-  padding: 0 18px;
+  width: 116px;
+  min-width: 116px;
+  min-height: 56px;
+  height: 56px;
+  padding: 0 17px;
+  gap: 9px;
   border-radius: 14px;
   border-color: transparent;
-  background: #d9a7ad;
-  box-shadow: 0 12px 22px -20px rgba(148, 68, 78, 0.68);
+  background: var(--accent);
+  box-shadow: 0 14px 24px -18px rgba(148, 68, 78, 0.72);
   color: #fffaf5;
   flex-wrap: nowrap;
   line-height: 1;
 }
 
 .composer-actions .primary-btn:hover:not(:disabled) {
-  background: #cb8791;
+  background: var(--accent-strong);
+  box-shadow: 0 16px 28px -18px rgba(148, 68, 78, 0.78);
 }
 
 .composer-actions .primary-btn:disabled {
   opacity: 1;
-  background: #dfb8bd;
-  color: rgba(255, 250, 245, 0.92);
+  background: rgba(180, 90, 100, 0.18);
+  color: rgba(110, 87, 83, 0.52);
   box-shadow: none;
 }
 
@@ -1947,6 +2072,25 @@ svg {
     width: calc(100% - 24px);
   }
 
+  .history-search-control {
+    min-height: 40px;
+    padding: 0 10px;
+  }
+
+  .history-search-panel {
+    max-height: min(320px, 48dvh);
+  }
+
+  .latest-jump-row {
+    padding: 0 14px 8px;
+  }
+
+  .latest-jump-btn {
+    min-height: 38px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+
   .story-beat {
     padding-left: 14px;
   }
@@ -1996,6 +2140,10 @@ svg {
     gap: 6px;
     padding: 5px;
     border-radius: 14px;
+  }
+
+  .composer-actions {
+    padding: 0;
   }
 
   .composer-tools {
@@ -2293,6 +2441,10 @@ svg {
     padding: 0;
   }
 
+  .latest-jump-row {
+    padding: 0 8px 8px;
+  }
+
   .composer-field {
     gap: 0;
   }
@@ -2342,6 +2494,79 @@ svg {
     </div>
 
     <div class="topbar-actions">
+      <div class="topbar-search-wrap" x-show="messages.length" @click.outside="closeHistorySearch()">
+        <button
+          type="button"
+          class="ghost-btn menu-btn"
+          aria-label="搜索历史消息"
+          title="搜索历史消息"
+          x-ref="searchBtn"
+          :aria-expanded="historySearchOpen"
+          @click="toggleHistorySearch()"
+        >
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"/>
+              <path d="m20 20-3.2-3.2"/>
+            </svg>
+          </span>
+          <span class="btn-label">搜索</span>
+        </button>
+
+        <div class="topbar-search-popover" x-show="historySearchOpen" x-transition.opacity x-ref="searchPopover">
+          <div class="history-search-control">
+            <span class="history-search-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="7"/>
+                <path d="m20 20-3.2-3.2"/>
+              </svg>
+            </span>
+            <input
+              type="search"
+              class="history-search-input"
+              placeholder="搜索历史消息…"
+              x-ref="historySearchInput"
+              x-model="searchQuery"
+              @input="onSearchInput()"
+              @keydown.enter.prevent="searchResults.length && jumpToTurn(searchResults[0].turn)"
+              @keydown.escape.stop="closeHistorySearch()"
+            />
+            <button
+              type="button"
+              class="history-search-clear"
+              x-show="searchQuery.trim()"
+              aria-label="清空搜索"
+              @click="clearHistorySearch({ keepOpen: true })"
+            >
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M18 6 6 18"/>
+                <path d="m6 6 12 12"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="history-search-panel" x-show="searchQuery.trim()" x-transition.opacity>
+            <div class="date-menu-title" x-text="searchLoading ? '搜索中…' : `搜索结果（${searchResults.length}）`"></div>
+            <template x-if="!searchLoading && !searchResults.length">
+              <div class="date-menu-empty">无匹配消息</div>
+            </template>
+            <ul class="date-menu-list" x-show="searchResults.length">
+              <template x-for="result in searchResults" :key="result.turn + ':' + result.role">
+                <li>
+                  <button type="button" class="search-result-item" @click="jumpToTurn(result.turn)">
+                    <div class="search-result-head">
+                      <span class="search-result-author" x-text="result.author || result.role"></span>
+                      <span class="search-result-turn" x-text="`轮 ${result.turn}`"></span>
+                    </div>
+                    <div class="search-result-snippet" x-html="renderSearchSnippet(result.content, searchQuery.trim())"></div>
+                  </button>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <div class="date-picker-wrap" x-show="messages.length" @click.outside="dateMenuOpen = false">
         <button
           type="button"
@@ -2363,57 +2588,23 @@ svg {
           <span class="btn-label">历史</span>
         </button>
         <div class="date-menu" x-show="dateMenuOpen" x-transition.opacity x-ref="dateMenu">
-          <input
-            type="text"
-            class="date-menu-search"
-            placeholder="搜索消息内容…"
-            x-model="searchQuery"
-            @input="onSearchInput()"
-          />
-
-          <template x-if="!searchQuery.trim()">
-            <div>
-              <div class="date-menu-title">游戏内日期</div>
-              <template x-if="gameDatesLoading && !gameDates.length">
-                <div class="date-menu-empty">加载中…</div>
-              </template>
-              <template x-if="!gameDatesLoading && !gameDates.length">
-                <div class="date-menu-empty">暂无可跳转的日期</div>
-              </template>
-              <ul class="date-menu-list">
-                <template x-for="(anchor, idx) in gameDates" :key="idx + ':' + anchor.first_turn">
-                  <li>
-                    <button type="button" class="date-menu-item" @click="jumpToTurn(anchor.first_turn)">
-                      <span class="date-menu-date" x-text="anchor.date"></span>
-                      <span class="date-menu-range" x-text="`轮 ${anchor.first_turn}-${anchor.last_turn}`"></span>
-                    </button>
-                  </li>
-                </template>
-              </ul>
-            </div>
+          <div class="date-menu-title">游戏内日期</div>
+          <template x-if="gameDatesLoading && !gameDates.length">
+            <div class="date-menu-empty">加载中…</div>
           </template>
-
-          <template x-if="searchQuery.trim()">
-            <div>
-              <div class="date-menu-title" x-text="searchLoading ? '搜索中…' : `搜索结果（${searchResults.length}）`"></div>
-              <template x-if="!searchLoading && !searchResults.length">
-                <div class="date-menu-empty">无匹配消息</div>
-              </template>
-              <ul class="date-menu-list">
-                <template x-for="result in searchResults" :key="result.turn + ':' + result.role">
-                  <li>
-                    <button type="button" class="search-result-item" @click="jumpToTurn(result.turn)">
-                      <div class="search-result-head">
-                        <span class="search-result-author" x-text="result.author || result.role"></span>
-                        <span class="search-result-turn" x-text="`轮 ${result.turn}`"></span>
-                      </div>
-                      <div class="search-result-snippet" x-html="renderSearchSnippet(result.content, searchQuery.trim())"></div>
-                    </button>
-                  </li>
-                </template>
-              </ul>
-            </div>
+          <template x-if="!gameDatesLoading && !gameDates.length">
+            <div class="date-menu-empty">暂无可跳转的日期</div>
           </template>
+          <ul class="date-menu-list">
+            <template x-for="(anchor, idx) in gameDates" :key="idx + ':' + anchor.first_turn">
+              <li>
+                <button type="button" class="date-menu-item" @click="jumpToTurn(anchor.first_turn)">
+                  <span class="date-menu-date" x-text="anchor.date"></span>
+                  <span class="date-menu-range" x-text="`轮 ${anchor.first_turn}-${anchor.last_turn}`"></span>
+                </button>
+              </li>
+            </template>
+          </ul>
         </div>
       </div>
 
@@ -2542,6 +2733,13 @@ svg {
               </article>
             </template>
           </div>
+
+        </div>
+
+        <div class="latest-jump-row" x-show="shouldShowJumpLatest()" x-transition.opacity>
+          <button type="button" class="latest-jump-btn" @click="jumpToLatest()">
+            回到最新<span x-show="unreadNewMessages"> · 有新消息</span>
+          </button>
         </div>
 
         <div class="feedback-strip" x-show="shouldShowNotice()">
@@ -3078,6 +3276,9 @@ document.addEventListener("alpine:init", () => {
     searchResults: [],
     searchLoading: false,
     searchTimer: null,
+    historySearchOpen: false,
+    nearLatest: true,
+    unreadNewMessages: false,
     activeStreamController: null,
     toastTimers: new Map(),
     toasts: [],
@@ -3189,6 +3390,10 @@ document.addEventListener("alpine:init", () => {
       }
       if (this.memoryGraphOpen) {
         this.closeMemoryGraph();
+        return;
+      }
+      if (this.historySearchOpen) {
+        this.closeHistorySearch();
         return;
       }
       if (this.storyModalOpen && this.canDismissStoryModal()) {
@@ -3656,20 +3861,51 @@ document.addEventListener("alpine:init", () => {
       return { built, minTurn };
     },
 
-    addMessage(kind, author, content, turn = 0) {
+    isNearLatest(buffer = 120) {
+      const el = this.$refs.messages;
+      if (!el) return true;
+      return el.scrollHeight - el.scrollTop - el.clientHeight <= buffer;
+    },
+
+    updateLatestState() {
+      this.nearLatest = this.isNearLatest();
+      if (this.nearLatest) {
+        this.unreadNewMessages = false;
+      }
+    },
+
+    shouldAutoFollowLatest() {
+      return !this.$refs.messages || this.nearLatest;
+    },
+
+    shouldShowJumpLatest() {
+      return this.messages.length > 0 && !this.isInputMode() && (!this.nearLatest || this.unreadNewMessages);
+    },
+
+    jumpToLatest() {
+      this.scrollToLatest({ settle: true });
+    },
+
+    _afterPush(shouldFollow) {
+      if (shouldFollow) {
+        this.scrollToLatest();
+      } else {
+        this.unreadNewMessages = true;
+      }
+    },
+
+    addMessage(kind, author, content, turn = 0, { forceScroll = false } = {}) {
       const message = this._makeMessage(kind, author, content, turn);
       if (!message) return;
+      const shouldFollow = forceScroll || this.shouldAutoFollowLatest();
       this.messages.push(message);
-      this.$nextTick(() => {
-        if (this.$refs.messages) {
-          this.$refs.messages.scrollTop = this.$refs.messages.scrollHeight;
-        }
-      });
+      this._afterPush(shouldFollow);
     },
 
     addSystemMessage({ title = "系统", name = "", identity = "", characterId = "" } = {}) {
       const displayName = String(name || characterId || "新角色").trim();
       const identityText = String(identity || "").trim();
+      const shouldFollow = this.shouldAutoFollowLatest();
 
       this.messages.push({
         id: this.nextMessageId++,
@@ -3680,11 +3916,7 @@ document.addEventListener("alpine:init", () => {
         characterId: String(characterId || "").trim(),
       });
 
-      this.$nextTick(() => {
-        if (this.$refs.messages) {
-          this.$refs.messages.scrollTop = this.$refs.messages.scrollHeight;
-        }
-      });
+      this._afterPush(shouldFollow);
     },
 
     addHistory(messages) {
@@ -3709,6 +3941,8 @@ document.addEventListener("alpine:init", () => {
       if (settle) {
         [80, 500, 1000].forEach(delay => setTimeout(stick, delay));
       }
+      this.unreadNewMessages = false;
+      this.nearLatest = true;
     },
 
     prependHistory(messages) {
@@ -3747,6 +3981,7 @@ document.addEventListener("alpine:init", () => {
         await this.$nextTick();
         if (container) {
           container.scrollTop = container.scrollHeight - prevHeight + prevTop;
+          this.updateLatestState();
         }
       } catch (error) {
         this.setNotice("加载更早的对话失败。", "error");
@@ -3757,6 +3992,9 @@ document.addEventListener("alpine:init", () => {
 
     handleMessagesScroll() {
       if (!this.$refs.messages) return;
+      const near = this.isNearLatest();
+      if (near !== this.nearLatest) this.nearLatest = near;
+      if (near) this.unreadNewMessages = false;
       if (this.$refs.messages.scrollTop < 80) {
         this.loadOlderHistory();
       }
@@ -3779,6 +4017,7 @@ document.addEventListener("alpine:init", () => {
     async toggleDateMenu() {
       this.dateMenuOpen = !this.dateMenuOpen;
       if (this.dateMenuOpen) {
+        this.closeHistorySearch();
         await this.ensureGameDates();
         await this.$nextTick();
         this.positionDateMenu();
@@ -3798,6 +4037,7 @@ document.addEventListener("alpine:init", () => {
       const target = Number(targetTurn);
       if (!target || target < 1) return;
       this.dateMenuOpen = false;
+      this.historySearchOpen = false;
       const container = this.$refs.messages;
       let exists = this.messages.some(m => m.turn === target);
       let safety = 20;
@@ -3824,7 +4064,62 @@ document.addEventListener("alpine:init", () => {
         const node = container.querySelector(`[data-turn="${target}"]`);
         if (node) {
           node.scrollIntoView({ behavior: "smooth", block: "start" });
+          setTimeout(() => this.updateLatestState(), 260);
         }
+      }
+    },
+
+    toggleHistorySearch() {
+      if (this.historySearchOpen) {
+        this.closeHistorySearch();
+      } else {
+        this.openHistorySearch();
+      }
+    },
+
+    positionHistorySearch() {
+      const btn = this.$refs.searchBtn;
+      const popover = this.$refs.searchPopover;
+      if (!btn || !popover) return;
+      const rect = btn.getBoundingClientRect();
+      const width = Math.min(430, window.innerWidth - 24);
+      const left = Math.min(
+        Math.max(12, rect.right - width),
+        window.innerWidth - width - 12
+      );
+      popover.style.top = `${rect.bottom + 8}px`;
+      popover.style.left = `${left}px`;
+      popover.style.right = "auto";
+      popover.style.width = `${width}px`;
+    },
+
+    openHistorySearch() {
+      this.historySearchOpen = true;
+      this.dateMenuOpen = false;
+      this.$nextTick(() => {
+        this.positionHistorySearch();
+        this.$refs.historySearchInput?.focus();
+        if (this.searchQuery.trim() && !this.searchResults.length && !this.searchLoading) {
+          this.onSearchInput();
+        }
+      });
+    },
+
+    closeHistorySearch() {
+      this.historySearchOpen = false;
+    },
+
+    clearHistorySearch({ keepOpen = false } = {}) {
+      this.searchQuery = "";
+      this.searchResults = [];
+      this.searchLoading = false;
+      this.historySearchOpen = keepOpen;
+      if (this.searchTimer) {
+        clearTimeout(this.searchTimer);
+        this.searchTimer = null;
+      }
+      if (keepOpen) {
+        this.$nextTick(() => this.$refs.historySearchInput?.focus());
       }
     },
 
@@ -3834,8 +4129,10 @@ document.addEventListener("alpine:init", () => {
       if (!q) {
         this.searchResults = [];
         this.searchLoading = false;
+        this.historySearchOpen = false;
         return;
       }
+      if (!this.historySearchOpen) this.historySearchOpen = true;
       this.searchLoading = true;
       this.searchTimer = setTimeout(() => this.runSearch(q), 250);
     },
@@ -3848,7 +4145,9 @@ document.addEventListener("alpine:init", () => {
       } catch (error) {
         this.setNotice("搜索失败。", "error");
       } finally {
-        this.searchLoading = false;
+        if (this.searchQuery.trim() === q) {
+          this.searchLoading = false;
+        }
       }
     },
 
@@ -3890,6 +4189,10 @@ document.addEventListener("alpine:init", () => {
       this.dateMenuOpen = false;
       this.searchQuery = "";
       this.searchResults = [];
+      this.searchLoading = false;
+      this.historySearchOpen = false;
+      this.nearLatest = true;
+      this.unreadNewMessages = false;
       clearTimeout(this.searchTimer);
       this.searchTimer = null;
       this.clearNotice();
@@ -3967,7 +4270,7 @@ document.addEventListener("alpine:init", () => {
       if (this.isCompact) {
         this.blurComposer();
       }
-      this.addMessage("player", "你", message);
+      this.addMessage("player", "你", message, 0, { forceScroll: true });
       this.resetComposer();
       this.choices = [];
       this.choiceStatus = "loading";
