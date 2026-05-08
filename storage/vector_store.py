@@ -183,6 +183,9 @@ class VectorStore:
         self._db: aiosqlite.Connection | None = None
         self.character_path = character_path
         self._background_tasks: set[asyncio.Task] = set()
+        # 连接/建表懒初始化必须串行化；sqlite 扩展加载不是可重复幂等操作。
+        self._init_lock: asyncio.Lock | None = None
+        self._init_lock_loop: asyncio.AbstractEventLoop | None = None
         # 单连接下显式串行化写事务；按事件循环懒初始化避免跨 loop 复用报错
         self._write_lock: asyncio.Lock | None = None
         self._write_lock_loop: asyncio.AbstractEventLoop | None = None
@@ -198,14 +201,24 @@ class VectorStore:
             self._write_lock_loop = loop
         return self._write_lock
 
+    def _get_init_lock(self) -> asyncio.Lock:
+        """获取当前事件循环绑定的初始化锁。"""
+        loop = asyncio.get_running_loop()
+        if self._init_lock is None or self._init_lock_loop is not loop:
+            self._init_lock = asyncio.Lock()
+            self._init_lock_loop = loop
+        return self._init_lock
+
     async def _ensure_tables(self) -> None:
         """建表只做一次；跨 loop 重建（脚本场景）。"""
         loop = asyncio.get_running_loop()
-        if self._tables_initialized and self._tables_initialized_loop is loop:
+        if (
+            self._db is not None
+            and self._tables_initialized
+            and self._tables_initialized_loop is loop
+        ):
             return
         await self.init_tables()
-        self._tables_initialized = True
-        self._tables_initialized_loop = loop
 
     def _sidecar_recall_by_hash(
         self,
@@ -256,7 +269,7 @@ class VectorStore:
         返回格式与 _read_memory_recall_state 兼容：
         {row_id: {"date": ..., "content_hash": ..., "last_recalled_at": ...}}
         """
-        await self.init_tables()
+        await self._ensure_tables()
         db = await self._get_db()
         rows = await db.execute_fetchall(
             "SELECT id, game_date, content_hash, last_recalled_at "
@@ -277,7 +290,7 @@ class VectorStore:
     # ----------------------------- DB 基础 -----------------------------
 
     async def _load_sqlite_vec(self, conn: aiosqlite.Connection):
-        """在当前连接加载 sqlite-vec 扩展（重复调用安全）。"""
+        """在当前连接加载 sqlite-vec 扩展；每个连接只应调用一次。"""
         try:
             import sqlite_vec  # type: ignore
 
@@ -285,11 +298,11 @@ class VectorStore:
             await conn.enable_load_extension(True)
             await conn.execute(f"SELECT load_extension('{ext_path}')")
         except Exception as e:
-            raise RuntimeError(f"加载 sqlite-vec 扩展失败，请安装 sqlite_vec: {e}")
+            raise RuntimeError(f"加载 sqlite-vec 扩展失败，请确认 sqlite_vec 可用: {e}")
 
     @staticmethod
     def _load_sqlite_vec_sync(conn: sqlite3.Connection):
-        """在同步 sqlite3 连接加载 sqlite-vec 扩展。"""
+        """在同步 sqlite3 连接加载 sqlite-vec 扩展；每个连接只应调用一次。"""
         try:
             import sqlite_vec  # type: ignore
 
@@ -300,12 +313,27 @@ class VectorStore:
             raise RuntimeError(f"加载 sqlite-vec 扩展失败: {e}")
 
     async def _get_db(self) -> aiosqlite.Connection:
-        if self._db is None:
-            os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-            self._db = await aiosqlite.connect(DB_PATH)
-            await self._db.execute("PRAGMA journal_mode=WAL;")
-            await self._load_sqlite_vec(self._db)
-        return self._db
+        if self._db is not None:
+            return self._db
+
+        async with self._get_init_lock():
+            return await self._open_db_locked()
+
+    async def _open_db_locked(self) -> aiosqlite.Connection:
+        """打开并加载扩展；调用方必须持有初始化锁。"""
+        if self._db is not None:
+            return self._db
+
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        db = await aiosqlite.connect(DB_PATH)
+        try:
+            await db.execute("PRAGMA journal_mode=WAL;")
+            await self._load_sqlite_vec(db)
+        except Exception:
+            await db.close()
+            raise
+        self._db = db
+        return db
 
     async def close(self) -> None:
         """关闭当前异步 DB 连接。
@@ -313,51 +341,63 @@ class VectorStore:
         aiosqlite 为每个连接维护后台 worker thread。命令行脚本如果不显式关闭，
         主协程结束后进程仍可能等待该线程，表现为脚本打印完成但不退出。
         """
-        if self._db is None:
-            return
-        await self._db.close()
+        if self._db is not None:
+            await self._db.close()
         self._db = None
+        self._init_lock = None
+        self._init_lock_loop = None
         self._tables_initialized = False
         self._tables_initialized_loop = None
         self._write_lock = None
         self._write_lock_loop = None
 
     async def init_tables(self):
-        db = await self._get_db()
+        loop = asyncio.get_running_loop()
+        async with self._get_init_lock():
+            if (
+                self._db is not None
+                and self._tables_initialized
+                and self._tables_initialized_loop is loop
+            ):
+                return
 
-        await db.execute(_EPISODE_MEMORY_SCHEMA)
-        await db.execute(
-            f"""
-            CREATE VIRTUAL TABLE IF NOT EXISTS EpisodeMemory_vec USING vec0(
-                embedding F32[{EMBED_DIM}]
+            db = await self._open_db_locked()
+
+            await db.execute(_EPISODE_MEMORY_SCHEMA)
+            await db.execute(
+                f"""
+                CREATE VIRTUAL TABLE IF NOT EXISTS EpisodeMemory_vec USING vec0(
+                    embedding F32[{EMBED_DIM}]
+                )
+                """
             )
-            """
-        )
-        await db.execute(
-            """
-            CREATE VIRTUAL TABLE IF NOT EXISTS EpisodeMemory_fts USING fts5(
-                content, keywords,
-                tokenize='unicode61'
+            await db.execute(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS EpisodeMemory_fts USING fts5(
+                    content, keywords,
+                    tokenize='unicode61'
+                )
+                """
             )
-            """
-        )
-        await db.execute(_UNDERSTANDING_SCHEMA)
-        await db.execute(
-            f"""
-            CREATE VIRTUAL TABLE IF NOT EXISTS Understanding_vec USING vec0(
-                embedding F32[{EMBED_DIM}]
+            await db.execute(_UNDERSTANDING_SCHEMA)
+            await db.execute(
+                f"""
+                CREATE VIRTUAL TABLE IF NOT EXISTS Understanding_vec USING vec0(
+                    embedding F32[{EMBED_DIM}]
+                )
+                """
             )
-            """
-        )
-        await db.execute(
-            """
-            CREATE VIRTUAL TABLE IF NOT EXISTS Understanding_fts USING fts5(
-                content, keywords,
-                tokenize='unicode61'
+            await db.execute(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS Understanding_fts USING fts5(
+                    content, keywords,
+                    tokenize='unicode61'
+                )
+                """
             )
-            """
-        )
-        await db.commit()
+            await db.commit()
+            self._tables_initialized = True
+            self._tables_initialized_loop = loop
 
     async def _delete_chunks(
         self, db: aiosqlite.Connection, memory_owner: str, date: str | None = None
