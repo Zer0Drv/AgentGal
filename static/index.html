@@ -826,57 +826,59 @@ svg {
 }
 
 .choice-rail {
-  padding: 0 24px 9px;
+  padding: 0 24px 14px;
 }
 
 .choice-rail-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   padding: 0 2px;
 }
 
 .choice-rail-title {
   color: var(--text-soft);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .choice-rail-subtitle {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: right;
 }
 
 .choice-list {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 1px 2px 3px;
-  scroll-snap-type: x proximity;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
 }
 
 .choice-chip {
-  flex: 1 1 0;
-  max-width: 420px;
-  min-width: 220px;
-  min-height: 42px;
-  padding: 8px 13px;
-  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 64px;
+  padding: 13px 16px;
+  border-radius: 14px;
   border: 1px solid rgba(47, 35, 36, 0.08);
-  background: rgba(255, 252, 248, 0.6);
-  box-shadow: none;
+  background: rgba(255, 252, 248, 0.68);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.66);
   color: var(--text-soft);
   text-align: left;
-  scroll-snap-align: start;
 }
 
 .choice-chip:hover {
-  background: rgba(255, 252, 248, 0.92);
-  border-color: rgba(47, 35, 36, 0.16);
+  background: rgba(255, 252, 248, 0.94);
+  border-color: rgba(180, 90, 100, 0.18);
   color: var(--text);
-  box-shadow: 0 2px 8px rgba(47, 35, 36, 0.035);
+  box-shadow: 0 8px 18px -18px rgba(83, 49, 45, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .choice-chip-label {
@@ -891,17 +893,18 @@ svg {
 
 .choice-chip-text {
   display: block;
+  min-width: 0;
   font-size: 15px;
-  line-height: 1.45;
+  line-height: 1.48;
   text-wrap: pretty;
 }
 
 .choice-state {
-  min-height: 42px;
-  padding: 9px 13px;
+  min-height: 54px;
+  padding: 14px 16px;
   border: 1px solid rgba(47, 35, 36, 0.08);
-  border-radius: 12px;
-  background: rgba(255, 252, 248, 0.52);
+  border-radius: 14px;
+  background: rgba(255, 252, 248, 0.6);
   color: var(--text-muted);
   font-size: 14px;
   line-height: 1.45;
@@ -948,7 +951,7 @@ svg {
 }
 
 .composer-shell {
-  margin: 0 24px 18px;
+  margin: 0 24px 20px;
   padding: 0;
   border: none;
   border-radius: 0;
@@ -962,17 +965,19 @@ svg {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin: 0 2px 7px;
+  margin: 0 2px 8px;
 }
 
 .composer-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .composer-hint {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .composer-tools {
@@ -985,20 +990,21 @@ svg {
 
 .composer-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 112px;
-  gap: 8px;
-  align-items: end;
-  padding: 6px;
+  grid-template-columns: minmax(0, 1fr) 124px;
+  gap: 10px;
+  align-items: stretch;
+  padding: 8px;
   border: 1px solid rgba(47, 35, 36, 0.08);
-  border-radius: 14px;
-  background: rgba(255, 252, 248, 0.76);
+  border-radius: 18px;
+  background: rgba(255, 252, 248, 0.78);
+  box-shadow: 0 16px 34px -32px rgba(83, 49, 45, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.68);
   transition: border-color 0.28s var(--easing), box-shadow 0.28s var(--easing), background-color 0.28s var(--easing);
 }
 
 .composer-body:focus-within {
   border-color: rgba(180, 90, 100, 0.28);
   background: rgba(255, 252, 248, 0.94);
-  box-shadow: 0 0 0 3px rgba(180, 90, 100, 0.06);
+  box-shadow: 0 0 0 3px rgba(180, 90, 100, 0.06), 0 16px 34px -32px rgba(83, 49, 45, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .composer-field {
@@ -1010,12 +1016,12 @@ svg {
 #user-input {
   display: block;
   width: 100%;
-  min-height: 80px;
-  height: 80px;
+  min-height: 108px;
+  height: 108px;
   max-height: 220px;
-  padding: 16px 14px;
+  padding: 20px 18px;
   border: none;
-  border-radius: 8px;
+  border-radius: 12px;
   background: transparent;
   color: var(--text);
   font-size: 16px;
@@ -1042,29 +1048,38 @@ svg {
 
 .composer-actions {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: flex-end;
 }
 
 .composer-actions .primary-btn {
   width: 100%;
-  min-height: 80px;
-  padding: 0 12px;
-  border-radius: 10px;
+  min-width: 124px;
+  min-height: 108px;
+  height: 100%;
+  padding: 0 18px;
+  border-radius: 14px;
   border-color: transparent;
-  background: rgba(180, 90, 100, 0.68);
-  box-shadow: none;
+  background: #d9a7ad;
+  box-shadow: 0 12px 22px -20px rgba(148, 68, 78, 0.68);
   color: #fffaf5;
+  flex-wrap: nowrap;
+  line-height: 1;
 }
 
 .composer-actions .primary-btn:hover:not(:disabled) {
-  background: var(--accent);
+  background: #cb8791;
 }
 
 .composer-actions .primary-btn:disabled {
   opacity: 1;
-  background: rgba(180, 90, 100, 0.42);
-  color: rgba(255, 250, 245, 0.9);
+  background: #dfb8bd;
+  color: rgba(255, 250, 245, 0.92);
+  box-shadow: none;
+}
+
+.composer-actions .btn-icon {
+  flex: 0 0 auto;
 }
 
 .composer-actions .send-label {
@@ -1951,9 +1966,36 @@ svg {
     padding-right: 14px;
   }
 
+  .choice-rail {
+    padding-bottom: 10px;
+  }
+
+  .choice-rail-head {
+    margin-bottom: 8px;
+  }
+
+  .choice-list {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 1px 2px 4px;
+    scroll-snap-type: x proximity;
+  }
+
+  .choice-chip {
+    flex: 0 0 auto;
+    width: min(68vw, 340px);
+    min-height: 56px;
+    padding: 11px 13px;
+    border-radius: 12px;
+    scroll-snap-align: start;
+  }
+
   .composer-body {
-    grid-template-columns: minmax(0, 1fr) 44px;
+    grid-template-columns: minmax(0, 1fr) 52px;
     gap: 6px;
+    padding: 5px;
+    border-radius: 14px;
   }
 
   .composer-tools {
@@ -1975,12 +2017,23 @@ svg {
     padding: 0;
   }
 
-  .composer-actions .primary-btn {
-    width: 44px;
-    min-width: 44px;
-    min-height: 44px;
-    padding: 0;
+  #user-input {
+    min-height: 52px;
+    height: 52px;
+    max-height: 136px;
+    padding: 12px;
     border-radius: 10px;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  .composer-actions .primary-btn {
+    width: 52px;
+    min-width: 52px;
+    min-height: 52px;
+    height: 52px;
+    padding: 0;
+    border-radius: 11px;
   }
 
   .composer-actions .send-label {
@@ -2220,15 +2273,14 @@ svg {
     padding-right: 20px;
   }
 
-  .choice-chip {
-    min-width: min(78vw, 320px);
-    max-width: min(78vw, 320px);
-    border-radius: 10px;
-  }
-
   .choice-rail-head {
     flex-direction: column;
     align-items: flex-start;
+    gap: 4px;
+  }
+
+  .choice-rail-subtitle {
+    text-align: left;
   }
 
   .composer-head,
@@ -2246,18 +2298,18 @@ svg {
   }
 
   #user-input {
-    min-height: 44px;
-    height: 44px;
+    min-height: 52px;
+    height: 52px;
     max-height: 132px;
-    padding: 10px 12px;
+    padding: 12px;
     border-radius: 10px;
     font-size: 16px;
     line-height: 1.5;
   }
 
   .choice-chip {
-    min-width: min(72vw, 280px);
-    max-width: min(72vw, 280px);
+    width: min(72vw, 280px);
+    min-height: 54px;
     padding: 9px 12px;
     border-radius: 10px;
   }
@@ -3050,7 +3102,6 @@ document.addEventListener("alpine:init", () => {
       }
       this.setupViewportListener();
       this.setupVisualViewportListener();
-      this.resizeComposer();
 
       try {
         const storiesResponse = await this.fetchJson("/api/stories");
@@ -3103,6 +3154,7 @@ document.addEventListener("alpine:init", () => {
           this.inputFocused = false;
         }
         this.updateKeyboardState();
+        this.$nextTick(() => this.resizeComposer());
       };
       this.handleViewportChangeBound(this.mediaQuery);
       this.mediaQuery.addEventListener("change", this.handleViewportChangeBound);
@@ -3386,8 +3438,8 @@ document.addEventListener("alpine:init", () => {
     resizeComposer(target = null) {
       const textarea = target || this.$refs?.composerInput;
       if (!textarea) return;
-      const baseHeight = this.isCompact ? 44 : 80;
-      const maxHeight = this.isCompact ? 132 : 220;
+      const baseHeight = this.isCompact ? 52 : 108;
+      const maxHeight = this.isCompact ? 136 : 220;
       textarea.style.height = `${baseHeight}px`;
       if (!textarea.value) return;
       textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, baseHeight), maxHeight)}px`;
