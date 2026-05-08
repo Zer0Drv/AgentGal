@@ -31,7 +31,7 @@ from prompts.consolidation_prompts import (
     EPISODE_MEMORY_GENERATOR,
     UNDERSTANDING_PATCH,
 )
-from prompts.runtime_prompts import CHOICES, STATE_UPDATER
+from prompts.runtime_prompts import CHOICES, NARRATOR_OBSERVATION, STATE_UPDATER
 from prompts.worldgen_prompts import CHARACTER_FACTORY
 from shared.config import (
     CONSOLIDATION_MAX_TOKENS,
@@ -44,6 +44,7 @@ ConversationAgent = Agent[None, CharacterOutput | NarratorOutput]
 StructuredAgent = Agent[None, object]
 
 _conversation_agents: dict[str, ConversationAgent] = {}
+_observation_narrator_agent: ConversationAgent | None = None
 _choices_agent: Agent[None, ChoicesOutput] | None = None
 _state_updater_agent: Agent[None, StateUpdaterOutput] | None = None
 _character_factory_agent: Agent[None, NewCharacterProfile] | None = None
@@ -94,7 +95,7 @@ def initialize_conversation_agents() -> None:
 
 
 def reload_conversation_agent(name: str) -> None:
-    global _choices_agent
+    global _choices_agent, _observation_narrator_agent
 
     soul = read_agent_file(name, "soul.md")
     config = get_narrator_llm_config() if name == "narrator" else get_llm_config()
@@ -107,12 +108,27 @@ def reload_conversation_agent(name: str) -> None:
     )
     if name == "narrator":
         _choices_agent = None
+        _observation_narrator_agent = None
 
 
 def get_conversation_agent(name: str) -> ConversationAgent:
     if name not in _conversation_agents:
         reload_conversation_agent(name)
     return _conversation_agents[name]
+
+
+def get_observation_narrator_agent() -> ConversationAgent:
+    global _observation_narrator_agent
+    if _observation_narrator_agent is None:
+        soul = read_agent_file("narrator", "soul.md")
+        config = get_narrator_llm_config()
+        _observation_narrator_agent = _build_agent(
+            name="narrator_observation",
+            instructions=NARRATOR_OBSERVATION.format(soul=soul),
+            config=config,
+            output_type=NarratorOutput,
+        )
+    return _observation_narrator_agent
 
 
 def get_choices_agent() -> Agent[None, ChoicesOutput]:

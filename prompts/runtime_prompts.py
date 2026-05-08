@@ -198,6 +198,72 @@ Return the result in this exact JSON format:
 """
 
 
+NARRATOR_OBSERVATION = r"""<goal>
+玩家当前处于旁观模式，不在场景中。根据被观察角色的打算和当前状态，布置一个合理的场景让角色自然展开互动。
+</goal>
+
+<soul>
+{soul}
+</soul>
+
+<task>
+玩家指定了想旁观的角色。你的职责是布置场景——决定时间、地点、谁在场，然后退出。
+
+**1. targets：决定谁在场**
+- 被观察角色必须在 targets 中
+- 读取被观察角色的「打算」：如果打算里写明了要和哪个主要角色见面或谈话，把那个角色也加入 targets
+- 如果打算里没有涉及其他主要角色，targets 就只有被观察角色
+- 不得把玩家放入 targets 或场景内
+
+**2. 场景：时间和地点**
+- 优先参考被观察角色打算中带地点的待触发事件
+- 若无明确待触发事件，根据当前时间和角色位置安排合适地点
+
+**3. content：只描述场景，不描述行为**
+- 描述时间、地点、各角色所处位置和环境氛围
+- 不描述角色做了什么、说了什么、心里想什么
+</task>
+
+<context_usage>
+- `<status>`：当前场景、时间、各角色位置、叙事焦点、待触发事件
+- 近期对话历史
+</context_usage>
+
+<writing_boundaries>
+- 在场列表不含玩家。
+- 不要给在场角色添加行为或对话，仅描述位置。
+- 场景跳跃时包含过渡信息。
+</writing_boundaries>
+
+<output_format>
+Return the result in this exact JSON format:
+{{
+  "targets": ["角色id"],
+  "content": "**时间**：X月X日 星期X XX:XX\n**地点**：...\n**在场**：\n[每个主要角色一行，位置或场外，不含玩家]\n\n[一两句气氛烘托]",
+  "new_characters": []
+}}
+targets 必须包含至少一个被观察角色的 id。
+如果本轮没有新角色生成，请将 new_characters 设置为空数组 []。
+</output_format>
+
+<examples>
+<example scene="被观察角色独自一人">
+<input>玩家想旁观：roleA。当前时间：4月5日 16:30。roleA 打算：[ ] 【整理笔记】放学后在教室整理上周积压的课堂笔记。roleB 打算：[ ] 【社团练习】4月5日 放学后 音乐室，练习新曲目。</input>
+<output>
+{{"targets": ["roleA"], "content": "**时间**：4月5日 星期五 16:30\n**地点**：教室\n**在场**：\n- roleA：座位旁\n- roleB：场外\n\n放学铃刚过，走廊里陆续传来同学离开的脚步声。教室里只剩几盏日光灯亮着。", "new_characters": []}}
+</output>
+</example>
+
+<example scene="被观察角色的打算涉及另一角色">
+<input>玩家想旁观：roleA。当前时间：10月3日 12:10。roleA 打算：[ ] 【找roleB谈清楚】10月3日 午休 操场角，趁没人的时候问清楚上次的事。roleB 打算：无。</input>
+<output>
+{{"targets": ["roleA", "roleB"], "content": "**时间**：10月3日 星期四 12:10\n**地点**：操场角\n**在场**：\n- roleA：操场角铁栅栏旁\n- roleB：操场角\n\n午休时间大多数人去了食堂，操场这边安静下来，只有远处篮球架旁偶尔传来几声。", "new_characters": []}}
+</output>
+</example>
+</examples>
+"""
+
+
 STATE_UPDATER = r"""<prompt>
 <goal>
 每轮结束后维护 narrator/status.md：更新公共状态，清理待触发事件，从角色「打算」同步新的公共「待触发事件」，并识别最近3条历史中自然形成的近未来剧情机会。

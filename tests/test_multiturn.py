@@ -220,7 +220,7 @@ class TestBuildUserMessage:
 
         assert result.index("最近对话历史:") < result.index("<status>")
         assert result.index("<status>") < result.index("记忆内容")
-        assert result.index("记忆内容") < result.index("玩家新消息: 你好")
+        assert result.index("记忆内容") < result.index("玩家新消息：你好")
 
     def test_character_includes_user_profile_status_memories_input_without_history(self):
         def fake_read(agent_name: str, filename: str) -> str:
@@ -243,7 +243,7 @@ class TestBuildUserMessage:
         assert "最近对话历史:" not in result
         assert "当前状态" in result
         assert "记忆内容" in result
-        assert "玩家新消息: 你好" in result
+        assert "玩家新消息：你好" in result
 
     def test_narrator_uses_single_big_user_message_with_status_and_input(self):
         msgs = [
@@ -260,4 +260,4 @@ class TestBuildUserMessage:
         assert "旁白: 旧场景" in result
         assert "guyining: 旧回复" in result
         assert result.index("最近对话历史:") < result.index("<status>")
-        assert result.index("<status>") < result.index("玩家新消息: 新输入")
+        assert result.index("<status>") < result.index("玩家新消息：新输入")

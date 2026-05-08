@@ -1211,6 +1211,63 @@ svg {
   white-space: nowrap;
 }
 
+.composer-head-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.observe-switch-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+.observe-switch-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color 0.22s;
+  white-space: nowrap;
+}
+
+.observe-switch-wrap.on .observe-switch-label {
+  color: var(--accent);
+}
+
+.observe-switch-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: rgba(138, 112, 104, 0.22);
+  transition: background 0.25s var(--easing);
+  flex-shrink: 0;
+}
+
+.observe-switch-wrap.on .observe-switch-track {
+  background: var(--accent);
+}
+
+.observe-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(60, 30, 28, 0.22), 0 0.5px 1px rgba(60, 30, 28, 0.12);
+  transition: transform 0.25s var(--easing);
+}
+
+.observe-switch-wrap.on .observe-switch-thumb {
+  transform: translateX(16px);
+}
+
 .composer-foot {
   display: none;
   align-items: center;
@@ -2779,9 +2836,27 @@ svg {
 
         <section class="composer-shell">
           <div class="composer-head" x-show="!isCompact">
-            <div class="composer-title">你的行动</div>
+            <div class="composer-head-left">
+              <div class="composer-title">你的行动</div>
+              <div
+                class="observe-switch-wrap"
+                :class="{ on: observeMode }"
+                x-show="messages.length > 0 && characterCount > 0"
+                @click="observeMode = !observeMode"
+                role="switch"
+                :aria-checked="observeMode"
+                tabindex="0"
+                @keydown.space.prevent="observeMode = !observeMode"
+                @keydown.enter.prevent="observeMode = !observeMode"
+              >
+                <span class="observe-switch-label">旁观</span>
+                <div class="observe-switch-track">
+                  <div class="observe-switch-thumb"></div>
+                </div>
+              </div>
+            </div>
             <div class="composer-tools">
-              <div class="composer-hint">Enter 发送，Shift + Enter 换行</div>
+              <div class="composer-hint" x-text="observeMode ? '输入想观察的角色，Enter 发送' : 'Enter 发送，Shift + Enter 换行'"></div>
             </div>
           </div>
 
@@ -2793,7 +2868,7 @@ svg {
                 x-model="inputText"
                 rows="1"
                 :disabled="busy"
-                placeholder="输入台词、动作，或一段压低声音的心思。"
+                :placeholder="observeMode ? '输入想观察的角色名…' : '输入台词、动作，或一段压低声音的心思。'"
                 @input="handleComposerInput($event)"
                 @focus="handleComposerFocus()"
                 @blur="handleComposerBlur()"
@@ -3236,6 +3311,8 @@ marked.setOptions({ breaks: true, gfm: true });
 document.addEventListener("alpine:init", () => {
   Alpine.data("agentGalApp", () => ({
     busy: false,
+    observeMode: false,
+    characterCount: 0,
     consolidating: false,
     consolidatingPollTimer: null,
     consolidatingPollGen: 0,
@@ -3314,6 +3391,7 @@ document.addEventListener("alpine:init", () => {
       try {
         const initState = await this.fetchJson("/api/init");
         this.hasSave = Boolean(initState.has_save);
+        this.characterCount = initState.character_count || 0;
         this.initialRecent = initState.recent || [];
         this.initialChoices = initState.last_choices || [];
         if (this.hasSave) {
@@ -4181,6 +4259,7 @@ document.addEventListener("alpine:init", () => {
       this.choiceStatus = "hidden";
       this.nextMessageId = 1;
       this.agentStyleByAuthor = {};
+      this.observeMode = false;
       this.oldestLoadedTurn = null;
       this.historyExhausted = false;
       this.loadingOlder = false;
@@ -4216,6 +4295,7 @@ document.addEventListener("alpine:init", () => {
         if (response.opening) this.addMessage("narrator", "旁白", response.opening);
         this.choices = response.choices || [];
         this.choiceStatus = this.choices.length ? "ready" : "empty";
+        this.characterCount = response.character_count || 0;
         this.hasSave = true;
         this.initialRecent = [];
         this.initialChoices = this.choices;
@@ -4270,7 +4350,11 @@ document.addEventListener("alpine:init", () => {
       if (this.isCompact) {
         this.blurComposer();
       }
-      this.addMessage("player", "你", message, 0, { forceScroll: true });
+      if (this.observeMode) {
+        this.addMessage("narrator", "旁白", `*（旁观：${message}）*`, 0, { forceScroll: true });
+      } else {
+        this.addMessage("player", "你", message, 0, { forceScroll: true });
+      }
       this.resetComposer();
       this.choices = [];
       this.choiceStatus = "loading";
@@ -4297,7 +4381,7 @@ document.addEventListener("alpine:init", () => {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, mode: this.observeMode ? "observe" : "participate" }),
         signal: this.activeStreamController.signal,
       });
 
@@ -4519,6 +4603,7 @@ document.addEventListener("alpine:init", () => {
           throw new Error("load failed");
         }
         this.hasSave = true;
+        this.characterCount = response.character_count || 0;
         this.initialRecent = response.recent || [];
         this.initialChoices = response.last_choices || [];
         this.continueGame(response.recent, response.last_choices);

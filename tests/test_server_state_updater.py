@@ -16,6 +16,7 @@ except ModuleNotFoundError as exc:
     pytest.skip(f"skip server tests: missing dependency ({exc})", allow_module_level=True)
 
 
+
 @pytest.mark.asyncio
 async def test_settle_pending_state_update_waits_for_background_task(monkeypatch):
     started = False
@@ -100,7 +101,7 @@ async def test_chat_stream_does_not_wait_for_pending_state_update(monkeypatch):
     async def blocking_task():
         await release.wait()
 
-    async def fake_route(_self, _user_input):
+    async def fake_route(_self, _user_input, *, observation_mode=False):
         return [], "", [], False
 
     task = server_module.asyncio.create_task(blocking_task())
@@ -328,7 +329,7 @@ async def test_chat_stream_emits_created_character_identity(monkeypatch):
     async def fake_settle_pending_state_update(*, cancel=False):
         return None
 
-    async def fake_route(_self, _user_input):
+    async def fake_route(_self, _user_input, *, observation_mode=False):
         return [], "", [], True
 
     async def fake_bootstrap_new_characters(_specs, _targets):

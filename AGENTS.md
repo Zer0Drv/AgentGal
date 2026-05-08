@@ -160,6 +160,8 @@ state_updater outputs full "Character Locations" snapshot each round; priority: 
 state_updater syncs public "Pending Events" from each character's "Intentions" (event names preserve character names)
 ```
 
+Observation mode uses the same SSE chat endpoint with `mode="observe"`: the narrator runs with the observation prompt, the player message is not written to raw history, selected characters respond to the narrator scene, choices are cleared instead of generated, and state update / consolidation still run after the round.
+
 ## Agent Output and Writeback Mechanism
 
 All structured agents use pydantic-ai's `PromptedOutput` structured output, no longer using XML `<update_notes>`:
@@ -234,7 +236,7 @@ Narrator supports independent LLM configuration (`NARRATOR_LLM_*` env vars), fal
 
 ### Choice Generation
 
-After each round of character responses, `generate_choices()` is called to generate 2-3 player-selectable actions:
+After each participation round of character responses, `generate_choices()` is called to generate 2-3 player-selectable actions. Observation rounds skip choice generation and clear `last_choices.json`.
 
 - Prompt source: `prompts.runtime_prompts.CHOICES`
 - Uses narrator's LLM configuration

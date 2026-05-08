@@ -80,11 +80,15 @@ async def run_agent_in_scene(
     agent_name: str,
     targets: list[str],
     user_input: str,
+    *,
+    observation_mode: bool = False,
+    scene_description: str = "",
 ) -> str | None:
     """在场景上下文中运行单个角色并广播响应。"""
     from storage.message_router import message_router
 
-    output = await get_character(agent_name).run(user_input)
+    query = scene_description if observation_mode else user_input
+    output = await get_character(agent_name).run(query, observation_mode=observation_mode)
     response = clean_response(output.content)
     if is_valid_response(response, agent_name):
         await message_router.broadcast_agent_response(agent_name, targets, response)

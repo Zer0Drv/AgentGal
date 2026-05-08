@@ -13,6 +13,7 @@ from typing import Any, ClassVar
 
 from agents.factory import (
     get_conversation_agent,
+    get_observation_narrator_agent,
     get_state_updater_agent,
 )
 from agents.runner import run_structured_agent
@@ -233,12 +234,14 @@ class Character(BaseEntity):
         self,
         user_input: str,
         raw_messages: list[dict] | None = None,
+        *,
+        observation_mode: bool = False,
     ) -> CharacterOutput:
         """搜记忆 → 构建 prompt → 运行 SDK → 写回文件，返回 CharacterOutput。"""
         if raw_messages is None:
             raw_messages = load_conversation_history(turns=HISTORY_RAW_SCAN_TURNS)
 
-        user_message = self._build_prompt(user_input, raw_messages)
+        user_message = self._build_prompt(user_input, raw_messages, observation_mode=observation_mode)
 
         config = get_llm_config()
         output = await self._run_structured(
@@ -251,7 +254,7 @@ class Character(BaseEntity):
         return output
 
     def _build_prompt(
-        self, user_input: str, raw_messages: list[dict]
+        self, user_input: str, raw_messages: list[dict], *, observation_mode: bool = False
     ) -> str:
         """组装角色 user message（含记忆与长期判断召回前缀）。"""
         memory_query = build_search_query(self.name, user_input)
@@ -281,6 +284,7 @@ class Character(BaseEntity):
             _wrap_block("relevant_memories", relevant_memories),
             understandings_prefix=_wrap_block("relevant_understandings", relevant_understandings),
             raw_messages=raw_messages,
+            observation_mode=observation_mode,
         )
         return message
 
@@ -326,7 +330,11 @@ class Narrator(BaseEntity):
         return get_state_updater_agent()
 
     async def route(
-        self, user_input: str, raw_messages: list[dict] | None = None
+        self,
+        user_input: str,
+        raw_messages: list[dict] | None = None,
+        *,
+        observation_mode: bool = False,
     ) -> tuple[list[str], str, list[NewCharacterRequest], bool]:
         """运行 narrator → 返回 (targets, scene_description, new_characters, is_valid)。
 
@@ -334,7 +342,8 @@ class Narrator(BaseEntity):
         此处只做 schema 层过滤（保留 relation_to 合法且描述非空的锚点），
         实际命名、孵化与目录校验由 engine.character_factory.create_character 负责。
         """
-        self.sync_player_relations()
+        if not observation_mode:
+            self.sync_player_relations()
         valid_agents = get_agent_names(include_narrator=False)
         if raw_messages is None:
             raw_messages = load_conversation_history(turns=HISTORY_RAW_SCAN_TURNS)
@@ -342,7 +351,7 @@ class Narrator(BaseEntity):
         async def _run(
             narrator_input: str,
         ) -> tuple[list[str], str, list[NewCharacterRequest]]:
-            output = await self._run_narrator(narrator_input, raw_messages)
+            output = await self._run_narrator(narrator_input, raw_messages, observation_mode=observation_mode)
             new_chars = self._filter_new_characters(output.new_characters, valid_agents)
             valid_targets = [t for t in output.targets if t in valid_agents]
             scene = self._sanitize_scene_description(output.content)
@@ -533,17 +542,21 @@ class Narrator(BaseEntity):
 
         _log_file_updates(self.name, results)
 
-    async def _run_narrator(self, user_input: str, raw_messages: list[dict]) -> NarratorOutput:
+    async def _run_narrator(
+        self, user_input: str, raw_messages: list[dict], *, observation_mode: bool = False
+    ) -> NarratorOutput:
         """构建 prompt → 运行 narrator SDK，返回 NarratorOutput。"""
         user_message, _ = build_user_message(
-            self.name, user_input, "", raw_messages=raw_messages
+            self.name, user_input, "", raw_messages=raw_messages, observation_mode=observation_mode
         )
         config = get_narrator_llm_config()
+        sdk = get_observation_narrator_agent() if observation_mode else self._sdk
         return await self._run_structured(
             user_message=user_message,
             output_type=NarratorOutput,
             config=config,
             workflow_name="agentgal_turn",
+            sdk=sdk,
         )
 
     def _sanitize_scene_description(self, scene_description: str) -> str:

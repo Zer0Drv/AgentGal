@@ -12,6 +12,8 @@ import traceback
 from functools import lru_cache
 from pathlib import Path
 
+from typing import Literal
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -162,6 +164,7 @@ def _format_raw_dialogue_preview(raw_dialogue: str, limit: int) -> str:
             entries.append(cleaned)
 
     return _clip_preserving_lines("\n\n".join(entries), limit)
+
 
 
 def _memory_graph_agents() -> list[dict]:
@@ -409,6 +412,7 @@ async def api_init() -> JSONResponse:
             "recent": recent,
             "last_choices": last_choices,
             "scene_status": _current_scene_status(),
+            "character_count": len(get_agent_names(include_narrator=False)),
         }
     )
 
@@ -537,6 +541,7 @@ async def api_new_game(req: NewGameRequest) -> JSONResponse:
             "opening": opening_text,
             "choices": choices,
             "scene_status": _current_scene_status(),
+            "character_count": len(get_agent_names(include_narrator=False)),
         }
     )
 
@@ -548,16 +553,18 @@ async def api_new_game(req: NewGameRequest) -> JSONResponse:
 
 class ChatRequest(BaseModel):
     message: str
+    mode: Literal["participate", "observe"] = "participate"
 
 
-async def _chat_stream(user_input: str):
+async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] = "participate"):
     """核心游戏循环，通过 SSE 逐步推送结果。"""
+    observation_mode = mode == "observe"
     # 0 = 哨兵：本轮还没有 narrator 成功发言，不触发 consolidation
     current_turn = 0
 
     # 1. narrator 路由
     targets, scene_description, new_character_specs, is_narrator_valid = (
-        await narrator.route(user_input)
+        await narrator.route(user_input, observation_mode=observation_mode)
     )
 
     # 1.5 处理 narrator 请求的新角色（孵化成功后加入 targets）
@@ -580,7 +587,8 @@ async def _chat_stream(user_input: str):
     # 2. 广播玩家消息与旁白
     # 旁白失败时不把玩家消息写进 raw，避免下一轮上下文里残留没人回应的玩家话语。
     if is_narrator_valid:
-        await message_router.broadcast_player_message(targets, user_input)
+        if not observation_mode:
+            await message_router.broadcast_player_message(targets, user_input)
         current_turn = await message_router.broadcast_agent_response(
             "narrator", targets, scene_description
         )
@@ -598,7 +606,13 @@ async def _chat_stream(user_input: str):
     agent_responses: list[tuple[str, str]] = []
     for agent_name in targets:
         try:
-            response = await run_agent_in_scene(agent_name, targets, user_input)
+            response = await run_agent_in_scene(
+                agent_name,
+                targets,
+                user_input,
+                observation_mode=observation_mode,
+                scene_description=scene_description,
+            )
             if response:
                 agent_responses.append((agent_name, response))
                 yield _sse_event(
@@ -613,11 +627,13 @@ async def _chat_stream(user_input: str):
             )
 
     # 5. 先生成选项，再启动后台维护，避免后台整理抢当前轮的前台 LLM 请求
-    if agent_responses:
+    if agent_responses and not observation_mode:
         choices = await generate_choices(scene_description, agent_responses)
         if choices:
             _save_last_choices(choices)
             yield _sse_event("choices", {"choices": choices})
+    elif observation_mode and agent_responses:
+        _clear_last_choices()
 
     _start_state_update()
     if current_turn > 0:
@@ -631,7 +647,7 @@ async def _chat_stream(user_input: str):
 @app.post("/api/chat")
 async def api_chat(req: ChatRequest) -> StreamingResponse:
     return StreamingResponse(
-        _chat_stream(req.message),
+        _chat_stream(req.message, req.mode),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -742,6 +758,7 @@ async def api_load(req: LoadRequest) -> JSONResponse:
                 "recent": recent,
                 "last_choices": last_choices,
                 "scene_status": _current_scene_status(),
+                "character_count": len(get_agent_names(include_narrator=False)),
             }
         )
     return JSONResponse({"ok": False}, status_code=500)
@@ -796,5 +813,6 @@ async def api_reset(req: ResetRequest) -> JSONResponse:
             "opening": opening_text,
             "choices": choices,
             "scene_status": _current_scene_status(),
+            "character_count": len(get_agent_names(include_narrator=False)),
         }
     )
