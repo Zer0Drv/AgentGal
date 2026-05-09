@@ -1249,6 +1249,58 @@ svg {
   color: var(--accent);
 }
 
+.observe-switch-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.observe-info-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(138, 112, 104, 0.32);
+  border-radius: 50%;
+  color: rgba(110, 87, 83, 0.72);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+
+.observe-info-badge::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 2;
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(54, 43, 39, 0.96);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  box-shadow: 0 8px 18px rgba(45, 30, 26, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 0.18s var(--easing), transform 0.18s var(--easing);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.observe-info-badge:hover::after,
+.observe-switch-wrap:focus-visible .observe-info-badge::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 .observe-switch-track {
   position: relative;
   width: 36px;
@@ -2862,7 +2914,14 @@ svg {
                 @keydown.space.prevent="observeMode = !observeMode"
                 @keydown.enter.prevent="observeMode = !observeMode"
               >
-                <span class="observe-switch-label">旁观</span>
+                <span class="observe-switch-copy">
+                  <span class="observe-switch-label">观察模式</span>
+                  <span
+                    class="observe-info-badge"
+                    data-tooltip="观察此时角色在做什么，玩家不参与互动"
+                    aria-label="观察此时角色在做什么，玩家不参与互动"
+                  >i</span>
+                </span>
                 <div class="observe-switch-track">
                   <div class="observe-switch-thumb"></div>
                 </div>
@@ -4364,7 +4423,7 @@ document.addEventListener("alpine:init", () => {
         this.blurComposer();
       }
       if (this.observeMode) {
-        this.addMessage("narrator", "旁白", `*（旁观：${message}）*`, 0, { forceScroll: true });
+        this.addMessage("narrator", "旁白", `*（观察模式：${message}）*`, 0, { forceScroll: true });
       } else {
         this.addMessage("player", "你", message, 0, { forceScroll: true });
       }
