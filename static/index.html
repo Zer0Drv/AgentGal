@@ -1616,7 +1616,7 @@ svg {
 
 .save-card-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 8px;
   margin-top: 14px;
 }
@@ -1635,6 +1635,584 @@ svg {
   gap: 10px;
 }
 
+.worldline-page {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr);
+  width: 100vw;
+  height: 100dvh;
+  color: var(--text);
+  background:
+    linear-gradient(rgba(255, 252, 248, 0.7) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 252, 248, 0.62) 1px, transparent 1px),
+    radial-gradient(circle at 16% 14%, rgba(180, 90, 100, 0.12), transparent 28%),
+    radial-gradient(circle at 88% 24%, rgba(91, 125, 134, 0.13), transparent 26%),
+    linear-gradient(180deg, rgba(246, 239, 231, 0.98), rgba(239, 230, 221, 0.96));
+  background-size: 48px 48px, 48px 48px, auto, auto, auto;
+  overflow: hidden;
+}
+
+.worldline-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(47, 35, 36, 0.06), transparent 18%, transparent 78%, rgba(47, 35, 36, 0.05)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), transparent 32%, rgba(115, 91, 82, 0.05));
+  z-index: 0;
+}
+
+.worldline-rail,
+.worldline-board {
+  position: relative;
+  z-index: 1;
+}
+
+.worldline-rail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 24px;
+  min-width: 0;
+  padding: 24px 15px 18px;
+  border-right: 1px solid rgba(113, 84, 74, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 252, 248, 0.82), rgba(250, 244, 237, 0.72)),
+    rgba(250, 244, 237, 0.68);
+  box-shadow: 12px 0 26px -30px rgba(38, 25, 26, 0.46);
+  backdrop-filter: blur(20px) saturate(1.04);
+}
+
+.worldline-rail-kicker {
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.worldline-rail-title {
+  margin-top: 7px;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.worldline-rail-tabs {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.worldline-rail-tabs::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  background: rgba(113, 84, 74, 0.16);
+}
+
+.worldline-rail-tab {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 5px 8px 5px 0;
+  border-radius: 13px;
+  color: var(--text-soft);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 0.24s var(--easing),
+    color 0.24s var(--easing),
+    background-color 0.24s var(--easing);
+}
+
+.worldline-rail-tab:hover {
+  transform: translateX(2px);
+  color: var(--text);
+}
+
+.worldline-rail-tab.active {
+  color: var(--text);
+  background: rgba(255, 251, 247, 0.58);
+}
+
+.worldline-rail-dot {
+  position: relative;
+  z-index: 1;
+  width: 11px;
+  height: 11px;
+  margin-left: 4px;
+  border-radius: 50%;
+  border: 2px solid rgba(91, 125, 134, 0.42);
+  background: #fffaf5;
+  box-shadow: 0 0 0 4px rgba(91, 125, 134, 0.08);
+}
+
+.worldline-rail-tab.active .worldline-rail-dot {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 5px rgba(180, 90, 100, 0.12);
+}
+
+.worldline-rail-label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.worldline-rail-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.worldline-rail-count {
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.worldline-rail-current {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 14px;
+  border-top: 1px solid rgba(113, 84, 74, 0.14);
+}
+
+.worldline-rail-current span {
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.worldline-rail-current strong {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+}
+
+.worldline-board {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  padding: 22px 24px 24px;
+}
+
+.worldline-board-head,
+.worldline-actions,
+.worldline-board-metrics,
+.worldline-game-head,
+.worldline-node-meta,
+.worldline-node-actions {
+  display: flex;
+  align-items: center;
+}
+
+.worldline-board-head {
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding-bottom: 18px;
+}
+
+.worldline-title {
+  font-size: clamp(38px, 4.6vw, 72px);
+  font-weight: 600;
+  letter-spacing: -0.07em;
+  line-height: 0.9;
+}
+
+.worldline-subtitle {
+  margin-top: 8px;
+  color: var(--text-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.worldline-board-metrics {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.worldline-board-metric {
+  display: grid;
+  gap: 2px;
+  min-width: 76px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background:
+    linear-gradient(180deg, rgba(255, 252, 248, 0.76), rgba(255, 248, 242, 0.58)),
+    rgba(255, 251, 247, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.56);
+  backdrop-filter: blur(16px);
+}
+
+.worldline-board-metric span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.worldline-board-metric strong {
+  color: var(--text);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.worldline-actions {
+  gap: 8px;
+}
+
+.worldline-canvas-shell {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  background:
+    radial-gradient(ellipse at 28% 24%, rgba(255, 251, 247, 0.5), transparent 48%),
+    rgba(255, 251, 247, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.58),
+    0 24px 46px -34px rgba(38, 25, 26, 0.36);
+  backdrop-filter: blur(16px) saturate(1.04);
+}
+
+.worldline-canvas-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(113, 84, 74, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(113, 84, 74, 0.07) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent);
+  opacity: 0.7;
+}
+
+.worldline-canvas-scroll {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.worldline-game-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 72px;
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  padding: 30px 34px 42px;
+}
+
+.worldline-game {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  width: var(--game-frame-width);
+  min-width: var(--game-frame-width);
+  animation: worldlineNodeIn 0.34s var(--easing) both;
+  animation-delay: calc(min(var(--game-index, 0), 10) * 42ms);
+}
+
+.worldline-game-head,
+.worldline-game-actions {
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 3px;
+}
+
+.worldline-game-label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.worldline-game-kicker {
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.worldline-game-title {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worldline-game-count {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(47, 35, 36, 0.06);
+  color: var(--text-soft);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.worldline-game-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.worldline-game-actions .save-delete-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(162, 88, 88, 0.14);
+  background: rgba(255, 251, 247, 0.5);
+  color: rgba(162, 88, 88, 0.86);
+}
+
+.worldline-game-canvas {
+  position: relative;
+  justify-self: center;
+  width: var(--game-width);
+  height: var(--game-height);
+  min-height: 210px;
+}
+
+.worldline-game-links {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.worldline-game-link {
+  stroke: rgba(91, 125, 134, 0.46);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.worldline-graph-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  width: 248px;
+  height: 204px;
+  overflow: hidden;
+  padding: 13px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(113, 84, 74, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 252, 248, 0.94), rgba(255, 248, 242, 0.86)),
+    rgba(255, 251, 247, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.66),
+    0 16px 28px -24px rgba(38, 25, 26, 0.28);
+  transition:
+    transform 0.28s var(--easing),
+    border-color 0.28s var(--easing),
+    box-shadow 0.28s var(--easing),
+    background-color 0.28s var(--easing);
+  will-change: transform;
+}
+
+.worldline-graph-node.current {
+  border-color: rgba(180, 90, 100, 0.36);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 247, 241, 0.92)),
+    rgba(255, 251, 247, 0.96);
+  box-shadow:
+    0 0 0 4px rgba(180, 90, 100, 0.09),
+    0 18px 34px -24px rgba(83, 49, 45, 0.32);
+}
+
+.worldline-graph-node.orphan {
+  border-style: dashed;
+}
+
+.worldline-graph-node:hover {
+  border-color: rgba(91, 125, 134, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 20px 34px -23px rgba(38, 25, 26, 0.32);
+}
+
+.worldline-node-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+}
+
+@keyframes worldlineNodeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.worldline-node-kicker {
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.worldline-node-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.28;
+  word-break: break-word;
+}
+
+.worldline-node-focus {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  margin-top: 7px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.worldline-node-meta {
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+  max-height: 46px;
+  overflow: hidden;
+}
+
+.worldline-node-meta span {
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(47, 35, 36, 0.06);
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.worldline-node-file {
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worldline-node-actions {
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.worldline-node-delete {
+  width: 27px;
+  height: 27px;
+  border: 1px solid rgba(162, 88, 88, 0.12);
+  background: rgba(255, 251, 247, 0.58);
+  color: rgba(162, 88, 88, 0.86);
+}
+
+.worldline-node-actions .save-action {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 11px;
+  font-size: 12px;
+}
+
+.worldline-empty,
+.worldline-skeleton {
+  position: relative;
+  z-index: 1;
+  border-radius: 18px;
+  border: 1px dashed rgba(113, 84, 74, 0.18);
+  background: rgba(255, 251, 247, 0.72);
+}
+
+.worldline-empty {
+  margin: 30px;
+  padding: 24px;
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+
+.worldline-skeleton {
+  margin: 30px;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.worldline-skeleton span {
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(90deg, rgba(180, 90, 100, 0.08), rgba(255, 255, 255, 0.62), rgba(91, 125, 134, 0.08));
+  background-size: 220% 100%;
+  animation: skeletonSweep 1.6s ease-in-out infinite;
+}
+
+@keyframes skeletonSweep {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}
+
 .overlay,
 .drawer-backdrop,
 .toast-stack {
@@ -1643,7 +2221,7 @@ svg {
 
 .overlay {
   inset: 0;
-  z-index: 30;
+  z-index: 90;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2367,6 +2945,46 @@ svg {
     border-radius: 26px;
   }
 
+  .worldline-page {
+    grid-template-columns: 126px minmax(0, 1fr);
+  }
+
+  .worldline-rail {
+    padding: 18px 10px 14px;
+  }
+
+  .worldline-rail-title {
+    font-size: 20px;
+  }
+
+  .worldline-rail-tab {
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .worldline-board {
+    padding: 16px;
+  }
+
+  .worldline-board-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .worldline-board-metrics {
+    justify-content: flex-start;
+  }
+
+  .worldline-title {
+    font-size: 36px;
+  }
+
+  .worldline-game-row {
+    gap: 34px;
+    padding: 24px 24px 34px;
+  }
+
   .story-main,
   .story-side,
   .confirm-shell {
@@ -2397,6 +3015,77 @@ svg {
   .modal-surface {
     max-height: calc(100dvh - 16px);
     border-radius: 22px;
+  }
+
+  .worldline-page {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .worldline-rail {
+    gap: 16px;
+    padding: 14px 7px 12px;
+  }
+
+  .worldline-rail-kicker,
+  .worldline-rail-count,
+  .worldline-rail-current span {
+    font-size: 9px;
+  }
+
+  .worldline-rail-title {
+    font-size: 18px;
+  }
+
+  .worldline-rail-tab {
+    min-height: 40px;
+    padding-right: 4px;
+  }
+
+  .worldline-rail-name {
+    font-size: 12px;
+  }
+
+  .worldline-rail-current strong {
+    font-size: 11px;
+  }
+
+  .worldline-board {
+    padding: 12px 10px 10px;
+  }
+
+  .worldline-board-head {
+    padding-bottom: 10px;
+  }
+
+  .worldline-title {
+    font-size: 30px;
+  }
+
+  .worldline-subtitle {
+    display: none;
+  }
+
+  .worldline-board-metric {
+    min-width: 58px;
+    padding: 6px 8px;
+    border-radius: 11px;
+  }
+
+  .worldline-board-metric span {
+    font-size: 10px;
+  }
+
+  .worldline-board-metric strong {
+    font-size: 12px;
+  }
+
+  .worldline-canvas-shell {
+    border-radius: 18px;
+  }
+
+  .worldline-game-row {
+    gap: 28px;
+    padding: 20px 18px 28px;
   }
 
   .brand-kicker {
@@ -2732,6 +3421,25 @@ svg {
       <button
         type="button"
         class="ghost-btn menu-btn"
+        aria-label="世界线"
+        title="世界线"
+        @click="openWorldline()"
+      >
+        <span class="btn-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="6" cy="6" r="2"/>
+            <circle cx="18" cy="6" r="2"/>
+            <circle cx="12" cy="18" r="2"/>
+            <path d="M8 6h3a3 3 0 0 1 3 3v7"/>
+            <path d="M16 6h-3a3 3 0 0 0-3 3v1"/>
+          </svg>
+        </span>
+        <span class="btn-label">世界线</span>
+      </button>
+
+      <button
+        type="button"
+        class="ghost-btn menu-btn"
         aria-label="记忆图谱"
         title="记忆图谱"
         @click="openMemoryGraph()"
@@ -3000,7 +3708,7 @@ svg {
       </div>
 
       <div class="drawer-body">
-        <div class="drawer-copy">选择一个档位覆盖或读取；新建存档会生成新的档位。</div>
+        <div class="drawer-copy">存档会作为不可变节点写入世界线；读取旧节点后继续保存，会从那里分出新的分支。</div>
 
         <div class="drawer-copy" x-show="consolidating" style="color: var(--accent-warm, #b07a2c);">记忆整理进行中，存档与读档暂时不可用。</div>
 
@@ -3035,7 +3743,7 @@ svg {
             </span>
             <span>
               <span class="new-save-title">新建存档</span>
-              <span class="new-save-meta" x-text="messages.length ? '创建一个新的档位' : '开始故事后可用'"></span>
+              <span class="new-save-meta" x-text="messages.length ? '在当前世界线下创建节点' : '开始故事后可用'"></span>
             </span>
           </span>
         </button>
@@ -3069,18 +3777,10 @@ svg {
               <div class="save-card-top">
                 <span class="save-card-label" x-text="`档位 ${index + 1}`"></span>
                 <span class="save-card-arrow" x-text="save.filename"></span>
-                <button type="button" class="save-delete-btn" :title="consolidating ? '记忆整理进行中，暂不可操作' : '删除存档'" :disabled="busy || consolidating" @click.stop="promptDeleteSave(save)">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <path d="M6 2h4M2 4h12M5 4l.5 9h5l.5-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </button>
               </div>
               <div class="save-card-time" x-text="save.display"></div>
               <div class="save-card-focus" x-text="save.focus || '未提供额外焦点摘要。'"></div>
               <div class="save-card-actions">
-                <button type="button" class="ghost-btn danger save-action" :disabled="busy || consolidating" :title="consolidating ? '记忆整理进行中，请稍后再覆盖' : ''" @click="promptOverwriteSave(save)">
-                  <span>覆盖</span>
-                </button>
                 <button type="button" class="primary-btn save-action" :disabled="busy || consolidating" :title="consolidating ? '记忆整理进行中，请稍后再读取' : ''" @click="promptLoadSave(save.filename)">
                   <span>读取</span>
                 </button>
@@ -3194,6 +3894,167 @@ svg {
   >
     <span class="pull-tab-label">档案</span>
   </button>
+
+  <div class="worldline-page" x-show="worldlineOpen">
+    <aside class="worldline-rail" aria-label="世界观切换">
+      <div>
+        <div class="worldline-rail-kicker">Worldlines</div>
+        <div class="worldline-rail-title">世界线</div>
+      </div>
+
+      <nav class="worldline-rail-tabs" x-show="worldTabs().length">
+        <template x-for="world in worldTabs()" :key="world.story_id">
+          <button
+            type="button"
+            class="worldline-rail-tab"
+            :class="{ active: activeWorldId === world.story_id }"
+            @click="selectWorld(world.story_id)"
+          >
+            <span class="worldline-rail-dot" aria-hidden="true"></span>
+            <span class="worldline-rail-label">
+              <span class="worldline-rail-name" x-text="world.display_name"></span>
+              <span class="worldline-rail-count" x-text="`${world.save_count || 0} nodes`"></span>
+            </span>
+          </button>
+        </template>
+      </nav>
+
+      <div class="worldline-rail-current">
+        <span>当前节点</span>
+        <strong x-text="currentWorldlineText()"></strong>
+      </div>
+    </aside>
+
+    <main class="worldline-board">
+      <header class="worldline-board-head">
+        <div>
+          <div class="worldline-title" x-text="activeWorldLabel()"></div>
+          <div class="worldline-subtitle" x-text="activeWorldDescription()"></div>
+        </div>
+
+        <div class="worldline-board-metrics">
+          <div class="worldline-board-metric">
+            <span>节点</span>
+            <strong x-text="activeWorld()?.save_count || 0"></strong>
+          </div>
+          <div class="worldline-board-metric">
+            <span>游戏</span>
+            <strong x-text="activeWorldGames().length"></strong>
+          </div>
+          <div class="worldline-board-metric">
+            <span>断点</span>
+            <strong x-text="activeWorld()?.orphan_count || 0"></strong>
+          </div>
+
+          <div class="worldline-actions">
+            <button type="button" class="icon-btn" title="刷新世界线" :disabled="saveLoading" @click="refreshSaves()">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 11a8 8 0 1 0-2.34 5.66"/>
+                <path d="M20 4v7h-7"/>
+              </svg>
+            </button>
+            <button type="button" class="icon-btn" title="关闭世界线" @click="closeWorldline()">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 6 18 18"/>
+                <path d="m18 6-12 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <section class="worldline-canvas-shell" aria-label="世界线图谱">
+        <template x-if="saveLoading">
+          <div class="worldline-skeleton">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </template>
+
+        <template x-if="!saveLoading && saveError">
+          <div class="drawer-error" x-text="saveError"></div>
+        </template>
+
+        <template x-if="!saveLoading && !saveError && !activeWorldGames().length">
+          <div class="worldline-empty">这个世界观还没有存档节点。开始故事后，新建存档会在这里生成第一条世界线。</div>
+        </template>
+
+        <div class="worldline-canvas-scroll" x-show="!saveLoading && !saveError && activeWorldGames().length">
+          <div class="worldline-game-row">
+            <template x-for="game in activeWorldGames()" :key="game.id">
+              <section
+                class="worldline-game"
+                :data-worldline-game-id="game.id"
+                :style="`--game-width: ${game.width}px; --game-height: ${game.height}px; --game-frame-width: ${game.frameWidth}px; --game-index: ${game.index};`"
+              >
+                <header class="worldline-game-head">
+                  <div class="worldline-game-label">
+                    <div class="worldline-game-kicker" x-text="game.kicker"></div>
+                    <div class="worldline-game-title" x-text="game.title"></div>
+                  </div>
+                  <div class="worldline-game-actions">
+                    <div class="worldline-game-count" x-text="`${game.nodes.length} nodes`"></div>
+                    <button type="button" class="save-delete-btn" :title="consolidating ? '记忆整理中，暂不可删除' : '删除整个 Game'" :disabled="busy || consolidating" @click.stop="promptDeleteGame(game)">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M6 2h4M2 4h12M5 4l.5 9h5l.5-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                  </div>
+                </header>
+
+                <div class="worldline-game-canvas" :style="`width: ${game.width}px; height: ${game.height}px;`">
+                  <svg class="worldline-game-links" :viewBox="`0 0 ${game.width} ${game.height}`" aria-hidden="true">
+                    <template x-for="link in game.links" :key="link.id">
+                      <path class="worldline-game-link" :d="link.path"></path>
+                    </template>
+                  </svg>
+
+                  <template x-for="node in game.nodes" :key="node.filename">
+                    <article
+                      class="worldline-graph-node"
+                      :class="{ current: node.save_id && node.save_id === currentSaveId, orphan: node.parent_missing }"
+                      :style="`transform: translate(${node.x}px, ${node.y}px);`"
+                    >
+                      <div class="worldline-node-top">
+                        <div>
+                          <div class="worldline-node-kicker" x-text="worldlineNodeKicker(node)"></div>
+                          <div class="worldline-node-title" x-text="node.title || node.focus || node.filename"></div>
+                        </div>
+                        <button
+                          type="button"
+                          class="save-delete-btn worldline-node-delete"
+                          x-show="node.can_delete"
+                          :title="consolidating ? '记忆整理中，暂不可删除' : '删除这个存档节点'"
+                          :disabled="busy || consolidating"
+                          @click.stop="promptDeleteLeafSave(node)"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                            <path d="M6 2h4M2 4h12M5 4l.5 9h5l.5-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </button>
+                      </div>
+                      <div class="worldline-node-focus" x-text="node.focus || '未提供额外焦点摘要。'"></div>
+                      <div class="worldline-node-meta">
+                        <span x-text="node.display || node.display_time || node.filename"></span>
+                        <span x-show="node.turn" x-text="`轮 ${node.turn}`"></span>
+                        <span class="worldline-node-file" x-text="node.filename"></span>
+                      </div>
+                      <div class="worldline-node-actions">
+                        <button type="button" class="primary-btn save-action" :disabled="busy || consolidating" :title="consolidating ? '记忆整理进行中，请稍后再读取' : ''" @click="promptLoadSave(node.filename)">
+                          <span>读取</span>
+                        </button>
+                      </div>
+                    </article>
+                  </template>
+                </div>
+              </section>
+            </template>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <div class="memory-graph-page" x-show="memoryGraphOpen">
     <div class="memory-graph-shell" :class="{ 'is-detail-collapsed': memoryGraphDetailCollapsed }">
@@ -3409,6 +4270,11 @@ document.addEventListener("alpine:init", () => {
     choices: [],
     choiceStatus: "hidden",
     saves: [],
+    worlds: [],
+    activeWorldId: "",
+    currentSaveId: "",
+    currentStoryId: "",
+    worldlineOpen: false,
     saveLoading: false,
     saveError: "",
     initialRecent: [],
@@ -3542,6 +4408,10 @@ document.addEventListener("alpine:init", () => {
         this.closeMemoryGraph();
         return;
       }
+      if (this.worldlineOpen) {
+        this.closeWorldline();
+        return;
+      }
       if (this.historySearchOpen) {
         this.closeHistorySearch();
         return;
@@ -3610,6 +4480,25 @@ document.addEventListener("alpine:init", () => {
 
     async createSave() {
       await this.saveGame();
+    },
+
+    async openWorldline() {
+      if (this.isCompact) {
+        this.closeDrawer();
+      }
+      this.worldlineOpen = true;
+      if (!this.worlds.length && !this.saveLoading) {
+        await this.refreshSaves({ quiet: true });
+      }
+      this.ensureActiveWorld();
+    },
+
+    closeWorldline() {
+      this.worldlineOpen = false;
+    },
+
+    selectWorld(storyId) {
+      this.activeWorldId = storyId || "";
     },
 
     resetFromDrawer() {
@@ -4574,25 +5463,374 @@ document.addEventListener("alpine:init", () => {
       return typeof save === "string"
         ? { filename: save, display: save, focus: "" }
         : {
+            ...save,
             filename: save.filename,
             display: save.display_time || save.filename,
             focus: save.focus || "",
           };
     },
 
-    async refreshSaves({ quiet = false } = {}) {
-      this.saveLoading = true;
+    storyLabel(storyId) {
+      const story = this.stories.find(item => item.id === storyId);
+      return story?.label || story?.title || storyId || "未知世界观";
+    },
+
+    storySummary(storyId) {
+      const story = this.stories.find(item => item.id === storyId);
+      return story?.summary || "这个世界观下的存档会按父子关系显示为分支树。";
+    },
+
+    normalizeWorld(world) {
+      const storyId = world.story_id || "unknown";
+      return {
+        ...world,
+        story_id: storyId,
+        display_name: this.storyLabel(storyId),
+        roots: world.roots || [],
+        orphans: world.orphans || [],
+        save_count: Number(world.save_count) || 0,
+        root_count: Number(world.root_count) || 0,
+        orphan_count: Number(world.orphan_count) || 0,
+      };
+    },
+
+    worldTabs() {
+      const byId = new Map();
+      this.stories.forEach(story => {
+        byId.set(story.id, {
+          story_id: story.id,
+          display_name: story.label || story.title || story.id,
+          roots: [],
+          orphans: [],
+          save_count: 0,
+          root_count: 0,
+          orphan_count: 0,
+        });
+      });
+      this.worlds.forEach(world => {
+        byId.set(world.story_id, {
+          ...(byId.get(world.story_id) || {}),
+          ...world,
+          display_name: this.storyLabel(world.story_id),
+        });
+      });
+      return Array.from(byId.values());
+    },
+
+    ensureActiveWorld() {
+      const tabs = this.worldTabs();
+      if (!tabs.length) {
+        this.activeWorldId = "";
+        return;
+      }
+      if (this.activeWorldId && tabs.some(world => world.story_id === this.activeWorldId)) return;
+      if (this.currentStoryId && tabs.some(world => world.story_id === this.currentStoryId)) {
+        this.activeWorldId = this.currentStoryId;
+        return;
+      }
+      this.activeWorldId = tabs[0].story_id;
+    },
+
+    activeWorld() {
+      const tabs = this.worldTabs();
+      return tabs.find(world => world.story_id === this.activeWorldId) || tabs[0] || null;
+    },
+
+    activeWorldLabel() {
+      const world = this.activeWorld();
+      return world?.display_name || "世界观";
+    },
+
+    activeWorldDescription() {
+      const world = this.activeWorld();
+      return this.storySummary(world?.story_id || "");
+    },
+
+    worldlineGameLatestKey(node) {
+      if (!node) return "";
+      const childLatest = (node.children || []).reduce((latest, child) => {
+        const childKey = this.worldlineGameLatestKey(child);
+        return childKey > latest ? childKey : latest;
+      }, "");
+      const ownKey = node.latest_created_at || node.created_at || node.display || node.filename || "";
+      return ownKey > childLatest ? ownKey : childLatest;
+    },
+
+    worldlineGameRoots() {
+      const world = this.activeWorld();
+      if (!world) return [];
+      const games = [
+        ...(world.roots || []).map(node => ({
+          node,
+          orphan: false,
+        })),
+        ...(world.orphans || []).map(node => ({
+          node,
+          orphan: true,
+        })),
+      ];
+      games.sort((a, b) => this.worldlineGameLatestKey(b.node).localeCompare(this.worldlineGameLatestKey(a.node)));
+      let gameIndex = 0;
+      let orphanIndex = 0;
+      return games.map((game, index) => {
+        if (game.orphan) {
+          orphanIndex += 1;
+          return { ...game, index, label: `断裂分支 ${orphanIndex}` };
+        }
+        gameIndex += 1;
+        return { ...game, index, label: `Game ${gameIndex}` };
+      });
+    },
+
+    layoutWorldlineTree(root, { orphan = false, index = 0, label = "Game" } = {}) {
+      const nodeWidth = 248;
+      const nodeHeight = 204;
+      const siblingGap = 318;
+      const levelGap = 258;
+      const padX = 34;
+      const padY = 24;
+      let leafIndex = 0;
+      let maxDepth = 0;
+
+      const build = (node, depth = 0) => {
+        maxDepth = Math.max(maxDepth, depth);
+        const childLayouts = (node.children || []).map(child => build(child, depth + 1));
+        const x = childLayouts.length
+          ? childLayouts.reduce((sum, child) => sum + child.x, 0) / childLayouts.length
+          : padX + leafIndex++ * siblingGap;
+        return {
+          node,
+          depth,
+          x,
+          y: padY + depth * levelGap,
+          children: childLayouts,
+        };
+      };
+
+      const rootLayout = build(root);
+      const nodes = [];
+      const links = [];
+
+      const flatten = (layout, parent = null) => {
+        const item = {
+          ...layout.node,
+          depth: layout.depth,
+          x: layout.x,
+          y: layout.y,
+          child_count: (layout.node.children || []).length,
+          can_delete: Boolean(parent) && !(layout.node.children || []).length,
+          parent_missing: Boolean(layout.node.parent_missing || (orphan && layout.depth === 0)),
+        };
+        nodes.push(item);
+
+        if (parent) {
+          const startX = parent.x + nodeWidth / 2;
+          const startY = parent.y + nodeHeight;
+          const endX = layout.x + nodeWidth / 2;
+          const endY = layout.y;
+          const midY = startY + Math.max(30, (endY - startY) * 0.5);
+          links.push({
+            id: `${parent.node.save_id || parent.node.filename}->${layout.node.save_id || layout.node.filename}`,
+            path: `M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`,
+          });
+        }
+
+        layout.children.forEach(child => flatten(child, layout));
+      };
+
+      flatten(rootLayout);
+
+      const width = Math.max(320, padX * 2 + nodeWidth + Math.max(0, leafIndex - 1) * siblingGap);
+      const height = Math.max(270, padY * 2 + nodeHeight + maxDepth * levelGap);
+
+      return {
+        id: root.save_id || root.filename || `${label}-${index}`,
+        index,
+        root,
+        title: root.title || root.focus || root.filename || label,
+        kicker: orphan ? label : label,
+        orphan,
+        nodes,
+        links,
+        width,
+        height,
+        frameWidth: Math.max(360, width),
+      };
+    },
+
+    activeWorldGames() {
+      return this.worldlineGameRoots().map(item => this.layoutWorldlineTree(item.node, item));
+    },
+
+    findWorldlineNode(saveId) {
+      if (!saveId) return null;
+      for (const world of this.worlds) {
+        const stack = [...(world.roots || []), ...(world.orphans || [])];
+        while (stack.length) {
+          const node = stack.shift();
+          if (node?.save_id === saveId) return node;
+          stack.push(...(node?.children || []));
+        }
+      }
+      return null;
+    },
+
+    currentWorldlineText() {
+      if (!this.currentSaveId) return "当前进度尚未保存为节点";
+      const node = this.findWorldlineNode(this.currentSaveId);
+      if (!node) return this.currentSaveId;
+      return node.title || node.focus || node.filename;
+    },
+
+    worldlineNodeKicker(item) {
+      if (item.save_id && item.save_id === this.currentSaveId) return "当前节点";
+      if (item.parent_missing) return "父节点缺失";
+      if (!item.depth) return "根节点";
+      if (item.child_count) return `${item.child_count} 条分支`;
+      return "节点";
+    },
+
+    captureWorldlineGameRects() {
+      if (!this.worldlineOpen) return {};
+      const rects = {};
+      document.querySelectorAll(".worldline-page .worldline-game[data-worldline-game-id]").forEach(element => {
+        rects[element.dataset.worldlineGameId] = element.getBoundingClientRect();
+      });
+      return rects;
+    },
+
+    playWorldlineGameFlip(beforeRects) {
+      if (!this.worldlineOpen || !beforeRects || !Object.keys(beforeRects).length) return;
+
+      requestAnimationFrame(() => {
+        const moved = [];
+        document.querySelectorAll(".worldline-page .worldline-game[data-worldline-game-id]").forEach(element => {
+          const before = beforeRects[element.dataset.worldlineGameId];
+          if (!before) return;
+
+          const after = element.getBoundingClientRect();
+          const dx = before.left - after.left;
+          const dy = before.top - after.top;
+          if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+
+          element.style.transition = "none";
+          element.style.transform = `translate(${dx}px, ${dy}px)`;
+          element.style.opacity = "0.98";
+          moved.push(element);
+        });
+
+        if (!moved.length) return;
+        requestAnimationFrame(() => {
+          moved.forEach(element => {
+            element.style.transition = "transform 320ms cubic-bezier(0.16, 1, 0.3, 1), opacity 220ms ease";
+            element.style.transform = "translate(0, 0)";
+            element.style.opacity = "1";
+            window.setTimeout(() => {
+              element.style.transition = "";
+              element.style.transform = "";
+              element.style.opacity = "";
+            }, 360);
+          });
+        });
+      });
+    },
+
+    worldlineNodeLatestKey(node) {
+      if (!node) return "";
+      const childLatest = (node.children || []).reduce((latest, child) => {
+        const childKey = this.worldlineNodeLatestKey(child);
+        return childKey > latest ? childKey : latest;
+      }, "");
+      const ownKey = node.created_at || node.display || node.display_time || node.filename || "";
+      return ownKey > childLatest ? ownKey : childLatest;
+    },
+
+    countWorldlineNodes(nodes) {
+      return (nodes || []).reduce(
+        (total, node) => total + 1 + this.countWorldlineNodes(node.children || []),
+        0,
+      );
+    },
+
+    pruneWorldlineNodes(nodes, deletedFilenames) {
+      return (nodes || []).flatMap(node => {
+        if (deletedFilenames.has(node.filename)) return [];
+        const children = this.pruneWorldlineNodes(node.children || [], deletedFilenames);
+        const next = {
+          ...node,
+          children,
+          child_count: children.length,
+        };
+        next.latest_created_at = this.worldlineNodeLatestKey(next);
+        return [next];
+      });
+    },
+
+    removeSaveFilenamesFromWorlds(filenames) {
+      const deletedFilenames = new Set((filenames || []).filter(Boolean));
+      if (!deletedFilenames.size) return;
+
+      let removedCurrentNode = false;
+      const checkCurrent = nodes => {
+        (nodes || []).forEach(node => {
+          if (deletedFilenames.has(node.filename) && node.save_id && node.save_id === this.currentSaveId) {
+            removedCurrentNode = true;
+          }
+          checkCurrent(node.children || []);
+        });
+      };
+      this.worlds.forEach(world => {
+        checkCurrent(world.roots || []);
+        checkCurrent(world.orphans || []);
+      });
+
+      this.saves = this.saves.filter(save => !deletedFilenames.has(save.filename));
+      this.worlds = this.worlds.map(world => {
+        const roots = this.pruneWorldlineNodes(world.roots || [], deletedFilenames);
+        const orphans = this.pruneWorldlineNodes(world.orphans || [], deletedFilenames);
+        return {
+          ...world,
+          roots,
+          orphans,
+          save_count: this.countWorldlineNodes(roots) + this.countWorldlineNodes(orphans),
+          root_count: roots.length,
+          orphan_count: orphans.length,
+        };
+      });
+
+      if (removedCurrentNode) {
+        this.currentSaveId = "";
+      }
+      this.ensureActiveWorld();
+    },
+
+    syncSavesAfterWorldlineAnimation() {
+      window.setTimeout(() => {
+        this.refreshSaves({ quiet: true, silent: true });
+      }, 380);
+    },
+
+    async refreshSaves({ quiet = false, silent = false } = {}) {
+      if (!silent) {
+        this.saveLoading = true;
+      }
       this.saveError = "";
       try {
         const response = await this.fetchJson("/api/saves");
         this.saves = (response.saves || []).map(save => this.normalizeSave(save));
+        this.worlds = (response.worlds || []).map(world => this.normalizeWorld(world));
+        this.currentSaveId = response.current_save_id || "";
+        this.currentStoryId = response.current_story_id || "";
+        this.ensureActiveWorld();
       } catch (error) {
         this.saveError = "存档列表加载失败，请稍后再试。";
         if (!quiet) {
           this.setNotice(this.saveError, "error", true);
         }
       } finally {
-        this.saveLoading = false;
+        if (!silent) {
+          this.saveLoading = false;
+        }
       }
     },
 
@@ -4607,7 +5845,7 @@ document.addEventListener("alpine:init", () => {
       }
       this.openConfirm({
         title: "读取这个存档？",
-        body: `当前运行时内容会被 "${filename}" 覆盖。`,
+        body: `当前运行时会恢复到 "${filename}" 记录的世界线节点。之后新建存档会从该节点继续分支。`,
         confirmText: "读取",
         onConfirm: async () => {
           await this.loadSave(filename);
@@ -4615,26 +5853,28 @@ document.addEventListener("alpine:init", () => {
       });
     },
 
-    promptOverwriteSave(save) {
+    promptDeleteGame(game) {
       if (this.busy) {
-        this.setNotice("请等待当前回合结束后再覆盖存档。", "error");
+        this.setNotice("请等待当前回合结束后再删除 Game。", "error");
         return;
       }
       if (this.consolidating) {
-        this.setNotice("记忆整理进行中，请稍后再覆盖存档。", "error");
+        this.setNotice("记忆整理进行中，请稍后再删除 Game。", "error");
         return;
       }
+      const rootFilename = game?.root?.filename || "";
+      if (!rootFilename) return;
       this.openConfirm({
-        title: "覆盖这个档位？",
-        body: `当前进度会写入 "${save.filename}"，原档位内容会被替换。`,
-        confirmText: "覆盖",
+        title: "删除这个 Game？",
+        body: `将永久删除 "${game.title || rootFilename}" 以及它下面的 ${game.nodes?.length || 1} 个存档节点。此操作无法撤销。`,
+        confirmText: "删除",
         onConfirm: async () => {
-          await this.saveGame(save.filename);
+          await this.deleteGame(rootFilename);
         },
       });
     },
 
-    promptDeleteSave(save) {
+    promptDeleteLeafSave(node) {
       if (this.busy) {
         this.setNotice("请等待当前回合结束后再删除存档。", "error");
         return;
@@ -4643,22 +5883,51 @@ document.addEventListener("alpine:init", () => {
         this.setNotice("记忆整理进行中，请稍后再删除存档。", "error");
         return;
       }
+      const filename = node?.filename || "";
+      if (!filename) return;
+      if ((node.child_count || 0) > 0) {
+        this.setNotice("这个存档已经是其他分支的 parent，不能单独删除。", "error");
+        return;
+      }
       this.openConfirm({
-        title: "删除这个存档？",
-        body: `"${save.filename}" 将被永久删除，此操作无法撤销。`,
+        title: "删除这个存档节点？",
+        body: `将永久删除 "${node.title || node.focus || filename}"。只有没有子分支的存档节点可以这样删除。`,
         confirmText: "删除",
         onConfirm: async () => {
-          await this.deleteSave(save.filename);
+          await this.deleteLeafSave(filename);
         },
       });
     },
 
-    async deleteSave(filename) {
+    async deleteLeafSave(filename) {
       this.busy = true;
       try {
-        await this.deleteJson(`/api/save/${encodeURIComponent(filename)}`);
-        await this.refreshSaves({ quiet: true });
-        this.pushToast("存档已删除", "success");
+        const response = await this.deleteJson(`/api/save-node/${encodeURIComponent(filename)}`);
+        const deleted = response.deleted?.length ? response.deleted : [filename];
+        const beforeRects = this.captureWorldlineGameRects();
+        this.removeSaveFilenamesFromWorlds(deleted);
+        this.playWorldlineGameFlip(beforeRects);
+        this.syncSavesAfterWorldlineAnimation();
+        const count = response.deleted?.length || 0;
+        this.pushToast(count ? "存档节点已删除" : "存档已删除", "success");
+      } catch (error) {
+        this.pushToast("删除失败：只能删除没有子分支的存档。", "error");
+      } finally {
+        this.busy = false;
+      }
+    },
+
+    async deleteGame(rootFilename) {
+      this.busy = true;
+      try {
+        const response = await this.deleteJson(`/api/save/${encodeURIComponent(rootFilename)}`);
+        const deleted = response.deleted?.length ? response.deleted : [rootFilename];
+        const beforeRects = this.captureWorldlineGameRects();
+        this.removeSaveFilenamesFromWorlds(deleted);
+        this.playWorldlineGameFlip(beforeRects);
+        this.syncSavesAfterWorldlineAnimation();
+        const count = response.deleted?.length || 0;
+        this.pushToast(count ? `Game 已删除（${count} 个节点）` : "Game 已删除", "success");
       } catch (error) {
         this.pushToast("删除失败", "error");
       } finally {
@@ -4680,6 +5949,7 @@ document.addEventListener("alpine:init", () => {
         this.initialChoices = response.last_choices || [];
         this.continueGame(response.recent, response.last_choices);
         await this.refreshSaves({ quiet: true });
+        this.closeWorldline();
         this.pushToast("存档已加载", "success");
       } catch (error) {
         this.setNotice("存档读取失败，请稍后再试。", "error", true);
@@ -4689,7 +5959,7 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    async saveGame(filename = null) {
+    async saveGame() {
       if (this.busy) return;
       if (!this.messages.length) {
         this.setNotice("还没有可保存的对话内容。", "error");
@@ -4697,16 +5967,14 @@ document.addEventListener("alpine:init", () => {
       }
 
       try {
-        const body = filename ? { filename } : {};
-        const response = await this.postJson("/api/save", body);
+        const response = await this.postJson("/api/save", {});
 
         if (response.ok) {
           this.hasSave = true;
           await this.refreshSaves({ quiet: true });
-          const savedName = response.filename || filename || "新档位";
-          const actionText = filename ? "已覆盖档位" : "已新建档位";
-          this.setNotice(`${actionText}：${savedName}`, "success");
-          this.pushToast(filename ? "档位已覆盖" : "新存档已创建", "success");
+          const savedName = response.filename || "新节点";
+          this.setNotice(`已记录世界线节点：${savedName}`, "success");
+          this.pushToast("世界线节点已创建", "success");
         } else {
           throw new Error(response.detail || "存档失败");
         }
