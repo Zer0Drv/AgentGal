@@ -176,6 +176,7 @@ async def test_export_new_save_uses_fresh_slot_filename(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(save_manager, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(save_manager, "CHARACTERS_DIR", characters_dir)
+    monkeypatch.setattr(agent_files_module, "CHARACTERS_DIR", characters_dir)
     monkeypatch.setattr(save_manager, "get_agent_names", lambda: ["narrator"])
     monkeypatch.setattr(
         save_manager,
@@ -196,9 +197,205 @@ async def test_export_new_save_uses_fresh_slot_filename(tmp_path: Path, monkeypa
         metadata = json.loads(zf.read("metadata.json").decode("utf-8"))
         assert metadata["filename"] == archive_path.name
         assert metadata["save_id"] == archive_path.stem.rsplit("_", 1)[-1]
+        assert metadata["parent_save_id"] is None
+        assert metadata["story_id"] == "school"
+        assert metadata["turn"] == 3
+        assert metadata["title"] == "屋顶"
         assert zf.read(".save_id").decode("utf-8") == metadata["save_id"]
         assert zf.read(PLAYER_NAME_FILENAME).decode("utf-8") == "北原悠"
 
     assert (characters_dir / ".save_id").read_text(encoding="utf-8") == metadata[
         "save_id"
     ]
+
+    second_path, second_error = await save_manager.export_save_archive_with_detail()
+
+    assert second_error is None
+    assert second_path is not None
+    with zipfile.ZipFile(second_path) as zf:
+        second_metadata = json.loads(zf.read("metadata.json").decode("utf-8"))
+        assert second_metadata["parent_save_id"] == metadata["save_id"]
+        assert second_metadata["save_id"] != metadata["save_id"]
+
+
+def test_list_save_worldlines_groups_by_story_and_parent(tmp_path: Path, monkeypatch):
+    save_dir = tmp_path / "saves"
+    save_dir.mkdir()
+
+    def write_archive(filename: str, metadata: dict) -> None:
+        with zipfile.ZipFile(save_dir / filename, "w") as zf:
+            zf.writestr(
+                "metadata.json",
+                json.dumps(metadata, ensure_ascii=False),
+            )
+
+    write_archive(
+        "school_a.zip",
+        {
+            "save_id": "a",
+            "story_id": "school",
+            "created_at": "2026-05-09T10:00:00",
+            "title": "根节点",
+        },
+    )
+    write_archive(
+        "school_b.zip",
+        {
+            "save_id": "b",
+            "parent_save_id": "a",
+            "story_id": "school",
+            "created_at": "2026-05-09T10:05:00",
+            "title": "同一分支",
+        },
+    )
+    write_archive(
+        "school_c.zip",
+        {
+            "save_id": "c",
+            "parent_save_id": "missing",
+            "story_id": "school",
+            "created_at": "2026-05-09T10:07:00",
+            "title": "父节点缺失",
+        },
+    )
+    write_archive(
+        "school_d.zip",
+        {
+            "save_id": "d",
+            "story_id": "school",
+            "created_at": "2026-05-09T09:00:00",
+            "title": "较早根节点",
+        },
+    )
+    write_archive(
+        "school_e.zip",
+        {
+            "save_id": "e",
+            "parent_save_id": "d",
+            "story_id": "school",
+            "created_at": "2026-05-09T10:10:00",
+            "title": "最新子节点",
+        },
+    )
+    write_archive(
+        "modern_x.zip",
+        {
+            "save_id": "x",
+            "story_id": "modern",
+            "created_at": "2026-05-09T11:00:00",
+            "title": "现代根节点",
+        },
+    )
+
+    monkeypatch.setattr(save_manager, "PROJECT_ROOT", tmp_path)
+
+    worlds = save_manager.list_save_worldlines()
+    by_story = {world["story_id"]: world for world in worlds}
+
+    assert set(by_story) == {"modern", "school"}
+    assert by_story["school"]["save_count"] == 5
+    assert by_story["school"]["root_count"] == 2
+    assert by_story["school"]["orphan_count"] == 1
+    assert by_story["school"]["roots"][0]["save_id"] == "d"
+    assert by_story["school"]["roots"][0]["latest_created_at"] == "2026-05-09T10:10:00"
+    assert by_story["school"]["roots"][0]["children"][0]["save_id"] == "e"
+    assert by_story["school"]["roots"][1]["save_id"] == "a"
+    assert by_story["school"]["roots"][1]["children"][0]["save_id"] == "b"
+    assert by_story["school"]["orphans"][0]["save_id"] == "c"
+    assert by_story["school"]["orphans"][0]["parent_missing"] is True
+    assert by_story["modern"]["roots"][0]["save_id"] == "x"
+
+
+def test_delete_save_game_deletes_root_descendants_and_clears_current(
+    tmp_path: Path,
+    monkeypatch,
+):
+    save_dir = tmp_path / "saves"
+    save_dir.mkdir()
+    characters_dir = tmp_path / "data" / "runtime" / "characters"
+    characters_dir.mkdir(parents=True)
+    (characters_dir / ".save_id").write_text("b", encoding="utf-8")
+
+    def write_archive(filename: str, metadata: dict) -> None:
+        with zipfile.ZipFile(save_dir / filename, "w") as zf:
+            zf.writestr(
+                "metadata.json",
+                json.dumps(metadata, ensure_ascii=False),
+            )
+
+    write_archive(
+        "school_a.zip",
+        {"save_id": "a", "story_id": "school", "created_at": "2026-05-09T10:00:00"},
+    )
+    write_archive(
+        "school_b.zip",
+        {
+            "save_id": "b",
+            "parent_save_id": "a",
+            "story_id": "school",
+            "created_at": "2026-05-09T10:05:00",
+        },
+    )
+    write_archive(
+        "school_c.zip",
+        {"save_id": "c", "story_id": "school", "created_at": "2026-05-09T11:00:00"},
+    )
+
+    monkeypatch.setattr(save_manager, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(save_manager, "CHARACTERS_DIR", characters_dir)
+
+    deleted = save_manager.delete_save_game("school_a.zip")
+
+    assert set(deleted or []) == {"school_a.zip", "school_b.zip"}
+    assert not (save_dir / "school_a.zip").exists()
+    assert not (save_dir / "school_b.zip").exists()
+    assert (save_dir / "school_c.zip").exists()
+    assert not (characters_dir / ".save_id").exists()
+
+
+def test_delete_save_leaf_only_allows_non_parent_nodes(
+    tmp_path: Path,
+    monkeypatch,
+):
+    save_dir = tmp_path / "saves"
+    save_dir.mkdir()
+    characters_dir = tmp_path / "data" / "runtime" / "characters"
+    characters_dir.mkdir(parents=True)
+    (characters_dir / ".save_id").write_text("b", encoding="utf-8")
+
+    def write_archive(filename: str, metadata: dict) -> None:
+        with zipfile.ZipFile(save_dir / filename, "w") as zf:
+            zf.writestr(
+                "metadata.json",
+                json.dumps(metadata, ensure_ascii=False),
+            )
+
+    write_archive(
+        "school_a.zip",
+        {"save_id": "a", "story_id": "school", "created_at": "2026-05-09T10:00:00"},
+    )
+    write_archive(
+        "school_b.zip",
+        {
+            "save_id": "b",
+            "parent_save_id": "a",
+            "story_id": "school",
+            "created_at": "2026-05-09T10:05:00",
+        },
+    )
+
+    monkeypatch.setattr(save_manager, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(save_manager, "CHARACTERS_DIR", characters_dir)
+
+    deleted, reason = save_manager.delete_save_leaf("school_a.zip")
+
+    assert deleted is None
+    assert reason == "has_children"
+    assert (save_dir / "school_a.zip").exists()
+
+    deleted, reason = save_manager.delete_save_leaf("school_b.zip")
+
+    assert deleted == "school_b.zip"
+    assert reason is None
+    assert not (save_dir / "school_b.zip").exists()
+    assert not (characters_dir / ".save_id").exists()

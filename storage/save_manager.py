@@ -22,6 +22,7 @@ from storage.agent_files import (
     increment_turn_counter,
     read_agent_file,
     read_player_name,
+    read_turn_counter,
     write_player_name,
 )
 from storage.history import append_message, load_conversation_history
@@ -144,15 +145,14 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
 
         read_player_name.cache_clear()
 
-        # 5. 写入 story_id 和 save_id 标记文件
+        # 5. 写入 story_id，并清空当前存档节点。新开局的第一次保存是世界线根节点。
         story_id_path = os.path.join(characters_dir, ".story_id")
         with open(story_id_path, "w", encoding="utf-8") as f:
             f.write(story_id)
         print(f"  已写入: {story_id_path}", flush=True)
 
-        save_id = uuid.uuid4().hex[:8]
-        _write_save_id(save_id)
-        print(f"  已写入: .save_id ({save_id})", flush=True)
+        _clear_save_id()
+        print("  已清空: .save_id", flush=True)
 
         # 6. 重置日志
         print("[日志]", flush=True)
@@ -189,6 +189,98 @@ async def reset_game(story_id: str = "school") -> tuple[str, str]:
 # =============================================================================
 
 
+def _clean_meta_text(value: object) -> str:
+    return str(value).strip() if value is not None else ""
+
+
+def _read_archive_metadata(save_path: Path) -> dict:
+    try:
+        with zipfile.ZipFile(str(save_path), "r") as zf:
+            if "metadata.json" not in zf.namelist():
+                return {}
+            payload = json.loads(zf.read("metadata.json").decode("utf-8"))
+            return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _story_id_from_metadata(meta: dict, save_path: Path) -> str:
+    story_id = _clean_meta_text(meta.get("story_id")) or _clean_meta_text(
+        meta.get("theme")
+    )
+    if story_id:
+        return story_id
+
+    stem = save_path.stem
+    if "_" in stem:
+        return stem.split("_", 1)[0]
+    return "unknown"
+
+
+def _format_archive_time(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        return datetime.fromisoformat(value).strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return value
+
+
+def _read_archive_turn(meta: dict, zip_file: Path) -> int:
+    try:
+        if meta.get("turn") is not None:
+            return int(meta.get("turn") or 0)
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        with zipfile.ZipFile(str(zip_file), "r") as zf:
+            if ".turn_counter.json" in zf.namelist():
+                data = json.loads(zf.read(".turn_counter.json").decode("utf-8"))
+                return int(data.get("turn", 0))
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, zipfile.BadZipFile):
+        pass
+    return 0
+
+
+def _save_id_from_metadata(meta: dict, save_path: Path) -> str:
+    save_id = _clean_meta_text(meta.get("save_id"))
+    if save_id:
+        return save_id
+    stem = save_path.stem
+    return stem.rsplit("_", 1)[-1] if "_" in stem else stem
+
+
+def _read_save_archive_entry(zip_file: Path) -> dict:
+    meta = _read_archive_metadata(zip_file)
+    turn = _read_archive_turn(meta, zip_file)
+
+    export_time = _clean_meta_text(meta.get("export_time")) or _clean_meta_text(
+        meta.get("created_at")
+    )
+    display_time = _format_archive_time(export_time) or zip_file.name
+    focus = _clean_meta_text(meta.get("focus"))
+    title = _clean_meta_text(meta.get("title")) or focus or display_time
+    story_id = _story_id_from_metadata(meta, zip_file)
+    save_id = _save_id_from_metadata(meta, zip_file)
+    parent_save_id = _clean_meta_text(meta.get("parent_save_id"))
+
+    return {
+        "filename": zip_file.name,
+        "display_time": display_time,
+        "display": display_time,
+        "created_at": export_time,
+        "save_id": save_id,
+        "parent_save_id": parent_save_id,
+        "story_id": story_id,
+        "title": title,
+        "focus": focus,
+        "turn": turn,
+        "version": _clean_meta_text(meta.get("version")),
+        "_sort_key": export_time or f"{zip_file.stat().st_mtime:.6f}",
+    }
+
+
 def list_save_archives() -> list[dict]:
     """列出 saves/ 目录下所有存档，按时间倒序
 
@@ -201,20 +293,7 @@ def list_save_archives() -> list[dict]:
 
     saves = []
     for zip_file in save_dir.glob("*.zip"):
-        entry: dict = {"filename": zip_file.name, "display_time": zip_file.name, "focus": ""}
-        try:
-            with zipfile.ZipFile(str(zip_file), "r") as zf:
-                if "metadata.json" in zf.namelist():
-                    meta = json.loads(zf.read("metadata.json").decode("utf-8"))
-                    export_time = meta.get("export_time", "")
-                    if export_time:
-                        dt = datetime.fromisoformat(export_time)
-                        entry["display_time"] = dt.strftime("%Y-%m-%d %H:%M:%S")
-                        entry["_sort_key"] = dt.isoformat()
-                    entry["focus"] = meta.get("focus", "")
-        except Exception:
-            pass
-        saves.append(entry)
+        saves.append(_read_save_archive_entry(zip_file))
 
     saves.sort(key=lambda s: s.get("_sort_key", ""), reverse=True)
     for s in saves:
@@ -222,19 +301,188 @@ def list_save_archives() -> list[dict]:
     return saves
 
 
-def delete_save_archive(save_filename: str) -> bool:
-    """删除指定存档文件，文件名非法或不存在时返回 False。"""
+def _save_node_sort_key(node: dict) -> str:
+    return _clean_meta_text(node.get("created_at")) or _clean_meta_text(
+        node.get("filename")
+    )
+
+
+def _sort_save_nodes(nodes: list[dict]) -> str:
+    nodes.sort(key=lambda s: (s.get("created_at") or "", s.get("filename") or ""))
+    latest = ""
+    for node in nodes:
+        child_latest = _sort_save_nodes(node.get("children", []))
+        node["child_count"] = len(node.get("children", []))
+        node_latest = max(_save_node_sort_key(node), child_latest)
+        node["latest_created_at"] = node_latest
+        latest = max(latest, node_latest)
+    return latest
+
+
+def _sort_game_roots(nodes: list[dict]) -> None:
+    nodes.sort(
+        key=lambda node: (
+            _clean_meta_text(node.get("latest_created_at")),
+            _clean_meta_text(node.get("created_at")),
+            _clean_meta_text(node.get("filename")),
+        ),
+        reverse=True,
+    )
+
+
+def list_save_worldlines(saves: list[dict] | None = None) -> list[dict]:
+    """按 story_id 把存档拼成临时世界线树。关系只来自各 zip 的 metadata。"""
+    if saves is None:
+        saves = list_save_archives()
+    worlds: dict[str, list[dict]] = {}
+    for save in saves:
+        story_id = _clean_meta_text(save.get("story_id")) or "unknown"
+        node = {**save, "children": [], "child_count": 0, "parent_missing": False}
+        worlds.setdefault(story_id, []).append(node)
+
+    result: list[dict] = []
+    for story_id, nodes in worlds.items():
+        by_id = {
+            _clean_meta_text(node.get("save_id")): node
+            for node in nodes
+            if _clean_meta_text(node.get("save_id"))
+        }
+        roots: list[dict] = []
+        orphans: list[dict] = []
+
+        for node in nodes:
+            parent_save_id = _clean_meta_text(node.get("parent_save_id"))
+            parent = by_id.get(parent_save_id) if parent_save_id else None
+            if parent and parent is not node:
+                parent["children"].append(node)
+            elif parent_save_id:
+                node["parent_missing"] = True
+                orphans.append(node)
+            else:
+                roots.append(node)
+
+        _sort_save_nodes(roots)
+        _sort_save_nodes(orphans)
+        _sort_game_roots(roots)
+        _sort_game_roots(orphans)
+        result.append(
+            {
+                "story_id": story_id,
+                "root_count": len(roots),
+                "orphan_count": len(orphans),
+                "save_count": len(nodes),
+                "roots": roots,
+                "orphans": orphans,
+            }
+        )
+
+    result.sort(key=lambda w: w["story_id"])
+    return result
+
+
+def get_current_save_context() -> dict:
+    return {
+        "current_save_id": _read_save_id(),
+        "current_story_id": _read_story_theme(),
+    }
+
+
+def delete_save_leaf(save_filename: str) -> tuple[str | None, str | None]:
+    """只删除没有子分支的单个存档节点。
+
+    返回 (deleted_filename, None) 表示成功；失败时返回 (None, reason)。
+    """
     if not _is_safe_save_filename(save_filename):
-        routing_logger.warning("[delete_save] 非法文件名: %s", save_filename)
-        return False
+        routing_logger.warning("[delete_leaf_save] 非法文件名: %s", save_filename)
+        return None, "invalid"
+
+    saves = list_save_archives()
+    target = next((save for save in saves if save.get("filename") == save_filename), None)
+    if not target:
+        routing_logger.warning("[delete_leaf_save] 存档不存在: %s", save_filename)
+        return None, "not_found"
+
+    target_id = _clean_meta_text(target.get("save_id"))
+    target_story = _clean_meta_text(target.get("story_id"))
+    has_children = target_id and any(
+        _clean_meta_text(s.get("story_id")) == target_story
+        and _clean_meta_text(s.get("parent_save_id")) == target_id
+        for s in saves
+    )
+    if has_children:
+        routing_logger.warning("[delete_leaf_save] 存档仍有子分支: %s", save_filename)
+        return None, "has_children"
+
     save_path = PROJECT_ROOT / "saves" / save_filename
     try:
         save_path.unlink()
-        routing_logger.info("[delete_save] 已删除存档: %s", save_filename)
-        return True
     except FileNotFoundError:
-        routing_logger.warning("[delete_save] 存档文件不存在: %s", save_path)
-        return False
+        routing_logger.warning("[delete_leaf_save] 存档文件不存在: %s", save_path)
+        return None, "not_found"
+
+    if target_id and _read_save_id() == target_id:
+        _clear_save_id()
+
+    routing_logger.info("[delete_leaf_save] 已删除叶子存档: %s", save_filename)
+    return save_filename, None
+
+
+def delete_save_game(root_filename: str) -> list[str] | None:
+    """删除以 root_filename 为根的整棵 Game 存档树。
+
+    返回删除的文件名列表；文件名非法或根节点不存在时返回 None。
+    """
+    if not _is_safe_save_filename(root_filename):
+        routing_logger.warning("[delete_game] 非法文件名: %s", root_filename)
+        return None
+
+    saves = list_save_archives()
+    root = next((save for save in saves if save.get("filename") == root_filename), None)
+    if not root:
+        routing_logger.warning("[delete_game] 根存档不存在: %s", root_filename)
+        return None
+
+    story_id = _clean_meta_text(root.get("story_id"))
+    children_by_parent: dict[str, list[dict]] = {}
+    for save in saves:
+        if _clean_meta_text(save.get("story_id")) != story_id:
+            continue
+        parent_id = _clean_meta_text(save.get("parent_save_id"))
+        if parent_id:
+            children_by_parent.setdefault(parent_id, []).append(save)
+
+    to_delete: list[dict] = []
+    stack = [root]
+    seen_filenames: set[str] = set()
+    while stack:
+        current = stack.pop()
+        filename = _clean_meta_text(current.get("filename"))
+        if not filename or filename in seen_filenames:
+            continue
+        seen_filenames.add(filename)
+        to_delete.append(current)
+        save_id = _clean_meta_text(current.get("save_id"))
+        if save_id:
+            stack.extend(children_by_parent.get(save_id, []))
+
+    save_dir = PROJECT_ROOT / "saves"
+    deleted: list[str] = []
+    deleted_ids = {_clean_meta_text(save.get("save_id")) for save in to_delete}
+    for save in to_delete:
+        filename = _clean_meta_text(save.get("filename"))
+        if not filename:
+            continue
+        try:
+            (save_dir / filename).unlink()
+            deleted.append(filename)
+        except FileNotFoundError:
+            continue
+
+    if _read_save_id() in deleted_ids:
+        _clear_save_id()
+
+    routing_logger.info("[delete_game] 已删除 Game: root=%s files=%s", root_filename, deleted)
+    return deleted
 
 
 def _restore_player_name_from_raw_history() -> None:
@@ -286,6 +534,8 @@ async def import_save_archive(save_filename: str) -> bool:
         old_agents = get_agent_names()
         log_step(f"扫描当前角色（{len(old_agents)} 个）")
 
+        archive_meta = _read_archive_metadata(save_path)
+
         characters_dir = str(CHARACTERS_DIR)
         if os.path.exists(characters_dir):
             shutil.rmtree(characters_dir)
@@ -308,12 +558,18 @@ async def import_save_archive(save_filename: str) -> bool:
         _restore_player_name_from_raw_history()
         log_step("校验玩家名")
 
-        save_id_path = os.path.join(characters_dir, ".save_id")
-        if not os.path.exists(save_id_path):
-            new_save_id = uuid.uuid4().hex[:8]
-            with open(save_id_path, "w", encoding="utf-8") as f:
-                f.write(new_save_id)
-            print(f"[读档] 旧存档无 save_id，已生成新 id: {new_save_id}", flush=True)
+        story_id_path = os.path.join(characters_dir, ".story_id")
+        if not os.path.exists(story_id_path):
+            story_id = _story_id_from_metadata(archive_meta, save_path)
+            with open(story_id_path, "w", encoding="utf-8") as f:
+                f.write(story_id)
+            print(f"[读档] 旧存档无 story_id，已恢复为: {story_id}", flush=True)
+
+        save_id = _read_save_id()
+        if not save_id:
+            save_id = _read_archive_save_id(save_path)
+            _write_save_id(save_id)
+            print(f"[读档] 旧存档无 save_id，已恢复为: {save_id}", flush=True)
         log_step("校验 save_id")
 
         restored_agents = get_agent_names()
@@ -389,13 +645,18 @@ def _read_save_id() -> str:
     try:
         return save_id_path.read_text(encoding="utf-8").strip()
     except Exception:
-        return uuid.uuid4().hex[:8]
+        return ""
 
 
 def _write_save_id(save_id: str) -> None:
     """更新当前游戏来源标记。"""
     save_id_path = CHARACTERS_DIR / ".save_id"
     save_id_path.write_text(save_id, encoding="utf-8")
+
+
+def _clear_save_id() -> None:
+    save_id_path = CHARACTERS_DIR / ".save_id"
+    save_id_path.unlink(missing_ok=True)
 
 
 def _read_story_theme() -> str:
@@ -421,7 +682,7 @@ def _read_narrator_focus() -> str:
 
 
 def _is_safe_save_filename(filename: str) -> bool:
-    """只允许覆盖 saves/ 下的单个 zip 文件名。"""
+    """只允许定位 saves/ 下的单个 zip 文件名。"""
     return (
         bool(filename)
         and filename.endswith(".zip")
@@ -432,18 +693,7 @@ def _is_safe_save_filename(filename: str) -> bool:
 
 def _read_archive_save_id(save_path: Path) -> str:
     """读取旧档位的来源标记，缺失时用文件名兜底。"""
-    try:
-        with zipfile.ZipFile(str(save_path), "r") as zf:
-            if "metadata.json" in zf.namelist():
-                meta = json.loads(zf.read("metadata.json").decode("utf-8"))
-                save_id = str(meta.get("save_id", "")).strip()
-                if save_id:
-                    return save_id
-    except Exception:
-        pass
-
-    stem = save_path.stem
-    return stem.rsplit("_", 1)[-1] if "_" in stem else stem
+    return _save_id_from_metadata(_read_archive_metadata(save_path), save_path)
 
 
 def _recall_state_by_content_hash(
@@ -510,35 +760,24 @@ def _build_new_save_path(theme: str, save_dir: Path) -> tuple[str, Path, str]:
     return filename, save_dir / filename, save_id
 
 
-async def export_save_archive_with_detail(
-    target_filename: str | None = None,
-) -> tuple[str | None, str | None]:
-    """导出存档，并返回路径或可直接展示的错误详情。
-
-    Args:
-        target_filename: 指定时覆盖该 saves/ 下的 zip；为空时创建新档位。
+async def export_save_archive_with_detail() -> tuple[str | None, str | None]:
+    """导出不可变存档节点，并返回路径或可直接展示的错误详情。
 
     Returns:
         (save_path, error_detail)
     """
     theme = _read_story_theme()
+    parent_save_id = _read_save_id()
+    turn = read_turn_counter()
 
     save_dir = PROJECT_ROOT / "saves"
     os.makedirs(save_dir, exist_ok=True)
 
-    if target_filename is not None:
-        if not _is_safe_save_filename(target_filename):
-            return None, "非法存档文件名。"
-        filename = target_filename
-        save_path = save_dir / filename
-        if not save_path.exists():
-            return None, "目标存档不存在，无法覆盖。"
-        save_id = _read_archive_save_id(save_path) or _read_save_id()
-    else:
-        filename, save_path, save_id = _build_new_save_path(theme, save_dir)
-        print(f"[存档] 新建档位: {filename}")
+    filename, save_path, save_id = _build_new_save_path(theme, save_dir)
+    print(f"[存档] 新建世界线节点: {filename}")
 
     focus = _read_narrator_focus()
+    title = focus or (f"第 {turn} 轮" if turn else "新存档")
 
     all_agents = get_agent_names()
     if not all_agents:
@@ -560,15 +799,20 @@ async def export_save_archive_with_detail(
         )
         recall_states = dict(zip(character_agents, export_results))
 
+        export_time = datetime.now().isoformat()
         with zipfile.ZipFile(str(temp_path), "w", zipfile.ZIP_DEFLATED) as zf:
             metadata = {
-                "export_time": datetime.now().isoformat(),
+                "export_time": export_time,
+                "created_at": export_time,
                 "save_id": save_id,
+                "parent_save_id": parent_save_id or None,
                 "filename": filename,
-                "theme": theme,
+                "story_id": theme,
+                "turn": turn,
+                "title": title,
                 "focus": focus,
                 "agents": all_agents,
-                "version": "1.0",
+                "version": "2.0",
             }
             zf.writestr(
                 "metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2)

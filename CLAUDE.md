@@ -283,13 +283,17 @@ After each participation round of character responses, `generate_choices()` is c
 
 Handled by `storage/save_manager.py`, exposed via FastAPI endpoints:
 
-- `POST /api/save`: Export zip to `saves/`; `{}` creates new uuid slot, `{"filename": "...zip"}` overwrites specified slot
-- `GET /api/saves`: List saves
+- `POST /api/save`: Export a new immutable worldline node zip to `saves/`; filename-based overwrite is rejected
+- `GET /api/saves`: List saves and return temporary worldline trees grouped by `story_id`
+- `DELETE /api/save/{filename}`: Delete the Game tree rooted at the given save
+- `DELETE /api/save-node/{filename}`: Delete one save only when it has no child branches
 - `POST /api/load`: Restore save and rebuild necessary indexes
 - `POST /api/reset`: Reset runtime data from `data/templates/{story_id}`
 
 Save includes:
 
+- `metadata.json` (save metadata: `save_id`, `parent_save_id`, `story_id`, `created_at`, `turn`, `title`, `focus`; this is the only persisted branch relationship source)
+- `.save_id` (current save node id restored on load; reset clears it so the first save is a root node)
 - Character markdown / jsonl files (`narrator` does not include `memory.jsonl` / `memory_draft.jsonl`)
 - Character `memory.jsonl` (structured long-term memory, one `EpisodeMemory` per line, includes stable `id`, `raw_dialogue` trace field, and archive-refreshed `last_recalled_at`)
 - Character `memory_draft.jsonl` (when present; each line `{"turn": int, "text": str}`, ensuring unclosed merge memories are not lost on save)

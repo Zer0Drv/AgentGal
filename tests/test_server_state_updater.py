@@ -129,8 +129,7 @@ async def _collect_stream(stream):
 
 @pytest.mark.asyncio
 async def test_api_save_returns_error_detail(monkeypatch):
-    async def fake_export_save_archive_with_detail(*, target_filename=None):
-        assert target_filename is None
+    async def fake_export_save_archive_with_detail():
         return None, "sqlite 已锁定"
 
     logged: list[str] = []
@@ -154,11 +153,12 @@ async def test_api_save_returns_error_detail(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_api_save_passes_target_filename(monkeypatch):
-    called: list[str | None] = []
+async def test_api_save_rejects_target_filename(monkeypatch):
+    called = False
 
-    async def fake_export_save_archive_with_detail(*, target_filename=None):
-        called.append(target_filename)
+    async def fake_export_save_archive_with_detail():
+        nonlocal called
+        called = True
         return "/tmp/school_slot.zip", None
 
     monkeypatch.setattr(
@@ -172,13 +172,12 @@ async def test_api_save_passes_target_filename(monkeypatch):
         server_module.SaveRequest(filename="school_slot.zip")
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 400
     assert json.loads(response.body) == {
-        "ok": True,
-        "path": "/tmp/school_slot.zip",
-        "filename": "school_slot.zip",
+        "ok": False,
+        "detail": "世界线存档不支持覆盖，请新建一个存档节点。",
     }
-    assert called == ["school_slot.zip"]
+    assert called is False
 
 
 @pytest.mark.asyncio
@@ -207,6 +206,54 @@ async def test_api_save_catches_unhandled_exception(monkeypatch):
     }
     assert len(logged) == 1
     assert logged[0].startswith("[save] /api/save 未捕获异常: RuntimeError: pending task 爆了")
+
+
+@pytest.mark.asyncio
+async def test_api_delete_save_deletes_game_tree(monkeypatch):
+    monkeypatch.setattr(
+        server_module,
+        "delete_save_game",
+        lambda filename: ["root.zip", "child.zip"] if filename == "root.zip" else None,
+    )
+
+    response = await server_module.api_delete_save("root.zip")
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {
+        "ok": True,
+        "deleted": ["root.zip", "child.zip"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_api_delete_save_node_rejects_parent(monkeypatch):
+    monkeypatch.setattr(
+        server_module,
+        "delete_save_leaf",
+        lambda filename: (None, "has_children"),
+    )
+
+    response = await server_module.api_delete_save_node("root.zip")
+
+    assert response.status_code == 409
+    assert json.loads(response.body) == {
+        "ok": False,
+        "detail": "这个存档已有子分支，不能单独删除。",
+    }
+
+
+@pytest.mark.asyncio
+async def test_api_delete_save_node_deletes_leaf(monkeypatch):
+    monkeypatch.setattr(
+        server_module,
+        "delete_save_leaf",
+        lambda filename: (filename, None),
+    )
+
+    response = await server_module.api_delete_save_node("leaf.zip")
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {"ok": True, "deleted": ["leaf.zip"]}
 
 
 @pytest.mark.asyncio

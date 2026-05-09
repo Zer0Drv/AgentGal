@@ -35,11 +35,14 @@ from memory.parser import (
     read_understandings,
 )
 from storage.save_manager import (
-    delete_save_archive,
+    delete_save_leaf,
+    delete_save_game,
     export_save_archive_with_detail,
+    get_current_save_context,
     has_existing_save,
     import_save_archive,
     list_save_archives,
+    list_save_worldlines,
     load_story_file,
     reset_game,
 )
@@ -685,9 +688,15 @@ async def api_status() -> JSONResponse:
 
 @app.get("/api/saves")
 async def api_list_saves() -> JSONResponse:
-    """列出所有存档。"""
+    """列出所有存档，并返回按故事世界观拼出的临时世界线树。"""
     saves = list_save_archives()
-    return JSONResponse({"saves": saves})
+    return JSONResponse(
+        {
+            "saves": saves,
+            "worlds": list_save_worldlines(saves),
+            **get_current_save_context(),
+        }
+    )
 
 
 # =============================================================================
@@ -701,7 +710,7 @@ class SaveRequest(BaseModel):
 
 @app.post("/api/save")
 async def api_save(req: SaveRequest | None = None) -> JSONResponse:
-    """导出存档。filename 为空时新建档位，有值时覆盖该档位。"""
+    """导出新的不可变世界线节点。"""
     if memory_consolidation_flow.is_running:
         return JSONResponse(
             {"ok": False, "detail": "记忆整理进行中，请稍后再存档。"},
@@ -710,9 +719,15 @@ async def api_save(req: SaveRequest | None = None) -> JSONResponse:
     try:
         await _settle_pending_state_update()
         request = req or SaveRequest()
-        save_path, error_detail = await export_save_archive_with_detail(
-            target_filename=request.filename
-        )
+        if request.filename:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "detail": "世界线存档不支持覆盖，请新建一个存档节点。",
+                },
+                status_code=400,
+            )
+        save_path, error_detail = await export_save_archive_with_detail()
         if save_path:
             return JSONResponse(
                 {"ok": True, "path": save_path, "filename": Path(save_path).name}
@@ -765,17 +780,37 @@ async def api_load(req: LoadRequest) -> JSONResponse:
 
 
 # =============================================================================
+# /api/save-node/{filename} DELETE
+# =============================================================================
+
+
+@app.delete("/api/save-node/{filename}")
+async def api_delete_save_node(filename: str) -> JSONResponse:
+    """删除没有子分支的单个存档节点。"""
+    deleted, reason = delete_save_leaf(filename)
+    if deleted:
+        return JSONResponse({"ok": True, "deleted": [deleted]})
+
+    if reason == "has_children":
+        return JSONResponse(
+            {"ok": False, "detail": "这个存档已有子分支，不能单独删除。"},
+            status_code=409,
+        )
+    return JSONResponse({"ok": False, "detail": "存档不存在或文件名非法。"}, status_code=404)
+
+
+# =============================================================================
 # /api/save/{filename} DELETE
 # =============================================================================
 
 
 @app.delete("/api/save/{filename}")
 async def api_delete_save(filename: str) -> JSONResponse:
-    """删除指定存档文件。"""
-    ok = delete_save_archive(filename)
-    if ok:
-        return JSONResponse({"ok": True})
-    return JSONResponse({"ok": False, "detail": "存档不存在或文件名非法。"}, status_code=404)
+    """删除以指定存档为根的整棵 Game 世界线。"""
+    deleted = delete_save_game(filename)
+    if deleted is not None:
+        return JSONResponse({"ok": True, "deleted": deleted})
+    return JSONResponse({"ok": False, "detail": "Game 不存在或文件名非法。"}, status_code=404)
 
 
 # =============================================================================
