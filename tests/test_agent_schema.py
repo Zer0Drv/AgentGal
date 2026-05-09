@@ -74,3 +74,14 @@ def test_understanding_entry_strips_string_fields():
     entry = output.add[0]
     assert entry.subject == "对玩家的认知"
     assert entry.content == "玩家会主动解释误会。"
+
+
+def test_understanding_update_allows_subject_only_entry():
+    output = UnderstandingPatchOutput.model_validate(
+        {"update": {"u1": {"subject": "对玩家的认知"}}}
+    )
+
+    entry = output.update["u1"]
+    assert entry.subject == "对玩家的认知"
+    assert entry.keywords == []
+    assert entry.content == ""

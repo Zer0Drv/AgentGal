@@ -434,7 +434,7 @@ def test_apply_understanding_patch_does_not_append_history_for_link_only_update(
         {
             "update": {
                 "u1": {
-                    "content": "玩家会认真履行约定。",
+                    "subject": "对玩家的认知",
                 }
             }
         }
@@ -448,6 +448,10 @@ def test_apply_understanding_patch_does_not_append_history_for_link_only_update(
     )
 
     assert result.links_only_ids == ["u1"]
+    assert result.full_replace_ids == []
+    assert result.updated["u1"].subject == "对玩家的认知"
+    assert result.updated["u1"].keywords == ["玩家"]
+    assert result.updated["u1"].content == "玩家会认真履行约定。"
     assert result.updated["u1"].linked_episodes == ["e0", "e1"]
     assert result.updated["u1"].history == []
 

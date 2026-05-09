@@ -111,19 +111,20 @@ def _apply_understanding_patch(
                 f"[整理器] {agent_name} understanding patch update 跳过不存在 ID: {uid}"
             )
             continue
-        if not entry.content:
+        if not entry.subject and not entry.keywords and not entry.content:
             memory_logger.warning(
-                f"[整理器] {agent_name} understanding patch update 跳过空 content: {uid}"
+                f"[整理器] {agent_name} understanding patch update 跳过空条目: {uid}"
             )
             continue
         existing = updated[uid]
         new_subject = entry.subject if entry.subject else existing.subject
         new_keywords = entry.keywords if entry.keywords else existing.keywords
+        new_content = entry.content if entry.content else existing.content
         injected = [new_episode_id] if new_episode_id else []
         linked_episodes = list(
             dict.fromkeys([*existing.linked_episodes, *injected])
         )
-        content_changed = entry.content != existing.content
+        content_changed = new_content != existing.content
         history = list(existing.history)
         if content_changed:
             history.append(
@@ -131,7 +132,7 @@ def _apply_understanding_patch(
                     episode_id=episode.id if episode else "",
                     date=episode.date if episode else "",
                     title=episode.title if episode else "",
-                    content=entry.content,
+                    content=new_content,
                 )
             )
         updated[uid] = Understanding(
@@ -139,7 +140,7 @@ def _apply_understanding_patch(
             memory_owner=agent_name,
             subject=new_subject,
             keywords=new_keywords,
-            content=entry.content,
+            content=new_content,
             linked_episodes=linked_episodes,
             history=history,
         )
