@@ -92,7 +92,11 @@ async def test_character_run_scans_recent_raw_history_by_turns(monkeypatch):
 
     monkeypatch.setattr(character_module, "HISTORY_RAW_SCAN_TURNS", 30)
     monkeypatch.setattr(character_module, "load_conversation_history", fake_load_conversation_history)
-    monkeypatch.setattr(Character, "_build_prompt", lambda self, user_input, raw_messages: "prompt")
+    monkeypatch.setattr(
+        Character,
+        "_build_prompt",
+        lambda self, user_input, raw_messages, **_kwargs: "prompt",
+    )
     monkeypatch.setattr(
         character_module,
         "get_llm_config",
@@ -150,14 +154,18 @@ async def test_narrator_route_returns_fallback_on_run_failure(monkeypatch):
         lambda include_narrator=False: ["mitsuki"],
     )
     monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
+    calls = 0
 
     async def fake_run_narrator(self, *_args, **_kwargs):
+        nonlocal calls
+        calls += 1
         raise asyncio.TimeoutError
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
     targets, scene_description, new_characters, is_valid = await Narrator().route("你好")
 
+    assert calls == 1
     assert targets == []
     assert scene_description == ""
     assert new_characters == []
@@ -191,8 +199,32 @@ async def test_narrator_route_filters_targets_and_sanitizes_scene(monkeypatch):
     assert is_valid is True
 
 
+def test_narrator_route_validation_rejects_unknown_targets():
+    output = NarratorOutput(targets=["ghost"], content="走廊里传来广播声。")
+
+    with pytest.raises(ValueError, match="invalid targets"):
+        Narrator._validate_route_output(output, ["mitsuki"])
+
+
+def test_narrator_route_validation_rejects_invalid_new_character_anchor():
+    output = NarratorOutput(
+        targets=[],
+        content="门外有人停下脚步。",
+        new_characters=[
+            {
+                "name_hint": "桥本志津",
+                "relation_to": "ghost",
+                "relation_description": "美月的妈妈",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="invalid relation_to"):
+        Narrator._validate_route_output(output, ["mitsuki"])
+
+
 @pytest.mark.asyncio
-async def test_narrator_route_retries_when_targets_filter_to_empty(monkeypatch):
+async def test_narrator_route_returns_fallback_when_empty_route_is_rejected(monkeypatch):
     _stub_player_relation_sync(monkeypatch)
     monkeypatch.setattr(
         character_module,
@@ -205,46 +237,17 @@ async def test_narrator_route_retries_when_targets_filter_to_empty(monkeypatch):
     async def fake_run_narrator(self, *_args, **_kwargs):
         nonlocal calls
         calls += 1
-        if calls == 1:
-            return NarratorOutput(targets=["ghost"], content="走廊里传来广播声。")
-        return NarratorOutput(targets=["mitsuki"], content="美月站在走廊尽头。")
+        raise ValueError("NarratorOutput must include targets or new_characters")
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
     targets, scene_description, new_characters, is_valid = await Narrator().route("回家睡觉")
 
-    assert calls == 2
-    assert targets == ["mitsuki"]
-    assert scene_description == "美月站在走廊尽头。"
-    assert is_valid is True
-
-
-@pytest.mark.asyncio
-async def test_narrator_route_retries_when_targets_are_empty(monkeypatch):
-    _stub_player_relation_sync(monkeypatch)
-    monkeypatch.setattr(
-        character_module,
-        "get_agent_names",
-        lambda include_narrator=False: ["mitsuki"],
-    )
-    monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
-    calls = 0
-
-    async def fake_run_narrator(self, *_args, **_kwargs):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            return NarratorOutput(targets=[], content="走廊里传来广播声。")
-        return NarratorOutput(targets=["mitsuki"], content="美月站在走廊尽头。")
-
-    monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
-
-    targets, scene_description, new_characters, is_valid = await Narrator().route("回家睡觉")
-
-    assert calls == 2
-    assert targets == ["mitsuki"]
-    assert scene_description == "美月站在走廊尽头。"
-    assert is_valid is True
+    assert calls == 1
+    assert targets == []
+    assert scene_description == ""
+    assert new_characters == []
+    assert is_valid is False
 
 
 @pytest.mark.asyncio

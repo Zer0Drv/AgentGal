@@ -50,6 +50,8 @@ raw_scan_turns = 30
 [agent]
 # Agent LLM 调用超时（秒）：角色、narrator、整理、新角色孵化共用
 run_timeout_seconds = 300
+# Agent LLM 调用最大尝试次数：包含首次调用，失败后最多补足到该次数
+max_attempts = 3
 # 选项生成 LLM 调用超时（秒）
 choices_timeout_seconds = 5
 # Agent 对话温度

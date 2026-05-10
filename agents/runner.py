@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import types
 import typing
+from collections.abc import Callable
 from typing import Any, TypeVar
 
 from log_config.routing import routing_logger
+from shared.config import AGENT_RUN_MAX_ATTEMPTS
 
 T = TypeVar("T")
 
@@ -44,21 +46,50 @@ def _build_run_metadata(
     return metadata
 
 
-async def _run_agent(
+async def _run_agent_with_retries(
+    *,
     agent,
     user_input: str,
     metadata: dict[str, str],
     timeout_seconds: float,
     label: str,
+    on_result,
+    max_attempts: int = AGENT_RUN_MAX_ATTEMPTS,
 ) -> Any:
-    try:
-        return await asyncio.wait_for(
-            agent.run(user_input, metadata=metadata),
-            timeout=timeout_seconds,
-        )
-    except asyncio.TimeoutError:
-        routing_logger.error(f"{label} 运行超时（>{timeout_seconds}s），强制终止")
-        raise
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be >= 1")
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            result = await asyncio.wait_for(
+                agent.run(user_input, metadata=metadata),
+                timeout=timeout_seconds,
+            )
+            return on_result(result)
+        except Exception as exc:
+            exc_desc = (
+                f"超时（>{timeout_seconds}s）"
+                if isinstance(exc, asyncio.TimeoutError)
+                else f"失败: {exc}"
+            )
+            if attempt >= max_attempts:
+                routing_logger.error(
+                    "[%s] LLM 调用第 %s/%s 次%s，停止重试",
+                    label,
+                    attempt,
+                    max_attempts,
+                    exc_desc,
+                )
+                raise
+            routing_logger.warning(
+                "[%s] LLM 调用第 %s/%s 次%s，准备重试",
+                label,
+                attempt,
+                max_attempts,
+                exc_desc,
+            )
+
+    raise RuntimeError("unreachable LLM retry state")
 
 
 async def run_text_agent(
@@ -72,22 +103,29 @@ async def run_text_agent(
     usage_phase: str,
     model_name: str,
     error_label: str | None = None,
+    max_attempts: int = AGENT_RUN_MAX_ATTEMPTS,
 ) -> str:
     """执行文本 Agent，返回原始字符串输出。"""
     label = error_label or usage_agent
-    result = await _run_agent(
-        agent,
-        user_input,
-        _build_run_metadata(workflow_name, usage_agent, usage_phase, model_name, trace_metadata),
-        timeout_seconds,
-        label,
-    )
 
-    output = result.output
-    if not isinstance(output, str):
-        routing_logger.error(f"[{label}] 文本输出类型异常: {type(output)!r}")
-        raise TypeError(f"{label} expected str output, got {type(output)!r}")
-    return output.strip()
+    def _extract_text(result) -> str:
+        output = result.output
+        if not isinstance(output, str):
+            routing_logger.error(f"[{label}] 文本输出类型异常: {type(output)!r}")
+            raise TypeError(f"{label} expected str output, got {type(output)!r}")
+        return output.strip()
+
+    return await _run_agent_with_retries(
+        agent=agent,
+        user_input=user_input,
+        metadata=_build_run_metadata(
+            workflow_name, usage_agent, usage_phase, model_name, trace_metadata
+        ),
+        timeout_seconds=timeout_seconds,
+        label=label,
+        on_result=_extract_text,
+        max_attempts=max_attempts,
+    )
 
 
 async def run_structured_agent(
@@ -102,22 +140,32 @@ async def run_structured_agent(
     usage_phase: str,
     model_name: str,
     error_label: str | None = None,
+    max_attempts: int = AGENT_RUN_MAX_ATTEMPTS,
+    output_validator: Callable[[T], None] | None = None,
 ) -> T:
     """执行结构化 Agent，并统一处理超时、用量日志和 typed parse。"""
     label = error_label or usage_agent
-    result = await _run_agent(
-        agent,
-        user_input,
-        _build_run_metadata(workflow_name, usage_agent, usage_phase, model_name, trace_metadata),
-        timeout_seconds,
-        label,
-    )
 
-    output = result.output
-    if _matches_output_type(output, output_type):
-        return output
+    def _extract_structured(result) -> T:
+        output = result.output
+        if _matches_output_type(output, output_type):
+            if output_validator is not None:
+                output_validator(output)
+            return output
 
-    routing_logger.error(
-        f"[{label}] structured output 类型异常: expected={output_type!r}, got={type(output)!r}, raw={result.response!r}"
+        routing_logger.error(
+            f"[{label}] structured output 类型异常: expected={output_type!r}, got={type(output)!r}, raw={result.response!r}"
+        )
+        raise TypeError(f"{label} expected {output_type!r}, got {type(output)!r}")
+
+    return await _run_agent_with_retries(
+        agent=agent,
+        user_input=user_input,
+        metadata=_build_run_metadata(
+            workflow_name, usage_agent, usage_phase, model_name, trace_metadata
+        ),
+        timeout_seconds=timeout_seconds,
+        label=label,
+        on_result=_extract_structured,
+        max_attempts=max_attempts,
     )
-    raise TypeError(f"{label} expected {output_type!r}, got {type(output)!r}")

@@ -276,7 +276,7 @@ After each participation round of character responses, `generate_choices()` is c
 
 ### `config.toml`
 
-- Holds runtime strategy parameters, such as Agent temperature, character/consolidation/choice generation timeouts, embedding/rerank request timeouts, vector retrieval weights
+- Holds runtime strategy parameters, such as Agent temperature, LLM retry attempts, character/consolidation/choice generation timeouts, embedding/rerank request timeouts, vector retrieval weights
 - `[history]`'s `history_high` / `history_low` control multi-round dialogue high/low water mark truncation (in distinct turn counts, anchored by turn number, stored in `.history_window_state.json`'s `start_turn` field); `raw_scan_turns` limits how many turns narrator routing / character running / choice generation reads from raw history (consolidation flow slices by turn, not subject to this limit)
 
 ## Save and Reset

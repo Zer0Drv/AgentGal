@@ -39,6 +39,7 @@ BM25_RELEVANCE_WEIGHT: float = _cfg["vector"]["bm25_relevance_weight"]
 
 # Agent 运行
 AGENT_RUN_TIMEOUT_SECONDS: int = _cfg["agent"]["run_timeout_seconds"]
+AGENT_RUN_MAX_ATTEMPTS: int = _cfg["agent"]["max_attempts"]
 CHOICES_RUN_TIMEOUT_SECONDS: float = _cfg["agent"]["choices_timeout_seconds"]
 AGENT_TEMPERATURE: float = _cfg["agent"]["temperature"]
 

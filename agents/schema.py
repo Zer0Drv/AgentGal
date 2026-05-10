@@ -2,7 +2,15 @@
 
 from typing import Annotated, Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    field_validator,
+    model_validator,
+)
 
 from shared.config import MAX_CHOICE_CHARS, MAX_EPISODE_KEYWORDS
 
@@ -45,6 +53,12 @@ class NarratorOutput(BaseModel):
     targets: list[str]
     content: str
     new_characters: list[NewCharacterRequest] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_route_target_or_new_character(self) -> "NarratorOutput":
+        if not self.targets and not self.new_characters:
+            raise ValueError("NarratorOutput must include targets or new_characters")
+        return self
 
 
 class NewCharacterProfile(BaseModel):

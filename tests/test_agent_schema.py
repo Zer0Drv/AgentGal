@@ -1,10 +1,14 @@
 """测试 Agent 结构化输出模型。"""
 
+import pytest
+from pydantic import ValidationError
+
 from agents.schema import (
     MAX_CHOICE_CHARS,
     MAX_EPISODE_KEYWORDS,
     ChoicesOutput,
     EpisodeMemoryBlock,
+    NarratorOutput,
     UnderstandingPatchOutput,
 )
 
@@ -17,6 +21,27 @@ def test_choices_output_trims_each_choice_to_50_chars():
     assert output.choices[0] == "我" * MAX_CHOICE_CHARS
     assert len(output.choices[0]) == MAX_CHOICE_CHARS
     assert output.choices[1] == "短选项"
+
+
+def test_narrator_output_requires_route_target_or_new_character():
+    with pytest.raises(ValidationError):
+        NarratorOutput(targets=[], content="走廊里传来广播声。")
+
+
+def test_narrator_output_allows_new_character_without_existing_target():
+    output = NarratorOutput(
+        targets=[],
+        content="门外有人停下脚步。",
+        new_characters=[
+            {
+                "relation_to": "player",
+                "relation_description": "玩家刚认识的邻班学生",
+            }
+        ],
+    )
+
+    assert output.targets == []
+    assert output.new_characters[0].relation_to == "player"
 
 
 def test_episode_memory_block_cleans_keywords_and_clamps_importance():

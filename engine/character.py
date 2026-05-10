@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 from agents.factory import (
@@ -173,6 +174,7 @@ class BaseEntity:
         *,
         sdk: Any = None,
         usage_agent: str | None = None,
+        output_validator: Callable[[Any], None] | None = None,
     ):
         """执行结构化 SDK 调用的共用封装。"""
         return await run_structured_agent(
@@ -185,6 +187,7 @@ class BaseEntity:
             usage_agent=usage_agent or self.name,
             usage_phase="agent_run",
             model_name=config["model_id"],
+            output_validator=output_validator,
         )
 
 
@@ -348,53 +351,61 @@ class Narrator(BaseEntity):
         if raw_messages is None:
             raw_messages = load_conversation_history(turns=HISTORY_RAW_SCAN_TURNS)
 
+        def _validate_output(output: NarratorOutput) -> None:
+            self._validate_route_output(output, valid_agents)
+
         async def _run(
             narrator_input: str,
         ) -> tuple[list[str], str, list[NewCharacterRequest]]:
-            output = await self._run_narrator(narrator_input, raw_messages, observation_mode=observation_mode)
+            output = await self._run_narrator(
+                narrator_input,
+                raw_messages,
+                observation_mode=observation_mode,
+                output_validator=_validate_output,
+            )
             new_chars = self._filter_new_characters(output.new_characters, valid_agents)
             valid_targets = [t for t in output.targets if t in valid_agents]
             scene = self._sanitize_scene_description(output.content)
             return valid_targets, scene, new_chars
 
-        async def _retry() -> tuple[list[str], str, list[NewCharacterRequest]]:
-            correction = (
-                f"{user_input}\n\n"
-                "<routing_correction>"
-                "上一轮没有返回可用路由。请保留玩家原意，重新输出 JSON；"
-                "如果本轮已有现成主要角色可回应，targets 必须包含至少 1 个 <fields> 中的角色id；"
-                "如果本轮要引入新角色，targets 可以暂时为空，但必须提供合法的 new_characters 锚点。"
-                "</routing_correction>"
-            )
-            return await _run(correction)
-
-        retried = False
         try:
             targets, scene, new_chars = await _run(user_input)
         except Exception as e:
-            self._log_failure("首次调用", e)
-            retried = True
-            try:
-                targets, scene, new_chars = await _retry()
-            except Exception as e:
-                self._log_failure("重试调用", e)
-                return [], "", [], False
+            self._log_failure("调用", e)
+            return [], "", [], False
 
         if not targets and not new_chars:
-            if not retried:
-                routing_logger.warning("narrator 响应缺少可用路由，重试中...")
-                try:
-                    targets, scene, new_chars = await _retry()
-                except Exception as e:
-                    self._log_failure("重试调用", e)
-                    return [], "", [], False
-            if not targets and not new_chars:
-                routing_logger.warning("narrator 重试后仍缺少可用路由")
-                return [], scene, new_chars, False
+            routing_logger.warning("narrator 响应缺少可用路由")
+            return [], scene, new_chars, False
 
         return targets, scene, new_chars, is_valid_response(scene, "narrator") and bool(
             targets or new_chars
         )
+
+    @staticmethod
+    def _validate_route_output(
+        output: NarratorOutput,
+        existing_agents: list[str],
+    ) -> None:
+        """校验 schema 无法表达的运行时路由约束，失败交给 runner 重试。"""
+        valid_targets = set(existing_agents)
+        valid_anchors = valid_targets | {"player"}
+        errors: list[str] = []
+
+        invalid_targets = [target for target in output.targets if target not in valid_targets]
+        if invalid_targets:
+            errors.append(f"invalid targets={invalid_targets!r}")
+
+        for spec in output.new_characters:
+            label = spec.name_hint.strip() or spec.relation_description.strip() or "new_character"
+            relation_to = spec.relation_to.strip()
+            if relation_to not in valid_anchors:
+                errors.append(f"{label!r} has invalid relation_to={relation_to!r}")
+            if not spec.relation_description.strip():
+                errors.append(f"{label!r} missing relation_description")
+
+        if errors:
+            raise ValueError("; ".join(errors))
 
     @staticmethod
     def _filter_new_characters(
@@ -543,7 +554,12 @@ class Narrator(BaseEntity):
         _log_file_updates(self.name, results)
 
     async def _run_narrator(
-        self, user_input: str, raw_messages: list[dict], *, observation_mode: bool = False
+        self,
+        user_input: str,
+        raw_messages: list[dict],
+        *,
+        observation_mode: bool = False,
+        output_validator: Callable[[NarratorOutput], None] | None = None,
     ) -> NarratorOutput:
         """构建 prompt → 运行 narrator SDK，返回 NarratorOutput。"""
         user_message, _ = build_user_message(
@@ -557,6 +573,7 @@ class Narrator(BaseEntity):
             config=config,
             workflow_name="agentgal_turn",
             sdk=sdk,
+            output_validator=output_validator,
         )
 
     def _sanitize_scene_description(self, scene_description: str) -> str:
