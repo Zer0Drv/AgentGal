@@ -3503,7 +3503,6 @@ svg {
                   <div class="beat-divider">
                     <span class="beat-dot" aria-hidden="true"></span>
                     <div class="beat-copy">
-                      <span class="beat-label" x-text="group.label"></span>
                       <span class="beat-title" x-text="group.title"></span>
                       <span class="beat-time" x-show="group.time" x-text="group.time"></span>
                     </div>
@@ -4818,15 +4817,11 @@ document.addEventListener("alpine:init", () => {
     messageGroups() {
       const groups = [];
       let current = null;
-      let sceneIndex = 0;
 
       this.messages.forEach(message => {
         if (message.kind === "narrator") {
-          sceneIndex += 1;
-          const turn = Number(message.turn) || 0;
           current = {
             key: `scene-${message.id}`,
-            label: turn ? `场景 ${turn}` : `场景 ${sceneIndex}`,
             title: this.extractNarratorField(message.content, ["地点", "场景"]) || "新的场面",
             time: this.extractNarratorField(message.content, ["时间"]),
             narrator: message,
@@ -4839,7 +4834,6 @@ document.addEventListener("alpine:init", () => {
         if (!current) {
           current = {
             key: `open-${message.id}`,
-            label: "当前行动",
             title: "",
             time: "",
             narrator: null,
