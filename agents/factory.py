@@ -66,7 +66,21 @@ def _build_model_settings(
     *,
     max_tokens: int | None = None,
 ) -> ModelSettings:
-    settings: ModelSettings = {"temperature": config["temperature"]}
+    settings: ModelSettings = {
+        "temperature": config["temperature"],
+        # Vertex AI safety filters return non-standard finish_reason values that
+        # break OpenAI SDK validation; disable them so the game content goes through.
+        "extra_body": {
+            "google": {
+                "safety_settings": [
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "OFF"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "OFF"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "OFF"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "OFF"},
+                ]
+            }
+        },
+    }
     if max_tokens is not None:
         settings["max_tokens"] = max_tokens
     return settings
