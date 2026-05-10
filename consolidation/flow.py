@@ -47,6 +47,7 @@ from storage.vector_store import vector_store
 from agents.schema import (
     EpisodeClosureOutput,
     EpisodeMemoryBlock,
+    UnderstandingEntry,
     UnderstandingPatchOutput,
 )
 
@@ -65,6 +66,12 @@ class _UnderstandingPatchResult:
     added_ids: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class _UnderstandingPromptContext:
+    text: str
+    id_map: dict[str, str] = field(default_factory=dict)
+
+
 def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:
     return {
         "id": episode.id,
@@ -77,18 +84,57 @@ def _episode_to_llm_payload(episode: EpisodeMemory) -> dict[str, str]:
     }
 
 
-def _render_understandings_for_prompt(understandings: dict[str, Understanding]) -> str:
+def _render_understandings_for_prompt(
+    understandings: dict[str, Understanding],
+) -> _UnderstandingPromptContext:
     if not understandings:
-        return "（尚无）"
+        return _UnderstandingPromptContext(text="（尚无）")
     lines: list[str] = []
-    for uid, u in understandings.items():
+    id_map: dict[str, str] = {}
+    for index, (uid, u) in enumerate(understandings.items(), start=1):
+        prompt_id = f"u{index}"
+        id_map[prompt_id] = uid
         keywords = "、".join(u.keywords) if u.keywords else ""
         keywords_part = f"\n  keywords: {keywords}" if keywords else ""
         lines.append(
-            f"[{uid}] subject={u.subject!r}{keywords_part}\n"
+            f"[{prompt_id}] subject={u.subject!r}{keywords_part}\n"
             f"  content: {u.content}"
         )
-    return "\n\n".join(lines)
+    return _UnderstandingPromptContext(text="\n\n".join(lines), id_map=id_map)
+
+
+def _resolve_understanding_update_id(
+    raw_uid: str,
+    understandings: dict[str, Understanding],
+    prompt_id_map: dict[str, str],
+) -> str:
+    uid = raw_uid.strip().lower()
+    mapped = prompt_id_map.get(uid)
+    if mapped:
+        return mapped
+    if uid in understandings:
+        return uid
+
+    prefix_matches = [
+        existing_id for existing_id in understandings if existing_id.startswith(uid)
+    ]
+    if len(prefix_matches) == 1:
+        return prefix_matches[0]
+    return uid
+
+
+def _resolve_understanding_patch_ids(
+    patch: UnderstandingPatchOutput,
+    understandings: dict[str, Understanding],
+    prompt_id_map: dict[str, str],
+) -> UnderstandingPatchOutput:
+    if not patch.update:
+        return patch
+    resolved_update: dict[str, UnderstandingEntry] = {}
+    for raw_uid, entry in patch.update.items():
+        uid = _resolve_understanding_update_id(raw_uid, understandings, prompt_id_map)
+        resolved_update[uid] = entry
+    return patch.model_copy(update={"update": resolved_update})
 
 
 def _apply_understanding_patch(
@@ -317,11 +363,11 @@ class MemoryConsolidationFlow:
         episode: EpisodeMemory,
     ) -> None:
         current_understandings = read_understandings(agent_name)
-        existing_text = _render_understandings_for_prompt(current_understandings)
+        prompt_context = _render_understandings_for_prompt(current_understandings)
         episode_json = json.dumps(
             _episode_to_llm_payload(episode), ensure_ascii=False, indent=2
         )
-        user = build_understanding_patch_payload(existing_text, episode_json)
+        user = build_understanding_patch_payload(prompt_context.text, episode_json)
 
         output = await self._run_consolidation_agent(
             agent=get_understanding_patch_agent(),
@@ -331,8 +377,11 @@ class MemoryConsolidationFlow:
             user=user,
         )
 
+        resolved_output = _resolve_understanding_patch_ids(
+            output, current_understandings, prompt_context.id_map
+        )
         result = _apply_understanding_patch(
-            agent_name, current_understandings, output, episode
+            agent_name, current_understandings, resolved_output, episode
         )
         if not result.logs:
             memory_logger.debug(f"[整理器] {agent_name} 无 Understanding 更新")

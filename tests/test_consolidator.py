@@ -456,6 +456,103 @@ def test_apply_understanding_patch_does_not_append_history_for_link_only_update(
     assert result.updated["u1"].history == []
 
 
+def test_render_understandings_uses_temporary_prompt_ids():
+    context = consolidator_module._render_understandings_for_prompt(
+        {
+            "79889b06b1204883b26dcf01b7ff3f21": Understanding(
+                id="79889b06b1204883b26dcf01b7ff3f21",
+                subject="北原悠的性格特征",
+                content="他会记住细节。",
+            ),
+            "deb8d2bbdda7435199d66d32ed5bd6db": Understanding(
+                id="deb8d2bbdda7435199d66d32ed5bd6db",
+                subject="我与北原悠的相处方式",
+                content="我们相处自然。",
+            ),
+        }
+    )
+
+    assert "[u1] subject='北原悠的性格特征'" in context.text
+    assert "[u2] subject='我与北原悠的相处方式'" in context.text
+    assert "79889b06" not in context.text
+    assert context.id_map == {
+        "u1": "79889b06b1204883b26dcf01b7ff3f21",
+        "u2": "deb8d2bbdda7435199d66d32ed5bd6db",
+    }
+
+
+def test_resolve_understanding_patch_ids_maps_prompt_ids_to_real_ids():
+    existing = {
+        "79889b06b1204883b26dcf01b7ff3f21": Understanding(
+            id="79889b06b1204883b26dcf01b7ff3f21",
+            subject="北原悠的性格特征",
+            content="旧理解。",
+            linked_episodes=["e0"],
+        ),
+        "deb8d2bbdda7435199d66d32ed5bd6db": Understanding(
+            id="deb8d2bbdda7435199d66d32ed5bd6db",
+            subject="我与北原悠的相处方式",
+            content="旧理解。",
+            linked_episodes=["e0"],
+        ),
+        "e072064bd6a94edc9070d4eeab29fcb5": Understanding(
+            id="e072064bd6a94edc9070d4eeab29fcb5",
+            subject="我对北原悠的感情",
+            content="旧理解。",
+            linked_episodes=["e0"],
+        ),
+    }
+    patch = UnderstandingPatchOutput.model_validate(
+        {
+            "add": [],
+            "update": {
+                "u1": {"subject": "北原悠的性格特征"},
+                "u2": {"subject": "我与北原悠的相处方式"},
+                "u3": {"subject": "我对北原悠的感情"},
+            },
+        }
+    )
+
+    resolved = consolidator_module._resolve_understanding_patch_ids(
+        patch,
+        existing,
+        {
+            "u1": "79889b06b1204883b26dcf01b7ff3f21",
+            "u2": "deb8d2bbdda7435199d66d32ed5bd6db",
+            "u3": "e072064bd6a94edc9070d4eeab29fcb5",
+        },
+    )
+    result = consolidator_module._apply_understanding_patch(
+        "mitsuki",
+        existing,
+        resolved,
+        EpisodeMemory(id="episode-id", date="4月18日", title="他记得口味"),
+    )
+
+    assert result.logs == [
+        "UPDATE 79889b06b1204883b26dcf01b7ff3f21",
+        "UPDATE deb8d2bbdda7435199d66d32ed5bd6db",
+        "UPDATE e072064bd6a94edc9070d4eeab29fcb5",
+    ]
+    assert result.links_only_ids == [
+        "79889b06b1204883b26dcf01b7ff3f21",
+        "deb8d2bbdda7435199d66d32ed5bd6db",
+        "e072064bd6a94edc9070d4eeab29fcb5",
+    ]
+    assert result.updated["79889b06b1204883b26dcf01b7ff3f21"].linked_episodes == [
+        "e0",
+        "episode-id",
+    ]
+    assert result.updated["deb8d2bbdda7435199d66d32ed5bd6db"].linked_episodes == [
+        "e0",
+        "episode-id",
+    ]
+    assert result.updated["e072064bd6a94edc9070d4eeab29fcb5"].linked_episodes == [
+        "e0",
+        "episode-id",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_apply_pipeline_assigns_episode_id_before_understanding_patch(monkeypatch):
     class FakeUUID:
