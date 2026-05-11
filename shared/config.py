@@ -42,6 +42,8 @@ AGENT_RUN_TIMEOUT_SECONDS: int = _cfg["agent"]["run_timeout_seconds"]
 AGENT_RUN_MAX_ATTEMPTS: int = _cfg["agent"]["max_attempts"]
 CHOICES_RUN_TIMEOUT_SECONDS: float = _cfg["agent"]["choices_timeout_seconds"]
 AGENT_TEMPERATURE: float = _cfg["agent"]["temperature"]
+STATE_UPDATER_TEMPERATURE: float = _cfg["agent"]["state_updater_temperature"]
+STATE_UPDATER_OUTPUT_RETRIES: int = _cfg["agent"]["state_updater_output_retries"]
 
 # 外部 HTTP 服务
 EMBEDDING_REQUEST_TIMEOUT_SECONDS: float = _cfg["embedding"]["request_timeout_seconds"]

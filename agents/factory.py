@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from pydantic_ai import Agent, PromptedOutput
+from pydantic_ai.models import Model
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
+from pydantic_ai.providers.deepseek import DeepSeekProvider
+from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
@@ -32,6 +40,8 @@ from prompts.worldgen_prompts import CHARACTER_FACTORY
 from shared.config import (
     CONSOLIDATION_MAX_TOKENS,
     CONSOLIDATION_TEMPERATURE,
+    STATE_UPDATER_OUTPUT_RETRIES,
+    STATE_UPDATER_TEMPERATURE,
     get_agent_names,
 )
 from storage.agent_files import read_agent_file
@@ -47,14 +57,63 @@ _character_factory_agent: Agent[None, NewCharacterProfile] | None = None
 _consolidation_agents: dict[str, StructuredAgent] = {}
 
 
-def _make_sdk_model(config: dict) -> OpenAIChatModel:
-    return OpenAIChatModel(
-        config["model_id"],
-        provider=OpenAIProvider(
-            base_url=config["api_url"],
-            api_key=config["api_key"],
+_GOOGLE_SAFETY_OFF = [
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "OFF"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "OFF"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "OFF"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "OFF"},
+]
+
+_MakeModel = Callable[[dict], Model]
+_MakeSettings = Callable[[dict], ModelSettings]
+
+_default_make_settings: _MakeSettings = lambda c: ModelSettings(temperature=c["temperature"])
+
+# 新增 provider：加一行 tuple 即可
+_PROVIDER_REGISTRY: dict[str, tuple[_MakeModel, _MakeSettings]] = {
+    "openai": (
+        lambda c: OpenAIChatModel(
+            c["model_id"],
+            provider=OpenAIProvider(base_url=c["api_url"] or None, api_key=c["api_key"]),
         ),
-    )
+        _default_make_settings,
+    ),
+    "google": (
+        lambda c: GoogleModel(
+            c["model_id"],
+            provider=GoogleProvider(api_key=c["api_key"]),
+        ),
+        lambda c: GoogleModelSettings(
+            temperature=c["temperature"],
+            google_safety_settings=_GOOGLE_SAFETY_OFF,
+        ),
+    ),
+    "anthropic": (
+        lambda c: AnthropicModel(
+            c["model_id"],
+            provider=AnthropicProvider(api_key=c["api_key"]),
+        ),
+        _default_make_settings,
+    ),
+    "deepseek": (
+        lambda c: OpenAIChatModel(
+            c["model_id"],
+            provider=DeepSeekProvider(api_key=c["api_key"]),
+        ),
+        _default_make_settings,
+    ),
+}
+
+
+def _make_sdk_model(config: dict) -> Model:
+    entry = _PROVIDER_REGISTRY.get(config["provider"])
+    if entry is None:
+        raise ValueError(
+            f"Unsupported LLM_PROVIDER: {config['provider']!r}. "
+            f"Supported: {list(_PROVIDER_REGISTRY)}"
+        )
+    make_model, _ = entry
+    return make_model(config)
 
 
 def _build_model_settings(
@@ -62,21 +121,8 @@ def _build_model_settings(
     *,
     max_tokens: int | None = None,
 ) -> ModelSettings:
-    settings: ModelSettings = {
-        "temperature": config["temperature"],
-        # Vertex AI safety filters return non-standard finish_reason values that
-        # break OpenAI SDK validation; disable them so the game content goes through.
-        "extra_body": {
-            "google": {
-                "safety_settings": [
-                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "OFF"},
-                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "OFF"},
-                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "OFF"},
-                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "OFF"},
-                ]
-            }
-        },
-    }
+    _, make_settings = _PROVIDER_REGISTRY[config["provider"]]
+    settings = make_settings(config)
     if max_tokens is not None:
         settings["max_tokens"] = max_tokens
     return settings
@@ -89,6 +135,7 @@ def _build_agent(
     config: dict,
     output_type: type,
     max_tokens: int | None = None,
+    output_retries: int | None = None,
 ) -> StructuredAgent:
     return Agent(
         _make_sdk_model(config),
@@ -96,6 +143,7 @@ def _build_agent(
         instructions=instructions,
         model_settings=_build_model_settings(config, max_tokens=max_tokens),
         output_type=PromptedOutput(output_type),
+        output_retries=output_retries,
     )
 
 
@@ -159,12 +207,13 @@ def get_state_updater_agent() -> Agent[None, StateUpdaterOutput]:
     global _state_updater_agent
 
     if _state_updater_agent is None:
-        config = get_llm_config()
+        config = get_llm_config(temperature=STATE_UPDATER_TEMPERATURE)
         _state_updater_agent = _build_agent(
             name="state_updater",
             instructions=STATE_UPDATER,
             config=config,
             output_type=StateUpdaterOutput,
+            output_retries=STATE_UPDATER_OUTPUT_RETRIES,
         )
     return _state_updater_agent
 

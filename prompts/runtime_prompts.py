@@ -292,9 +292,14 @@ recent_history 是最近3条 raw 历史的摘要，不再另行提供 player_inp
 8. 同一轮最多新增2条，其中剧情机会最多1条；没有可同步打算且没有高质量剧情机会时 add_event=[]。
 </rules>
 
-<format>
-{"status":{"场景":"","角色位置":"","当前时间":"","叙事焦点":""},"triggered":[],"add_event":["【角色名：打算名】日期/时段 地点。角色可观察行为。玩家可进入的缝隙。"]}
-</format>
+<output_contract>
+你会通过 pydantic-ai PromptedOutput 返回 StateUpdaterOutput。按自动注入的 JSON schema 填字段即可，不要输出 markdown、代码块、解释文字或第二个 JSON 对象。
+字段含义：
+- status：对象，只包含 场景 / 角色位置 / 当前时间 / 叙事焦点。无变化的字段填空字符串；角色位置每轮必须给完整快照。
+- triggered：字符串数组，只放要移除的 narrator「待触发事件」事件名。
+- add_event：字符串数组，只放新增公共待触发事件描述。
+JSON 必须只有一个顶层对象；对象结束后不能再输出任何字符。特别注意 add_event 数组结束后，只关闭顶层对象一次。
+</output_contract>
 
 <examples>
 <eg name="sync_intention">

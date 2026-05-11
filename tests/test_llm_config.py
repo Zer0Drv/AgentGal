@@ -14,13 +14,14 @@ except ModuleNotFoundError as exc:
     pytest.skip(f"skip llm config tests: missing dependency ({exc})", allow_module_level=True)
 
 
-_CONFIG_KEYS = {"api_url", "api_key", "model_id", "temperature"}
+_CONFIG_KEYS = {"api_url", "api_key", "model_id", "temperature", "provider"}
 
 
 _LLM_ENV_KEYS = [
     "LLM_MODEL_ID",
     "LLM_API_KEY",
     "LLM_API_URL",
+    "LLM_PROVIDER",
     "CHOICES_LLM_MODEL_ID",
     "CHOICES_LLM_API_KEY",
     "CHOICES_LLM_API_URL",
@@ -45,6 +46,7 @@ def test_get_llm_config_normalizes_full_chat_completions_url(monkeypatch):
     assert config["model_id"] == "gpt-test"
     assert config["api_key"] == "main-key"
     assert config["api_url"] == "https://example.com/v1"
+    assert config["provider"] == "openai"
 
 
 def test_get_llm_config_reads_model_key_and_url(monkeypatch):
@@ -59,6 +61,7 @@ def test_get_llm_config_reads_model_key_and_url(monkeypatch):
     assert config["model_id"] == "custom-model"
     assert config["api_key"] == "main-key"
     assert config["api_url"] == "https://custom.example/v1"
+    assert config["provider"] == "openai"
 
 
 def test_get_choices_llm_config_falls_back_to_main_config(monkeypatch):
@@ -73,6 +76,7 @@ def test_get_choices_llm_config_falls_back_to_main_config(monkeypatch):
     assert config["model_id"] == "gpt-main"
     assert config["api_key"] == "main-key"
     assert config["api_url"] == "https://main.example/v1"
+    assert config["provider"] == "openai"
 
 
 def test_choices_config_can_override_all_fields_without_main_config(monkeypatch):
@@ -87,6 +91,7 @@ def test_choices_config_can_override_all_fields_without_main_config(monkeypatch)
     assert config["model_id"] == "choices-model"
     assert config["api_key"] == "choices-key"
     assert config["api_url"] == "https://choices.example/v1"
+    assert config["provider"] == "openai"
 
 
 def test_choices_config_partially_overrides_main_config(monkeypatch):
@@ -102,6 +107,7 @@ def test_choices_config_partially_overrides_main_config(monkeypatch):
     assert config["model_id"] == "deepseek-main"
     assert config["api_key"] == "main-key"
     assert config["api_url"] == "https://scoped.example/v1"
+    assert config["provider"] == "openai"
 
 
 def test_get_llm_config_accepts_temperature_override(monkeypatch):
@@ -117,12 +123,28 @@ def test_get_llm_config_accepts_temperature_override(monkeypatch):
     assert config["api_key"] == "main-key"
     assert config["api_url"] == "https://main.example/v1"
     assert config["temperature"] == 0.42
+    assert config["provider"] == "openai"
 
 
-def test_get_llm_config_requires_api_url(monkeypatch):
+def test_get_llm_config_reads_provider(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("LLM_MODEL_ID", "gemini-main")
+    monkeypatch.setenv("LLM_API_KEY", "main-key")
+    monkeypatch.setenv("LLM_API_URL", "https://ignored.example/v1")
+    monkeypatch.setenv("LLM_PROVIDER", "google")
+
+    config = llm_config_module.get_llm_config()
+
+    assert set(config) == _CONFIG_KEYS
+    assert config["provider"] == "google"
+
+
+def test_get_llm_config_omits_api_url_when_unset(monkeypatch):
     _clear_llm_env(monkeypatch)
     monkeypatch.setenv("LLM_MODEL_ID", "gpt-main")
     monkeypatch.setenv("LLM_API_KEY", "main-key")
 
-    with pytest.raises(ValueError, match="LLM_API_URL"):
-        llm_config_module.get_llm_config()
+    config = llm_config_module.get_llm_config()
+
+    assert set(config) == _CONFIG_KEYS
+    assert config["api_url"] == ""

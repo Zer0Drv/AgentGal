@@ -57,14 +57,16 @@ def get_llm_config(
             "temperature": float,
         }
     """
+    provider = _get_optional_env("LLM_PROVIDER") or "openai"
     model_id = _normalize_optional(model_id) or _get_required_env("LLM_MODEL_ID")
     api_key = _normalize_optional(api_key) or _get_required_env("LLM_API_KEY")
-    api_url = _normalize_optional(api_url) or _get_required_env("LLM_API_URL")
+    raw_url = _normalize_optional(api_url) or _get_optional_env("LLM_API_URL")
     return {
-        "api_url": _normalize_api_url(api_url),
+        "api_url": _normalize_api_url(raw_url) if raw_url else "",
         "api_key": api_key,
         "model_id": model_id,
         "temperature": AGENT_TEMPERATURE if temperature is None else temperature,
+        "provider": provider,
     }
 
 

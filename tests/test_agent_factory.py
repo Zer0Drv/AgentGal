@@ -33,6 +33,7 @@ def _fake_config(temperature=None):
         "api_key": "test-key",
         "model_id": "deepseek-chat",
         "temperature": 0.2 if temperature is None else temperature,
+        "provider": "openai",
     }
 
 
@@ -63,6 +64,18 @@ def test_auxiliary_structured_agents_use_prompted_output(monkeypatch):
     assert understanding_patch._output_schema.mode == "prompted"
 
 
+def test_state_updater_uses_deterministic_generation_settings(monkeypatch):
+    monkeypatch.setattr(agent_factory_module, "get_llm_config", _fake_config)
+
+    state_updater = agent_factory_module.get_state_updater_agent()
+
+    assert (
+        state_updater.model_settings["temperature"]
+        == agent_factory_module.STATE_UPDATER_TEMPERATURE
+    )
+    assert state_updater._max_result_retries == agent_factory_module.STATE_UPDATER_OUTPUT_RETRIES
+
+
 def test_consolidation_agents_use_configured_max_tokens(monkeypatch):
     monkeypatch.setattr(agent_factory_module, "get_llm_config", _fake_config)
     monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_MAX_TOKENS", 1234)
@@ -81,6 +94,7 @@ def test_make_sdk_model_uses_configured_openai_compatible_url():
             "api_key": "test-key",
             "model_id": "moonshotai/kimi-k2.5",
             "temperature": 0.2,
+            "provider": "openai",
         }
     )
 
