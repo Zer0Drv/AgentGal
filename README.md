@@ -67,9 +67,9 @@ cp .env.example .env
 打开 `.env`，填入模型服务配置。最少需要：
 
 ```bash
-LLM_API_URL=https://api.deepseek.com/v1
-LLM_API_KEY=你的 API Key
-LLM_MODEL_ID=deepseek-v4-pro
+LLM_API_URL=your-llm-api-url
+LLM_API_KEY=your-llm-api-key
+LLM_MODEL_ID=deepseek-v4-pro # 建议使用 deepseek 模型，在角色扮演上表现好。如果你有其他模型也可以使用。
 ```
 
 如果使用其他 OpenAI-compatible 模型服务，按 `.env.example` 里的注释调整 URL 和模型名。
@@ -77,7 +77,7 @@ LLM_MODEL_ID=deepseek-v4-pro
 启动：
 
 ```bash
-uv run uvicorn server:app --reload
+uv run uvicorn server:app
 ```
 
 然后打开：
@@ -103,22 +103,22 @@ http://localhost:8000
 “你今天看起来有点累，要不要一起去天台吹会儿风？”
 ```
 
-也可以输入动作：
+也用括号表示动作：
 
 ```text
-我把手机扣在桌上，假装没看到那条消息。
+（把手机扣在桌上，假装没看到那条消息）
 ```
 
 也可以主动改变场景：
 
 ```text
-放学后我去便利店找美月。
+（去找美月）
 ```
 
 或者跳过时间：
 
 ```text
-我等到晚上十点，再给陈晓发消息。
+（等到晚上十点，给陈晓发消息）
 ```
 
 ### 3. 和角色互动
@@ -144,16 +144,10 @@ http://localhost:8000
 例如：
 
 ```text
-我问美月：“你之前说的那个社团前辈，今天也会来吗？”
+你之前说的那个社团前辈，今天也会来吗？
 ```
 
-或：
-
-```text
-我给陈晓的经纪人打电话，问她今晚的安排为什么临时改了。
-```
-
-如果这个人物适合进入主要关系网，系统会创建角色，并让他/她在后续剧情中继续存在。
+如果这个人物适合进入主要关系网，系统会自动创建角色，并让他/她在后续剧情中继续存在。
 
 ### 5. 存档、读档和重开
 
