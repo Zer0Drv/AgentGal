@@ -19,12 +19,8 @@ from agents.schema import (
 )
 from engine.prompt_builder import build_system_prompt
 from llm.config import (
-    get_character_factory_llm_config,
     get_choices_llm_config,
-    get_consolidation_llm_config,
-    get_episode_closure_detector_llm_config,
     get_llm_config,
-    get_narrator_llm_config,
 )
 from prompts.consolidation_prompts import (
     EPISODE_CLOSURE_DETECTOR,
@@ -112,7 +108,7 @@ def reload_conversation_agent(name: str) -> None:
     global _choices_agent, _observation_narrator_agent
 
     soul = read_agent_file(name, "soul.md")
-    config = get_narrator_llm_config() if name == "narrator" else get_llm_config()
+    config = get_llm_config()
     output_type = NarratorOutput if name == "narrator" else CharacterOutput
     _conversation_agents[name] = _build_agent(
         name=name,
@@ -135,7 +131,7 @@ def get_observation_narrator_agent() -> ConversationAgent:
     global _observation_narrator_agent
     if _observation_narrator_agent is None:
         soul = read_agent_file("narrator", "soul.md")
-        config = get_narrator_llm_config()
+        config = get_llm_config()
         _observation_narrator_agent = _build_agent(
             name="narrator_observation",
             instructions=NARRATOR_OBSERVATION.format(soul=soul),
@@ -163,7 +159,7 @@ def get_state_updater_agent() -> Agent[None, StateUpdaterOutput]:
     global _state_updater_agent
 
     if _state_updater_agent is None:
-        config = get_narrator_llm_config()
+        config = get_llm_config()
         _state_updater_agent = _build_agent(
             name="state_updater",
             instructions=STATE_UPDATER,
@@ -177,7 +173,7 @@ def get_character_factory_agent() -> Agent[None, NewCharacterProfile]:
     global _character_factory_agent
 
     if _character_factory_agent is None:
-        config = get_character_factory_llm_config()
+        config = get_llm_config()
         _character_factory_agent = _build_agent(
             name="character_factory",
             instructions=CHARACTER_FACTORY,
@@ -191,7 +187,7 @@ def _ensure_consolidation_agents() -> None:
     if _consolidation_agents:
         return
 
-    config = get_consolidation_llm_config(temperature=CONSOLIDATION_TEMPERATURE)
+    config = get_llm_config(temperature=CONSOLIDATION_TEMPERATURE)
     _consolidation_agents["episode_memory_generator"] = _build_agent(
         name="episode_memory_generator",
         instructions=EPISODE_MEMORY_GENERATOR,
@@ -199,13 +195,10 @@ def _ensure_consolidation_agents() -> None:
         output_type=EpisodeMemoryBlock,
         max_tokens=CONSOLIDATION_MAX_TOKENS,
     )
-    closure_config = get_episode_closure_detector_llm_config(
-        temperature=CONSOLIDATION_TEMPERATURE
-    )
     _consolidation_agents["episode_closure_detector"] = _build_agent(
         name="episode_closure_detector",
         instructions=EPISODE_CLOSURE_DETECTOR,
-        config=closure_config,
+        config=config,
         output_type=EpisodeClosureOutput,
         max_tokens=CONSOLIDATION_MAX_TOKENS,
     )

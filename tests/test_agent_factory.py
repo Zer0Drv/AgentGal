@@ -27,12 +27,12 @@ def reset_agent_caches():
     agent_factory_module._consolidation_agents.clear()
 
 
-def _fake_config():
+def _fake_config(temperature=None):
     return {
         "api_url": "https://example.com/v1",
         "api_key": "test-key",
         "model_id": "deepseek-chat",
-        "temperature": 0.2,
+        "temperature": 0.2 if temperature is None else temperature,
     }
 
 
@@ -40,7 +40,6 @@ def test_conversation_agents_use_prompted_output(monkeypatch):
     monkeypatch.setattr(agent_factory_module, "read_agent_file", lambda *_args: "# soul")
     monkeypatch.setattr(agent_factory_module, "build_system_prompt", lambda *_args: "system prompt")
     monkeypatch.setattr(agent_factory_module, "get_llm_config", _fake_config)
-    monkeypatch.setattr(agent_factory_module, "get_narrator_llm_config", _fake_config)
 
     narrator = agent_factory_module.get_conversation_agent("narrator")
     character = agent_factory_module.get_conversation_agent("mitsuki")
@@ -51,17 +50,7 @@ def test_conversation_agents_use_prompted_output(monkeypatch):
 
 def test_auxiliary_structured_agents_use_prompted_output(monkeypatch):
     monkeypatch.setattr(agent_factory_module, "get_choices_llm_config", _fake_config)
-    monkeypatch.setattr(agent_factory_module, "get_narrator_llm_config", _fake_config)
-    monkeypatch.setattr(
-        agent_factory_module,
-        "get_consolidation_llm_config",
-        lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
-    )
-    monkeypatch.setattr(
-        agent_factory_module,
-        "get_episode_closure_detector_llm_config",
-        lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
-    )
+    monkeypatch.setattr(agent_factory_module, "get_llm_config", _fake_config)
 
     choices = agent_factory_module.get_choices_agent()
     state_updater = agent_factory_module.get_state_updater_agent()
@@ -75,16 +64,7 @@ def test_auxiliary_structured_agents_use_prompted_output(monkeypatch):
 
 
 def test_consolidation_agents_use_configured_max_tokens(monkeypatch):
-    monkeypatch.setattr(
-        agent_factory_module,
-        "get_consolidation_llm_config",
-        lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
-    )
-    monkeypatch.setattr(
-        agent_factory_module,
-        "get_episode_closure_detector_llm_config",
-        lambda temperature=None: {**_fake_config(), "temperature": temperature or 0.2},
-    )
+    monkeypatch.setattr(agent_factory_module, "get_llm_config", _fake_config)
     monkeypatch.setattr(agent_factory_module, "CONSOLIDATION_MAX_TOKENS", 1234)
 
     episode_memory_generator = agent_factory_module.get_episode_memory_generator_agent()

@@ -38,7 +38,7 @@ def _mock_llm_infra(monkeypatch: pytest.MonkeyPatch) -> None:
     """Mock LLM config and agent construction so tests don't need real API keys."""
     monkeypatch.setattr(
         migrate,
-        "get_consolidation_llm_config",
+        "get_llm_config",
         lambda temperature=None: {"model_id": "test-model"},
     )
     monkeypatch.setattr(

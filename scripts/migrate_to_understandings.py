@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 from agents.factory import _build_agent
 from agents.runner import run_structured_agent
 from agents.schema import UnderstandingEntry
-from llm.config import get_consolidation_llm_config
+from llm.config import get_llm_config
 from memory.parser import Understanding, read_understandings, write_understandings
 from shared.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
@@ -215,7 +215,7 @@ async def migrate_agent(agent_name: str) -> int:
         print(f"  {agent_name}: nothing to migrate", flush=True)
         return 0
 
-    config = get_consolidation_llm_config(temperature=CONSOLIDATION_TEMPERATURE)
+    config = get_llm_config(temperature=CONSOLIDATION_TEMPERATURE)
     agent = _build_agent(
         name="understanding_migration",
         instructions=MIGRATION_PROMPT,

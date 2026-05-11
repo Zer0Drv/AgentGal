@@ -13,7 +13,7 @@ from pathlib import Path
 from agents.factory import get_character_factory_agent, reload_conversation_agent
 from agents.runner import run_structured_agent
 from agents.schema import CharacterSchedule, NewCharacterProfile, NewCharacterRequest
-from llm.config import get_character_factory_llm_config
+from llm.config import get_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field
 from shared.config import (
@@ -227,7 +227,7 @@ async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | 
         routing_logger.warning(f"[character_factory] 拒绝生成 {label!r}：{error}")
         return None
 
-    config = get_character_factory_llm_config()
+    config = get_llm_config()
     try:
         creation = await run_structured_agent(
             agent=get_character_factory_agent(),

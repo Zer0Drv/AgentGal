@@ -232,14 +232,14 @@ Where:
 
 > Note: `<world_now>` (derived projection of current time / real-time character locations) is currently disabled, to be restored after schedule mechanism is refined. During this period narrator only reads fields maintained by author/state_updater in `status.md`.
 
-Narrator supports independent LLM configuration (`NARRATOR_LLM_*` env vars), falling back to main LLM when not set.
+Narrator uses the main LLM configuration (`LLM_*` env vars).
 
 ### Choice Generation
 
 After each participation round of character responses, `generate_choices()` is called to generate 2-3 player-selectable actions. Observation rounds skip choice generation and clear `last_choices.json`.
 
 - Prompt source: `prompts.runtime_prompts.CHOICES`
-- Uses narrator's LLM configuration
+- Uses `CHOICES_LLM_*` when configured, otherwise falls back to the main LLM configuration
 - Output style is player dialogue (may include parenthetical action descriptions), not action instructions
 - Options are displayed as both text and buttons, persisted to `last_choices.json`
 
@@ -272,7 +272,7 @@ After each participation round of character responses, `generate_choices()` is c
 
 - Holds secrets, model IDs, and external service URLs
 - Rerank calls are only truly enabled when `RERANK_MODEL` is configured
-- narrator / choices / consolidation / character_factory / episode_closure_detector all support their own independent LLM configurations, falling back level by level when not set (`CHARACTER_FACTORY_LLM_*` falls back to narrator; `EPISODE_CLOSURE_DETECTOR_LLM_*` falls back to main LLM)
+- Generated dialogue and background generation use the main `LLM_*` configuration; only choice generation has an optional `CHOICES_LLM_*` override, falling back to the main LLM when not set
 
 ### `config.toml`
 

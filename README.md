@@ -72,6 +72,8 @@ LLM_API_KEY=your-llm-api-key
 LLM_MODEL_ID=deepseek-v4-pro # 建议使用 deepseek 模型，在角色扮演上表现好。如果你有其他模型也可以使用。
 ```
 
+选项生成可通过 `CHOICES_LLM_API_URL` / `CHOICES_LLM_API_KEY` / `CHOICES_LLM_MODEL_ID` 单独配置；不配置时复用主模型。
+
 如果使用其他 OpenAI-compatible 模型服务，按 `.env.example` 里的注释调整 URL 和模型名。
 
 启动：

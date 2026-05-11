@@ -1,7 +1,6 @@
 """LLM 配置 - 使用 OpenAI-compatible API URL、模型 ID 和 API key。"""
 
 import os
-from collections.abc import Callable
 
 from shared.config import AGENT_TEMPERATURE
 
@@ -44,10 +43,11 @@ def get_llm_config(
     model_id: str | None = None,
     api_key: str | None = None,
     api_url: str | None = None,
+    temperature: float | None = None,
 ) -> dict:
     """返回 LLM 配置 dict，供 agent_factory 构建 OpenAI-compatible chat model 使用。
 
-    参数优先级：传入参数 > 环境变量
+    参数优先级：传入参数 > 环境变量。temperature 不为 None 时覆盖默认值。
 
     Returns:
         {
@@ -64,87 +64,17 @@ def get_llm_config(
         "api_url": _normalize_api_url(api_url),
         "api_key": api_key,
         "model_id": model_id,
-        "temperature": AGENT_TEMPERATURE,
+        "temperature": AGENT_TEMPERATURE if temperature is None else temperature,
     }
-
-
-def _read_scoped_overrides(env_prefix: str) -> dict[str, str | None]:
-    return {
-        "model_id": _get_optional_env(f"{env_prefix}_MODEL_ID"),
-        "api_key": _get_optional_env(f"{env_prefix}_API_KEY"),
-        "api_url": _get_optional_env(f"{env_prefix}_API_URL"),
-    }
-
-
-def _make_scoped_llm_config(
-    env_prefix: str,
-    fallback_getter: Callable[[], dict],
-    *,
-    temperature: float | None = None,
-) -> dict:
-    """基于环境变量前缀构建 scoped LLM 配置。"""
-    overrides = _read_scoped_overrides(env_prefix)
-    if not any(overrides.values()):
-        config = fallback_getter().copy()
-    else:
-        fallback_config: dict | None = None
-
-        def fallback_value(key: str) -> str:
-            nonlocal fallback_config
-            if fallback_config is None:
-                fallback_config = fallback_getter()
-            return fallback_config[key]
-
-        config = get_llm_config(
-            model_id=overrides["model_id"] or fallback_value("model_id"),
-            api_key=overrides["api_key"] or fallback_value("api_key"),
-            api_url=overrides["api_url"] or fallback_value("api_url"),
-        )
-
-    if temperature is not None:
-        config["temperature"] = temperature
-    return config
-
-
-def get_narrator_llm_config() -> dict:
-    """返回 narrator 使用的 LLM 配置。
-
-    优先使用 NARRATOR_LLM_* 系列环境变量，未设置则复用主 LLM 配置。
-    """
-    return _make_scoped_llm_config("NARRATOR_LLM", get_llm_config)
 
 
 def get_choices_llm_config() -> dict:
     """返回选项生成使用的 LLM 配置。
 
-    优先使用 CHOICES_LLM_* 系列环境变量，未设置则复用 narrator LLM 配置。
+    优先使用 CHOICES_LLM_* 系列环境变量，未设置则复用主 LLM 配置。
     """
-    return _make_scoped_llm_config("CHOICES_LLM", get_narrator_llm_config)
-
-
-def get_character_factory_llm_config() -> dict:
-    """返回动态生成角色使用的 LLM 配置。
-
-    优先使用 CHARACTER_FACTORY_LLM_* 系列环境变量，未设置则复用 narrator LLM 配置。
-    """
-    return _make_scoped_llm_config("CHARACTER_FACTORY_LLM", get_narrator_llm_config)
-
-
-def get_consolidation_llm_config(temperature: float | None = None) -> dict:
-    """返回记忆整理器使用的 LLM 配置。
-
-    优先使用 CONSOLIDATION_LLM_* 系列环境变量，未设置则复用主 LLM 配置。
-    temperature 不为 None 时覆盖默认值。
-    """
-    return _make_scoped_llm_config("CONSOLIDATION_LLM", get_llm_config, temperature=temperature)
-
-
-def get_episode_closure_detector_llm_config(temperature: float | None = None) -> dict:
-    """返回 episode 闭合检测器使用的 LLM 配置。
-
-    优先使用 EPISODE_CLOSURE_DETECTOR_LLM_* 系列环境变量，未设置则复用主 LLM 配置。
-    temperature 不为 None 时覆盖默认值。
-    """
-    return _make_scoped_llm_config(
-        "EPISODE_CLOSURE_DETECTOR_LLM", get_llm_config, temperature=temperature
+    return get_llm_config(
+        model_id=_get_optional_env("CHOICES_LLM_MODEL_ID"),
+        api_key=_get_optional_env("CHOICES_LLM_API_KEY"),
+        api_url=_get_optional_env("CHOICES_LLM_API_URL"),
     )

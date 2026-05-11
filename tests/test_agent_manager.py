@@ -491,7 +491,7 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     monkeypatch.setattr(character_module, "get_display_name", lambda *_args: "角色B")
     monkeypatch.setattr(
         character_module,
-        "get_narrator_llm_config",
+        "get_llm_config",
         lambda: {"model_id": "test-model"},
     )
     monkeypatch.setattr(

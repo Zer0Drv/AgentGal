@@ -14,7 +14,7 @@ from agents.factory import (
 )
 from agents.runner import run_structured_agent
 from log_config.memory import memory_logger
-from llm.config import get_consolidation_llm_config
+from llm.config import get_llm_config
 from shared.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
     CONSOLIDATION_TEMPERATURE,
@@ -307,7 +307,7 @@ class MemoryConsolidationFlow:
         function_name: str,
         user: str,
     ):
-        config = get_consolidation_llm_config(temperature=CONSOLIDATION_TEMPERATURE)
+        config = get_llm_config(temperature=CONSOLIDATION_TEMPERATURE)
         return await run_structured_agent(
             agent=agent,
             user_input=user,

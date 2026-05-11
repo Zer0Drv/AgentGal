@@ -33,7 +33,7 @@ from engine.prompt_builder import (
     build_user_message,
 )
 from llm.embedding import embed_sync
-from llm.config import get_llm_config, get_narrator_llm_config
+from llm.config import get_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field, normalize
 from memory.retrieval import search_memories, search_understandings
@@ -452,7 +452,7 @@ class Narrator(BaseEntity):
         """调用 state_updater 写回 narrator/status.md。"""
         self.sync_player_relations()
         user_message = self._build_state_updater_input()
-        config = get_narrator_llm_config()
+        config = get_llm_config()
         try:
             output = await self._run_structured(
                 user_message=user_message,
@@ -565,7 +565,7 @@ class Narrator(BaseEntity):
         user_message, _ = build_user_message(
             self.name, user_input, "", raw_messages=raw_messages, observation_mode=observation_mode
         )
-        config = get_narrator_llm_config()
+        config = get_llm_config()
         sdk = get_observation_narrator_agent() if observation_mode else self._sdk
         return await self._run_structured(
             user_message=user_message,
