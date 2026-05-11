@@ -3647,7 +3647,7 @@ svg {
                 x-model="inputText"
                 rows="1"
                 :disabled="busy"
-                :placeholder="observeMode ? '输入想观察的角色名…' : '输入台词、动作，或一段压低声音的心思。'"
+                :placeholder="observeMode ? '输入想观察的角色名…' : '输入你想说的话和动作，用括号表示动作，例如「早上好（挥手）」'"
                 @input="handleComposerInput($event)"
                 @focus="handleComposerFocus()"
                 @blur="handleComposerBlur()"
