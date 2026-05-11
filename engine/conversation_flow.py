@@ -12,7 +12,7 @@ from engine.character_factory import CreatedCharacterInfo, create_character
 from engine.prompt_builder import build_history_transcript
 from llm.config import get_choices_llm_config
 from log_config.routing import routing_logger
-from shared.config import CHOICES_RUN_TIMEOUT_SECONDS, HISTORY_RAW_SCAN_TURNS
+from shared.config import AGENT_RUN_TIMEOUT_SECONDS, HISTORY_RAW_SCAN_TURNS
 from shared.text_utils import clean_response, is_valid_response
 from storage.history import load_conversation_history
 
@@ -37,14 +37,15 @@ async def generate_choices(
             agent=get_choices_agent(),
             user_input="\n\n".join(parts),
             output_type=ChoicesOutput,
-            timeout_seconds=CHOICES_RUN_TIMEOUT_SECONDS,
+            timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
             workflow_name="agentgal_choices",
             trace_metadata=None,
             usage_agent="choices",
             usage_phase="agent_run",
             model_name=config["model_id"],
         )
-    except Exception:
+    except Exception as exc:
+        routing_logger.warning("[choices] 生成选项失败: %s", exc)
         return []
     return output.choices[:3]
 

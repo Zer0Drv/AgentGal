@@ -145,13 +145,12 @@ Sequentially invoke each target Agent (each agent response is written to history
   ↓
 After each Agent response: write back from CharacterOutput typed fields, broadcast to history
   ↓
-Invoke choice generation (using narrator model), display 2-3 optional actions
+Launch three post-response lines together:
+  1. choice generation → cancellable auxiliary task; if it finishes before the next player input, display 2-3 optional actions and persist them to `last_choices.json`
+  2. state_updater → update narrator/status.md (scene, time, character locations, narrative focus, pending events; "Relationship with Player" is derived and synced from each character's status by code)
+  3. detect_and_consolidate(current_turn) → determine episode closure and merge memories (see "Memory Consolidation")
   ↓
-Persist latest options to last_choices.json (for load restoration)
-  ↓
-Background concurrently launch two tasks (both `asyncio.create_task`, non-blocking):
-  1. state_updater → update narrator/status.md (scene, time, character locations, narrative focus, pending events; "Relationship with Player" is derived and synced from each character's status by code)
-  2. detect_and_consolidate(current_turn) → determine episode closure and merge memories (see "Memory Consolidation")
+Emit `response_done` so the UI can re-enable free input while those lines continue
   ↓
 state_updater inputs in order: `schedule_snapshot` (renders each character's schedule default location by current game_time, missing schedule marked "(no schedule)"), character_intention, current_narrator_status, recent_history
   ↓
@@ -236,7 +235,7 @@ Narrator uses the main LLM configuration (`LLM_*` env vars).
 
 ### Choice Generation
 
-After each participation round of character responses, `generate_choices()` is called to generate 2-3 player-selectable actions. Observation rounds skip choice generation and clear `last_choices.json`.
+After each participation round of character responses, `generate_choices()` is launched alongside `state_updater` and memory consolidation to generate 2-3 player-selectable actions. The player input box is already usable while choices are still generating. Starting a new `/api/chat` round invalidates and cancels any pending choice generation, clears stale saved choices, and prevents late results from writing `last_choices.json`. Observation rounds skip choice generation and clear `last_choices.json`.
 
 - Prompt source: `prompts.runtime_prompts.CHOICES`
 - Uses `CHOICES_LLM_*` when configured, otherwise falls back to the main LLM configuration

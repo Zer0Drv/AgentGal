@@ -4294,6 +4294,7 @@ document.addEventListener("alpine:init", () => {
     nearLatest: true,
     unreadNewMessages: false,
     activeStreamController: null,
+    activeStreamId: 0,
     toastTimers: new Map(),
     toasts: [],
     mediaQuery: null,
@@ -5293,6 +5294,8 @@ document.addEventListener("alpine:init", () => {
       if (!this.activeStreamController) return;
       this.activeStreamController.abort();
       this.activeStreamController = null;
+      this.activeStreamId += 1;
+      this.busy = false;
       if (!silent) {
         this.pushToast("当前请求已取消。", "success");
       }
@@ -5301,6 +5304,10 @@ document.addEventListener("alpine:init", () => {
     async submitMessage(text) {
       const message = String(text || "").trim();
       if (!message || this.busy) return;
+      if (this.activeStreamController) {
+        this.activeStreamController.abort();
+        this.activeStreamController = null;
+      }
 
       if (this.isCompact) {
         this.blurComposer();
@@ -5312,36 +5319,44 @@ document.addEventListener("alpine:init", () => {
       }
       this.resetComposer();
       this.choices = [];
-      this.choiceStatus = "loading";
+      this.choiceStatus = this.observeMode ? "hidden" : "loading";
       this.busy = true;
+      const streamId = this.activeStreamId + 1;
+      this.activeStreamId = streamId;
 
       try {
-        await this.streamChat(message);
+        await this.streamChat(message, streamId);
       } catch (error) {
-        if (error.name !== "AbortError") {
+        if (this.activeStreamId === streamId && error.name !== "AbortError") {
           this.setNotice("消息发送失败，请检查连接后重试。", "error", true);
           this.pushToast("发送失败", "error");
         }
       } finally {
-        if (this.choiceStatus === "loading") {
-          this.choiceStatus = "empty";
+        if (this.activeStreamId === streamId) {
+          if (this.choiceStatus === "loading") {
+            this.choiceStatus = "empty";
+          }
+          this.busy = false;
+          this.activeStreamController = null;
         }
-        this.busy = false;
-        this.activeStreamController = null;
       }
     },
 
-    async streamChat(message) {
-      this.activeStreamController = new AbortController();
+    async streamChat(message, streamId) {
+      const controller = new AbortController();
+      this.activeStreamController = controller;
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, mode: this.observeMode ? "observe" : "participate" }),
-        signal: this.activeStreamController.signal,
+        signal: controller.signal,
       });
 
       if (!response.ok) {
         throw new Error(`/api/chat failed: ${response.status}`);
+      }
+      if (this.activeStreamId !== streamId) {
+        return;
       }
       if (!response.body) {
         throw new Error("SSE body is empty");
@@ -5354,18 +5369,23 @@ document.addEventListener("alpine:init", () => {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (this.activeStreamId !== streamId) {
+          await reader.cancel();
+          return;
+        }
         buffer += decoder.decode(value, { stream: true });
         const chunks = buffer.split("\n\n");
         buffer = chunks.pop() || "";
-        chunks.forEach(chunk => this.handleStreamPart(chunk));
+        chunks.forEach(chunk => this.handleStreamPart(chunk, streamId));
       }
 
       if (buffer.trim()) {
-        this.handleStreamPart(buffer);
+        this.handleStreamPart(buffer, streamId);
       }
     },
 
-    handleStreamPart(part) {
+    handleStreamPart(part, streamId = this.activeStreamId) {
+      if (streamId !== this.activeStreamId) return;
       const payload = part
         .split("\n")
         .filter(line => line.startsWith("data:"))
@@ -5396,6 +5416,9 @@ document.addEventListener("alpine:init", () => {
             this.setNotice("这一轮没有预设选项，你可以直接输入下一句。", "success");
           }
         } else if (event.type === "done") {
+          this.setConsolidating(Boolean(event.consolidating));
+        } else if (event.type === "response_done") {
+          this.busy = false;
           this.setConsolidating(Boolean(event.consolidating));
         }
       } catch (error) {
@@ -5930,6 +5953,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     async loadSave(filename) {
+      this.cancelActiveStream({ silent: true });
       this.busy = true;
 
       try {

@@ -67,6 +67,8 @@ STATIC_DIR = Path(__file__).parent / "static"
 _LAST_CHOICES_FILE = CHARACTERS_DIR / "last_choices.json"
 _pending_state_update_task: asyncio.Task[None] | None = None
 _pending_state_update_requested = False
+_pending_choices_task: asyncio.Task[list[str]] | None = None
+_choices_generation_token = 0
 _RECENT_HISTORY_LIMIT = 12
 _MEMORY_GRAPH_LABEL_LIMIT = 42
 _MEMORY_GRAPH_DETAIL_LIMIT = 260
@@ -91,6 +93,29 @@ def _load_last_choices() -> list[str]:
 
 def _clear_last_choices() -> None:
     _LAST_CHOICES_FILE.unlink(missing_ok=True)
+
+
+def _consume_cancelled_choices_task(task: asyncio.Task[list[str]]) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        routing_logger.info("[choices] 选项生成任务已取消")
+    except Exception as exc:
+        routing_logger.warning("[choices] 选项生成任务结束异常: %s", exc)
+
+
+def _invalidate_pending_choices(*, clear_saved: bool = False) -> int:
+    """让旧选项生成失效；返回当前请求应使用的 generation token。"""
+    global _pending_choices_task, _choices_generation_token
+    _choices_generation_token += 1
+    task = _pending_choices_task
+    if task is not None and not task.done():
+        task.cancel()
+        task.add_done_callback(_consume_cancelled_choices_task)
+    _pending_choices_task = None
+    if clear_saved:
+        _clear_last_choices()
+    return _choices_generation_token
 
 
 @lru_cache(maxsize=64)
@@ -526,8 +551,8 @@ async def api_new_game(req: NewGameRequest) -> JSONResponse:
             {"ok": False, "detail": "记忆整理进行中，请稍后再开始新故事。"},
             status_code=409,
         )
+    _invalidate_pending_choices(clear_saved=True)
     await _settle_pending_state_update(cancel=True)
-    _clear_last_choices()
     intro_text, opening_text = await reset_game(req.story_id)
     reset_entities()
     for name in get_agent_names(include_narrator=True):
@@ -561,7 +586,9 @@ class ChatRequest(BaseModel):
 
 async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] = "participate"):
     """核心游戏循环，通过 SSE 逐步推送结果。"""
+    global _pending_choices_task
     observation_mode = mode == "observe"
+    choices_token = _invalidate_pending_choices(clear_saved=True)
     # 0 = 哨兵：本轮还没有 narrator 成功发言，不触发 consolidation
     current_turn = 0
 
@@ -629,20 +656,31 @@ async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] 
                 {"content": f"（{_get_agent_display_name(agent_name)}暂时无法回应，请稍后再试）", "author": _get_agent_display_name(agent_name)},
             )
 
-    # 5. 先生成选项，再启动后台维护，避免后台整理抢当前轮的前台 LLM 请求
-    if agent_responses and not observation_mode:
-        choices = await generate_choices(scene_description, agent_responses)
-        if choices:
-            _save_last_choices(choices)
-            yield _sse_event("choices", {"choices": choices})
-    elif observation_mode and agent_responses:
-        _clear_last_choices()
+    choices_task: asyncio.Task[list[str]] | None = None
+    if agent_responses and not observation_mode and choices_token == _choices_generation_token:
+        choices_task = asyncio.create_task(generate_choices(scene_description, agent_responses))
+        _pending_choices_task = choices_task
 
     _start_state_update()
     if current_turn > 0:
         # 返回的 task 故意丢弃：MemoryConsolidationFlow._scheduled_task 已是强引用，
         # 任务不会被 GC；新 turn 在已运行任务内 coalesce 成 _pending_turn 补跑。
         memory_consolidation_flow.schedule_detect_and_consolidate(current_turn)
+    yield _sse_event("response_done", {"consolidating": memory_consolidation_flow.is_running})
+
+    # 5. 选项是辅助建议：与后台维护并行生成，且新一轮输入会让旧结果失效。
+    if choices_task is not None:
+        try:
+            choices = await choices_task
+        except asyncio.CancelledError:
+            return
+        finally:
+            if _pending_choices_task is choices_task:
+                _pending_choices_task = None
+
+        if choices and choices_token == _choices_generation_token:
+            _save_last_choices(choices)
+            yield _sse_event("choices", {"choices": choices})
 
     yield _sse_event("done", {"consolidating": memory_consolidation_flow.is_running})
 
@@ -758,6 +796,7 @@ async def api_load(req: LoadRequest) -> JSONResponse:
             {"ok": False, "detail": "记忆整理进行中，请稍后再读档。"},
             status_code=409,
         )
+    _invalidate_pending_choices(clear_saved=True)
     await _settle_pending_state_update(cancel=True)
     success = await import_save_archive(req.filename)
     if success:
@@ -830,8 +869,8 @@ async def api_reset(req: ResetRequest) -> JSONResponse:
             {"ok": False, "detail": "记忆整理进行中，请稍后再重置。"},
             status_code=409,
         )
+    _invalidate_pending_choices(clear_saved=True)
     await _settle_pending_state_update(cancel=True)
-    _clear_last_choices()
     intro_text, opening_text = await reset_game(req.story_id)
     reset_entities()
     for name in get_agent_names(include_narrator=True):

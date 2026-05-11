@@ -16,6 +16,23 @@ except ModuleNotFoundError as exc:
     pytest.skip(f"skip server tests: missing dependency ({exc})", allow_module_level=True)
 
 
+@pytest.fixture(autouse=True)
+def isolate_last_choices_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(server_module, "_LAST_CHOICES_FILE", tmp_path / "last_choices.json")
+    server_module._pending_choices_task = None
+    server_module._choices_generation_token = 0
+    yield
+    task = server_module._pending_choices_task
+    if task is not None and not task.done():
+        task.cancel()
+    server_module._pending_choices_task = None
+    server_module._choices_generation_token = 0
+
+
+def _parse_sse_chunk(chunk: str) -> dict:
+    return json.loads(chunk.removeprefix("data: ").strip())
+
+
 
 @pytest.mark.asyncio
 async def test_settle_pending_state_update_waits_for_background_task(monkeypatch):
@@ -121,6 +138,160 @@ async def test_chat_stream_does_not_wait_for_pending_state_update(monkeypatch):
         server_module._pending_state_update_requested = False
 
     assert chunks == ['data: {"type": "done"}\n\n']
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_yields_response_done_before_choices(monkeypatch):
+    release_choices = server_module.asyncio.Event()
+    choices_started = server_module.asyncio.Event()
+    maintenance_calls: list[object] = []
+
+    async def fake_route(_self, _user_input, *, observation_mode=False):
+        return ["alice"], "场景推进", [], True
+
+    async def fake_broadcast_player_message(_targets, _user_input):
+        return None
+
+    async def fake_broadcast_agent_response(_agent_name, _targets, _content):
+        return 7
+
+    async def fake_run_agent_in_scene(*_args, **_kwargs):
+        return "角色回应"
+
+    async def fake_generate_choices(_scene_description, _agent_responses):
+        choices_started.set()
+        await release_choices.wait()
+        return ["继续追问"]
+
+    def fake_start_state_update():
+        maintenance_calls.append("state")
+
+    def fake_schedule_detect_and_consolidate(turn):
+        maintenance_calls.append(("memory", turn))
+
+    monkeypatch.setattr(server_module.narrator.__class__, "route", fake_route)
+    monkeypatch.setattr(
+        server_module.message_router,
+        "broadcast_player_message",
+        fake_broadcast_player_message,
+    )
+    monkeypatch.setattr(
+        server_module.message_router,
+        "broadcast_agent_response",
+        fake_broadcast_agent_response,
+    )
+    monkeypatch.setattr(server_module, "run_agent_in_scene", fake_run_agent_in_scene)
+    monkeypatch.setattr(server_module, "generate_choices", fake_generate_choices)
+    monkeypatch.setattr(server_module, "_get_agent_display_name", lambda name: name)
+    monkeypatch.setattr(server_module, "_start_state_update", fake_start_state_update)
+    monkeypatch.setattr(
+        server_module.memory_consolidation_flow,
+        "schedule_detect_and_consolidate",
+        fake_schedule_detect_and_consolidate,
+    )
+
+    stream = server_module._chat_stream("继续")
+    try:
+        chunks = [
+            await server_module.asyncio.wait_for(anext(stream), timeout=0.1),
+            await server_module.asyncio.wait_for(anext(stream), timeout=0.1),
+            await server_module.asyncio.wait_for(anext(stream), timeout=0.1),
+        ]
+
+        assert [_parse_sse_chunk(chunk)["type"] for chunk in chunks] == [
+            "narrator",
+            "agent",
+            "response_done",
+        ]
+        await server_module.asyncio.wait_for(choices_started.wait(), timeout=0.1)
+        assert maintenance_calls == ["state", ("memory", 7)]
+
+        release_choices.set()
+        choices_chunk = await server_module.asyncio.wait_for(anext(stream), timeout=0.1)
+        done_chunk = await server_module.asyncio.wait_for(anext(stream), timeout=0.1)
+
+        assert _parse_sse_chunk(choices_chunk) == {
+            "type": "choices",
+            "choices": ["继续追问"],
+        }
+        assert _parse_sse_chunk(done_chunk)["type"] == "done"
+    finally:
+        await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_new_chat_cancels_pending_choices(monkeypatch):
+    choices_started = server_module.asyncio.Event()
+    choices_cancelled = server_module.asyncio.Event()
+
+    async def fake_route(_self, user_input, *, observation_mode=False):
+        if user_input == "第一轮":
+            return ["alice"], "第一轮场景", [], True
+        return [], "", [], False
+
+    async def fake_broadcast_player_message(_targets, _user_input):
+        return None
+
+    async def fake_broadcast_agent_response(_agent_name, _targets, _content):
+        return 8
+
+    async def fake_run_agent_in_scene(*_args, **_kwargs):
+        return "第一轮回应"
+
+    async def fake_generate_choices(_scene_description, _agent_responses):
+        choices_started.set()
+        try:
+            await server_module.asyncio.sleep(3600)
+        except server_module.asyncio.CancelledError:
+            choices_cancelled.set()
+            raise
+        return ["过期选项"]
+
+    monkeypatch.setattr(server_module.narrator.__class__, "route", fake_route)
+    monkeypatch.setattr(
+        server_module.message_router,
+        "broadcast_player_message",
+        fake_broadcast_player_message,
+    )
+    monkeypatch.setattr(
+        server_module.message_router,
+        "broadcast_agent_response",
+        fake_broadcast_agent_response,
+    )
+    monkeypatch.setattr(server_module, "run_agent_in_scene", fake_run_agent_in_scene)
+    monkeypatch.setattr(server_module, "generate_choices", fake_generate_choices)
+    monkeypatch.setattr(server_module, "_get_agent_display_name", lambda name: name)
+    monkeypatch.setattr(server_module, "_start_state_update", lambda: None)
+    monkeypatch.setattr(
+        server_module.memory_consolidation_flow,
+        "schedule_detect_and_consolidate",
+        lambda _turn: None,
+    )
+
+    first_stream = server_module._chat_stream("第一轮")
+    try:
+        first_chunks = [
+            await server_module.asyncio.wait_for(anext(first_stream), timeout=0.1),
+            await server_module.asyncio.wait_for(anext(first_stream), timeout=0.1),
+            await server_module.asyncio.wait_for(anext(first_stream), timeout=0.1),
+        ]
+        assert _parse_sse_chunk(first_chunks[-1])["type"] == "response_done"
+
+        pending_first_choice = server_module.asyncio.create_task(anext(first_stream))
+        await server_module.asyncio.wait_for(choices_started.wait(), timeout=0.1)
+
+        second_chunks = [
+            chunk async for chunk in server_module._chat_stream("第二轮")
+        ]
+
+        await server_module.asyncio.wait_for(choices_cancelled.wait(), timeout=0.1)
+        with pytest.raises(StopAsyncIteration):
+            await server_module.asyncio.wait_for(pending_first_choice, timeout=0.1)
+
+        assert [_parse_sse_chunk(chunk)["type"] for chunk in second_chunks] == ["done"]
+        assert server_module._load_last_choices() == []
+    finally:
+        await first_stream.aclose()
 
 
 async def _collect_stream(stream):
