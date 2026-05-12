@@ -17,7 +17,7 @@ os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
 from shared.config import character_path
-from storage.history import load_conversation_history, search_history
+from storage.history import extract_game_date_anchors, load_conversation_history, search_history
 
 
 @pytest.fixture
@@ -213,3 +213,57 @@ def test_search_history_limit(temp_raw_dir):
     result = search_history("needle", limit=2)
 
     assert [item["turn"] for item in result] == [4, 3]
+
+
+def test_search_history_matches_structured_narrator_output(temp_raw_dir):
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    with open(temp_raw_dir / f"{today}.jsonl", "w", encoding="utf-8") as f:
+        f.write(
+            json.dumps(
+                {
+                    "role": "narrator",
+                    "targets": ["mitsuki"],
+                    "date": "4月3日 星期三",
+                    "time": "16:10",
+                    "location": "旧教学楼走廊",
+                    "present_characters": {"北原悠": "门口", "美月": "窗边"},
+                    "scene_description": "窗外传来社团练习的声音。",
+                    "new_characters": [],
+                    "turn": 5,
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+
+    result = search_history("旧教学楼", limit=10)
+
+    assert [item["turn"] for item in result] == [5]
+
+
+def test_extract_game_date_anchors_reads_structured_narrator_date(temp_raw_dir):
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    with open(temp_raw_dir / f"{today}.jsonl", "w", encoding="utf-8") as f:
+        f.write(
+            json.dumps(
+                {
+                    "role": "narrator",
+                    "targets": ["mitsuki"],
+                    "date": "4月3日 星期三",
+                    "time": "16:10",
+                    "location": "旧教学楼走廊",
+                    "present_characters": {"北原悠": "门口", "美月": "窗边"},
+                    "scene_description": "窗外传来社团练习的声音。",
+                    "new_characters": [],
+                    "turn": 5,
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+
+    assert extract_game_date_anchors() == [
+        {"date": "4月3日", "first_turn": 5, "last_turn": 5}
+    ]

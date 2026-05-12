@@ -70,6 +70,16 @@ class MessageRouter:
             turn=turn,
         )
 
+    async def broadcast_narrator_output(
+        self,
+        targets: list[str],
+        output: dict,
+    ) -> int:
+        """Broadcast structured narrator output as raw history fields."""
+        turn = increment_turn_counter()
+        message = dict(output)
+        message["role"] = "narrator"
+        return await self._broadcast_message(targets, message, turn=turn)
 
-# 全局实例
+
 message_router = MessageRouter()

@@ -60,6 +60,54 @@ async def test_narrator_response_starts_next_turn(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_broadcast_narrator_output_writes_structured_scene(tmp_path, monkeypatch):
+    current_turn = 2
+    written: list[dict] = []
+
+    def fake_increment_turn_counter() -> int:
+        nonlocal current_turn
+        current_turn += 1
+        return current_turn
+
+    async def fake_append_message(message: dict) -> None:
+        written.append(dict(message))
+
+    monkeypatch.setattr(agent_files_module, "CHARACTERS_DIR", tmp_path)
+    monkeypatch.setattr(router_module, "increment_turn_counter", fake_increment_turn_counter)
+    monkeypatch.setattr(router_module, "append_message", fake_append_message)
+
+    router = MessageRouter()
+    turn = await router.broadcast_narrator_output(
+        ["mitsuki"],
+        {
+            "targets": ["mitsuki"],
+            "date": "4月3日 星期三",
+            "time": "16:10",
+            "location": "走廊",
+            "present_characters": {"北原悠": "门口", "美月": "窗边"},
+            "scene_description": "走廊里传来广播声。",
+            "new_characters": [],
+        },
+    )
+
+    assert turn == 3
+    assert written == [
+        {
+            "role": "narrator",
+            "targets": ["mitsuki"],
+            "date": "4月3日 星期三",
+            "time": "16:10",
+            "location": "走廊",
+            "present_characters": {"北原悠": "门口", "美月": "窗边"},
+            "scene_description": "走廊里传来广播声。",
+            "new_characters": [],
+            "visible_to": ["mitsuki", "narrator"],
+            "turn": 3,
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_player_message_extracts_and_reuses_name_for_raw(tmp_path, monkeypatch):
     current_turn = 1
     written: list[dict] = []

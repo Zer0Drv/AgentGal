@@ -18,10 +18,13 @@ from shared.config import (
     character_path,
     get_agent_names,
 )
+from shared.narrator_output import raw_message_text
 from shared.text_utils import extract_identity, get_display_name, role_to_speaker
 from storage.agent_files import (
+    extract_player_name,
     get_allowed_fields,
     read_agent_file,
+    read_player_name,
     read_sidecar_json,
     write_sidecar_json,
 )
@@ -125,7 +128,7 @@ def build_history_transcript(
     lines: list[str] = []
     for idx, msg in enumerate(visible):
         role = msg.get("role", "unknown")
-        content = re.sub(r"\n+", "\n", msg.get("content", "").strip())
+        content = re.sub(r"\n+", "\n", raw_message_text(msg))
         if not content:
             continue
         prefix = ""
@@ -265,6 +268,14 @@ def build_characters_block(tag: str = "characters") -> str:
     return f"<{tag}>\n" + "\n".join(rows) + f"\n</{tag}>"
 
 
+def build_player_block(latest_user_input: str) -> str:
+    """Expose the player's display name to narrator prompts when known."""
+    player_name = read_player_name() or extract_player_name(latest_user_input)
+    if not player_name:
+        return ""
+    return f"<player>\ndisplay_name: {player_name}\n</player>"
+
+
 def build_user_message(
     agent_name: str,
     latest_user_input: str,
@@ -282,6 +293,7 @@ def build_user_message(
     my_schedule = build_my_schedule_block(agent_name) if not is_narrator else ""
 
     parts.append(my_schedule)
+    parts.append(build_player_block(latest_user_input) if is_narrator else "")
     parts.append(build_characters_block(tag="fields") if is_narrator else "")
     parts.append(f"最近对话历史:\n\n{history}" if history else "")
     parts.append(

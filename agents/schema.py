@@ -50,9 +50,43 @@ class NewCharacterRequest(BaseModel):
 
 
 class NarratorOutput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     targets: list[str]
-    content: str
+    date: str
+    time: str
+    location: str
+    present_characters: dict[str, str]
+    scene_description: str
     new_characters: list[NewCharacterRequest] = Field(default_factory=list)
+
+    @field_validator("targets", mode="before")
+    @classmethod
+    def trim_targets(cls, value: object) -> object:
+        if not isinstance(value, list):
+            return value
+        return [target.strip() if isinstance(target, str) else target for target in value]
+
+    @field_validator("present_characters", mode="before")
+    @classmethod
+    def clean_present_characters(cls, value: object) -> dict[str, str]:
+        if not isinstance(value, dict):
+            return {}
+        cleaned = {
+            str(name).strip(): str(description).strip()
+            for name, description in value.items()
+            if str(name).strip() and str(description).strip()
+        }
+        if not cleaned:
+            raise ValueError("present_characters cannot be empty")
+        return cleaned
+
+    @field_validator("date", "time", "location", "scene_description")
+    @classmethod
+    def ensure_scene_field_not_empty(cls, value: str) -> str:
+        if not value:
+            raise ValueError("field cannot be empty")
+        return value
 
     @model_validator(mode="after")
     def require_route_target_or_new_character(self) -> "NarratorOutput":

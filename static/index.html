@@ -776,6 +776,34 @@ svg {
   line-height: 2;
 }
 
+.narrator-scene {
+  display: grid;
+  gap: 12px;
+  color: var(--text-soft);
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.narrator-presence {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.narrator-presence li {
+  display: grid;
+  grid-template-columns: minmax(5em, max-content) 1fr;
+  gap: 10px;
+}
+
+.narrator-presence-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .system-card {
   display: grid;
   gap: 10px;
@@ -3513,7 +3541,22 @@ svg {
                   <article class="message-row" :class="message.kind" :data-turn="message.turn || ''">
                     <template x-if="message.kind === 'narrator'">
                       <div class="narrator-shell">
-                        <div class="narrator-body markdown-body" x-html="message.html"></div>
+                        <template x-if="message.payload">
+                          <div class="narrator-scene">
+                            <ul class="narrator-presence" x-show="presenceEntries(message.payload).length">
+                              <template x-for="entry in presenceEntries(message.payload)" :key="entry[0]">
+                                <li>
+                                  <span class="narrator-presence-name" x-text="entry[0]"></span>
+                                  <span x-text="entry[1]"></span>
+                                </li>
+                              </template>
+                            </ul>
+                            <div x-text="message.payload.scene_description || message.content"></div>
+                          </div>
+                        </template>
+                        <template x-if="!message.payload">
+                          <div class="narrator-body markdown-body" x-html="message.html"></div>
+                        </template>
                       </div>
                     </template>
 
@@ -4821,10 +4864,11 @@ document.addEventListener("alpine:init", () => {
 
       this.messages.forEach(message => {
         if (message.kind === "narrator") {
+          const payload = message.payload || null;
           current = {
             key: `scene-${message.id}`,
-            title: this.extractNarratorField(message.content, ["地点", "场景"]) || "新的场面",
-            time: this.extractNarratorField(message.content, ["时间"]),
+            title: (payload && payload.location) || this.extractNarratorField(message.content, ["地点", "场景"]) || "新的场面",
+            time: payload ? [payload.date, payload.time].filter(Boolean).join(" ") : this.extractNarratorField(message.content, ["时间"]),
             narrator: message,
             messages: [message],
           };
@@ -4848,6 +4892,33 @@ document.addEventListener("alpine:init", () => {
       return groups;
     },
 
+    normalizeNarratorPayload(payload) {
+      if (!payload || typeof payload !== "object") return null;
+      const present = payload.present_characters && typeof payload.present_characters === "object"
+        ? payload.present_characters
+        : {};
+      return {
+        targets: Array.isArray(payload.targets) ? payload.targets : [],
+        date: String(payload.date || "").trim(),
+        time: String(payload.time || "").trim(),
+        location: String(payload.location || "").trim(),
+        present_characters: Object.fromEntries(
+          Object.entries(present)
+            .map(([name, value]) => [String(name || "").trim(), String(value || "").trim()])
+            .filter(([name, value]) => name && value)
+        ),
+        scene_description: String(payload.scene_description || "").trim(),
+        new_characters: Array.isArray(payload.new_characters) ? payload.new_characters : [],
+      };
+    },
+
+    presenceEntries(payload) {
+      const present = payload && payload.present_characters && typeof payload.present_characters === "object"
+        ? payload.present_characters
+        : {};
+      return Object.entries(present);
+    },
+
     getAgentStyle(author) {
       const key = author || "角色";
       if (!this.agentStyleByAuthor[key]) {
@@ -4857,9 +4928,10 @@ document.addEventListener("alpine:init", () => {
       return this.agentStyleByAuthor[key];
     },
 
-    _makeMessage(kind, author, content, turn = 0) {
+    _makeMessage(kind, author, content, turn = 0, { payload = null } = {}) {
+      const normalizedPayload = kind === "narrator" ? this.normalizeNarratorPayload(payload) : null;
       const text = String(content || "").trim();
-      if (!text) return null;
+      if (!text && !normalizedPayload) return null;
       const resolvedAuthor = kind === "player" ? "你" : (author || "旁白");
       const style = kind === "agent" ? this.getAgentStyle(resolvedAuthor) : {
         color: "#b45a64",
@@ -4874,7 +4946,8 @@ document.addEventListener("alpine:init", () => {
         border: style.border,
         background: style.background,
         content: text,
-        html: this.renderMarkdown(text, { narrator: kind === "narrator" }),
+        payload: normalizedPayload,
+        html: normalizedPayload ? "" : this.renderMarkdown(text, { narrator: kind === "narrator" }),
         turn: Number(turn) || 0,
       };
     },
@@ -4887,7 +4960,7 @@ document.addEventListener("alpine:init", () => {
         const kind = role === "player" ? "player" : (role === "narrator" ? "narrator" : "agent");
         const author = kind === "player" ? "你" : (message.author || role);
         const turn = Number(message.turn) || 0;
-        const obj = this._makeMessage(kind, author, message.content, turn);
+        const obj = this._makeMessage(kind, author, message.content, turn, { payload: message.payload || null });
         if (!obj) return;
         built.push(obj);
         if (turn > 0 && (minTurn === null || turn < minTurn)) minTurn = turn;
@@ -4928,8 +5001,8 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    addMessage(kind, author, content, turn = 0, { forceScroll = false } = {}) {
-      const message = this._makeMessage(kind, author, content, turn);
+    addMessage(kind, author, content, turn = 0, { forceScroll = false, payload = null } = {}) {
+      const message = this._makeMessage(kind, author, content, turn, { payload });
       if (!message) return;
       const shouldFollow = forceScroll || this.shouldAutoFollowLatest();
       this.messages.push(message);
@@ -5397,7 +5470,7 @@ document.addEventListener("alpine:init", () => {
       try {
         const event = JSON.parse(payload);
         if (event.type === "narrator") {
-          this.addMessage("narrator", event.author || "旁白", event.content);
+          this.addMessage("narrator", event.author || "旁白", event.content, 0, { payload: event.payload || null });
         } else if (event.type === "system") {
           this.addSystemMessage({
             title: event.title || "系统",

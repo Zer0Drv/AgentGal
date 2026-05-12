@@ -11,6 +11,7 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
+    from agents.schema import NarratorOutput
     import server as server_module
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip server tests: missing dependency ({exc})", allow_module_level=True)
@@ -31,6 +32,20 @@ def isolate_last_choices_file(monkeypatch, tmp_path):
 
 def _parse_sse_chunk(chunk: str) -> dict:
     return json.loads(chunk.removeprefix("data: ").strip())
+
+
+def _narrator_output(**overrides) -> NarratorOutput:
+    data = {
+        "targets": ["alice"],
+        "date": "4月3日 星期三",
+        "time": "16:10",
+        "location": "走廊",
+        "present_characters": {"北原悠": "门口", "Alice": "窗边"},
+        "scene_description": "场景推进",
+        "new_characters": [],
+    }
+    data.update(overrides)
+    return NarratorOutput(**data)
 
 
 
@@ -119,7 +134,7 @@ async def test_chat_stream_does_not_wait_for_pending_state_update(monkeypatch):
         await release.wait()
 
     async def fake_route(_self, _user_input, *, observation_mode=False):
-        return [], "", [], False
+        return None, False
 
     task = server_module.asyncio.create_task(blocking_task())
     server_module._pending_state_update_task = task
@@ -147,12 +162,12 @@ async def test_chat_stream_yields_response_done_before_choices(monkeypatch):
     maintenance_calls: list[object] = []
 
     async def fake_route(_self, _user_input, *, observation_mode=False):
-        return ["alice"], "场景推进", [], True
+        return _narrator_output(), True
 
     async def fake_broadcast_player_message(_targets, _user_input):
         return None
 
-    async def fake_broadcast_agent_response(_agent_name, _targets, _content):
+    async def fake_broadcast_narrator_output(_targets, _output):
         return 7
 
     async def fake_run_agent_in_scene(*_args, **_kwargs):
@@ -177,8 +192,8 @@ async def test_chat_stream_yields_response_done_before_choices(monkeypatch):
     )
     monkeypatch.setattr(
         server_module.message_router,
-        "broadcast_agent_response",
-        fake_broadcast_agent_response,
+        "broadcast_narrator_output",
+        fake_broadcast_narrator_output,
     )
     monkeypatch.setattr(server_module, "run_agent_in_scene", fake_run_agent_in_scene)
     monkeypatch.setattr(server_module, "generate_choices", fake_generate_choices)
@@ -226,13 +241,13 @@ async def test_new_chat_cancels_pending_choices(monkeypatch):
 
     async def fake_route(_self, user_input, *, observation_mode=False):
         if user_input == "第一轮":
-            return ["alice"], "第一轮场景", [], True
-        return [], "", [], False
+            return _narrator_output(scene_description="第一轮场景"), True
+        return None, False
 
     async def fake_broadcast_player_message(_targets, _user_input):
         return None
 
-    async def fake_broadcast_agent_response(_agent_name, _targets, _content):
+    async def fake_broadcast_narrator_output(_targets, _output):
         return 8
 
     async def fake_run_agent_in_scene(*_args, **_kwargs):
@@ -255,8 +270,8 @@ async def test_new_chat_cancels_pending_choices(monkeypatch):
     )
     monkeypatch.setattr(
         server_module.message_router,
-        "broadcast_agent_response",
-        fake_broadcast_agent_response,
+        "broadcast_narrator_output",
+        fake_broadcast_narrator_output,
     )
     monkeypatch.setattr(server_module, "run_agent_in_scene", fake_run_agent_in_scene)
     monkeypatch.setattr(server_module, "generate_choices", fake_generate_choices)
@@ -548,7 +563,16 @@ async def test_chat_stream_emits_created_character_identity(monkeypatch):
         return None
 
     async def fake_route(_self, _user_input, *, observation_mode=False):
-        return [], "", [], True
+        return _narrator_output(
+            targets=[],
+            new_characters=[
+                {
+                    "name_hint": "桥本志津",
+                    "relation_to": "alice",
+                    "relation_description": "Alice 的家人",
+                }
+            ],
+        ), True
 
     async def fake_bootstrap_new_characters(_specs, _targets):
         return [], [
@@ -581,7 +605,7 @@ async def test_chat_stream_emits_created_character_identity(monkeypatch):
 
     chunks = [chunk async for chunk in server_module._chat_stream("来个新角色")]
 
-    assert len(chunks) == 2
+    assert len(chunks) == 3
     created_event = json.loads(chunks[0].removeprefix("data: ").strip())
     assert created_event == {
         "type": "system",
@@ -590,5 +614,8 @@ async def test_chat_stream_emits_created_character_identity(monkeypatch):
         "identity": "美月的妈妈，来学校接她放学的家长。",
         "character_id": "mitsukimom",
     }
-    done_event = json.loads(chunks[1].removeprefix("data: ").strip())
+    narrator_event = json.loads(chunks[1].removeprefix("data: ").strip())
+    assert narrator_event["type"] == "narrator"
+    assert narrator_event["payload"]["scene_description"] == "场景推进"
+    done_event = json.loads(chunks[2].removeprefix("data: ").strip())
     assert done_event == {"type": "done"}

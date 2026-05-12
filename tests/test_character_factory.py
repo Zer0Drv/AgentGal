@@ -29,6 +29,20 @@ except ModuleNotFoundError as exc:
     pytest.skip(f"skip character_factory tests: missing dependency ({exc})", allow_module_level=True)
 
 
+def _narrator_output(**overrides) -> NarratorOutput:
+    data = {
+        "targets": ["mitsuki"],
+        "date": "4月3日 星期三",
+        "time": "16:10",
+        "location": "走廊",
+        "present_characters": {"北原悠": "门口", "美月": "窗边"},
+        "scene_description": "场景",
+        "new_characters": [],
+    }
+    data.update(overrides)
+    return NarratorOutput(**data)
+
+
 # ---------------------------------------------------------------------------
 # Narrator._filter_new_characters
 # ---------------------------------------------------------------------------
@@ -119,9 +133,8 @@ async def test_narrator_route_passes_new_characters(monkeypatch):
     monkeypatch.setattr(character_module, "get_display_name", lambda *_args: "美月")
 
     async def fake_run_narrator(self, *_args, **_kwargs):
-        return NarratorOutput(
+        return _narrator_output(
             targets=[],
-            content="场景",
             new_characters=[
                 NewCharacterRequest(
                     name_hint="桥本志津",
@@ -133,10 +146,11 @@ async def test_narrator_route_passes_new_characters(monkeypatch):
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, _scene, new_chars, is_valid = await Narrator().route("来一个妈妈")
+    output, is_valid = await Narrator().route("来一个妈妈")
 
-    assert targets == []
-    assert [s.name_hint for s in new_chars] == ["桥本志津"]
+    assert output is not None
+    assert output.targets == []
+    assert [s.name_hint for s in output.new_characters] == ["桥本志津"]
     assert is_valid is True
 
 

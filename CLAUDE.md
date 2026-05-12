@@ -127,7 +127,7 @@ User Input → narrator → targets: ["existing character name", ...] (NarratorO
 - Every round must ensure at least one major character can perceive and respond to the player
 - Describe time, location, present characters, environment, pure NPC behavior, and current hooks
 - Do not add future events; future events are maintained by `state_updater` from character "Intentions"
-- When the plot requires introducing a new character with relationship anchors, list `NewCharacterRequest` anchors via `NarratorOutput.new_characters` (`name_hint` is just an optional name hint); `engine/character_factory.py` generates `character_id` and incubates the directory; the orchestration layer automatically adds successfully incubated new characters to this round's response list. Pure passersby are not generated, described directly in content
+- When the plot requires introducing a new character with relationship anchors, list `NewCharacterRequest` anchors via `NarratorOutput.new_characters` (`name_hint` is just an optional name hint); `engine/character_factory.py` generates `character_id` and incubates the directory; the orchestration layer automatically adds successfully incubated new characters to this round's response list. Pure passersby are not generated, described directly in `present_characters` / `scene_description`
 - **Never speak for characters or decide their actions**
 
 ## Single-Round Dialogue Flow
@@ -135,11 +135,11 @@ User Input → narrator → targets: ["existing character name", ...] (NarratorO
 ```text
 User Message
   ↓
-Invoke narrator, get NarratorOutput (targets + content + new_characters)
+Invoke narrator, get NarratorOutput (targets + date + time + location + present_characters + scene_description + new_characters)
   ↓
 Incubate new_characters: `character_factory` generates `character_id`, writes soul/status/memory + `schedule.json` (skipped if LLM does not produce); successfully incubated new characters enter this round's final response list
   ↓
-Write narrator content to single raw history (with visible_to)
+Write structured narrator output to single raw history (with visible_to)
   ↓
 Sequentially invoke each target Agent (each agent response is written to history before the next can see it)
   ↓
@@ -152,9 +152,9 @@ Launch three post-response lines together:
   ↓
 Emit `response_done` so the UI can re-enable free input while those lines continue
   ↓
-state_updater inputs in order: `schedule_snapshot` (renders each character's schedule default location by current game_time, missing schedule marked "(no schedule)"), character_intention, current_narrator_status, recent_history
+state_updater inputs in order: `schedule_snapshot` (renders each character's schedule default location by current game_time, missing schedule marked "(no schedule)"), latest_scene_json, character_intention, current_narrator_status, recent_history
   ↓
-state_updater outputs full "Character Locations" snapshot each round; priority: recent_history facts > character_intention with location > old snapshot > schedule_snapshot defaults
+state_updater outputs full "Character Locations" snapshot each round; priority: latest_scene_json / recent_history facts > character_intention with location > old snapshot > schedule_snapshot defaults
   ↓
 state_updater syncs public "Pending Events" from each character's "Intentions" (event names preserve character names)
 ```
@@ -166,7 +166,7 @@ Observation mode uses the same SSE chat endpoint with `mode="observe"`: the narr
 All structured agents use pydantic-ai's `PromptedOutput` structured output, no longer using XML `<update_notes>`:
 
 - `CharacterOutput`: `content`, `memory`, `status`, `triggered`, `add_event`
-- `NarratorOutput`: `content`, `targets`, `new_characters` (routing, scene description, and dynamic character requests)
+- `NarratorOutput`: `targets`, `date`, `time`, `location`, `present_characters`, `scene_description`, `new_characters` (routing, structured scene state, and dynamic character requests)
 - `NewCharacterRequest` / `NewCharacterProfile`: New character incubation anchor (optional `name_hint`, no `character_id`) and character_factory's complete output (includes `character_id`, final `display_name`, `initial_status`)
 - `EpisodeMemoryBlock`: Single long-term memory event output by `EpisodeMemoryGenerator` (`date / time / location / participants / keywords / importance / content / title`), completed with a stable `id` by the write path and injected with `memory_owner` and `raw_dialogue` (original dialogue trace, metadata only, not vector-indexed, not in recall text), then appended to character `memory.jsonl`
 - `EpisodeClosureDetector` output type: `dict[str, list[EpisodeClosureBoundary]]` (key is the character's `agent_name` appearing in recent_history; value is all theme boundaries detected for that character in history, sorted by `end_turn` ascending, empty array means no boundaries. Each boundary contains `end_turn / old_theme / new_theme / reason`. Consumer only adopts local candidate characters, and takes the maximum `end_turn` from each array as this round's mergeable closure point)

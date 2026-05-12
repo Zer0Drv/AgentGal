@@ -11,6 +11,7 @@ from agents.schema import (
     NarratorOutput,
     UnderstandingPatchOutput,
 )
+from conftest import _narrator_output
 
 
 def test_choices_output_trims_each_choice_to_50_chars():
@@ -25,13 +26,13 @@ def test_choices_output_trims_each_choice_to_50_chars():
 
 def test_narrator_output_requires_route_target_or_new_character():
     with pytest.raises(ValidationError):
-        NarratorOutput(targets=[], content="走廊里传来广播声。")
+        _narrator_output(targets=[], new_characters=[])
 
 
 def test_narrator_output_allows_new_character_without_existing_target():
-    output = NarratorOutput(
+    output = _narrator_output(
         targets=[],
-        content="门外有人停下脚步。",
+        scene_description="门外有人停下脚步。",
         new_characters=[
             {
                 "relation_to": "player",

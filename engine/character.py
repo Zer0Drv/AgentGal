@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from collections.abc import Callable
 from typing import Any, ClassVar
@@ -38,6 +39,10 @@ from log_config.routing import routing_logger
 from memory.parser import extract_status_field, normalize
 from memory.retrieval import search_memories, search_understandings
 from shared.config import AGENT_RUN_TIMEOUT_SECONDS, HISTORY_RAW_SCAN_TURNS, get_agent_names
+from shared.narrator_output import (
+    extract_narrator_output,
+    raw_message_text,
+)
 from shared.text_utils import (
     clean_response,
     get_display_name,
@@ -338,8 +343,8 @@ class Narrator(BaseEntity):
         raw_messages: list[dict] | None = None,
         *,
         observation_mode: bool = False,
-    ) -> tuple[list[str], str, list[NewCharacterRequest], bool]:
-        """运行 narrator → 返回 (targets, scene_description, new_characters, is_valid)。
+    ) -> tuple[NarratorOutput | None, bool]:
+        """运行 narrator → 返回 (清洗后的结构化输出, is_valid)。
 
         new_characters 是 narrator 本轮请求孵化的新角色 spec 列表；
         此处只做 schema 层过滤（保留 relation_to 合法且描述非空的锚点），
@@ -356,7 +361,7 @@ class Narrator(BaseEntity):
 
         async def _run(
             narrator_input: str,
-        ) -> tuple[list[str], str, list[NewCharacterRequest]]:
+        ) -> NarratorOutput:
             output = await self._run_narrator(
                 narrator_input,
                 raw_messages,
@@ -365,21 +370,27 @@ class Narrator(BaseEntity):
             )
             new_chars = self._filter_new_characters(output.new_characters, valid_agents)
             valid_targets = [t for t in output.targets if t in valid_agents]
-            scene = self._sanitize_scene_description(output.content)
-            return valid_targets, scene, new_chars
+            scene_description = self._sanitize_scene_description(output.scene_description)
+            return output.model_copy(
+                update={
+                    "targets": valid_targets,
+                    "scene_description": scene_description,
+                    "new_characters": new_chars,
+                }
+            )
 
         try:
-            targets, scene, new_chars = await _run(user_input)
+            output = await _run(user_input)
         except Exception as e:
             self._log_failure("调用", e)
-            return [], "", [], False
+            return None, False
 
-        if not targets and not new_chars:
+        if not output.targets and not output.new_characters:
             routing_logger.warning("narrator 响应缺少可用路由")
-            return [], scene, new_chars, False
+            return output, False
 
-        return targets, scene, new_chars, is_valid_response(scene, "narrator") and bool(
-            targets or new_chars
+        return output, is_valid_response(output.scene_description, "narrator") and bool(
+            output.targets or output.new_characters
         )
 
     @staticmethod
@@ -500,10 +511,18 @@ class Narrator(BaseEntity):
 
         character_intention = self._format_character_intentions()
         raw_messages = load_conversation_history(turns=1)
+        latest_scene = next(
+            (
+                payload
+                for msg in reversed(raw_messages)
+                if (payload := extract_narrator_output(msg))
+            ),
+            {},
+        )
         history_lines: list[str] = []
         for msg in raw_messages:
             role = msg.get("role", "unknown")
-            content = (msg.get("content") or "").strip()
+            content = raw_message_text(msg)
             if not content:
                 continue
             content = "\n".join(line.rstrip() for line in content.splitlines())
@@ -519,6 +538,12 @@ class Narrator(BaseEntity):
             parts.append(characters_block)
         if schedule_snapshot:
             parts.append(schedule_snapshot)
+        if latest_scene:
+            parts.append(
+                "<latest_scene_json>\n"
+                + json.dumps(latest_scene, ensure_ascii=False, indent=2)
+                + "\n</latest_scene_json>"
+            )
         parts.append(f"<character_intention>\n{character_intention}\n</character_intention>")
         parts.append(f"<current_narrator_status>\n{narrator_status}\n</current_narrator_status>")
         parts.append(f"<recent_history>\n{recent_history}\n</recent_history>")

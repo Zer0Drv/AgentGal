@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from shared.narrator_output import raw_message_text
 from shared.text_utils import get_display_name, role_to_speaker
 from storage.agent_files import read_agent_file
 
@@ -36,7 +37,7 @@ def render_raw_history(
             continue
         if turn_ge is not None and (not isinstance(turn, int) or turn < turn_ge):
             continue
-        content = re.sub(r"\n+", "\n", (msg.get("content") or "").strip())
+        content = re.sub(r"\n+", "\n", raw_message_text(msg))
         if not content:
             continue
         role = msg.get("role", "unknown")

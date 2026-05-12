@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import engine.conversation_flow as conversation_flow_module
+from agents.schema import NarratorOutput
 from shared.config import AGENT_RUN_TIMEOUT_SECONDS
 
 
@@ -34,8 +35,15 @@ async def test_generate_choices_passes_required_timeout(monkeypatch):
         fake_run_structured_agent,
     )
 
-    choices = await conversation_flow_module.generate_choices("场景", [("alice", "回应")])
+    narrator_output = NarratorOutput(
+        targets=["alice"],
+        date="4月3日 星期三",
+        time="16:10",
+        location="走廊",
+        present_characters={"北原悠": "门口", "Alice": "窗边"},
+        scene_description="场景",
+    )
+    choices = await conversation_flow_module.generate_choices(narrator_output, [("alice", "回应")])
 
     assert choices == ["继续问下去"]
     assert captured["timeout_seconds"] == AGENT_RUN_TIMEOUT_SECONDS
-

@@ -109,7 +109,7 @@ NARRATOR = r"""<goal>
 按“可回应 + 可延展”判断出场人物：
 - 可回应：在场，或通过电话、消息、隔门等方式连通；玩家主动联系的人也视为可回应。
 - 可延展：本轮后能自然再出现、推动关系或影响玩家/主要角色；可以是初次见面，也可以是已认识的人，如转学生、同学、邻居、社团新人、经纪人、常去店员。
-- 满足两条且在 `<fields>` 中 → 放入 targets；仅一次性功能人物 → 只在 content 中带过。
+- 满足两条且在 `<fields>` 中 → 放入 targets；仅一次性功能人物 → 只写入 present_characters / scene_description，不放入 targets。
 - targets 优先级为：玩家主动联系的人 > 可回应且关系重要的人 > 可回应的人 > 其他人物
 
 **2. 场景：根据当前状况和玩家意图决定时间和地点**
@@ -119,6 +119,7 @@ NARRATOR = r"""<goal>
 </task>
 
 <context_usage>
+- `<player>`：玩家显示名。present_characters 中玩家必须使用这个显示名，不要写成"玩家"。
 - `<status>`：当前场景、时间、各角色位置、各角色和玩家的关系索引、叙事焦点、待触发事件。
 - 近期对话历史
 </context_usage>
@@ -135,7 +136,9 @@ NARRATOR = r"""<goal>
 
 <writing_boundaries>
 - 描述时间、地点、在场人员。
-- 不要给在场角色添加行为或对话，仅描述位置。
+- present_characters 是"展示名 → 所在位置/站位/简短状态"的字典；已有主要角色用显示名，不用 agent id。
+- 不要给在场主要角色添加行为或对话，仅描述位置。
+- scene_description 写环境、气氛、转场、纯 NPC 制造的局面，不替主要角色说话或行动。
 - 场景跳跃时需要包含过渡信息。
 </writing_boundaries>
 
@@ -143,7 +146,14 @@ NARRATOR = r"""<goal>
 Return the result in this exact JSON format:
 {{
   "targets": ["角色id"],
-  "content": "**时间**：X月X日 星期X XX:XX\n**地点**：...\n**在场**：\n- 玩家：[位置]\n[每个主要角色一行，位置或场外]\n\n[一两句气氛烘托]",
+  "date": "X月X日 星期X",
+  "time": "XX:XX",
+  "location": "地点",
+  "present_characters": {{
+    "玩家显示名": "位置/站位/简短状态",
+    "角色显示名": "位置/站位/简短状态"
+  }},
+  "scene_description": "一两句环境、气氛或转场描写",
   "new_characters": [
     {{
       "name_hint": "可选中文名称提示，如李明（禁止写称谓如同学）",
@@ -162,35 +172,35 @@ Return the result in this exact JSON format:
 <example scene="原地延续：roleA/roleB 在场">
 <input>玩家看着roleA说："刚才的事别告诉别人。" 当前场景：楼下连廊，roleA和roleB都在场。待触发事件：【roleB：退回的钥匙】10月2日 19:30 共享资料室。</input>
 <output>
-{{"targets": ["roleA", "roleB"], "content": "**时间**：10月2日 星期一 18:10\n**地点**：楼下连廊\n**在场**：\n- 玩家：面对roleA，压低声音\n- roleA：玩家对面\n- roleB：几步外的玻璃门旁\n\n走廊里没有别人，窗外传来值日生搬桌椅的声音。", "new_characters": []}}
+{{"targets": ["roleA", "roleB"], "date": "10月2日 星期一", "time": "18:10", "location": "楼下连廊", "present_characters": {{"北原悠": "面对roleA，压低声音", "roleA": "北原悠对面", "roleB": "几步外的玻璃门旁"}}, "scene_description": "走廊里没有别人，窗外传来值日生搬桌椅的声音。", "new_characters": []}}
 </output>
 </example>
 
 <example scene="跳到待触发事件：roleB 办公室">
 <input>玩家点头说"好"，开始认真上课。当前时间：10月2日 09:28。待触发事件：【roleB：办公室确认】10月2日 09:40 roleB办公室门口。</input>
 <output>
-{{"targets": ["roleA", "roleB"], "content": "**时间**：10月2日 星期一 09:40\n**地点**：roleB办公室门口\n**在场**：\n- 玩家：办公室门口，手里拿着入职资料\n- roleA：玩家身侧，拿着补充表格\n- roleB：办公室门边\n\n走廊尽头传来打印机的嗡嗡声，办公室的门开着。", "new_characters": []}}
+{{"targets": ["roleA", "roleB"], "date": "10月2日 星期一", "time": "09:40", "location": "roleB办公室门口", "present_characters": {{"北原悠": "办公室门口，手里拿着入职资料", "roleA": "北原悠身侧，拿着补充表格", "roleB": "办公室门边"}}, "scene_description": "走廊尽头传来打印机的嗡嗡声，办公室的门开着。", "new_characters": []}}
 </output>
 </example>
 
 <example scene="touchable + relation-bearing spawn">
 <input>玩家：（转身走回家，隔壁青梅竹马的邻居姐姐走了过来） 当前场景：玩家家门口走廊。当前时间：4月24日 09:18。待触发事件：无。</input>
 <output>
-{{"targets": [], "content": "**时间**：4月24日 星期六 09:18\n**地点**：玩家家门口走廊\n**在场**：\n- 玩家：家门口，刚转身准备回屋\n- 邻居姐姐：隔壁房门前，拿着垃圾袋，正朝玩家走来\n\n她提着垃圾袋停住脚，看清是玩家后抬了下手。她没有立刻回屋。", "new_characters": [{{"name_hint": "沈知夏", "relation_to": "player", "relation_description": "住在隔壁的青梅竹马邻居姐姐", "background_hint": "熟悉玩家生活节奏，说话自然亲近", "initial_location": "玩家家门口走廊"}}]}}
+{{"targets": [], "date": "4月24日 星期六", "time": "09:18", "location": "玩家家门口走廊", "present_characters": {{"北原悠": "家门口，刚转身准备回屋", "邻居姐姐": "隔壁房门前，拿着垃圾袋，正朝北原悠走来"}}, "scene_description": "她提着垃圾袋停住脚，看清北原悠后抬了下手。她没有立刻回屋。", "new_characters": [{{"name_hint": "沈知夏", "relation_to": "player", "relation_description": "住在隔壁的青梅竹马邻居姐姐", "background_hint": "熟悉玩家生活节奏，说话自然亲近", "initial_location": "玩家家门口走廊"}}]}}
 </output>
 </example>
 
 <example scene="touchable + relation-bearing spawn：远程联系">
 <input>玩家接起电话，发现是 roleA 的经纪人打来的，立刻把手机递给 roleA。当前场景：玩家房间。当前时间：4月24日 08:40。待触发事件：无。</input>
 <output>
-{{"targets": ["roleA"], "content": "**时间**：4月24日 星期六 08:40\n**地点**：玩家房间\n**在场**：\n- 玩家：床边，刚接起电话又把手机递给 roleA\n- roleA：玩家身边\n- 电话那头的经纪人：正在等待 roleA 回应\n\n电话那头没有挂断，女人直接追问：’roleA在吗？上午时间提前了。’ 房间里安静下来。", "new_characters": [{{"name_hint": "早川凛", "relation_to": "roleA", "relation_description": "roleA 的经纪人，长期负责工作安排", "background_hint": "说话利落，习惯直接推进日程", "initial_location": "电话另一头"}}]}}
+{{"targets": ["roleA"], "date": "4月24日 星期六", "time": "08:40", "location": "玩家房间", "present_characters": {{"北原悠": "床边，刚接起电话又把手机递给 roleA", "roleA": "北原悠身边", "电话那头的经纪人": "正在等待 roleA 回应"}}, "scene_description": "电话那头没有挂断，女人直接追问：'roleA在吗？上午时间提前了。' 房间里安静下来。", "new_characters": [{{"name_hint": "早川凛", "relation_to": "roleA", "relation_description": "roleA 的经纪人，长期负责工作安排", "background_hint": "说话利落，习惯直接推进日程", "initial_location": "电话另一头"}}]}}
 </output>
 </example>
 
 <example scene="错过事件：roleA 替出后果">
 <input>玩家晚上才回到共享资料室。当前时间：10月2日 21:10。待触发事件：【roleB：退回的钥匙】10月2日 19:30 共享资料室。</input>
 <output>
-{{"targets": ["roleA"], "content": "**时间**：10月2日 星期一 21:10\n**地点**：共享资料室\n**在场**：\n- 玩家：门口\n- roleA：长桌旁\n- roleB：场外\n\n值班老师从门口探头看了一眼，见到玩家就皱了下眉：「你总算来了？刚才那个女生等了你很久，钥匙和便签都放桌上了。」 桌上确实压着一张便签。", "new_characters": []}}
+{{"targets": ["roleA"], "date": "10月2日 星期一", "time": "21:10", "location": "共享资料室", "present_characters": {{"北原悠": "门口", "roleA": "长桌旁", "roleB": "场外"}}, "scene_description": "值班老师从门口探头看了一眼，见到北原悠就皱了下眉：'你总算来了？刚才那个女生等了你很久，钥匙和便签都放桌上了。' 桌上确实压着一张便签。", "new_characters": []}}
 </output>
 </example>
 </examples>
@@ -218,7 +228,7 @@ NARRATOR_OBSERVATION = r"""<goal>
 - 优先参考被观察角色打算中带地点的待触发事件
 - 若无明确待触发事件，根据当前时间和角色位置安排合适地点
 
-**3. content：只描述场景，不描述行为**
+**3. scene_description：只描述场景，不描述行为**
 - 描述时间、地点、各角色所处位置和环境氛围
 - 不描述角色做了什么、说了什么、心里想什么
 </task>
@@ -238,7 +248,13 @@ NARRATOR_OBSERVATION = r"""<goal>
 Return the result in this exact JSON format:
 {{
   "targets": ["角色id"],
-  "content": "**时间**：X月X日 星期X XX:XX\n**地点**：...\n**在场**：\n[每个主要角色一行，位置或场外，不含玩家]\n\n[一两句气氛烘托]",
+  "date": "X月X日 星期X",
+  "time": "XX:XX",
+  "location": "地点",
+  "present_characters": {{
+    "角色显示名": "位置/站位/简短状态"
+  }},
+  "scene_description": "一两句环境、气氛或转场描写",
   "new_characters": []
 }}
 targets 必须包含至少一个被观察角色的 id。
@@ -249,14 +265,14 @@ targets 必须包含至少一个被观察角色的 id。
 <example scene="被观察角色独自一人">
 <input>玩家想旁观：roleA。当前时间：4月5日 16:30。roleA 打算：[ ] 【整理笔记】放学后在教室整理上周积压的课堂笔记。roleB 打算：[ ] 【社团练习】4月5日 放学后 音乐室，练习新曲目。</input>
 <output>
-{{"targets": ["roleA"], "content": "**时间**：4月5日 星期五 16:30\n**地点**：教室\n**在场**：\n- roleA：座位旁\n- roleB：场外\n\n放学铃刚过，走廊里陆续传来同学离开的脚步声。教室里只剩几盏日光灯亮着。", "new_characters": []}}
+{{"targets": ["roleA"], "date": "4月5日 星期五", "time": "16:30", "location": "教室", "present_characters": {{"roleA": "座位旁", "roleB": "场外"}}, "scene_description": "放学铃刚过，走廊里陆续传来同学离开的脚步声。教室里只剩几盏日光灯亮着。", "new_characters": []}}
 </output>
 </example>
 
 <example scene="被观察角色的打算涉及另一角色">
 <input>玩家想旁观：roleA。当前时间：10月3日 12:10。roleA 打算：[ ] 【找roleB谈清楚】10月3日 午休 操场角，趁没人的时候问清楚上次的事。roleB 打算：无。</input>
 <output>
-{{"targets": ["roleA", "roleB"], "content": "**时间**：10月3日 星期四 12:10\n**地点**：操场角\n**在场**：\n- roleA：操场角铁栅栏旁\n- roleB：操场角\n\n午休时间大多数人去了食堂，操场这边安静下来，只有远处篮球架旁偶尔传来几声。", "new_characters": []}}
+{{"targets": ["roleA", "roleB"], "date": "10月3日 星期四", "time": "12:10", "location": "操场角", "present_characters": {{"roleA": "操场角铁栅栏旁", "roleB": "操场角"}}, "scene_description": "午休时间大多数人去了食堂，操场这边安静下来，只有远处篮球架旁偶尔传来几声。", "new_characters": []}}
 </output>
 </example>
 </examples>
@@ -269,17 +285,18 @@ STATE_UPDATER = r"""<prompt>
 </goal>
 
 <input_blocks>
-输入按顺序包含以下 5 块：characters、schedule_snapshot、character_intention、current_narrator_status、recent_history。
+输入按顺序包含以下块：characters、schedule_snapshot、latest_scene_json、character_intention、current_narrator_status、recent_history。
 characters 列出所有主要角色的 id、显示名和身份介绍，整个故事期间几乎不变。
 schedule_snapshot 是当前 game_time 下各角色按自身 schedule 的默认位置，仅作为未被叙事覆盖时的基线；未配置日程或时段匹配不到的角色会显示「（无日程）」。
+latest_scene_json 是本轮旁白的结构化场景输出，包含 date、time、location、present_characters、scene_description。
 character_intention 标题格式为【character_id / 角色显示名】，内容来自各角色 status.md 的「打算」。
 recent_history 是最近3条 raw 历史的摘要，不再另行提供 player_input、narrator_content、agent_responses 或 targets。
 </input_blocks>
 
 <rules>
-1. status 的 场景 / 叙事焦点 / 当前时间：只写 recent_history 中明确改变的字段；未变化填""。当前时间来自旁白或明确推进，没有明确推进则填""。叙事焦点中若 recent_history 的玩家消息以 `## 姓名` 形式标注了名字，使用该名字代替「玩家」。
+1. status 的 场景 / 叙事焦点 / 当前时间：优先使用 latest_scene_json 中的 location、date/time；没有结构化场景时才从 recent_history 中读取明确变化；未变化填""。叙事焦点中若 recent_history 的玩家消息以 `## 姓名` 形式标注了名字，使用该名字代替「玩家」。
 2. status 的 角色位置：每轮必须输出完整快照，涵盖所有主要角色。按优先级合成：
-   recent_history 中的叙事事实 > character_intention 里带地点的打算 > current_narrator_status.角色位置 的旧值 > schedule_snapshot 的默认位置。
+   latest_scene_json.present_characters / recent_history 中的叙事事实 > character_intention 里带地点的打算 > current_narrator_status.角色位置 的旧值 > schedule_snapshot 的默认位置。
    schedule_snapshot 中标注「（无日程）」的角色，若无其他线索则沿用 current_narrator_status.角色位置 旧值；仍无则写合理推断。
    每行格式 `- 显示名：地点`，地点用自由文本，不需要统一词表。
 3. triggered：只写要从 narrator「待触发事件」移除的【事件名】。本轮明确发生则移除；当前时间能明确比较且已经错过则移除；同角色、同含义、同时间地点的冗余项移除，只保留角色名前缀完整、描述最清楚的一条；模糊时间无法明确比较时保留。

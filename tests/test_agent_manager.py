@@ -14,6 +14,7 @@ try:
     import storage.agent_files as agent_files_module
     from engine.character import Character, Narrator
     from agents.schema import CharacterOutput, NarratorOutput, NarratorStatus, StateUpdaterOutput
+    from conftest import _narrator_output
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip conversation flow tests: missing dependency ({exc})", allow_module_level=True)
 
@@ -163,12 +164,10 @@ async def test_narrator_route_returns_fallback_on_run_failure(monkeypatch):
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, new_characters, is_valid = await Narrator().route("你好")
+    output, is_valid = await Narrator().route("你好")
 
     assert calls == 1
-    assert targets == []
-    assert scene_description == ""
-    assert new_characters == []
+    assert output is None
     assert is_valid is False
 
 
@@ -185,31 +184,32 @@ async def test_narrator_route_filters_targets_and_sanitizes_scene(monkeypatch):
     monkeypatch.setattr(character_module, "get_display_name", lambda *_args: "美月")
 
     async def fake_run_narrator(self, *_args, **_kwargs):
-        return NarratorOutput(
+        return _narrator_output(
             targets=["mitsuki", "ghost"],
-            content="场景铺垫。\n美月：这句不该由旁白说。",
+            scene_description="场景铺垫。\n美月：这句不该由旁白说。",
         )
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, new_characters, is_valid = await Narrator().route("你好")
+    output, is_valid = await Narrator().route("你好")
 
-    assert targets == ["mitsuki"]
-    assert scene_description == "场景铺垫。"
+    assert output is not None
+    assert output.targets == ["mitsuki"]
+    assert output.scene_description == "场景铺垫。"
     assert is_valid is True
 
 
 def test_narrator_route_validation_rejects_unknown_targets():
-    output = NarratorOutput(targets=["ghost"], content="走廊里传来广播声。")
+    output = _narrator_output(targets=["ghost"])
 
     with pytest.raises(ValueError, match="invalid targets"):
         Narrator._validate_route_output(output, ["mitsuki"])
 
 
 def test_narrator_route_validation_rejects_invalid_new_character_anchor():
-    output = NarratorOutput(
+    output = _narrator_output(
         targets=[],
-        content="门外有人停下脚步。",
+        scene_description="门外有人停下脚步。",
         new_characters=[
             {
                 "name_hint": "桥本志津",
@@ -241,12 +241,10 @@ async def test_narrator_route_returns_fallback_when_empty_route_is_rejected(monk
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, new_characters, is_valid = await Narrator().route("回家睡觉")
+    output, is_valid = await Narrator().route("回家睡觉")
 
     assert calls == 1
-    assert targets == []
-    assert scene_description == ""
-    assert new_characters == []
+    assert output is None
     assert is_valid is False
 
 
@@ -264,9 +262,9 @@ async def test_narrator_route_allows_spawn_without_existing_targets(monkeypatch)
     async def fake_run_narrator(self, *_args, **_kwargs):
         nonlocal calls
         calls += 1
-        return NarratorOutput(
+        return _narrator_output(
             targets=[],
-            content="门外有人停下脚步。",
+            scene_description="门外有人停下脚步。",
             new_characters=[
                 {
                     "name_hint": "桥本志津",
@@ -278,13 +276,14 @@ async def test_narrator_route_allows_spawn_without_existing_targets(monkeypatch)
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, new_characters, is_valid = await Narrator().route("回家睡觉")
+    output, is_valid = await Narrator().route("回家睡觉")
 
     assert calls == 1
-    assert targets == []
-    assert len(new_characters) == 1
-    assert new_characters[0].name_hint == "桥本志津"
-    assert scene_description == "门外有人停下脚步。"
+    assert output is not None
+    assert output.targets == []
+    assert len(output.new_characters) == 1
+    assert output.new_characters[0].name_hint == "桥本志津"
+    assert output.scene_description == "门外有人停下脚步。"
     assert is_valid is True
 
 
@@ -299,14 +298,15 @@ async def test_narrator_route_rejects_scene_without_valid_targets(monkeypatch):
     monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
 
     async def fake_run_narrator(self, *_args, **_kwargs):
-        return NarratorOutput(targets=["ghost"], content="走廊里传来广播声。")
+        return _narrator_output(targets=["ghost"])
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
-    targets, scene_description, new_characters, is_valid = await Narrator().route("回家睡觉")
+    output, is_valid = await Narrator().route("回家睡觉")
 
-    assert targets == []
-    assert scene_description == "走廊里传来广播声。"
+    assert output is not None
+    assert output.targets == []
+    assert output.scene_description == "走廊里传来广播声。"
     assert is_valid is False
 
 

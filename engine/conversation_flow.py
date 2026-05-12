@@ -6,7 +6,7 @@ Narrator / Character 实体方法里，这里只负责把编排串起来。
 
 from agents.factory import get_choices_agent
 from agents.runner import run_structured_agent
-from agents.schema import ChoicesOutput, NewCharacterRequest
+from agents.schema import ChoicesOutput, NarratorOutput, NewCharacterRequest
 from engine.character import get_character, narrator
 from engine.character_factory import CreatedCharacterInfo, create_character
 from engine.prompt_builder import build_history_transcript
@@ -18,7 +18,7 @@ from storage.history import load_conversation_history
 
 
 async def generate_choices(
-    scene_description: str, agent_responses: list[tuple[str, str]]
+    narrator_output: NarratorOutput, agent_responses: list[tuple[str, str]]
 ) -> list[str]:
     """根据当前场景和角色回应生成玩家可选行动（2-3 个）。"""
     raw_messages = load_conversation_history(turns=HISTORY_RAW_SCAN_TURNS)
@@ -26,8 +26,7 @@ async def generate_choices(
     history, _ = build_history_transcript("narrator", raw_messages)
     if history:
         parts.append(f"【近期对话】\n{history}")
-    if scene_description:
-        parts.append(f"【场景】\n{scene_description}")
+    parts.append(f"【当前场景JSON】\n{narrator_output.model_dump_json()}")
     for name, response in agent_responses:
         parts.append(f"【{name}】\n{response}")
 
@@ -83,12 +82,13 @@ async def run_agent_in_scene(
     user_input: str,
     *,
     observation_mode: bool = False,
-    scene_description: str = "",
+    narrator_output: NarratorOutput | None = None,
 ) -> str | None:
     """在场景上下文中运行单个角色并广播响应。"""
     from storage.message_router import message_router
 
-    query = scene_description if observation_mode else user_input
+    scene_json = narrator_output.model_dump_json() if narrator_output else ""
+    query = scene_json if observation_mode else user_input
     output = await get_character(agent_name).run(query, observation_mode=observation_mode)
     response = clean_response(output.content)
     if is_valid_response(response, agent_name):

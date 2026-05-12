@@ -8,6 +8,7 @@ from datetime import datetime
 
 from memory.parser import canonical_cn_date
 from shared.config import character_path
+from shared.narrator_output import extract_narrator_output, raw_message_text
 
 
 def _iter_jsonl(filepath: str) -> Iterator[dict]:
@@ -132,7 +133,10 @@ def search_history(query: str, *, limit: int) -> list[dict]:
     q_lower = query.lower()
     matches: list[dict] = []
     for filepath in sorted(glob.glob(f"{raw_dir}/*.jsonl"), reverse=True):
-        file_msgs = [msg for msg in _iter_jsonl(filepath) if q_lower in (msg.get("content") or "").lower()]
+        file_msgs = [
+            msg for msg in _iter_jsonl(filepath)
+            if q_lower in raw_message_text(msg).lower()
+        ]
         for msg in reversed(file_msgs):
             matches.append(msg)
             if len(matches) >= limit:
@@ -169,7 +173,9 @@ def extract_game_date_anchors() -> list[dict]:
             turn = int(msg.get("turn") or 0)
             if turn <= 0:
                 continue
-            date = canonical_cn_date(msg.get("content") or "")
+            payload = extract_narrator_output(msg)
+            date_source = payload.get("date") if payload else msg.get("content")
+            date = canonical_cn_date(str(date_source or ""))
             if not date:
                 continue
             if current is None or current["date"] != date:

@@ -487,6 +487,7 @@ def delete_save_game(root_filename: str) -> list[str] | None:
 
 def _restore_player_name_from_raw_history() -> None:
     """旧存档没有 .player_name 时，从第一条玩家 raw 消息恢复一次。"""
+    read_player_name.cache_clear()
     if read_player_name():
         return
 

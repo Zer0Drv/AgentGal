@@ -49,6 +49,7 @@ from storage.save_manager import (
 from log_config.routing import routing_logger
 from log_config.logfire import setup_logfire
 from shared.config import CHARACTERS_DIR, get_agent_names
+from shared.narrator_output import extract_narrator_output
 from shared.text_utils import get_display_name
 from storage.agent_files import read_agent_file
 from storage.history import (
@@ -131,15 +132,23 @@ def _get_agent_display_name(agent_name: str) -> str:
 
 def _format_history_message(msg: dict) -> dict | None:
     role = msg.get("role", "")
-    content = (msg.get("content") or "").strip()
-    if not content:
+    payload = extract_narrator_output(msg)
+    content = (
+        str(payload.get("scene_description") or "").strip()
+        if payload
+        else str(msg.get("content") or "").strip()
+    )
+    if not content and not payload:
         return None
-    return {
+    formatted = {
         "role": role,
         "author": _get_agent_display_name(role) if role else "",
         "content": content,
         "turn": int(msg.get("turn") or 0),
     }
+    if payload:
+        formatted["payload"] = payload
+    return formatted
 
 
 def _clip_text(value: str, limit: int) -> str:
@@ -593,15 +602,20 @@ async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] 
     current_turn = 0
 
     # 1. narrator 路由
-    targets, scene_description, new_character_specs, is_narrator_valid = (
-        await narrator.route(user_input, observation_mode=observation_mode)
+    narrator_output, is_narrator_valid = await narrator.route(
+        user_input,
+        observation_mode=observation_mode,
     )
+    targets = narrator_output.targets if narrator_output is not None else []
+    new_character_specs = narrator_output.new_characters if narrator_output is not None else []
 
     # 1.5 处理 narrator 请求的新角色（孵化成功后加入 targets）
     targets, created_new_characters = await bootstrap_new_characters(
         new_character_specs, targets
     )
-    is_narrator_valid = is_narrator_valid and bool(targets)
+    if narrator_output is not None:
+        narrator_output = narrator_output.model_copy(update={"targets": targets})
+    is_narrator_valid = is_narrator_valid and narrator_output is not None and bool(targets)
     if created_new_characters:
         for character in created_new_characters:
             yield _sse_event(
@@ -616,18 +630,24 @@ async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] 
 
     # 2. 广播玩家消息与旁白
     # 旁白失败时不把玩家消息写进 raw，避免下一轮上下文里残留没人回应的玩家话语。
+    narrator_dump = narrator_output.model_dump() if narrator_output is not None else None
     if is_narrator_valid:
         if not observation_mode:
             await message_router.broadcast_player_message(targets, user_input)
-        current_turn = await message_router.broadcast_agent_response(
-            "narrator", targets, scene_description
+        current_turn = await message_router.broadcast_narrator_output(targets, narrator_dump)
+    if narrator_dump is not None:
+        yield _sse_event(
+            "narrator",
+            {
+                "content": narrator_output.scene_description,
+                "author": "旁白",
+                "payload": narrator_dump,
+            },
         )
-    if scene_description:
-        yield _sse_event("narrator", {"content": scene_description, "author": "旁白"})
 
     if not targets:
         routing_logger.info("[导演] 无角色需要回应")
-        if scene_description:
+        if narrator_output is not None:
             _start_state_update()
         yield _sse_event("done", {})
         return
@@ -641,7 +661,7 @@ async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] 
                 targets,
                 user_input,
                 observation_mode=observation_mode,
-                scene_description=scene_description,
+                narrator_output=narrator_output,
             )
             if response:
                 agent_responses.append((agent_name, response))
@@ -658,7 +678,7 @@ async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] 
 
     choices_task: asyncio.Task[list[str]] | None = None
     if agent_responses and not observation_mode and choices_token == _choices_generation_token:
-        choices_task = asyncio.create_task(generate_choices(scene_description, agent_responses))
+        choices_task = asyncio.create_task(generate_choices(narrator_output, agent_responses))
         _pending_choices_task = choices_task
 
     _start_state_update()
