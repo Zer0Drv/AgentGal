@@ -238,7 +238,7 @@ Narrator uses the main LLM configuration (`LLM_*` env vars).
 After each participation round of character responses, `generate_choices()` is launched alongside `state_updater` and memory consolidation to generate 2-3 player-selectable actions. The player input box is already usable while choices are still generating. Starting a new `/api/chat` round invalidates and cancels any pending choice generation, clears stale saved choices, and prevents late results from writing `last_choices.json`. Observation rounds skip choice generation and clear `last_choices.json`.
 
 - Prompt source: `prompts.runtime_prompts.CHOICES`
-- Uses `CHOICES_LLM_*` when configured, otherwise falls back to the main LLM configuration
+- Reuses the main `LLM_*` configuration
 - Output style is player dialogue (may include parenthetical action descriptions), not action instructions
 - Options are displayed as both text and buttons, persisted to `last_choices.json`
 
@@ -271,7 +271,7 @@ After each participation round of character responses, `generate_choices()` is l
 
 - Holds secrets, model IDs, and external service URLs
 - Rerank calls are only truly enabled when `RERANK_MODEL` is configured
-- Generated dialogue and background generation use the main `LLM_*` configuration; only choice generation has an optional `CHOICES_LLM_*` override, falling back to the main LLM when not set
+- Generated dialogue, background generation, and choice generation all use the main `LLM_*` configuration
 
 ### `config.toml`
 

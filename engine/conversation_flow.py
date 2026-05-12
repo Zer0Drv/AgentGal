@@ -10,7 +10,7 @@ from agents.schema import ChoicesOutput, NarratorOutput, NewCharacterRequest
 from engine.character import get_character, narrator
 from engine.character_factory import CreatedCharacterInfo, create_character
 from engine.prompt_builder import build_history_transcript
-from llm.config import get_choices_llm_config
+from llm.config import get_llm_config
 from log_config.routing import routing_logger
 from shared.config import AGENT_RUN_TIMEOUT_SECONDS, HISTORY_RAW_SCAN_TURNS
 from shared.text_utils import clean_response, is_valid_response
@@ -30,7 +30,7 @@ async def generate_choices(
     for name, response in agent_responses:
         parts.append(f"【{name}】\n{response}")
 
-    config = get_choices_llm_config()
+    config = get_llm_config()
     try:
         output = await run_structured_agent(
             agent=get_choices_agent(),

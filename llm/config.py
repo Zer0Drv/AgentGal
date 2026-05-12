@@ -55,6 +55,7 @@ def get_llm_config(
             "api_key": str,
             "model_id": str,
             "temperature": float,
+            "provider": str,
         }
     """
     provider = _get_optional_env("LLM_PROVIDER") or "openai"
@@ -68,15 +69,3 @@ def get_llm_config(
         "temperature": AGENT_TEMPERATURE if temperature is None else temperature,
         "provider": provider,
     }
-
-
-def get_choices_llm_config() -> dict:
-    """返回选项生成使用的 LLM 配置。
-
-    优先使用 CHOICES_LLM_* 系列环境变量，未设置则复用主 LLM 配置。
-    """
-    return get_llm_config(
-        model_id=_get_optional_env("CHOICES_LLM_MODEL_ID"),
-        api_key=_get_optional_env("CHOICES_LLM_API_KEY"),
-        api_url=_get_optional_env("CHOICES_LLM_API_URL"),
-    )

@@ -26,10 +26,7 @@ from agents.schema import (
     UnderstandingPatchOutput,
 )
 from engine.prompt_builder import build_system_prompt
-from llm.config import (
-    get_choices_llm_config,
-    get_llm_config,
-)
+from llm.config import get_llm_config
 from prompts.consolidation_prompts import (
     EPISODE_CLOSURE_DETECTOR,
     EPISODE_MEMORY_GENERATOR,
@@ -193,7 +190,7 @@ def get_choices_agent() -> Agent[None, ChoicesOutput]:
     global _choices_agent
 
     if _choices_agent is None:
-        config = get_choices_llm_config()
+        config = get_llm_config()
         _choices_agent = _build_agent(
             name="choices",
             instructions=CHOICES,

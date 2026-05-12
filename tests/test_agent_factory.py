@@ -50,7 +50,6 @@ def test_conversation_agents_use_prompted_output(monkeypatch):
 
 
 def test_auxiliary_structured_agents_use_prompted_output(monkeypatch):
-    monkeypatch.setattr(agent_factory_module, "get_choices_llm_config", _fake_config)
     monkeypatch.setattr(agent_factory_module, "get_llm_config", _fake_config)
 
     choices = agent_factory_module.get_choices_agent()

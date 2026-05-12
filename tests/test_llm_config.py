@@ -22,9 +22,6 @@ _LLM_ENV_KEYS = [
     "LLM_API_KEY",
     "LLM_API_URL",
     "LLM_PROVIDER",
-    "CHOICES_LLM_MODEL_ID",
-    "CHOICES_LLM_API_KEY",
-    "CHOICES_LLM_API_URL",
 ]
 
 
@@ -61,52 +58,6 @@ def test_get_llm_config_reads_model_key_and_url(monkeypatch):
     assert config["model_id"] == "custom-model"
     assert config["api_key"] == "main-key"
     assert config["api_url"] == "https://custom.example/v1"
-    assert config["provider"] == "openai"
-
-
-def test_get_choices_llm_config_falls_back_to_main_config(monkeypatch):
-    _clear_llm_env(monkeypatch)
-    monkeypatch.setenv("LLM_MODEL_ID", "gpt-main")
-    monkeypatch.setenv("LLM_API_KEY", "main-key")
-    monkeypatch.setenv("LLM_API_URL", "https://main.example/v1/chat/completions")
-
-    config = llm_config_module.get_choices_llm_config()
-
-    assert set(config) == _CONFIG_KEYS
-    assert config["model_id"] == "gpt-main"
-    assert config["api_key"] == "main-key"
-    assert config["api_url"] == "https://main.example/v1"
-    assert config["provider"] == "openai"
-
-
-def test_choices_config_can_override_all_fields_without_main_config(monkeypatch):
-    _clear_llm_env(monkeypatch)
-    monkeypatch.setenv("CHOICES_LLM_MODEL_ID", "choices-model")
-    monkeypatch.setenv("CHOICES_LLM_API_KEY", "choices-key")
-    monkeypatch.setenv("CHOICES_LLM_API_URL", "https://choices.example/v1/chat/completions")
-
-    config = llm_config_module.get_choices_llm_config()
-
-    assert set(config) == _CONFIG_KEYS
-    assert config["model_id"] == "choices-model"
-    assert config["api_key"] == "choices-key"
-    assert config["api_url"] == "https://choices.example/v1"
-    assert config["provider"] == "openai"
-
-
-def test_choices_config_partially_overrides_main_config(monkeypatch):
-    _clear_llm_env(monkeypatch)
-    monkeypatch.setenv("LLM_MODEL_ID", "deepseek-main")
-    monkeypatch.setenv("LLM_API_KEY", "main-key")
-    monkeypatch.setenv("LLM_API_URL", "https://main.example/v1")
-    monkeypatch.setenv("CHOICES_LLM_API_URL", "https://scoped.example/v1")
-
-    config = llm_config_module.get_choices_llm_config()
-
-    assert set(config) == _CONFIG_KEYS
-    assert config["model_id"] == "deepseek-main"
-    assert config["api_key"] == "main-key"
-    assert config["api_url"] == "https://scoped.example/v1"
     assert config["provider"] == "openai"
 
 

@@ -25,7 +25,7 @@ async def test_generate_choices_passes_required_timeout(monkeypatch):
     )
     monkeypatch.setattr(
         conversation_flow_module,
-        "get_choices_llm_config",
+        "get_llm_config",
         lambda: {"model_id": "choices-model"},
     )
     monkeypatch.setattr(conversation_flow_module, "get_choices_agent", lambda: object())
