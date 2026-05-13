@@ -32,7 +32,8 @@ try:
     import importlib
     import storage.vector_store  # 确保子模块被加载进 sys.modules
     vector_store_module = importlib.import_module("storage.vector_store")
-    from storage.vector_store import vector_store, VectorStore, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
+    from storage.vector_store import vector_store, VectorStore
+    from llm.embedding import embed_sync, EMBED_API_URL, EMBED_API_KEY
     import memory.retrieval as retrieval_module
     import memory.parser as parser_module
     from memory.parser import EpisodeMemory
@@ -79,8 +80,6 @@ async def clean_store(monkeypatch):
     if os.path.exists(test_db_path):
         os.remove(test_db_path)
 
-    await store.init_tables()
-
     yield store
 
     # 清理：关闭数据库连接
@@ -104,7 +103,6 @@ async def wait_for_search(store, agent_name: str, query: str, timeout: float = 1
             conn = sqlite3.connect(test_db_path)
             try:
                 VectorStore._load_sqlite_vec_sync(conn)
-                from storage.vector_store import embed_sync
                 qvec = embed_sync([query])[0]
                 rows = store.get_vector_candidates(conn, agent_name, qvec, 5)
             finally:
@@ -279,7 +277,6 @@ class TestVectorStoreBasic:
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
-            from storage.vector_store import embed_sync
             qvec = embed_sync(["早上好"])[0]
             res_after = store.get_vector_candidates(conn, "lilith", qvec, 5)
         finally:
@@ -354,11 +351,23 @@ class TestVectorStoreEdgeCases:
 
     @pytest.mark.asyncio
     async def test_search_nonexistent_agent(self, clean_store):
-        """测试搜索不存在的角色"""
+        """测试索引存在时搜索不存在的角色"""
         store = clean_store
+        await store.add_many(
+            [
+                EpisodeMemory(
+                    date="10月1日",
+                    time="早上",
+                    location="庭院",
+                    participants="莉莉丝",
+                    keywords=["测试"],
+                    content="莉莉丝记录了一条测试记忆。",
+                    memory_owner="lilith",
+                )
+            ]
+        )
 
         import sqlite3
-        from storage.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
@@ -399,7 +408,6 @@ class TestVectorStoreEdgeCases:
         assert len(res_old) >= 1, "应该能搜索到昨天的记忆"
 
         import sqlite3
-        from storage.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
@@ -437,7 +445,6 @@ class TestVectorStoreEdgeCases:
         assert result == {"lilith": True}
 
         import sqlite3
-        from storage.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
@@ -513,7 +520,6 @@ class TestVectorStoreMemoryIndexing:
         assert len(res2) >= 1, "应命中第二个事件块"
 
         import sqlite3
-        from storage.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)
@@ -555,7 +561,6 @@ class TestVectorStoreMemoryIndexing:
         assert len(res_hit) >= 1, "应命中索引的日期"
 
         import sqlite3
-        from storage.vector_store import embed_sync
         conn = sqlite3.connect(test_db_path)
         try:
             VectorStore._load_sqlite_vec_sync(conn)

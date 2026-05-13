@@ -21,10 +21,6 @@ import aiosqlite
 from log_config.memory import memory_logger
 from llm.embedding import (
     embed_async,
-    embed_sync,
-    EMBED_DIM,
-    EMBED_API_URL,
-    EMBED_API_KEY,
 )
 from memory.parser import EpisodeMemory, canonical_cn_date
 from shared.config import (
@@ -52,10 +48,6 @@ DB_PATH = str(RUNTIME_DIR / "vectors.sqlite")
 __all__ = [
     "VectorStore",
     "vector_store",
-    "embed_sync",
-    "EMBED_DIM",
-    "EMBED_API_URL",
-    "EMBED_API_KEY",
 ]
 
 
@@ -154,12 +146,12 @@ CREATE TABLE IF NOT EXISTS Understanding (
 """
 
 
-def _make_embed_text(name: str, keywords: list[str], content: str) -> str:
-    """[名称/标题, 关键词, 正文] join 为 embed 文本，空段过滤。"""
+def _make_embed_text(name: str, keywords: list[str], *content_parts: str) -> str:
+    """[名称/标题, 关键词, 正文...] join 为检索索引文本，空段过滤。"""
     parts = [
         name.strip(),
         "、".join(filter(None, (k.strip() for k in keywords))),
-        content.strip(),
+        *(part.strip() for part in content_parts),
     ]
     return "\n".join(p for p in parts if p)
 
@@ -171,11 +163,11 @@ class VectorStore:
     - EpisodeMemory(id PK, memory_owner, game_date, title, time, location,
                     participants, content, keywords, importance, content_hash,
                     last_recalled_at)
-    - EpisodeMemory_vec USING vec0(embedding F32[EMBED_DIM])  -- rowid = EpisodeMemory.id
+    - EpisodeMemory_vec USING vec0(embedding F32[embedding_dim])  -- rowid = EpisodeMemory.id
     - EpisodeMemory_fts USING fts5(content, keywords)
     - Understanding(db_id PK, id UNIQUE, memory_owner, subject, content, keywords,
                     linked_episodes)
-    - Understanding_vec USING vec0(embedding F32[EMBED_DIM])  -- rowid = Understanding.db_id
+    - Understanding_vec USING vec0(embedding F32[embedding_dim])  -- rowid = Understanding.db_id
     - Understanding_fts USING fts5(subject, keywords)
     """
 
@@ -209,16 +201,13 @@ class VectorStore:
             self._init_lock_loop = loop
         return self._init_lock
 
-    async def _ensure_tables(self) -> None:
-        """建表只做一次；跨 loop 重建（脚本场景）。"""
+    def _schema_ready_for_loop(self) -> bool:
         loop = asyncio.get_running_loop()
-        if (
+        return (
             self._db is not None
             and self._tables_initialized
             and self._tables_initialized_loop is loop
-        ):
-            return
-        await self.init_tables()
+        )
 
     def _sidecar_recall_by_hash(
         self,
@@ -269,8 +258,9 @@ class VectorStore:
         返回格式与 _read_memory_recall_state 兼容：
         {row_id: {"date": ..., "content_hash": ..., "last_recalled_at": ...}}
         """
-        await self._ensure_tables()
-        db = await self._get_db()
+        db = await self._open_existing_schema()
+        if db is None:
+            return {}
         rows = await db.execute_fetchall(
             "SELECT id, game_date, content_hash, last_recalled_at "
             "FROM EpisodeMemory WHERE memory_owner = ?",
@@ -351,23 +341,55 @@ class VectorStore:
         self._write_lock = None
         self._write_lock_loop = None
 
-    async def init_tables(self):
+    async def _vector_tables_exist(self, db: aiosqlite.Connection) -> bool:
+        rows = await db.execute_fetchall(
+            """
+            SELECT name FROM sqlite_master
+            WHERE name IN (
+                'EpisodeMemory',
+                'EpisodeMemory_vec',
+                'EpisodeMemory_fts',
+                'Understanding',
+                'Understanding_vec',
+                'Understanding_fts'
+            )
+            """
+        )
+        return {
+            "EpisodeMemory",
+            "EpisodeMemory_vec",
+            "EpisodeMemory_fts",
+            "Understanding",
+            "Understanding_vec",
+            "Understanding_fts",
+        }.issubset({str(row[0]) for row in rows})
+
+    async def _open_existing_schema(self) -> aiosqlite.Connection | None:
         loop = asyncio.get_running_loop()
         async with self._get_init_lock():
-            if (
-                self._db is not None
-                and self._tables_initialized
-                and self._tables_initialized_loop is loop
-            ):
+            if self._schema_ready_for_loop():
+                return self._db
+            db = await self._open_db_locked()
+            if not await self._vector_tables_exist(db):
+                return None
+            self._tables_initialized = True
+            self._tables_initialized_loop = loop
+            return db
+
+    async def _create_schema(self, embedding_dim: int) -> None:
+        loop = asyncio.get_running_loop()
+        async with self._get_init_lock():
+            if self._schema_ready_for_loop():
                 return
+            if embedding_dim <= 0:
+                raise ValueError(f"embedding_dim 必须是正整数: {embedding_dim}")
 
             db = await self._open_db_locked()
-
             await db.execute(_EPISODE_MEMORY_SCHEMA)
             await db.execute(
                 f"""
                 CREATE VIRTUAL TABLE IF NOT EXISTS EpisodeMemory_vec USING vec0(
-                    embedding F32[{EMBED_DIM}]
+                    embedding F32[{embedding_dim}]
                 )
                 """
             )
@@ -383,7 +405,7 @@ class VectorStore:
             await db.execute(
                 f"""
                 CREATE VIRTUAL TABLE IF NOT EXISTS Understanding_vec USING vec0(
-                    embedding F32[{EMBED_DIM}]
+                    embedding F32[{embedding_dim}]
                 )
                 """
             )
@@ -422,9 +444,19 @@ class VectorStore:
 
     @staticmethod
     def _embed_text(episode: EpisodeMemory) -> str:
-        """决定拿哪些高密度字段去 embed，避免只靠抽象标题丢失检索锚点。"""
+        """决定拿哪些高密度字段去索引，避免只靠正文丢失检索锚点。"""
+        metadata = "；".join(
+            f"{label}：{cleaned}"
+            for label, value in (
+                ("日期", episode.date),
+                ("时间", episode.time),
+                ("地点", episode.location),
+                ("在场", episode.participants),
+            )
+            if (cleaned := str(value).strip())
+        )
         return _make_embed_text(
-            episode.title, episode.keywords, episode.content
+            episode.title, episode.keywords, metadata, episode.content
         )
 
     @staticmethod
@@ -494,6 +526,8 @@ class VectorStore:
         content_hash: str,
         recalled_at: str,
         embedding: list[float],
+        *,
+        embed_text: str,
     ) -> None:
         """将单条 EpisodeMemory 与 embedding 写入三张表，不做删除。"""
         keywords_str = "、".join(episode.keywords)
@@ -524,7 +558,11 @@ class VectorStore:
             )
             await db.execute(
                 "INSERT INTO EpisodeMemory_fts(rowid, content, keywords) VALUES (?, ?, ?)",
-                (rowid, _tokenize_for_fts(episode.content), _tokenize_for_fts(keywords_str)),
+                (
+                    rowid,
+                    _tokenize_for_fts(embed_text),
+                    _tokenize_for_fts(keywords_str),
+                ),
             )
 
     async def _insert_prepared_batch(
@@ -535,11 +573,16 @@ class VectorStore:
         """在单个事务内写入一批已完成 embedding 的记忆。"""
         if not prepared:
             return 0
+        try:
+            embedding_dim = self._embedding_dim(embeddings)
+        except ValueError as e:
+            memory_logger.error("[VectorStore] embedding 维度无效: %s", e)
+            return 0
 
         db: aiosqlite.Connection | None = None
         try:
             async with self._get_write_lock():
-                await self._ensure_tables()
+                await self._create_schema(embedding_dim)
                 db = await self._get_db()
 
                 await db.execute("BEGIN")
@@ -552,6 +595,7 @@ class VectorStore:
                         item.content_hash,
                         item.recalled_at,
                         embedding,
+                        embed_text=item.embed_text,
                     )
                 await db.commit()
                 return len(prepared)
@@ -673,7 +717,7 @@ class VectorStore:
         content: str = getattr(understanding, "content", "")
 
         async with self._get_write_lock():
-            await self._ensure_tables()
+            await self._create_schema(len(embedding))
             db = await self._get_db()
             try:
                 await db.execute("BEGIN")
@@ -733,8 +777,9 @@ class VectorStore:
         """仅更新 linked_episodes 字段，不触碰向量或 FTS 索引。"""
         linked_str = json.dumps(linked_episodes, ensure_ascii=False)
         async with self._get_write_lock():
-            await self._ensure_tables()
-            db = await self._get_db()
+            db = await self._open_existing_schema()
+            if db is None:
+                return
             try:
                 await db.execute("BEGIN")
                 await db.execute(
@@ -755,8 +800,9 @@ class VectorStore:
     async def delete_understanding(self, understanding_id: str) -> None:
         """从三张 Understanding 表删除指定条目。id 不存在时静默返回。"""
         async with self._get_write_lock():
-            await self._ensure_tables()
-            db = await self._get_db()
+            db = await self._open_existing_schema()
+            if db is None:
+                return
             try:
                 row = await (
                     await db.execute(
@@ -946,6 +992,16 @@ class VectorStore:
         )
 
     @staticmethod
+    def _embedding_dim(embeddings: list[list[float]]) -> int:
+        if not embeddings or not embeddings[0]:
+            raise ValueError("接口未返回有效 embedding")
+        dim = len(embeddings[0])
+        bad_dims = sorted({len(item) for item in embeddings if len(item) != dim})
+        if bad_dims:
+            raise ValueError(f"同批 embedding 维度不一致: expected={dim}, got={bad_dims}")
+        return dim
+
+    @staticmethod
     def _to_vec_blob(vec: list[float]) -> bytes:
         import array
         a = array.array("f", [float(x) for x in vec])
@@ -956,8 +1012,9 @@ class VectorStore:
     async def delete(self, memory_owner: str) -> bool:
         """删除指定 agent 的所有记忆索引。"""
         try:
-            await self._ensure_tables()
-            db = await self._get_db()
+            db = await self._open_existing_schema()
+            if db is None:
+                return True
             async with self._get_write_lock():
                 await self._delete_chunks(db, memory_owner)
                 await db.execute(
@@ -989,8 +1046,9 @@ class VectorStore:
         if all_agents and set(unique_names) == all_agents:
             db: aiosqlite.Connection | None = None
             try:
-                await self._ensure_tables()
-                db = await self._get_db()
+                db = await self._open_existing_schema()
+                if db is None:
+                    return {name: True for name in unique_names}
                 async with self._get_write_lock():
                     await db.execute("BEGIN")
                     await db.execute("DELETE FROM EpisodeMemory_vec")

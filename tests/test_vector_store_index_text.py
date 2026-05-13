@@ -7,15 +7,22 @@ from storage.vector_store import VectorStore
 def test_embed_text_includes_title_keywords_and_content():
     episode = EpisodeMemory(
         title="亲昵称呼约定",
+        date="10月19日",
+        time="放学后",
+        location="旧阅览室",
+        participants="我、玩家",
         keywords=["小狗", "主人", "亲密称呼"],
         content="他叫我小狗，我叫他主人，这个称呼让互动变得更亲昵。",
         memory_owner="mitsuki",
-        date="10月19日",
     )
 
     embed_text = VectorStore._embed_text(episode)
 
     assert "亲昵称呼约定" in embed_text
+    assert "日期：10月19日" in embed_text
+    assert "时间：放学后" in embed_text
+    assert "地点：旧阅览室" in embed_text
+    assert "在场：我、玩家" in embed_text
     assert "小狗、主人、亲密称呼" in embed_text
     assert "他叫我小狗" in embed_text
 

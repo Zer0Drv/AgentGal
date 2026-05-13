@@ -12,7 +12,7 @@ from memory.parser import (
 from shared.config import get_agent_names
 from storage.vector_store import vector_store
 
-DEFAULT_REBUILD_BATCH_SIZE = 64
+DEFAULT_REBUILD_BATCH_SIZE = 10
 
 
 async def rebuild_memory_index(

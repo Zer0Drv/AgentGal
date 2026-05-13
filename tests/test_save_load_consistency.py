@@ -39,7 +39,8 @@ try:
     import memory.parser as parser_module
     vector_store_module = importlib.import_module("storage.vector_store")
     retrieval_module = importlib.import_module("memory.retrieval")
-    from storage.vector_store import vector_store, EMBED_DIM, EMBED_API_URL, EMBED_API_KEY
+    from storage.vector_store import vector_store
+    from llm.embedding import EMBED_API_URL, EMBED_API_KEY
     from storage.save_manager import export_save_archive, import_save_archive
     from memory.parser import EpisodeMemory, serialize_episode, parse_jsonl_line
 except ModuleNotFoundError as exc:
@@ -226,8 +227,6 @@ class TestSaveLoadConsistency:
         monkeypatch.setattr(save_manager_module, "character_path", make_character_path(tmp_path))
 
         try:
-            await store.init_tables()
-
             write_memory(
                 tmp_path,
                 "lilith",

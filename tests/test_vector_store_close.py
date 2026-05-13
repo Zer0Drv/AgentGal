@@ -105,4 +105,4 @@ async def test_concurrent_export_recall_state_initializes_connection_once(
     assert results == [{}, {}, {}, {}]
     assert len(connections) == 1
     assert load_calls == connections
-    assert store._tables_initialized is True
+    assert store._tables_initialized is False

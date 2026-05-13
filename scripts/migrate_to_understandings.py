@@ -274,7 +274,6 @@ async def migrate_agent(agent_name: str) -> int:
 
 
 async def main() -> None:
-    await vector_store.init_tables()
     try:
         total = 0
         for name in get_agent_names(include_narrator=False):

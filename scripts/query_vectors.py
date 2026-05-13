@@ -17,6 +17,8 @@ import asyncio
 import sys
 from pathlib import Path
 
+import aiosqlite
+
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -24,13 +26,22 @@ from dotenv import load_dotenv
 
 load_dotenv(project_root / ".env")
 
-from storage.vector_store import vector_store
+from storage.vector_store import DB_PATH
+
+
+async def _open_db() -> aiosqlite.Connection | None:
+    if not Path(DB_PATH).exists():
+        return None
+    return await aiosqlite.connect(DB_PATH)
 
 
 async def cmd_list():
     """显示全库总览：总条数、覆盖日期等"""
-    await vector_store.init_tables()
-    db = await vector_store._get_db()
+    db = await _open_db()
+    if db is None:
+        print("总条数: 0")
+        print("覆盖日期(游戏内): 0 天")
+        return
     try:
         row = await (await db.execute(
             "SELECT COUNT(*), COUNT(DISTINCT game_date) FROM EpisodeMemory"
@@ -50,13 +61,15 @@ async def cmd_list():
             for d, c in rows:
                 print(f"  {d or '-'}: {c}")
     finally:
-        await vector_store.close()
+        await db.close()
 
 
 async def cmd_show(limit: int, agent: str | None, date: str | None, order: str):
     """查看 EpisodeMemory 内容，支持按角色/日期过滤"""
-    await vector_store.init_tables()
-    db = await vector_store._get_db()
+    db = await _open_db()
+    if db is None:
+        print("=== EpisodeMemory（显示 0/0）===")
+        return
     try:
         where = []
         params: list = []
@@ -92,13 +105,16 @@ async def cmd_show(limit: int, agent: str | None, date: str | None, order: str):
             )
             print(f"{len(content)} chars: {preview}\n")
     finally:
-        await vector_store.close()
+        await db.close()
 
 
 async def cmd_stats():
     """显示整体统计（长度分布、日期分布 Top）"""
-    await vector_store.init_tables()
-    db = await vector_store._get_db()
+    db = await _open_db()
+    if db is None:
+        print("总计: 0 条记忆")
+        print("（空库）")
+        return
     try:
         total_chunks = (await (await db.execute("SELECT COUNT(*) FROM EpisodeMemory")).fetchone())[0]
         lens = await (
@@ -123,7 +139,7 @@ async def cmd_stats():
             for d, c in rows:
                 print(f"  {d or '-'}: {c}")
     finally:
-        await vector_store.close()
+        await db.close()
 
 
 async def main():

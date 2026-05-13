@@ -4,7 +4,10 @@ import pytest
 
 from memory.parser import Understanding
 import storage.vector_store as vector_store_module
-from storage.vector_store import EMBED_DIM, VectorStore
+from storage.vector_store import VectorStore
+
+
+TEST_EMBED_DIM = 8
 
 
 @pytest.fixture
@@ -13,7 +16,7 @@ def fake_embedding(monkeypatch):
 
     async def _fake_embed_async(texts: list[str]) -> list[list[float]]:
         calls.append(texts)
-        return [[0.0] * EMBED_DIM for _ in texts]
+        return [[0.0] * TEST_EMBED_DIM for _ in texts]
 
     monkeypatch.setattr(vector_store_module, "embed_async", _fake_embed_async)
     return calls
@@ -56,12 +59,61 @@ async def test_add_understanding_indexes_vector_and_bm25(tmp_path, monkeypatch, 
         )
 
         vector_rows = store.get_understanding_vector_candidates(
-            conn, "alice", [0.0] * EMBED_DIM, 5
+            conn, "alice", [0.0] * TEST_EMBED_DIM, 5
         )
         assert [(row[1], row[2]) for row in vector_rows] == [("u1", "对玩家的认知")]
 
         bm25_rows = store.get_understanding_bm25_candidates(conn, "alice", "保护欲", 5)
         assert [(row[1], row[4]) for row in bm25_rows] == [("u1", "玩家、保护欲")]
+    finally:
+        conn.close()
+
+
+@pytest.mark.asyncio
+async def test_auto_embedding_dimension_uses_first_real_embedding(tmp_path, monkeypatch):
+    db_path = tmp_path / "vectors.sqlite"
+    monkeypatch.setattr(vector_store_module, "DB_PATH", str(db_path))
+    calls: list[list[str]] = []
+
+    async def _fake_embed_async(texts: list[str]) -> list[list[float]]:
+        calls.append(texts)
+        return [[0.0] * TEST_EMBED_DIM for _ in texts]
+
+    monkeypatch.setattr(vector_store_module, "embed_async", _fake_embed_async)
+    store = VectorStore()
+    await store.add_understanding(
+        Understanding(
+            id="u1",
+            memory_owner="alice",
+            subject="对玩家的认知",
+            content="玩家会解释误会。",
+        )
+    )
+    await store.close()
+
+    assert calls == [["对玩家的认知\n玩家会解释误会。"]]
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        rows = conn.execute(
+            "SELECT name, sql FROM sqlite_master "
+            "WHERE name IN ('EpisodeMemory_vec', 'Understanding_vec') "
+            "ORDER BY name"
+        ).fetchall()
+        assert rows == [
+            (
+                "EpisodeMemory_vec",
+                "CREATE VIRTUAL TABLE EpisodeMemory_vec USING vec0(\n"
+                f"                    embedding F32[{TEST_EMBED_DIM}]\n"
+                "                )",
+            ),
+            (
+                "Understanding_vec",
+                "CREATE VIRTUAL TABLE Understanding_vec USING vec0(\n"
+                f"                    embedding F32[{TEST_EMBED_DIM}]\n"
+                "                )",
+            ),
+        ]
     finally:
         conn.close()
 
