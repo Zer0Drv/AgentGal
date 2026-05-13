@@ -46,7 +46,8 @@ def log_retrieval_results(
     *,
     source: str,
     agent_name: str,
-    query: str,
+    embedding_query: str,
+    bm25_query: str | None = None,
     ranked: list[dict[str, Any]],
     limit: int,
     hybrid_enabled: bool,
@@ -60,6 +61,7 @@ def log_retrieval_results(
     """Log retrieval top hits as one structured event for Logfire."""
     if not memory_logger.isEnabledFor(logging.INFO):
         return
+    lexical_query = bm25_query if bm25_query is not None else embedding_query
     results = _retrieval_result_items(ranked)
     result_ids = [item["id"] for item in results]
     memory_logger.info(
@@ -72,7 +74,8 @@ def log_retrieval_results(
             "event.name": _RETRIEVAL_RESULTS_EVENT,
             "retrieval.source": source,
             "retrieval.agent": agent_name,
-            "retrieval.query": query,
+            "retrieval.embedding_query": embedding_query,
+            "retrieval.bm25_query": lexical_query,
             "retrieval.limit": limit,
             "retrieval.result_count": len(results),
             "retrieval.result_ids": result_ids,

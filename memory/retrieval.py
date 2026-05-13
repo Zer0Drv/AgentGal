@@ -39,6 +39,18 @@ from storage.vector_store import vector_store, VectorStore, DB_PATH
 
 _distance_to_relevance = lambda d: max(0.0, 1.0 - min(float(d), 2.0) / 2.0)
 
+
+def _sync_tables_exist(conn: sqlite3.Connection, names: set[str]) -> bool:
+    if not names:
+        return True
+    placeholders = ",".join("?" * len(names))
+    rows = conn.execute(
+        f"SELECT name FROM sqlite_master WHERE name IN ({placeholders})",
+        tuple(names),
+    ).fetchall()
+    return names.issubset({str(row[0]) for row in rows})
+
+
 def _decay_from_game_date(current_game_date: str, past_game_date: str, half_life_days: float) -> float:
     """基于游戏内日期做指数衰减；无法解析时返回中性值。"""
     if half_life_days <= 0:
@@ -315,7 +327,13 @@ def _format_retrieved_understanding(item: dict[str, Any]) -> str:
     return content
 
 
-def search_memories(agent_name: str, query: str, qvec: list[float] | None = None) -> str:
+def search_memories(
+    agent_name: str,
+    query: str,
+    qvec: list[float] | None = None,
+    *,
+    bm25_query: str | None = None,
+) -> str:
     """执行完整检索 pipeline 并格式化记忆块。
 
     pipeline 顺序：
@@ -327,6 +345,8 @@ def search_memories(agent_name: str, query: str, qvec: list[float] | None = None
     5. 更新命中条目的 last_recalled_at（DB）
     """
     if not query or not query.strip():
+        return "（无相关记忆）"
+    if not Path(DB_PATH).exists():
         return "（无相关记忆）"
 
     # Step 1: 计算查询向量
@@ -341,13 +361,19 @@ def search_memories(agent_name: str, query: str, qvec: list[float] | None = None
     try:
         conn = sqlite3.connect(DB_PATH)
         VectorStore._load_sqlite_vec_sync(conn)
+        if not _sync_tables_exist(conn, {"EpisodeMemory", "EpisodeMemory_vec"}):
+            return "（无相关记忆）"
 
         # Step 2: 拉取候选，hybrid 时合并 BM25；否则纯向量
         vec_rows = vector_store.get_vector_candidates(conn, agent_name, qvec, VECTOR_CANDIDATE_LIMIT)
         bm25_rows: list[tuple] = []
 
         if HYBRID_SEARCH_ENABLED:
-            bm25_rows = vector_store.get_bm25_candidates(conn, agent_name, query, BM25_CANDIDATE_LIMIT)
+            stripped_bm25 = bm25_query.strip() if bm25_query else ""
+            lexical_query = stripped_bm25 or query
+            bm25_rows = vector_store.get_bm25_candidates(
+                conn, agent_name, lexical_query, BM25_CANDIDATE_LIMIT
+            )
             if bm25_rows:
                 candidates = hybrid_fusion(vec_rows, bm25_rows)
             else:
@@ -373,7 +399,8 @@ def search_memories(agent_name: str, query: str, qvec: list[float] | None = None
         log_retrieval_results(
             source="episode",
             agent_name=agent_name,
-            query=query,
+            embedding_query=query,
+            bm25_query=lexical_query if HYBRID_SEARCH_ENABLED else None,
             ranked=ranked,
             limit=EPISODE_SEARCH_LIMIT,
             hybrid_enabled=HYBRID_SEARCH_ENABLED,
@@ -396,12 +423,20 @@ def search_memories(agent_name: str, query: str, qvec: list[float] | None = None
     return "\n\n---\n\n".join(memories) if memories else "（无相关记忆）"
 
 
-def search_understandings(agent_name: str, query: str, qvec: list[float] | None = None) -> str:
+def search_understandings(
+    agent_name: str,
+    query: str,
+    qvec: list[float] | None = None,
+    *,
+    bm25_query: str | None = None,
+) -> str:
     """检索角色长期判断，返回格式化文本。
 
     Understanding 不做 recency 排序，也不更新 recall 状态；只按相关性取前若干条。
     """
     if not query or not query.strip():
+        return ""
+    if not Path(DB_PATH).exists():
         return ""
 
     try:
@@ -419,6 +454,8 @@ def search_understandings(agent_name: str, query: str, qvec: list[float] | None 
     try:
         conn = sqlite3.connect(DB_PATH)
         VectorStore._load_sqlite_vec_sync(conn)
+        if not _sync_tables_exist(conn, {"Understanding", "Understanding_vec"}):
+            return ""
 
         vec_rows = vector_store.get_understanding_vector_candidates(
             conn, agent_name, qvec, VECTOR_CANDIDATE_LIMIT
@@ -440,9 +477,11 @@ def search_understandings(agent_name: str, query: str, qvec: list[float] | None 
 
         use_hybrid = False
         bm25_rows: list[tuple] = []
+        stripped_bm25 = bm25_query.strip() if bm25_query else ""
+        lexical_query = stripped_bm25 or query
         if HYBRID_SEARCH_ENABLED:
             bm25_rows = vector_store.get_understanding_bm25_candidates(
-                conn, agent_name, query, BM25_CANDIDATE_LIMIT
+                conn, agent_name, lexical_query, BM25_CANDIDATE_LIMIT
             )
             use_hybrid = bool(bm25_rows)
             for row in bm25_rows:
@@ -469,7 +508,8 @@ def search_understandings(agent_name: str, query: str, qvec: list[float] | None 
         log_retrieval_results(
             source="understanding",
             agent_name=agent_name,
-            query=query,
+            embedding_query=query,
+            bm25_query=lexical_query if HYBRID_SEARCH_ENABLED else None,
             ranked=top,
             limit=UNDERSTANDING_SEARCH_LIMIT,
             hybrid_enabled=HYBRID_SEARCH_ENABLED,

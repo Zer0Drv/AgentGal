@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from world.schedule import (
     get_default_location,
     load_character_schedule,
     parse_game_time,
 )
-from memory.parser import extract_status_field
 from prompts.runtime_prompts import CHARACTER, NARRATOR
 from shared.config import (
     HISTORY_HIGH,
     HISTORY_LOW,
-    character_path,
     get_agent_names,
 )
 from shared.narrator_output import raw_message_text
@@ -40,7 +37,6 @@ _WEEKDAY_EN_TO_CN = {
     "sat": "六",
     "sun": "日",
 }
-
 
 # ---------------------------------------------------------------------------
 # 对话历史窗口（原 engine/history.py）
@@ -144,34 +140,6 @@ def build_history_transcript(
 # ---------------------------------------------------------------------------
 # 对话 prompt 构建
 # ---------------------------------------------------------------------------
-
-
-def _get_narrative_focus(agent_name: str) -> str:
-    """读取 narrator/status.md 的叙事焦点；非角色或读取失败时返回空串。"""
-    if agent_name == "narrator":
-        return ""
-    try:
-        status = Path(character_path("narrator", "status.md")).read_text(encoding="utf-8")
-        return extract_status_field(status, "叙事焦点").strip()
-    except OSError:
-        return ""
-
-
-def build_search_query(agent_name: str, user_input: str) -> str:
-    """情节记忆检索 query：叙事焦点 + 玩家输入。"""
-    focus = _get_narrative_focus(agent_name)
-    if not focus:
-        return user_input
-    return f"{focus}\n{user_input}"
-
-
-def build_understanding_query(agent_name: str, user_input: str) -> str:
-    """稳定理解检索 query：只取叙事焦点，无焦点时回退到玩家输入。
-
-    Understanding 记录的是行为模式而非事件，场景上下文比具体话语更能命中相关条目。
-    """
-    focus = _get_narrative_focus(agent_name)
-    return focus if focus else user_input
 
 
 def build_system_prompt(agent_name: str, soul_content: str) -> str:

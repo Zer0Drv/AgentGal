@@ -29,10 +29,9 @@ from agents.schema import (
 from engine.prompt_builder import (
     build_characters_block,
     build_schedule_snapshot,
-    build_search_query,
-    build_understanding_query,
     build_user_message,
 )
+from engine.memory_query_builder import build_retrieval_queries
 from llm.embedding import embed_sync
 from llm.config import get_llm_config
 from log_config.routing import routing_logger
@@ -265,26 +264,33 @@ class Character(BaseEntity):
         self, user_input: str, raw_messages: list[dict], *, observation_mode: bool = False
     ) -> str:
         """组装角色 user message（含记忆与长期判断召回前缀）。"""
-        memory_query = build_search_query(self.name, user_input)
-        understanding_query = build_understanding_query(self.name, user_input)
+        queries = build_retrieval_queries(self.name, user_input, raw_messages)
 
-        if understanding_query == memory_query:
+        if queries.understanding == queries.episode:
             try:
-                qvec = embed_sync([memory_query])[0]
+                qvec = embed_sync([queries.episode])[0]
                 memory_qvec = understanding_qvec = qvec
             except Exception:
                 memory_qvec = understanding_qvec = None
         else:
             try:
-                vecs = embed_sync([memory_query, understanding_query])
+                vecs = embed_sync([queries.episode, queries.understanding])
                 memory_qvec = vecs[0]
                 understanding_qvec = vecs[1]
             except Exception:
                 memory_qvec = understanding_qvec = None
 
-        relevant_memories = search_memories(self.name, memory_query, qvec=memory_qvec)
+        relevant_memories = search_memories(
+            self.name,
+            queries.episode,
+            qvec=memory_qvec,
+            bm25_query=queries.episode_bm25,
+        )
         relevant_understandings = search_understandings(
-            self.name, understanding_query, qvec=understanding_qvec
+            self.name,
+            queries.understanding,
+            qvec=understanding_qvec,
+            bm25_query=queries.understanding_bm25,
         )
         message, _ = build_user_message(
             self.name,
