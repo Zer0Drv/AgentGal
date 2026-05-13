@@ -245,12 +245,13 @@ After each participation round of character responses, `generate_choices()` is l
 ## Long-Term Memory Retrieval
 
 - Vector store indexes long-term memory events from `memory.jsonl` and stable understandings from `understanding.jsonl` in separate tables; owner scope is fixed to current character
-- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); the embedding vector is computed once and shared between both searches
-- `memory/retrieval.py` handles the full retrieval pipeline: embedding → vector/BM25 candidates → hybrid fusion → (optional) rerank → recency sort → recall state update
+- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); `engine/memory_query_builder.py` builds separate semantic and BM25 lexical queries from the latest visible scene, recent dialogue, and narrative focus, and the embedding request is batched when episode and understanding semantic queries differ
+- Retrieval query construction: first filter raw history by `visible_to` and keep the latest 4 visible messages; choose the latest narrator structured scene as current scene and render only `date / time / location / scene_description` (do not include ambient `present_characters` names); render other visible messages as recent dialogue using display speaker names; read narrator `叙事焦点`; build `episode` semantic query as current scene + recent dialogue + narrative focus, `episode_bm25` as narrative focus + scene + raw dialogue text, `understanding` semantic query as relationship/behavior focus + recent dialogue, and `understanding_bm25` as narrative focus + raw dialogue text; each query falls back to the current player input if empty and is length-clipped separately
+- `memory/retrieval.py` handles the full retrieval pipeline: semantic query embedding → vector candidates + optional BM25 lexical candidates → hybrid fusion → (optional) rerank → recency sort → recall state update
 - `storage/vector_store.py` is storage layer only: provides raw candidates for EpisodeMemory and Understanding tables, pipeline logic is not here
 - `memory/indexer.py` reads `EpisodeMemory` records from `memory.jsonl` and `Understanding` records from `understanding.jsonl`, then appends them to the vector store
 - Recall ranking: vector relevance and BM25 relevance are fused first, rerank (optional) replaces relevance signal, then in-game time recency is layered on top
-- When Logfire is configured, memory retrieval logs each round's query and top hit summary for debugging recall quality
+- When Logfire is configured, memory retrieval logs each round's semantic query, BM25 query, and top hit summary for debugging recall quality
 - `last_recalled_at` is updated in SQLite on hit; save export merges the latest DB value into the archived `memory.jsonl`, while the working `memory.jsonl` remains append-only
 - `memory/indexer.rebuild_memory_index()` reads `memory.jsonl.last_recalled_at` to restore the long-term memory index; when `clear_existing=True` (the default, used on load), it also rebuilds the Understanding index via the shared `_rebuild_understanding_index_for_agents` helper. Legacy `.memory_recall_state.json` is only a fallback for old saves whose `memory.jsonl` lacks `last_recalled_at`. `rebuild_understanding_index()` is still available as a standalone function for targeted rebuilds (e.g. after consolidation patches a single agent's understandings)
 
@@ -270,6 +271,7 @@ After each participation round of character responses, `generate_choices()` is l
 ### `.env`
 
 - Holds secrets, model IDs, and external service URLs
+- `EMBEDDING_DIM=auto` or an empty value means the embedding client omits `dimensions` and the vector store creates sqlite-vec tables from the first real embedding length; numeric values are only for embedding services that support the `dimensions` parameter
 - Rerank calls are only truly enabled when `RERANK_MODEL` is configured
 - Generated dialogue, background generation, and choice generation all use the main `LLM_*` configuration
 
