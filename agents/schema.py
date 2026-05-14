@@ -37,6 +37,7 @@ class NarratorStatus(BaseModel):
     角色位置: str = ""
     当前时间: str = ""
     叙事焦点: str = ""
+    最近世界事件: str = ""
 
 
 class NewCharacterRequest(BaseModel):
@@ -158,6 +159,8 @@ class StateUpdaterOutput(BaseModel):
     status: NarratorStatus = Field(default_factory=NarratorStatus)
     triggered: list[str] = Field(default_factory=list)
     add_event: list[str] = Field(default_factory=list)
+    world_schedule_update: str = ""
+    triggered_world_events: list[str] = Field(default_factory=list)
 
 
 class ChoicesOutput(BaseModel):
