@@ -64,9 +64,10 @@ def _build_factory_user_message(spec: NewCharacterRequest) -> str:
     spec_lines.append("</spec>")
     spec_block = "\n".join(spec_lines)
 
-    blocks: list[str] = [spec_block]
-    if story_setting:
-        blocks.append(f"<story_setting>\n{story_setting}\n</story_setting>")
+    blocks: list[str] = [
+        f"<story_setting>\n{story_setting}\n</story_setting>",
+        spec_block,
+    ]
     blocks.append(
         "<world_now>\n"
         f"当前时间：{current_time}\n"
