@@ -44,7 +44,6 @@ class NewCharacterRequest(BaseModel):
     """上游请求动态生成新角色时的最小锚点。"""
 
     name_hint: str = ""
-    relation_to: str
     relation_description: str
     background_hint: str = ""
     initial_location: str = ""

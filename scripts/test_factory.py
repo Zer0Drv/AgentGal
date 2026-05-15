@@ -22,7 +22,6 @@ from shared.config import AGENT_RUN_TIMEOUT_SECONDS
 
 # 与原始 trace 完全一致的输入
 USER_INPUT = """<spec>
-relation_to: player
 relation_description: 北原悠的姐姐，比悠年长几岁，在同城工作或上学。
 background_hint: 接到电话后正在赶来，语气里带着担心但克制。
 name_hint: 北原栞

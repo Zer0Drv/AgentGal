@@ -207,20 +207,19 @@ def test_narrator_route_validation_rejects_unknown_targets():
         Narrator._validate_route_output(output, ["mitsuki"])
 
 
-def test_narrator_route_validation_rejects_invalid_new_character_anchor():
+def test_narrator_route_validation_rejects_missing_description():
     output = _narrator_output(
         targets=[],
         scene_description="门外有人停下脚步。",
         new_characters=[
             {
                 "name_hint": "桥本志津",
-                "relation_to": "ghost",
-                "relation_description": "美月的妈妈",
+                "relation_description": "",
             }
         ],
     )
 
-    with pytest.raises(ValueError, match="invalid relation_to"):
+    with pytest.raises(ValueError, match="missing relation_description"):
         Narrator._validate_route_output(output, ["mitsuki"])
 
 
@@ -269,7 +268,6 @@ async def test_narrator_route_allows_spawn_without_existing_targets(monkeypatch)
             new_characters=[
                 {
                     "name_hint": "桥本志津",
-                    "relation_to": "mitsuki",
                     "relation_description": "美月的妈妈",
                 }
             ],

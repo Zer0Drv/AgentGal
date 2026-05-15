@@ -37,14 +37,13 @@ def test_narrator_output_allows_new_character_without_existing_target():
         scene_description="门外有人停下脚步。",
         new_characters=[
             {
-                "relation_to": "player",
                 "relation_description": "玩家刚认识的邻班学生",
             }
         ],
     )
 
     assert output.targets == []
-    assert output.new_characters[0].relation_to == "player"
+    assert output.new_characters[0].relation_description == "玩家刚认识的邻班学生"
 
 
 def test_episode_memory_block_cleans_keywords_and_clamps_importance():

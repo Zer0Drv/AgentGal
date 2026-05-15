@@ -357,7 +357,7 @@ class Narrator(BaseEntity):
         """运行 narrator → 返回 (清洗后的结构化输出, is_valid)。
 
         new_characters 是 narrator 本轮请求孵化的新角色 spec 列表；
-        此处只做 schema 层过滤（保留 relation_to 合法且描述非空的锚点），
+        此处只做 schema 层过滤（去重、去空描述），
         实际命名、孵化与目录校验由 engine.character_factory.create_character 负责。
         """
         if not observation_mode:
@@ -410,7 +410,6 @@ class Narrator(BaseEntity):
     ) -> None:
         """校验 schema 无法表达的运行时路由约束，失败交给 runner 重试。"""
         valid_targets = set(existing_agents)
-        valid_anchors = valid_targets | {"player"}
         errors: list[str] = []
 
         invalid_targets = [target for target in output.targets if target not in valid_targets]
@@ -419,9 +418,6 @@ class Narrator(BaseEntity):
 
         for spec in output.new_characters:
             label = spec.name_hint.strip() or spec.relation_description.strip() or "new_character"
-            relation_to = spec.relation_to.strip()
-            if relation_to not in valid_anchors:
-                errors.append(f"{label!r} has invalid relation_to={relation_to!r}")
             if not spec.relation_description.strip():
                 errors.append(f"{label!r} missing relation_description")
 
@@ -433,22 +429,15 @@ class Narrator(BaseEntity):
         specs: list[NewCharacterRequest],
         existing_agents: list[str],
     ) -> list[NewCharacterRequest]:
-        """过滤 narrator 提交的 new_characters：去重、去空、去非法 relation_to。"""
-        valid_anchors = set(existing_agents) | {"player"}
+        """过滤 narrator 提交的 new_characters：去重、去空描述。"""
         kept: list[NewCharacterRequest] = []
-        seen: set[tuple[str, str, str]] = set()
+        seen: set[tuple[str, str]] = set()
         for spec in specs:
             name_hint = spec.name_hint.strip()
-            relation_to = spec.relation_to.strip()
             description = spec.relation_description.strip()
-            dedupe_key = (name_hint, relation_to, description)
+            dedupe_key = (name_hint, description)
             label = name_hint or description or "（未命名新角色）"
             if dedupe_key in seen:
-                continue
-            if relation_to not in valid_anchors:
-                routing_logger.warning(
-                    f"[narrator] new_characters 中 {label!r} 的 relation_to={relation_to!r} 不合法，跳过"
-                )
                 continue
             if not description:
                 routing_logger.warning(
@@ -458,7 +447,6 @@ class Narrator(BaseEntity):
             kept.append(
                 NewCharacterRequest(
                     name_hint=name_hint,
-                    relation_to=relation_to,
                     relation_description=description,
                     background_hint=spec.background_hint.strip(),
                     initial_location=spec.initial_location.strip(),
