@@ -246,13 +246,12 @@ After each participation round of character responses, `generate_choices()` is l
 ## Long-Term Memory Retrieval
 
 - Vector store indexes long-term memory events from `memory.jsonl` and stable understandings from `understanding.jsonl` in separate tables; owner scope is fixed to current character
-- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); `engine/memory_query_builder.py` builds separate semantic and BM25 lexical queries from the latest visible scene, recent dialogue, and narrative focus, and the embedding request is batched when episode and understanding semantic queries differ
-- Retrieval query construction (`engine/memory_query_builder.py` → `RetrievalQueries`): filter raw history by `visible_to`, keep latest 4 visible messages; find the latest narrator structured scene as current scene, render `date + time / location / scene_description` (exclude ambient `present_characters` names); remaining visible messages become recent dialogue using display speaker names (via `role_to_speaker`); read narrator `叙事焦点`; build four queries, each falls back to current player input if empty:
-  - `episode` (semantic, limit 1800 chars): `当前场景` + `最近对话` + `叙事焦点`
-  - `episode_bm25` (lexical, limit 700 chars): `叙事焦点` + scene text + raw dialogue text (no speaker formatting)
-  - `understanding` (semantic, limit 1200 chars): `关系/行为焦点` + `近期可见对话`
-  - `understanding_bm25` (lexical, limit 700 chars): `叙事焦点` + raw dialogue text (no speaker formatting)
-  - BM25 uses raw dialogue text (not speaker-formatted lines) to maximize keyword hit rate; semantic queries use speaker-formatted dialogue for LLM context coherence
+- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); `engine/memory_query_builder.py` builds retrieval queries from the character's own `在意的事` status field and the current location extracted from the latest visible narrator message
+- Retrieval query construction (`engine/memory_query_builder.py` → `RetrievalQueries`): read character's `在意的事` from their own `status.md`; extract `location` from the most recent narrator message visible to that character; build four queries, each falls back to current player input if empty:
+  - `episode` (semantic, limit 1800 chars): `在意的事` + location + user_input (location anchors episode scene searches; EpisodeMemory embedding index includes location)
+  - `episode_bm25` (lexical, limit 700 chars): `在意的事` + user_input (location is not a useful BM25 signal)
+  - `understanding` (semantic, limit 1200 chars): `在意的事` + user_input (understandings are not place-bound; location adds noise)
+  - `understanding_bm25` (lexical, limit 700 chars): `在意的事` + user_input
 - `memory/retrieval.py` handles the full retrieval pipeline: semantic query embedding → vector candidates + optional BM25 lexical candidates → hybrid fusion → (optional) rerank → recency sort → recall state update
 - `storage/vector_store.py` is storage layer only: provides raw candidates for EpisodeMemory and Understanding tables, pipeline logic is not here
 - `memory/indexer.py` reads `EpisodeMemory` records from `memory.jsonl` and `Understanding` records from `understanding.jsonl`, then appends them to the vector store
