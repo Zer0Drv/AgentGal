@@ -106,7 +106,7 @@ NARRATOR = r"""<goal>
 读玩家输入与当前状态，判断玩家意图，推导场景和人物。形成玩家可回应的场景。
 
 **1. 人物：决定本回合哪些人应当出现**
-按**可回应 + 可延展**判断出场人物：
+只要玩家还在回应某人，这个人就应该出现在下一回合的 targets 里。除此之外，判断哪些人物应该出现在场景里，优先级如下：
 - 可回应：在场，或通过电话、消息、隔门等方式连通；玩家主动联系的人也视为可回应。
 - 可延展：本轮后能自然再出现、推动关系或影响玩家/主要角色；可以是初次见面，也可以是已认识的人，如转学生、同学、邻居、社团新人、经纪人、常去店员。
 - 满足两条且在 `<fields>` 中 → 放入 targets；仅一次性功能人物 → 只写入 present_characters / scene_description，不放入 targets。
@@ -115,7 +115,7 @@ NARRATOR = r"""<goal>
 **2. 场景：根据当前状况和玩家意图决定时间和地点**
 - 玩家正在回应 → 时间和场景，根据互动慢慢更迭
 - 正在参与有自然时长的活动（上课、比赛、通勤）→ 推进完整时长
-- 对话结束 → 跳到下一个可互动的时间点。考虑待触发事件中的内容，若无待触发事件，跳到人物可以见面的时间（清晨/饭点等）。
+- 玩家与角色相互道别 → 跳到下一个可互动的时间点。考虑待触发事件中的内容，若无待触发事件，跳到人物可以见面的时间（清晨/饭点等）。
 </task>
 
 <context_usage>
@@ -128,8 +128,7 @@ NARRATOR = r"""<goal>
 考虑到这是恋爱游戏，不应该创建「父母辈」或「爷爷奶奶辈」等年龄跨度过大的角色。
 需生成的新角色字段说明：
 - name_hint：可选，描述角色名字
-- relation_to：`<fields>` 中的 id 或字面量 "player"
-- relation_description：一句话说清与 relation_to 的关系（如"玩家常一起打球的同班球友"）
+- relation_description：这个角色和现有角色或玩家的关系（如"玩家常一起打球的同班球友"）
 - background_hint：可选，描述角色背景
 - initial_location：可选，此刻位置
 </new_characters>
@@ -158,8 +157,7 @@ Return the result in this exact JSON format:
   "new_characters": [
     {{
       "name_hint": "可选中文名称提示，如李明（禁止写称谓如同学）",
-      "relation_to": "已有角色id或player",
-      "relation_description": "和锚点是什么关系",
+      "relation_description": "和现有角色或玩家是什么关系",
       "background_hint": "可选一句背景",
       "initial_location": "可选此刻位置"
     }}
@@ -187,14 +185,14 @@ Return the result in this exact JSON format:
 <example scene="touchable + relation-bearing spawn">
 <input>玩家：（转身走回家，隔壁青梅竹马的邻居姐姐走了过来） 当前场景：玩家家门口走廊。当前时间：4月24日 09:18。待触发事件：无。</input>
 <output>
-{{"targets": [], "date": "4月24日 星期六", "time": "09:18", "location": "玩家家门口走廊", "present_characters": {{"北原悠": "家门口，刚转身准备回屋", "邻居姐姐": "隔壁房门前，拿着垃圾袋，正朝北原悠走来"}}, "scene_description": "她提着垃圾袋停住脚，看清北原悠后抬了下手。她没有立刻回屋。", "new_characters": [{{"name_hint": "沈知夏", "relation_to": "player", "relation_description": "住在隔壁的青梅竹马邻居姐姐", "background_hint": "熟悉玩家生活节奏，说话自然亲近", "initial_location": "玩家家门口走廊"}}]}}
+{{"targets": [], "date": "4月24日 星期六", "time": "09:18", "location": "玩家家门口走廊", "present_characters": {{"北原悠": "家门口，刚转身准备回屋", "邻居姐姐": "隔壁房门前，拿着垃圾袋，正朝北原悠走来"}}, "scene_description": "她提着垃圾袋停住脚，看清北原悠后抬了下手。她没有立刻回屋。", "new_characters": [{{"name_hint": "沈知夏", "relation_description": "住在隔壁的青梅竹马邻居姐姐", "background_hint": "熟悉玩家生活节奏，说话自然亲近", "initial_location": "玩家家门口走廊"}}]}}
 </output>
 </example>
 
 <example scene="touchable + relation-bearing spawn：远程联系">
 <input>玩家接起电话，发现是 roleA 的经纪人打来的，立刻把手机递给 roleA。当前场景：玩家房间。当前时间：4月24日 08:40。待触发事件：无。</input>
 <output>
-{{"targets": ["roleA"], "date": "4月24日 星期六", "time": "08:40", "location": "玩家房间", "present_characters": {{"北原悠": "床边，刚接起电话又把手机递给 roleA", "roleA": "北原悠身边", "电话那头的经纪人": "正在等待 roleA 回应"}}, "scene_description": "电话那头没有挂断，女人直接追问：'roleA在吗？上午时间提前了。' 房间里安静下来。", "new_characters": [{{"name_hint": "早川凛", "relation_to": "roleA", "relation_description": "roleA 的经纪人，长期负责工作安排", "background_hint": "说话利落，习惯直接推进日程", "initial_location": "电话另一头"}}]}}
+{{"targets": ["roleA"], "date": "4月24日 星期六", "time": "08:40", "location": "玩家房间", "present_characters": {{"北原悠": "床边，刚接起电话又把手机递给 roleA", "roleA": "北原悠身边", "电话那头的经纪人": "正在等待 roleA 回应"}}, "scene_description": "电话那头没有挂断，女人直接追问：'roleA在吗？上午时间提前了。' 房间里安静下来。", "new_characters": [{{"name_hint": "早川凛", "relation_description": "roleA 的经纪人，长期负责工作安排", "background_hint": "说话利落，习惯直接推进日程", "initial_location": "电话另一头"}}]}}
 </output>
 </example>
 
@@ -303,21 +301,19 @@ recent_history 是最近几轮 raw 历史的摘要，不再另行提供 player_i
    schedule_snapshot 中标注「（无日程）」的角色，若无其他线索则沿用 current_narrator_status.角色位置 旧值；仍无则写合理推断。
    每行格式 `- 显示名：地点`，地点用自由文本，不需要统一词表。
 3. triggered：只写要从 narrator「待触发事件」移除的【事件名】。本轮明确发生则移除；当前时间能明确比较且已经错过则移除；同角色、同含义、同时间地点的冗余项移除，只保留角色名前缀完整、描述最清楚的一条；模糊时间无法明确比较时保留。
-4. add_event 可来自三类来源，按优先级：
-   A. 世界事件：读 world_schedule.events，选择当前日期附近且 status="pending" 的条目；status="triggered" 的条目视为已经推送过。
-      current_narrator_status 的「待触发事件」或「最近世界事件」已包含同一阶段时不再重复；没有匹配的 pending 条目时跳过。
-      推送世界事件时，同时把 event.name 填入 triggered_world_events，运行时据此将该条目标为 triggered。
-   B. 角色打算：从 character_intention 中选择可被公共叙事调度的打算：有日期或明确相对时段（如今天放学后、明天午休）、地点、可观察行为，玩家之后能进入角色可回应场景（遇见、通话、实时消息、共同被NPC打断或被角色引入）。
-   C. 剧情机会：从 recent_history 中识别有明确伏笔的小型近未来事件；通常发生在本场景后续、当天稍后、明天午休或放学后；只制造场景条件，不替玩家或主要角色做决定。
-5. 事件名格式：世界事件用【世界事件：事件阶段名】；角色打算用【角色显示名：原打算名】；剧情机会用【角色显示名：机会名】。描述写成"日期/时段 + 地点 + 可观察触发点 + 玩家可进入的缝隙"。如果机会由NPC触发，写清NPC的可见动作或一句短台词；NPC只制造局面，不替主要角色回应。
+4. add_event 来自两类来源：
+   A. 角色打算：从 character_intention 中选择可被公共叙事调度的打算：有日期或明确相对时段（如今天放学后、明天午休）、地点、可观察行为，玩家之后能进入角色可回应场景（遇见、通话、实时消息、共同被NPC打断或被角色引入）。
+   B. 剧情机会：从 recent_history 中识别有明确伏笔的小型近未来事件；通常发生在本场景后续、当天稍后、明天午休或放学后；只制造场景条件，不替玩家或主要角色做决定。
+   世界事件不进入 add_event，通过 status.最近世界事件 和 triggered_world_events 单独处理。
+5. 事件名格式：角色打算用【角色显示名：原打算名】；剧情机会用【角色显示名：机会名】，角色显示名必须是之后能回应的主要角色。描述写成"日期/时段 + 地点 + 可观察触发点 + 玩家可进入的缝隙"。如果机会由NPC触发，写清NPC的可见动作或一句短台词；NPC只制造局面，不替主要角色回应。
 6. 保留角色自己的「打算」；角色会在真正执行后自行 triggered。
 7. current_narrator_status 已有同角色、同含义、同时间地点的待触发事件时，add_event=[]。
-8. 世界事件每轮最多新增 1 条，角色打算/剧情机会最多 1 条；没有任何可添加内容时 add_event=[]。
+8. 同一轮最多新增 2 条，其中剧情机会最多 1 条；没有可同步打算且没有高质量剧情机会时 add_event=[]。
 
-status.最近世界事件：
-根据 world_schedule + 当前日期，生成一句话描述当前世界氛围，供 narrator 在场景描写中渲染气氛。
-- 有活跃的 pending 世界事件时 → 用 `（phase）` 开头写一句有画面感的氛围描述，如 `（准备期）体育祭报名周，放学后操场上各班的练习声此起彼伏`
-- 没有活跃的 pending 世界事件，或 current_narrator_status「最近世界事件」仍然适用时 → 填空字符串""，运行时会维持旧值
+status.最近世界事件 + triggered_world_events（世界事件处理）：
+读 world_schedule.events，选当前日期附近且 status="pending" 的条目：
+- 有匹配条目，且 current_narrator_status「最近世界事件」尚未描述同一阶段时 → 用 `（phase）` 开头写一句有画面感的氛围描述，如 `（准备期）体育祭报名周，放学后操场上各班的练习声此起彼伏`；同时把该条目的 event.name 填入 triggered_world_events，运行时据此将其标为 triggered。
+- 无匹配条目，或「最近世界事件」已覆盖当前阶段时 → 最近世界事件填""（运行时维持旧值），triggered_world_events=[]。
 
 world_schedule 维护：
 - 当世界发生 schedule 没有覆盖的重大变化时（如毕业、换工作、故事转入新环境），用 world_schedule_update 输出完整新的 world_schedule.json 内容；日常轮次填空字符串。
@@ -330,7 +326,7 @@ world_schedule 维护：
 - triggered：字符串数组，只放要移除的 narrator「待触发事件」事件名。
 - add_event：字符串数组，只放新增公共待触发事件描述。
 - world_schedule_update：字符串，只在需要替换世界日历时输出完整合法 JSON；日常填空字符串。
-- triggered_world_events：字符串数组，本轮通过 add_event 推送的世界事件 name（来自 world_schedule.event.name），运行时据此把对应条目标为 triggered；不推送世界事件时填空数组。
+- triggered_world_events：字符串数组，本轮推送的世界事件 name（来自 world_schedule.event.name），运行时据此把对应条目标为 triggered；无世界事件推送时填空数组。
 JSON 必须只有一个顶层对象；对象结束后不能再输出任何字符。特别注意 add_event 数组结束后，只关闭顶层对象一次。
 </output_contract>
 
@@ -387,7 +383,7 @@ character_intention：各角色暂无值得同步的打算
 current_narrator_status：当前时间 5月2日 08:15；待触发事件：无；角色位置：- 玩家：教学楼门口\n- roleB：教室\n- roleC：教室。
 recent_history：旁白将场景推进到早自习时间，同学们正在交作业和闲聊。
 输出：
-{"status":{"场景":"教室","角色位置":"- 玩家：座位旁\n- roleB：座位旁\n- roleC：座位旁","当前时间":"5月2日 08:15","叙事焦点":"体育祭报名开始，班级里开始讨论参赛项目","最近世界事件":"（准备期）体育祭报名周，告示板上贴出了体育祭的海报，走廊上偶尔传来讨论项目的声音"},"triggered":[],"add_event":["【世界事件：体育祭报名】5月第1周 各班教室。班长在早自习时宣布体育祭报名开始，分发参赛项目表，班级里开始热闹地讨论谁报哪个项目。"],"triggered_world_events":["体育祭报名"],"world_schedule_update":""}
+{"status":{"场景":"教室","角色位置":"- 玩家：座位旁\n- roleB：座位旁\n- roleC：座位旁","当前时间":"5月2日 08:15","叙事焦点":"体育祭报名周，班级氛围热闹","最近世界事件":"（准备期）体育祭报名周，告示板上贴出了体育祭的海报，走廊上偶尔传来讨论项目的声音"},"triggered":[],"add_event":[],"triggered_world_events":["体育祭报名"],"world_schedule_update":""}
 </eg>
 
 <eg name="not_schedulable">
