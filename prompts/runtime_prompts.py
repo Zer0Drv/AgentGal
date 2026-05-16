@@ -29,7 +29,6 @@ CHOICES = r"""你是一个叙事游戏的选项生成器。根据当前场景和
 CHARACTER = r"""<goal>
 **你就是这个角色**，用第一人称活在当下场景里。
 先读懂旁白给出的时间、地点、在场人物；然后用你的方式回应——说话、沉默、动作都算。
-`<my_schedule>` 是你的惯常作息，用来判断此刻你应该在哪、在做什么；有具体「打算」时以打算为准。
 这是恋爱游戏。大部分你说的话应该都和关系有关。
 </goal>
 
@@ -285,10 +284,9 @@ STATE_UPDATER = r"""<prompt>
 </goal>
 
 <input_blocks>
-输入按顺序包含以下块：characters、world_schedule、schedule_snapshot、latest_scene_json、character_intention、current_narrator_status、recent_history。
+输入按顺序包含以下块：characters、world_schedule、latest_scene_json、character_intention、current_narrator_status、recent_history。
 characters 列出所有主要角色的 id、显示名和身份介绍，整个故事期间几乎不变。
 world_schedule 是 JSON 格式的世界事件日历，events 数组中的每个事件包含 month、time、phase、name、status、summary、event；status="pending" 表示尚未触发，status="triggered" 表示已经推送过。
-schedule_snapshot 是当前 game_time 下各角色按自身 schedule 的默认位置，仅作为未被叙事覆盖时的基线；未配置日程或时段匹配不到的角色会显示「（无日程）」。
 latest_scene_json 是本轮旁白的结构化场景输出，包含 date、time、location、present_characters、scene_description。
 character_intention 标题格式为【character_id / 角色显示名】，内容来自各角色 status.md 的「打算」。
 recent_history 是最近几轮 raw 历史的摘要，不再另行提供 player_input、narrator_content、agent_responses 或 targets。
@@ -297,8 +295,7 @@ recent_history 是最近几轮 raw 历史的摘要，不再另行提供 player_i
 <rules>
 1. status 的 场景 / 叙事焦点 / 当前时间：优先使用 latest_scene_json 中的 location、date/time；没有结构化场景时才从 recent_history 中读取明确变化；未变化填""。叙事焦点中若 recent_history 的玩家消息以 `## 姓名` 形式标注了名字，使用该名字代替「玩家」。
 2. status 的 角色位置：每轮必须输出完整快照，涵盖所有主要角色。按优先级合成：
-   latest_scene_json.present_characters / recent_history 中的叙事事实 > character_intention 里带地点的打算 > current_narrator_status.角色位置 的旧值 > schedule_snapshot 的默认位置。
-   schedule_snapshot 中标注「（无日程）」的角色，若无其他线索则沿用 current_narrator_status.角色位置 旧值；仍无则写合理推断。
+   latest_scene_json.present_characters / recent_history 中的叙事事实 > character_intention 里带地点的打算 > current_narrator_status.角色位置 的旧值 > 合理推断。
    每行格式 `- 显示名：地点`，地点用自由文本，不需要统一词表。
 3. triggered：只写要从 narrator「待触发事件」移除的【事件名】。本轮明确发生则移除；当前时间能明确比较且已经错过则移除；同角色、同含义、同时间地点的冗余项移除，只保留角色名前缀完整、描述最清楚的一条；模糊时间无法明确比较时保留。
 4. add_event 来自两类来源：
@@ -333,9 +330,6 @@ JSON 必须只有一个顶层对象；对象结束后不能再输出任何字符
 <examples>
 <eg name="sync_intention">
 输入摘要：
-schedule_snapshot game_time="4月4日 星期二 07:42"：
-- roleB：教室
-- roleC：食堂
 character_intention：
 【roleB / roleB】
 - [ ] 【一起写作业】4月4日 放学后 旧阅览角。和玩家一起写作业。
@@ -347,8 +341,6 @@ recent_history：roleB和玩家约好放学后在旧阅览角写作业。
 
 <eg name="trigger_existing">
 输入摘要：
-schedule_snapshot game_time="4月4日 星期二 16:12"：
-- roleB：社团室
 character_intention：
 【roleB / roleB】
 - [ ] 【岔路口回望】4月4日 放学后 河畔石子路岔路口。想确认玩家会不会走这边。
@@ -360,9 +352,6 @@ recent_history：旁白已经把玩家切到河畔石子路岔路口，roleB站�
 
 <eg name="scene_opportunity">
 输入摘要：
-schedule_snapshot game_time="4月4日 星期二 17:05"：
-- roleA：（无日程）
-- roleB：社团室
 character_intention：
 【roleA / roleA】
 （暂无）
@@ -375,9 +364,6 @@ recent_history：玩家问骑到roleA家门口会不会被父母看到；roleA�
 <eg name="world_event_preparation">
 输入摘要：
 world_schedule.events 包含 {"month":"5月","time":"第1周","phase":"准备期","name":"体育祭报名","status":"pending","summary":"体育祭报名周","event":"班级讨论参赛项目，报名开始"}。
-schedule_snapshot game_time="5月2日 星期二 08:15"：
-- roleB：教室
-- roleC：教室
 latest_scene_json date="5月2日 星期二" time="08:15" location="教室"
 character_intention：各角色暂无值得同步的打算
 current_narrator_status：当前时间 5月2日 08:15；待触发事件：无；角色位置：- 玩家：教学楼门口\n- roleB：教室\n- roleC：教室。
@@ -388,9 +374,6 @@ recent_history：旁白将场景推进到早自习时间，同学们正在交作
 
 <eg name="not_schedulable">
 输入摘要：
-schedule_snapshot game_time="10月2日 星期一 09:40"：
-- roleA：研发部
-- roleB：主管办公室
 character_intention：
 【roleA / roleA】
 - [ ] 【想再聊】有机会时和玩家聊刚入职的事。

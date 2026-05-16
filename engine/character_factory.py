@@ -1,18 +1,17 @@
 """动态生成新角色：narrator 请求时给新人搭骨架。
 
 流程：校验锚点 → 调 character_factory agent 生成
-character_id/role/identity/goal/dynamic/behavior/voice/status/schedule → 写文件。
+character_id/role/identity/goal/dynamic/behavior/voice/status → 写文件。
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from agents.factory import get_character_factory_agent, reload_conversation_agent
 from agents.runner import run_structured_agent
-from agents.schema import CharacterSchedule, NewCharacterProfile, NewCharacterRequest
+from agents.schema import NewCharacterProfile, NewCharacterRequest
 from llm.config import get_llm_config
 from log_config.routing import routing_logger
 from memory.parser import extract_status_field
@@ -175,20 +174,6 @@ def _append_to_narrator_locations(display_name: str, location: str) -> None:
     update_status("narrator", "角色位置", new_value)
 
 
-def _write_schedule_json(agent_dir: Path, schedule: CharacterSchedule | None) -> bool:
-    """写新角色 schedule.json；schedule 为空或所有 period 都没有 slots 时跳过并返回 False。"""
-    if schedule is None or not schedule.periods:
-        return False
-    if not any(p.slots for p in schedule.periods):
-        return False
-    payload = schedule.model_dump(mode="json")
-    (agent_dir / "schedule.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    return True
-
-
 def _write_bootstrap_files(
     spec: NewCharacterRequest,
     creation: NewCharacterProfile,
@@ -200,12 +185,6 @@ def _write_bootstrap_files(
     (agent_dir / "soul.md").write_text(soul_content, encoding="utf-8")
 
     _write_status_md(agent_dir, creation.initial_status, creation.display_name)
-
-    if not _write_schedule_json(agent_dir, creation.schedule):
-        routing_logger.warning(
-            f"[character_factory] {creation.character_id!r} 未生成 schedule.json，"
-            "schedule_snapshot 将显示「（无日程）」"
-        )
 
     if spec.initial_location.strip():
         _append_to_narrator_locations(creation.display_name, spec.initial_location.strip())

@@ -16,9 +16,6 @@ try:
     import engine.character_factory as character_factory_module
     import engine.conversation_flow as conversation_flow_module
     from agents.schema import (
-        CharacterSchedule,
-        CharacterSchedulePeriod,
-        CharacterScheduleSlot,
         NarratorOutput,
         NewCharacterProfile,
         NewCharacterRequest,
@@ -313,25 +310,6 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
                 "在意的事": "女儿练习太累",
                 "打算": "- [ ] 【等美月】在教室外等她下课",
             },
-            schedule=CharacterSchedule(
-                periods=[
-                    CharacterSchedulePeriod(
-                        start="2026-04-01",
-                        end="2026-07-31",
-                        name="春学期",
-                        slots=[
-                            CharacterScheduleSlot(
-                                days=["mon", "tue", "wed", "thu", "fri"],
-                                time="上午",
-                                location="家",
-                            ),
-                            CharacterScheduleSlot(
-                                days=["sat", "sun"], time="全天", location="家"
-                            ),
-                        ],
-                    )
-                ]
-            ),
         )
 
     monkeypatch.setattr(
@@ -385,53 +363,6 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
 
     assert "## 和玩家的关系\n听说过" in status
 
-    import json as _json
-
-    schedule_path = agent_dir / "schedule.json"
-    assert schedule_path.exists()
-    schedule_data = _json.loads(schedule_path.read_text(encoding="utf-8"))
-    assert schedule_data["periods"][0]["name"] == "春学期"
-    assert schedule_data["periods"][0]["slots"][0]["location"] == "家"
-
-
-@pytest.mark.asyncio
-async def test_create_character_skips_schedule_when_llm_omits(character_dir, monkeypatch):
-    """LLM 没产出 schedule 时不写 schedule.json，但其他文件依然落盘。"""
-    _seed(character_dir, "mitsuki", soul="# 美月\n")
-    _seed(character_dir, "narrator", status="## 当前时间\n4月3日 星期一 8:23\n")
-
-    async def fake_run_structured_agent(**_kwargs):
-        return NewCharacterProfile(
-            character_id="neighbor",
-            display_name="林晚",
-            identity="美月的邻居。",
-            goal="你希望邻里相处轻松，不被卷进别家的事；有礼貌就够了。",
-            dynamic="你偶尔撞见美月，会打招呼但没熟到能聊天。",
-            behavior=["撞见邻居时先点头笑一下"],
-            voice=["今天回得早呀。"],
-            initial_status={"身份": "邻居", "心境": "随和", "和玩家的关系": "陌生人"},
-            schedule=None,
-        )
-
-    monkeypatch.setattr(character_factory_module, "run_structured_agent", fake_run_structured_agent)
-    monkeypatch.setattr(character_factory_module, "get_character_factory_agent", lambda: object())
-    monkeypatch.setattr(
-        character_factory_module,
-        "get_llm_config",
-        lambda: {"model_id": "test"},
-    )
-    monkeypatch.setattr(character_factory_module, "reload_conversation_agent", lambda _name: None)
-
-    spec = NewCharacterRequest(
-        relation_description="美月的邻居",
-    )
-    created = await character_factory_module.create_character(spec)
-    assert created is not None
-
-    agent_dir = character_dir / "neighbor"
-    assert not (agent_dir / "schedule.json").exists()
-    assert (agent_dir / "soul.md").exists()
-    assert (agent_dir / "status.md").exists()
 
 @pytest.mark.asyncio
 async def test_create_character_validates_before_calling_llm(character_dir, monkeypatch):

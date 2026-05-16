@@ -557,7 +557,6 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
         "get_state_updater_agent",
         lambda: fake_agent,
     )
-    monkeypatch.setattr(character_module, "build_schedule_snapshot", lambda _t: "")
     history_calls: list[dict] = []
 
     def fake_load_conversation_history(*, limit=None, turns=None):

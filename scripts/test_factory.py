@@ -119,13 +119,6 @@ async def main():
     print()
     print("--- initial_status ---")
     print(json.dumps(result.initial_status, ensure_ascii=False, indent=2))
-    if result.schedule and result.schedule.periods:
-        print()
-        print("--- schedule ---")
-        for p in result.schedule.periods:
-            print(f"  {p.name}: {p.start} ~ {p.end}")
-            for s in p.slots[:3]:
-                print(f"    {s.days} {s.time} → {s.location}")
 
 
 if __name__ == "__main__":

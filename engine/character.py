@@ -21,14 +21,12 @@ from agents.factory import (
 from agents.runner import run_structured_agent
 from agents.schema import (
     CharacterOutput,
-    CharacterSchedule,
     NarratorOutput,
     NewCharacterRequest,
     StateUpdaterOutput,
 )
 from engine.prompt_builder import (
     build_characters_block,
-    build_schedule_snapshot,
     build_user_message,
 )
 from engine.memory_query_builder import build_retrieval_queries
@@ -61,7 +59,6 @@ from storage.agent_files import (
     write_sidecar_json,
 )
 from storage.history import load_conversation_history
-from world.schedule import load_character_schedule
 
 
 _FILE_UPDATES_EVENT = "agentgal.routing.file_updates"
@@ -206,12 +203,6 @@ class Character(BaseEntity):
     @property
     def _sdk(self) -> Any:
         return get_conversation_agent(self.name)
-
-    # ── Character 独有的动态文件（全部实时读）──
-
-    @property
-    def schedule(self) -> CharacterSchedule:
-        return load_character_schedule(self.name)
 
     # ── Character 独有的写入方法 ──
 
@@ -504,9 +495,6 @@ class Narrator(BaseEntity):
 
     def _build_state_updater_input(self) -> str:
         narrator_status = self.status
-        game_time = extract_status_field(narrator_status, "当前时间").strip()
-        schedule_snapshot = build_schedule_snapshot(game_time)
-
         character_intention = self._format_character_intentions()
         raw_messages = load_conversation_history(turns=1)
         latest_scene = next(
@@ -537,8 +525,6 @@ class Narrator(BaseEntity):
             parts.append(characters_block)
         if world_schedule_content:
             parts.append(_wrap_block("world_schedule", world_schedule_content.strip()))
-        if schedule_snapshot:
-            parts.append(schedule_snapshot)
         if latest_scene:
             parts.append(
                 "<latest_scene_json>\n"
