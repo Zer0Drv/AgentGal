@@ -400,17 +400,16 @@ class Narrator(BaseEntity):
         existing_agents: list[str],
     ) -> None:
         """校验 schema 无法表达的运行时路由约束，失败交给 runner 重试。"""
-        valid_targets = set(existing_agents)
+        valid_agents = set(existing_agents)
         errors: list[str] = []
-
-        invalid_targets = [target for target in output.targets if target not in valid_targets]
-        if invalid_targets:
-            errors.append(f"invalid targets={invalid_targets!r}")
 
         for spec in output.new_characters:
             label = spec.name_hint.strip() or spec.relation_description.strip() or "new_character"
             if not spec.relation_description.strip():
                 errors.append(f"{label!r} missing relation_description")
+
+        if not any(t in valid_agents for t in output.targets) and not output.new_characters:
+            errors.append("no valid targets or new characters")
 
         if errors:
             raise ValueError("; ".join(errors))
