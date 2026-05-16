@@ -122,15 +122,9 @@ def _write_status_md(
 
 
 
-def _format_bulleted_block(items: list[str]) -> str:
-    """渲染 behavior 列表：每条前缀 '- '；空条目跳过。"""
-    lines: list[str] = []
-    for item in items:
-        text = (item or "").strip()
-        if not text:
-            continue
-        lines.append(text if text.startswith("- ") else f"- {text}")
-    return "\n".join(lines)
+def _format_paragraph_block(items: list[str]) -> str:
+    """渲染段落列表：各条之间空行分隔；空条目跳过。"""
+    return "\n\n".join(item.strip() for item in items if item and item.strip())
 
 
 def _format_voice_block(items: list[str]) -> str:
@@ -139,8 +133,10 @@ def _format_voice_block(items: list[str]) -> str:
 
 
 def _build_soul_md(creation: NewCharacterProfile) -> str:
-    """按模板结构拼装 soul.md：role / identity / goal / dynamic / behavior / voice。"""
-    behavior_block = _format_bulleted_block(creation.behavior)
+    """按模板结构拼装 soul.md：role / identity / goal / past / habits / reactions / voice。"""
+    past_block = _format_paragraph_block(creation.past)
+    habits_block = _format_paragraph_block(creation.habits)
+    reactions_block = _format_paragraph_block(creation.reactions)
     voice_block = _format_voice_block(creation.voice)
 
     parts = [
@@ -151,15 +147,15 @@ def _build_soul_md(creation: NewCharacterProfile) -> str:
         "</identity>",
         "",
         "<goal>",
-        creation.goal.strip(),
+        creation.goal,
         "</goal>",
-        "",
-        "<dynamic>",
-        creation.dynamic,
-        "</dynamic>",
     ]
-    if behavior_block:
-        parts.extend(["", "<behavior>", behavior_block, "</behavior>"])
+    if past_block:
+        parts.extend(["", "<past>", past_block, "</past>"])
+    if habits_block:
+        parts.extend(["", "<habits>", habits_block, "</habits>"])
+    if reactions_block:
+        parts.extend(["", "<reactions>", reactions_block, "</reactions>"])
     if voice_block:
         parts.extend(["", "<voice>", voice_block, "</voice>"])
     return "\n".join(parts).strip() + "\n"

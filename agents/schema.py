@@ -100,15 +100,16 @@ class NewCharacterProfile(BaseModel):
 
     character_id 由 character_factory 生成，是最终目录名 / agent 标识。
     display_name 是最终展示名，会写入 soul.md / status.md。
-    soul 分成五段（identity / goal / dynamic / behavior / voice），和模板对齐。
+    soul 分成六段（identity / goal / past / habits / reactions / voice），和模板对齐。
     """
 
     character_id: str = Field(validation_alias=AliasChoices("character_id", "agent_id"))
     display_name: str
     identity: str
     goal: str
-    dynamic: str
-    behavior: list[str] = Field(default_factory=list)
+    past: list[str] = Field(default_factory=list)
+    habits: list[str] = Field(default_factory=list)
+    reactions: list[str] = Field(default_factory=list)
     voice: list[str] = Field(default_factory=list)
     initial_status: dict[str, str] = Field(default_factory=dict)
 
@@ -117,21 +118,20 @@ class NewCharacterProfile(BaseModel):
         "display_name",
         "identity",
         "goal",
-        "dynamic",
         mode="before",
     )
     @classmethod
     def trim_creation_fields(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
 
-    @field_validator("behavior", "voice", mode="before")
+    @field_validator("past", "habits", "reactions", "voice", mode="before")
     @classmethod
     def trim_list_items(cls, value: object) -> object:
         if not isinstance(value, list):
             return value
         return [item.strip() if isinstance(item, str) else item for item in value]
 
-    @field_validator("character_id", "display_name", "identity", "goal", "dynamic")
+    @field_validator("character_id", "display_name", "identity", "goal")
     @classmethod
     def ensure_creation_fields_not_empty(cls, value: str) -> str:
         if not value:
