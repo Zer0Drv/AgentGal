@@ -203,7 +203,7 @@ async def test_narrator_route_filters_targets_and_sanitizes_scene(monkeypatch):
 def test_narrator_route_validation_rejects_unknown_targets():
     output = _narrator_output(targets=["ghost"])
 
-    with pytest.raises(ValueError, match="invalid targets"):
+    with pytest.raises(ValueError, match="no valid targets"):
         Narrator._validate_route_output(output, ["mitsuki"])
 
 
@@ -214,12 +214,12 @@ def test_narrator_route_validation_rejects_missing_description():
         new_characters=[
             {
                 "name_hint": "桥本志津",
-                "relation_description": "",
+                "background_hint": "",
             }
         ],
     )
 
-    with pytest.raises(ValueError, match="missing relation_description"):
+    with pytest.raises(ValueError, match="missing background_hint"):
         Narrator._validate_route_output(output, ["mitsuki"])
 
 
@@ -268,7 +268,7 @@ async def test_narrator_route_allows_spawn_without_existing_targets(monkeypatch)
             new_characters=[
                 {
                     "name_hint": "桥本志津",
-                    "relation_description": "美月的妈妈",
+                    "background_hint": "美月的妈妈，温柔而谨慎，常在放学时到校门口等女儿。",
                 }
             ],
         )

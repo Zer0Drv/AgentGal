@@ -8,6 +8,7 @@ CHARACTER_FACTORY = r"""<goal>
 <guidance>
 - 姓名、文化背景、社会身份、口吻贴合 <story_setting>。
 - identity / goal / past / habits / reactions / voice 描述长期稳定特质；当下细节放进 initial_status。
+- <spec> 中的 background_hint 提供了角色的完整起点——社会身份、与现有角色的关系、性格行为特征。soul 的各个维度从这里展开，呈现角色在这段关系之外丰富的独立生活。
 - goal 和 habits 中至少一个场景展示角色独立于关系的领域——职业、能力、在意的事。角色的目标和行为从自身出发，围绕自己的职业、能力或在意的事。
 - 每句描述对应一个具体的动作或状态；用可以直接扮演的行为代替感受描述（写"眼神转开"而不是"她感到难过"）。
 - habits 是角色没有受到特定刺激时的日常默认行为；reactions 是有触发时的完整行为链，二者不重叠。

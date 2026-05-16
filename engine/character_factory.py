@@ -52,8 +52,7 @@ def _build_factory_user_message(spec: NewCharacterRequest) -> str:
 
     spec_lines = [
         "<spec>",
-        f"relation_description: {spec.relation_description}",
-        f"background_hint: {spec.background_hint or '（无）'}",
+        f"background_hint: {spec.background_hint}",
     ]
     if spec.name_hint.strip():
         spec_lines.append(f"name_hint: {spec.name_hint.strip()}")
@@ -77,8 +76,8 @@ def _build_factory_user_message(spec: NewCharacterRequest) -> str:
 
 def _validate_spec(spec: NewCharacterRequest) -> str | None:
     """返回错误描述；None 表示校验通过。"""
-    if not spec.relation_description.strip():
-        return "relation_description 为空"
+    if not spec.background_hint.strip():
+        return "background_hint 为空"
     return None
 
 
@@ -190,7 +189,7 @@ async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | 
     """孵化新角色；成功返回 CreatedCharacterInfo，失败返回 None 并记录日志。"""
     error = _validate_spec(spec)
     if error:
-        label = spec.name_hint.strip() or spec.relation_description.strip() or "（未命名新角色）"
+        label = spec.name_hint.strip() or spec.background_hint[:20] or "（未命名新角色）"
         routing_logger.warning(f"[character_factory] 拒绝生成 {label!r}：{error}")
         return None
 
@@ -204,14 +203,14 @@ async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | 
             workflow_name="agentgal_character_factory",
             trace_metadata={
                 "agent_name": "character_factory",
-                "target": spec.name_hint.strip() or spec.relation_description[:20],
+                "target": spec.name_hint.strip() or spec.background_hint[:20],
             },
             usage_agent="character_factory",
             usage_phase="agent_run",
             model_name=config["model_id"],
         )
     except Exception as e:
-        label = spec.name_hint.strip() or spec.relation_description.strip() or "（未命名新角色）"
+        label = spec.name_hint.strip() or spec.background_hint[:20] or "（未命名新角色）"
         routing_logger.error(f"[character_factory] 生成 {label!r} 失败: {e}")
         return None
 
@@ -238,7 +237,7 @@ async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | 
         routing_logger.warning(f"[character_factory] 刷新对话 agents 失败: {e}")
 
     routing_logger.info(
-        f"[character_factory] 生成 {creation.character_id!r}（{spec.relation_description[:30]}）"
+        f"[character_factory] 生成 {creation.character_id!r}（{spec.background_hint[:30]}）"
     )
     return CreatedCharacterInfo(
         character_id=creation.character_id,

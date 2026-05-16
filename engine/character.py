@@ -404,9 +404,9 @@ class Narrator(BaseEntity):
         errors: list[str] = []
 
         for spec in output.new_characters:
-            label = spec.name_hint.strip() or spec.relation_description.strip() or "new_character"
-            if not spec.relation_description.strip():
-                errors.append(f"{label!r} missing relation_description")
+            label = spec.name_hint.strip() or spec.background_hint.strip()[:20] or "new_character"
+            if not spec.background_hint.strip():
+                errors.append(f"{label!r} missing background_hint")
 
         if not any(t in valid_agents for t in output.targets) and not output.new_characters:
             errors.append("no valid targets or new characters")
@@ -424,21 +424,20 @@ class Narrator(BaseEntity):
         seen: set[tuple[str, str]] = set()
         for spec in specs:
             name_hint = spec.name_hint.strip()
-            description = spec.relation_description.strip()
-            dedupe_key = (name_hint, description)
-            label = name_hint or description or "（未命名新角色）"
+            background_hint = spec.background_hint.strip()
+            dedupe_key = (name_hint, background_hint)
+            label = name_hint or background_hint[:20] or "（未命名新角色）"
             if dedupe_key in seen:
                 continue
-            if not description:
+            if not background_hint:
                 routing_logger.warning(
-                    f"[narrator] new_characters 中 {label!r} 缺 relation_description，跳过"
+                    f"[narrator] new_characters 中 {label!r} 缺 background_hint，跳过"
                 )
                 continue
             kept.append(
                 NewCharacterRequest(
                     name_hint=name_hint,
-                    relation_description=description,
-                    background_hint=spec.background_hint.strip(),
+                    background_hint=background_hint,
                     initial_location=spec.initial_location.strip(),
                 )
             )
