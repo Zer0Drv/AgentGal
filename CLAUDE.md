@@ -150,11 +150,11 @@ Launch three post-response lines together:
   ↓
 Emit `response_done` so the UI can re-enable free input while those lines continue
   ↓
-state_updater inputs in order: characters, `world_schedule`, latest_scene_json, character_intention, current_narrator_status, recent_history
+state_updater inputs in order: `characters_status` (身份/心境/在意的事/打算 per character), `world_schedule`, latest_scene_json, current_narrator_status, recent_history
   ↓
-state_updater outputs full "Character Locations" snapshot each round; priority: latest_scene_json / recent_history facts > character_intention with location > old snapshot > reasonable inference. It also maintains "Recent World Event" as a derived narrator status field used to keep current world-event atmosphere and avoid duplicate world-event pushes.
+state_updater outputs full "Character Locations" snapshot each round; priority: latest_scene_json / recent_history facts > characters_status with location > old snapshot > reasonable inference. It also maintains "Recent World Event" as a derived narrator status field used to keep current world-event atmosphere and avoid duplicate world-event pushes.
   ↓
-state_updater syncs public "Pending Events" from each character's "Intentions" (event names preserve character names)
+state_updater syncs public "Pending Events" from each character's "打算" (event names preserve character names); when recent dialogue is too mundane, derives an irreversible plot event from character's 身份+心境+在意的事, optionally using a world_schedule event as a vessel
 ```
 
 Observation mode uses the same SSE chat endpoint with `mode="observe"`: the narrator runs with the observation prompt, the player message is not written to raw history, selected characters respond to the narrator scene, choices are cleared instead of generated, and state update / consolidation still run after the round.

@@ -150,11 +150,11 @@ Launch three post-response lines together:
   ↓
 Emit `response_done` so the UI can re-enable free input while those lines continue
   ↓
-state_updater inputs in order: characters, `world_schedule`, latest_scene_json, character_intention, current_narrator_status, recent_history
+state_updater inputs in order: `characters_status` (身份/心境/在意的事/打算 per character), `world_schedule`, latest_scene_json, current_narrator_status, recent_history
   ↓
-state_updater outputs full "Character Locations" snapshot each round; priority: latest_scene_json / recent_history facts > character_intention with location > old snapshot > reasonable inference. It also maintains "Recent World Event" as a derived narrator status field used to keep current world-event atmosphere and avoid duplicate world-event pushes.
+state_updater outputs full "Character Locations" snapshot each round; priority: latest_scene_json / recent_history facts > characters_status with location > old snapshot > reasonable inference. It also maintains "Recent World Event" as a derived narrator status field used to keep current world-event atmosphere and avoid duplicate world-event pushes.
   ↓
-state_updater syncs public "Pending Events" from each character's "Intentions" (event names preserve character names)
+state_updater syncs public "Pending Events" from each character's "打算" (event names preserve character names); when recent dialogue is too mundane, derives an irreversible plot event from character's 身份+心境+在意的事, optionally using a world_schedule event as a vessel
 ```
 
 Observation mode uses the same SSE chat endpoint with `mode="observe"`: the narrator runs with the observation prompt, the player message is not written to raw history, selected characters respond to the narrator scene, choices are cleared instead of generated, and state update / consolidation still run after the round.
@@ -242,8 +242,12 @@ After each participation round of character responses, `generate_choices()` is l
 ## Long-Term Memory Retrieval
 
 - Vector store indexes long-term memory events from `memory.jsonl` and stable understandings from `understanding.jsonl` in separate tables; owner scope is fixed to current character
-- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); `engine/memory_query_builder.py` builds separate semantic and BM25 lexical queries from the latest visible scene, recent dialogue, and narrative focus, and the embedding request is batched when episode and understanding semantic queries differ
-- Retrieval query construction: first filter raw history by `visible_to` and keep the latest 4 visible messages; choose the latest narrator structured scene as current scene and render only `date / time / location / scene_description` (do not include ambient `present_characters` names); render other visible messages as recent dialogue using display speaker names; read narrator `叙事焦点`; build `episode` semantic query as current scene + recent dialogue + narrative focus, `episode_bm25` as narrative focus + scene + raw dialogue text, `understanding` semantic query as relationship/behavior focus + recent dialogue, and `understanding_bm25` as narrative focus + raw dialogue text; each query falls back to the current player input if empty and is length-clipped separately
+- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); `engine/memory_query_builder.py` builds retrieval queries from the character's own `在意的事` status field and the current location extracted from the latest visible narrator message
+- Retrieval query construction (`engine/memory_query_builder.py` → `RetrievalQueries`): read character's `在意的事` from their own `status.md`; extract `location` from the most recent narrator message visible to that character; build four queries, each falls back to current player input if empty:
+  - `episode` (semantic, limit 1800 chars): `在意的事` + location + user_input (location anchors episode scene searches; EpisodeMemory embedding index includes location)
+  - `episode_bm25` (lexical, limit 700 chars): `在意的事` + user_input (location is not a useful BM25 signal)
+  - `understanding` (semantic, limit 1200 chars): `在意的事` + user_input (understandings are not place-bound; location adds noise)
+  - `understanding_bm25` (lexical, limit 700 chars): `在意的事` + user_input
 - `memory/retrieval.py` handles the full retrieval pipeline: semantic query embedding → vector candidates + optional BM25 lexical candidates → hybrid fusion → (optional) rerank → recency sort → recall state update
 - `storage/vector_store.py` is storage layer only: provides raw candidates for EpisodeMemory and Understanding tables, pipeline logic is not here
 - `memory/indexer.py` reads `EpisodeMemory` records from `memory.jsonl` and `Understanding` records from `understanding.jsonl`, then appends them to the vector store
