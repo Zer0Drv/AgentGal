@@ -209,6 +209,19 @@ class VectorStore:
             and self._tables_initialized_loop is loop
         )
 
+    @staticmethod
+    async def _get_existing_vec_dim(db: aiosqlite.Connection) -> int | None:
+        """从 sqlite_master 读取已有 EpisodeMemory_vec 的向量维度；表不存在返回 None。"""
+        row = await (
+            await db.execute(
+                "SELECT sql FROM sqlite_master WHERE name = 'EpisodeMemory_vec'"
+            )
+        ).fetchone()
+        if row is None or not row[0]:
+            return None
+        m = re.search(r"(?:F32|FLOAT32)\s*\[\s*(\d+)\s*\]", row[0], re.IGNORECASE)
+        return int(m.group(1)) if m else None
+
     def _sidecar_recall_by_hash(
         self,
         agent_name: str,
@@ -380,11 +393,37 @@ class VectorStore:
         loop = asyncio.get_running_loop()
         async with self._get_init_lock():
             if self._schema_ready_for_loop():
-                return
+                db = await self._open_db_locked()
+                existing_dim = await self._get_existing_vec_dim(db)
+                if existing_dim is None or existing_dim == embedding_dim:
+                    return
+                # 维度变更：重置标志，强制走后面的重建逻辑
+                self._tables_initialized = False
+                self._tables_initialized_loop = None
+
             if embedding_dim <= 0:
                 raise ValueError(f"embedding_dim 必须是正整数: {embedding_dim}")
 
             db = await self._open_db_locked()
+
+            # ---- 向量维度迁移：换 embedding 模型后自动重建 vec 表 ----
+            existing_dim = await self._get_existing_vec_dim(db)
+            if existing_dim is not None and existing_dim != embedding_dim:
+                memory_logger.warning(
+                    "[VectorStore] 向量维度变更 %s → %s，清空向量表（数据将从 jsonl 重建）",
+                    existing_dim, embedding_dim,
+                )
+                await db.execute("BEGIN")
+                for tbl in (
+                    "EpisodeMemory_vec", "Understanding_vec",
+                    "EpisodeMemory_fts", "Understanding_fts",
+                ):
+                    await db.execute(f"DROP TABLE IF EXISTS {tbl}")
+                await db.execute("DELETE FROM EpisodeMemory")
+                await db.execute("DELETE FROM Understanding")
+                await db.commit()
+            # -------------------------------------------------------
+
             await db.execute(_EPISODE_MEMORY_SCHEMA)
             await db.execute(
                 f"""
