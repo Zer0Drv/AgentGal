@@ -36,6 +36,7 @@ document.addEventListener("alpine:init", () => {
     worldlineOpen: false,
     worldlineZoom: 1,
     worldlineDrag: null,
+    isSaving: false,
     saveLoading: false,
     saveError: "",
     initialRecent: [],
@@ -1967,12 +1968,13 @@ document.addEventListener("alpine:init", () => {
     },
 
     async saveGame() {
-      if (this.busy) return;
+      if (this.busy || this.isSaving) return;
       if (!this.messages.length) {
         this.setNotice("还没有可保存的对话内容。", "error");
         return;
       }
 
+      this.isSaving = true;
       try {
         const response = await this.postJson("/api/save", {});
 
@@ -1989,6 +1991,8 @@ document.addEventListener("alpine:init", () => {
         const message = error instanceof Error ? error.message : "存档失败，请稍后再试。";
         this.setNotice(`存档失败：${message}`, "error", true);
         this.pushToast("存档失败", "error");
+      } finally {
+        this.isSaving = false;
       }
     },
   }));

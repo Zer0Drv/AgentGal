@@ -472,7 +472,7 @@
           </span>
         </button>
 
-        <button type="button" class="new-save-button" :disabled="busy || consolidating || !messages.length" :title="consolidating ? '记忆整理进行中，请稍后再存档' : ''" @click="createSave()">
+        <button type="button" class="new-save-button" :disabled="busy || isSaving || consolidating || !messages.length" :title="isSaving ? '存档中，请稍候……' : consolidating ? '记忆整理进行中，请稍后再存档' : ''" @click="createSave()">
           <span class="new-save-main">
             <span class="new-save-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
@@ -481,8 +481,8 @@
               </svg>
             </span>
             <span>
-              <span class="new-save-title">新建存档</span>
-              <span class="new-save-meta" x-text="messages.length ? '在当前世界线下创建节点' : '开始故事后可用'"></span>
+              <span class="new-save-title" x-text="isSaving ? '存档中……' : '新建存档'"></span>
+              <span class="new-save-meta" x-text="isSaving ? '请稍候，正在写入世界线节点' : messages.length ? '在当前世界线下创建节点' : '开始故事后可用'"></span>
             </span>
           </span>
         </button>
