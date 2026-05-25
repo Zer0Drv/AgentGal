@@ -796,7 +796,7 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     async def fake_add(episode: EpisodeMemory) -> None:
         vector_calls.append(episode)
 
-    monkeypatch.setattr(consolidator_module.vector_store, "add", fake_add)
+    monkeypatch.setattr(consolidator_module.vector_store, "add_episode", fake_add)
 
     result = await consolidator.consolidate_agent(agent_name, until_turn=4)
 
