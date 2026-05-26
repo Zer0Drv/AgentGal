@@ -206,7 +206,7 @@ class TestBuildMemoryQueryBuilder:
 
     def test_episode_query_includes_concern_location_and_input(self, monkeypatch):
         monkeypatch.setattr(
-            query_builder_module, "get_character_concern", lambda _: "玩家是否真的在乎她的感受"
+            query_builder_module, "read_agent_file", lambda _agent, _file: "## 在意的事\n玩家是否真的在乎她的感受"
         )
         queries = build_retrieval_queries("mitsuki", "我不想再被拒绝", self._raw_messages())
         assert "玩家是否真的在乎她的感受" in queries.episode
@@ -215,7 +215,7 @@ class TestBuildMemoryQueryBuilder:
 
     def test_bm25_and_understanding_contain_concern_and_input_not_location(self, monkeypatch):
         monkeypatch.setattr(
-            query_builder_module, "get_character_concern", lambda _: "玩家是否真的在乎她的感受"
+            query_builder_module, "read_agent_file", lambda _agent, _file: "## 在意的事\n玩家是否真的在乎她的感受"
         )
         queries = build_retrieval_queries("mitsuki", "我不想再被拒绝", self._raw_messages())
         for q in [queries.episode_bm25, queries.understanding, queries.understanding_bm25]:
@@ -224,12 +224,12 @@ class TestBuildMemoryQueryBuilder:
             assert "一之濑美月家客厅" not in q
 
     def test_location_extracted_from_visible_narrator_message(self, monkeypatch):
-        monkeypatch.setattr(query_builder_module, "get_character_concern", lambda _: "")
+        monkeypatch.setattr(query_builder_module, "read_agent_file", lambda _agent, _file: "")
         queries = build_retrieval_queries("mitsuki", "测试输入", self._raw_messages())
         assert "一之濑美月家客厅" in queries.episode
 
     def test_invisible_narrator_message_location_ignored(self, monkeypatch):
-        monkeypatch.setattr(query_builder_module, "get_character_concern", lambda _: "")
+        monkeypatch.setattr(query_builder_module, "read_agent_file", lambda _agent, _file: "")
         raw_messages = [
             {
                 "role": "narrator",
@@ -245,7 +245,7 @@ class TestBuildMemoryQueryBuilder:
         assert "秘密地点" not in queries.episode
 
     def test_fallback_to_user_input_when_concern_empty_and_no_location(self, monkeypatch):
-        monkeypatch.setattr(query_builder_module, "get_character_concern", lambda _: "")
+        monkeypatch.setattr(query_builder_module, "read_agent_file", lambda _agent, _file: "")
         queries = build_retrieval_queries("mitsuki", "我还需要时间", [])
         assert queries.episode == "我还需要时间"
         assert queries.episode_bm25 == "我还需要时间"
@@ -253,7 +253,9 @@ class TestBuildMemoryQueryBuilder:
         assert queries.understanding_bm25 == "我还需要时间"
 
     def test_user_input_appears_exactly_once(self, monkeypatch):
-        monkeypatch.setattr(query_builder_module, "get_character_concern", lambda _: "某种在意的事")
+        monkeypatch.setattr(
+            query_builder_module, "read_agent_file", lambda _agent, _file: "## 在意的事\n某种在意的事"
+        )
         queries = build_retrieval_queries("mitsuki", "这句话只出现一次", self._raw_messages())
         assert queries.episode.count("这句话只出现一次") == 1
         assert queries.episode_bm25.count("这句话只出现一次") == 1
@@ -261,7 +263,7 @@ class TestBuildMemoryQueryBuilder:
         assert queries.understanding_bm25.count("这句话只出现一次") == 1
 
     def test_invisible_player_message_not_in_queries(self, monkeypatch):
-        monkeypatch.setattr(query_builder_module, "get_character_concern", lambda _: "")
+        monkeypatch.setattr(query_builder_module, "read_agent_file", lambda _agent, _file: "")
         queries = build_retrieval_queries("mitsuki", "当前输入", self._raw_messages())
         assert "私密词" not in queries.episode
         assert "私密词" not in queries.episode_bm25
