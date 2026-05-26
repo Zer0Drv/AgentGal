@@ -66,10 +66,6 @@ _CHARACTER_STATUS_FIELDS = ("身份", "心境", "在意的事", "打算")
 _WORLD_SCHEDULE_FILENAME = "world_schedule.json"
 
 
-def _wrap_block(tag: str, content: str) -> str:
-    return f"<{tag}>\n{content}\n</{tag}>" if content else ""
-
-
 def _log_file_updates(agent_name: str, results: list[FileUpdateResult]) -> None:
     """批量记录一次回合的文件更新结果，供观测使用。"""
     if not results:
@@ -258,19 +254,15 @@ class Character(BaseEntity):
         """组装角色 user message（含记忆与长期判断召回前缀）。"""
         queries = build_retrieval_queries(self.name, user_input, raw_messages)
 
-        if queries.understanding == queries.episode:
-            try:
-                qvec = embed_sync([queries.episode])[0]
-                memory_qvec = understanding_qvec = qvec
-            except Exception:
-                memory_qvec = understanding_qvec = None
-        else:
-            try:
-                vecs = embed_sync([queries.episode, queries.understanding])
-                memory_qvec = vecs[0]
-                understanding_qvec = vecs[1]
-            except Exception:
-                memory_qvec = understanding_qvec = None
+        # 两条 query 相同则只 embed 一次，复用同一个向量
+        same_query = queries.understanding == queries.episode
+        texts = [queries.episode] if same_query else [queries.episode, queries.understanding]
+        try:
+            vecs = embed_sync(texts)
+            memory_qvec = vecs[0]
+            understanding_qvec = vecs[0] if same_query else vecs[1]
+        except Exception:
+            memory_qvec = understanding_qvec = None
 
         relevant_memories = search_memories(
             self.name,
@@ -284,11 +276,13 @@ class Character(BaseEntity):
             qvec=understanding_qvec,
             bm25_query=queries.understanding_bm25,
         )
+        memories_block = f"<relevant_memories>\n{relevant_memories}\n</relevant_memories>" if relevant_memories else ""
+        understandings_block = f"<relevant_understandings>\n{relevant_understandings}\n</relevant_understandings>" if relevant_understandings else ""
         message, _ = build_user_message(
             self.name,
             user_input,
-            _wrap_block("relevant_memories", relevant_memories),
-            understandings_prefix=_wrap_block("relevant_understandings", relevant_understandings),
+            memories_block,
+            understandings_prefix=understandings_block,
             raw_messages=raw_messages,
             observation_mode=observation_mode,
         )
@@ -355,42 +349,56 @@ class Narrator(BaseEntity):
         if raw_messages is None:
             raw_messages = load_conversation_history(turns=HISTORY_RAW_SCAN_TURNS)
 
-        def _validate_output(output: NarratorOutput) -> None:
-            self._validate_route_output(output, valid_agents)
-
-        async def _run(
-            narrator_input: str,
-        ) -> NarratorOutput:
+        try:
             output = await self._run_narrator(
-                narrator_input,
+                user_input,
                 raw_messages,
                 observation_mode=observation_mode,
-                output_validator=_validate_output,
+                output_validator=lambda o: self._validate_route_output(o, valid_agents),
             )
-            new_chars = self._filter_new_characters(output.new_characters, valid_agents)
-            valid_targets = [t for t in output.targets if t in valid_agents]
-            scene_description = self._sanitize_scene_description(output.scene_description)
-            return output.model_copy(
-                update={
-                    "targets": valid_targets,
-                    "scene_description": scene_description,
-                    "new_characters": new_chars,
-                }
-            )
-
-        try:
-            output = await _run(user_input)
-        except Exception as e:
-            self._log_failure("调用", e)
+        except asyncio.TimeoutError as e:
+            routing_logger.error(f"[narrator] 调用超时: {e}")
             return None, False
+        except Exception as e:
+            routing_logger.error(f"[narrator] 调用失败: {e}")
+            return None, False
+
+        output = output.model_copy(
+            update={
+                "targets": [t for t in output.targets if t in valid_agents],
+                "scene_description": self._sanitize_scene_description(output.scene_description),
+                "new_characters": self._filter_new_characters(output.new_characters, valid_agents),
+            }
+        )
 
         if not output.targets and not output.new_characters:
             routing_logger.warning("narrator 响应缺少可用路由")
             return output, False
 
-        return output, is_valid_response(output.scene_description, "narrator") and bool(
+        is_valid = is_valid_response(output.scene_description, "narrator") and bool(
             output.targets or output.new_characters
         )
+        if is_valid and not observation_mode:
+            self._write_scene_to_status(output)
+        return output, is_valid
+
+    def _write_scene_to_status(self, output: NarratorOutput) -> None:
+        """把 NarratorOutput 的场景字段同步写入 narrator/status.md。
+
+        场景 / 当前时间 / 角色位置 由 narrator 独占维护，state_updater 不写这些字段。
+        角色位置来自 character_locations（覆盖所有主要角色，包括不在当前场景的）；
+        若 narrator 未输出该字段，跳过角色位置更新以保留上一轮的值。
+        """
+        results: list[FileUpdateResult] = [
+            update_status_allow_new_field(self.name, "场景", output.location),
+            update_status_allow_new_field(self.name, "当前时间", f"{output.date} {output.time}"),
+        ]
+        if output.character_locations:
+            location_lines = [f"- {name}：{loc}" for name, loc in output.character_locations.items()]
+            results.append(
+                update_status_allow_new_field(self.name, "角色位置", "\n".join(location_lines))
+            )
+        _log_file_updates(self.name, results)
 
     @staticmethod
     def _validate_route_output(
@@ -518,7 +526,9 @@ class Narrator(BaseEntity):
         parts: list[str] = []
         parts.append(f"<characters_status>\n{characters_status}\n</characters_status>")
         if world_schedule_content:
-            parts.append(_wrap_block("world_schedule", world_schedule_content.strip()))
+            parts.append(
+                f"<world_schedule>\n{world_schedule_content.strip()}\n</world_schedule>"
+            )
         if latest_scene:
             parts.append(
                 "<latest_scene_json>\n"
@@ -549,15 +559,14 @@ class Narrator(BaseEntity):
     def _apply_state_updates(self, output: StateUpdaterOutput) -> None:
         """把 StateUpdaterOutput 的字段 / 触发 / 新增事件落盘，并记录结构化日志。"""
         results: list[FileUpdateResult] = []
-        status_fields = output.status.model_dump()
-        recent_world_event = status_fields.pop(self._RECENT_WORLD_EVENT_SECTION, "")
-        results.extend(self.set_status_fields(status_fields))
-        if recent_world_event:
+        if output.narrative_focus:
+            results.extend(self.set_status_fields({"叙事焦点": output.narrative_focus}))
+        if output.recent_world_event:
             results.append(
                 update_status_allow_new_field(
                     self.name,
                     self._RECENT_WORLD_EVENT_SECTION,
-                    recent_world_event,
+                    output.recent_world_event,
                 )
             )
 
@@ -565,8 +574,11 @@ class Narrator(BaseEntity):
         if output.world_schedule_update:
             try:
                 schedule = json.loads(output.world_schedule_update)
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                routing_logger.warning(
+                    "[state_updater] world_schedule_update JSON 解析失败，已忽略: %s",
+                    e,
+                )
         elif output.triggered_world_events:
             schedule = read_sidecar_json(self.name, _WORLD_SCHEDULE_FILENAME)
 
@@ -628,33 +640,27 @@ class Narrator(BaseEntity):
 
         for agent_name in valid_agents:
             soul_content = read_agent_file(agent_name, "soul.md")
-            names_to_check = [agent_name]
             display_name = get_display_name(agent_name, soul_content) if soul_content else None
+            names = [agent_name]
             if display_name and display_name != agent_name:
-                names_to_check.append(display_name)
+                names.append(display_name)
 
-            for name in names_to_check:
-                for pattern in [
-                    re.compile(rf"^{re.escape(name)}\s*[:：]", re.MULTILINE | re.IGNORECASE),
-                    re.compile(rf"^##\s*{re.escape(name)}", re.MULTILINE | re.IGNORECASE),
-                ]:
-                    match = pattern.search(sanitized)
-                    if match:
-                        routing_logger.warning(
-                            f"[narrator] 场景描述中检测到角色台词 '{name}'，已截断"
-                        )
-                        sanitized = sanitized[: match.start()].strip()
-                        break
+            for name in names:
+                dialogue_match = re.search(
+                    rf"^{re.escape(name)}\s*[:：]", sanitized, re.MULTILINE | re.IGNORECASE
+                )
+                header_match = re.search(
+                    rf"^##\s*{re.escape(name)}", sanitized, re.MULTILINE | re.IGNORECASE
+                )
+                match = dialogue_match or header_match
+                if match:
+                    routing_logger.warning(
+                        f"[narrator] 场景描述中检测到角色台词 '{name}'，已截断"
+                    )
+                    sanitized = sanitized[: match.start()].strip()
+                    break
 
         return sanitized
-
-    @staticmethod
-    def _log_failure(stage: str, exc: Exception) -> None:
-        if isinstance(exc, asyncio.TimeoutError):
-            routing_logger.error(f"[narrator] {stage} 超时: {exc}")
-        else:
-            routing_logger.error(f"[narrator] {stage} 失败: {exc}")
-
 
 _characters: dict[str, Character] = {}
 

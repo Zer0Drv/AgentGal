@@ -14,7 +14,7 @@ try:
     import engine.character as character_module
     import storage.agent_files as agent_files_module
     from engine.character import Character, Narrator
-    from agents.schema import CharacterOutput, NarratorOutput, NarratorStatus, StateUpdaterOutput
+    from agents.schema import CharacterOutput, NarratorOutput, StateUpdaterOutput
     from conftest import _narrator_output
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip conversation flow tests: missing dependency ({exc})", allow_module_level=True)
@@ -22,6 +22,8 @@ except ModuleNotFoundError as exc:
 
 def _stub_player_relation_sync(monkeypatch):
     monkeypatch.setattr(character_module.Narrator, "sync_player_relations", lambda _self: {})
+    # _write_scene_to_status 在 route() 中写真实文件；测试只关心路由逻辑，统一 stub 掉
+    monkeypatch.setattr(character_module.Narrator, "_write_scene_to_status", lambda _self, _output: None)
 
 
 def test_sanitize_narrator_scene_description_truncates_character_dialogue(monkeypatch):
@@ -334,20 +336,18 @@ def test_state_updater_output_writes_narrator_status_and_events(monkeypatch):
     )
 
     output = StateUpdaterOutput(
-        status=NarratorStatus(
-            场景="餐厅",
-            角色位置="- 玩家：餐桌旁",
-            当前时间="10月24日 08:40",
-        ),
+        narrative_focus="角色B和玩家在餐厅重逢",
         triggered=["角色B来电"],
         add_event=["【楼下碰面】10月24日 09:30 角色B到达公寓楼下"],
     )
 
     Narrator()._apply_state_updates(output)
 
-    assert ("status", "narrator", "场景", "餐厅") in calls
-    assert ("status", "narrator", "角色位置", "- 玩家：餐桌旁") in calls
-    assert ("status", "narrator", "当前时间", "10月24日 08:40") in calls
+    # 场景 / 角色位置 / 当前时间 由 _write_scene_to_status() 写入，不经过 state_updater
+    assert ("status", "narrator", "场景", "餐厅") not in calls
+    assert ("status", "narrator", "角色位置", "- 玩家：餐桌旁") not in calls
+    assert ("status", "narrator", "当前时间", "10月24日 08:40") not in calls
+    assert ("status", "narrator", "叙事焦点", "角色B和玩家在餐厅重逢") in calls
     assert ("derived_status", "narrator", "最近世界事件", "") not in calls
     assert ("triggered", "narrator", "角色B来电", "待触发事件") in calls
     assert (
@@ -391,9 +391,7 @@ def test_state_updater_updates_recent_world_event_and_marks_schedule(monkeypatch
     monkeypatch.setattr(character_module.Narrator, "add_event", lambda *_args: None)
 
     output = StateUpdaterOutput(
-        status=NarratorStatus(
-            最近世界事件="（准备期）体育祭报名周，告示板上贴出了体育祭的海报",
-        ),
+        recent_world_event="（准备期）体育祭报名周，告示板上贴出了体育祭的海报",
         add_event=["【世界事件：体育祭报名】5月第1周 各班教室。班长宣布报名开始。"],
         triggered_world_events=["体育祭报名"],
     )
@@ -575,9 +573,7 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
 
     async def fake_run_structured_agent(**kwargs):
         captured.update(kwargs)
-        return StateUpdaterOutput(
-            status=NarratorStatus(叙事焦点="玩家私下联系角色B")
-        )
+        return StateUpdaterOutput(narrative_focus="玩家私下联系角色B")
 
     def fake_apply_state_updates(self, output):
         applied.append((self.name, output))
@@ -595,10 +591,9 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     assert captured["agent"] is fake_agent
     assert captured["output_type"] is StateUpdaterOutput
     assert captured["usage_agent"] == "state_updater"
-    assert history_calls == [{"limit": None, "turns": 1}]
+    assert history_calls == [{"limit": None, "turns": 5}]
     user_input = captured["user_input"]
-    assert "<world_event_state>" not in user_input
-    assert user_input.index("<character_intention>") < user_input.index("<current_narrator_status>")
+    assert user_input.index("<characters_status>") < user_input.index("<current_narrator_status>")
     assert user_input.index("<current_narrator_status>") < user_input.index("<recent_history>")
     assert "玩家: 更早的问题" not in user_input
     assert "旁白: 手机在掌心震了一下。" in user_input
@@ -617,4 +612,4 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     assert "手机屏幕亮了一下。" not in user_input
     assert "我看到了。" not in user_input
     assert applied[0][0] == "narrator"
-    assert applied[0][1].status.叙事焦点 == "玩家私下联系角色B"
+    assert applied[0][1].narrative_focus == "玩家私下联系角色B"

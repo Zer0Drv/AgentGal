@@ -11,6 +11,7 @@ def _narrator_output(**overrides) -> NarratorOutput:
         "location": "走廊",
         "present_characters": {"北原悠": "门口", "美月": "窗边"},
         "scene_description": "走廊里传来广播声。",
+        "character_locations": {"北原悠": "走廊", "美月": "走廊"},
         "new_characters": [],
     }
     data.update(overrides)

@@ -9,7 +9,6 @@ from agents.schema import (
     ChoicesOutput,
     EpisodeMemoryBlock,
     NarratorOutput,
-    NarratorStatus,
     StateUpdaterOutput,
     UnderstandingPatchOutput,
 )
@@ -105,16 +104,16 @@ def test_understanding_entry_strips_string_fields():
 
 def test_state_updater_output_accepts_world_schedule_fields():
     default_output = StateUpdaterOutput()
-    assert default_output.status.最近世界事件 == ""
+    assert default_output.recent_world_event == ""
     assert default_output.world_schedule_update == ""
     assert default_output.triggered_world_events == []
 
     output = StateUpdaterOutput(
-        status=NarratorStatus(最近世界事件="（准备期）文化祭准备中"),
+        recent_world_event="（准备期）文化祭准备中",
         world_schedule_update='{"events":[]}',
         triggered_world_events=["文化祭主题讨论"],
     )
-    assert output.status.最近世界事件 == "（准备期）文化祭准备中"
+    assert output.recent_world_event == "（准备期）文化祭准备中"
     assert output.world_schedule_update == '{"events":[]}'
     assert output.triggered_world_events == ["文化祭主题讨论"]
 

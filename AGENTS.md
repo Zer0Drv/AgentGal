@@ -145,16 +145,18 @@ After each Agent response: write back from CharacterOutput typed fields, broadca
   ↓
 Launch three post-response lines together:
   1. choice generation → cancellable auxiliary task; if it finishes before the next player input, display 2-3 optional actions and persist them to `last_choices.json`
-  2. state_updater → update narrator/status.md (scene, time, character locations, narrative focus, pending events; "Relationship with Player" is derived and synced from each character's status by code)
+  2. state_updater → update narrator/status.md (narrative focus, pending events; "Relationship with Player" is derived and synced from each character's status by code)
   3. detect_and_consolidate(current_turn) → determine episode closure and merge memories (see "Memory Consolidation")
   ↓
 Emit `response_done` so the UI can re-enable free input while those lines continue
   ↓
 state_updater inputs in order: `characters_status` (身份/心境/在意的事/打算 per character), `world_schedule`, latest_scene_json, current_narrator_status, recent_history
   ↓
-state_updater outputs full "Character Locations" snapshot each round; priority: latest_scene_json / recent_history facts > characters_status with location > old snapshot > reasonable inference. It also maintains "Recent World Event" as a derived narrator status field used to keep current world-event atmosphere and avoid duplicate world-event pushes.
+narrator.route() writes 场景 / 当前时间 / 角色位置 synchronously to narrator/status.md before post-response tasks start; state_updater does not write these fields.
   ↓
-state_updater syncs public "Pending Events" from each character's "打算" (event names preserve character names); when recent dialogue is too mundane, derives an irreversible plot event from character's 身份+心境+在意的事, optionally using a world_schedule event as a vessel
+state_updater maintains "Recent World Event" as a derived narrator status field; when a new world-schedule event matches the current date, it also derives a concrete public scene (add_event) that pulls the player into the event via a main character.
+  ↓
+state_updater syncs public "Pending Events" from each character's "打算" (event names preserve character names)
 ```
 
 Observation mode uses the same SSE chat endpoint with `mode="observe"`: the narrator runs with the observation prompt, the player message is not written to raw history, selected characters respond to the narrator scene, choices are cleared instead of generated, and state update / consolidation still run after the round.
