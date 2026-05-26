@@ -21,11 +21,11 @@ vector_candidate_limit = 15
 # rerank 后保留条数，再做 recency
 rerank_top_n = 10
 # relevance 权重
-relevance_weight = 0.5
+relevance_weight = 0.4
 # recency 权重
-recency_weight = 0.2
-# importance 权重（来自 memory.md 中的“重要度”）
-importance_weight = 0.3
+recency_weight = 0.1
+# importance 权重（来自 memory.md 中的”重要度”）
+importance_weight = 0.5
 # 游戏内时间半衰期（天）
 recency_half_life_days = 5.0
 # recency 内部权重：按加权平均融合日期与 recall 两个信号，设为 0 可禁用对应信号
