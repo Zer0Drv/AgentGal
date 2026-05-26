@@ -209,9 +209,12 @@
       memoryGraphZoom: 1,
       memoryGraphDetailCollapsed: false,
 
-      async openMemoryGraph() {
+      async openMemoryGraph(agentName = null) {
         if (this.isCompact) {
           this.closeDrawer();
+        }
+        if (agentName) {
+          this.memoryGraphAgent = agentName;
         }
         this.memoryGraphOpen = true;
         await this.$nextTick();

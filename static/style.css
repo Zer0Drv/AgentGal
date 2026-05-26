@@ -1710,6 +1710,30 @@ svg {
   line-height: 1.5;
 }
 
+.character-memory-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.character-memory-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.character-memory-btn:hover {
+  color: var(--text-soft);
+  background: var(--surface-raised, rgba(0,0,0,0.05));
+}
+
 .character-skeleton {
   padding: 8px 0;
 }

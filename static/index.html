@@ -12,7 +12,7 @@
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <script src="/static/memory_graph.js?v=12"></script>
 <script defer src="/static/alpine.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=character-roster">
+<link rel="stylesheet" href="/static/style.css?v=memory-graph-card">
 </head>
 <body>
 <div
@@ -163,27 +163,7 @@
         <span class="btn-label">世界线</span>
       </button>
 
-      <button
-        type="button"
-        class="ghost-btn menu-btn"
-        x-show="messages.length"
-        aria-label="记忆图谱"
-        title="记忆图谱"
-        @click="openMemoryGraph()"
-      >
-        <span class="btn-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="6" cy="7" r="2.2"/>
-            <circle cx="17" cy="5" r="2.2"/>
-            <circle cx="18" cy="17" r="2.2"/>
-            <circle cx="7" cy="18" r="2.2"/>
-            <path d="m8 7 7-1.4"/>
-            <path d="m7.4 9 9.2 6.8"/>
-            <path d="m9.1 17.5 6.8-.4"/>
-          </svg>
-        </span>
-        <span class="btn-label">记忆图谱</span>
-      </button>
+
 
       <button
         type="button"
@@ -488,6 +468,17 @@
               <div class="character-card-head">
                 <span class="character-dot" :style="`background:${getAgentStyle(char.display_name).color};`"></span>
                 <span class="character-name" x-text="char.display_name"></span>
+                <button type="button" class="character-memory-btn" @click="openMemoryGraph(char.name)" title="记忆图谱" aria-label="查看记忆图谱">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="6" cy="7" r="2.2"/>
+                    <circle cx="17" cy="5" r="2.2"/>
+                    <circle cx="18" cy="17" r="2.2"/>
+                    <circle cx="7" cy="18" r="2.2"/>
+                    <path d="m8 7 7-1.4"/>
+                    <path d="m7.4 9 9.2 6.8"/>
+                    <path d="m9.1 17.5 6.8-.4"/>
+                  </svg>
+                </button>
               </div>
               <div class="character-card-body">
                 <div class="character-field" x-show="char.identity">
