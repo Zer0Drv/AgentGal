@@ -152,7 +152,7 @@ async def test_chat_stream_does_not_wait_for_pending_state_update(monkeypatch):
         server_module._pending_state_update_task = None
         server_module._pending_state_update_requested = False
 
-    assert chunks == ['data: {"type": "done"}\n\n']
+    assert chunks == ['data: {"type": "done", "consolidating": false}\n\n']
 
 
 @pytest.mark.asyncio
@@ -617,4 +617,4 @@ async def test_chat_stream_emits_created_character_identity(monkeypatch):
     assert narrator_event["type"] == "narrator"
     assert narrator_event["payload"]["scene_description"] == "场景推进"
     done_event = json.loads(chunks[2].removeprefix("data: ").strip())
-    assert done_event == {"type": "done"}
+    assert done_event == {"type": "done", "consolidating": False}

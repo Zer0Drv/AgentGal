@@ -12,7 +12,7 @@
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <script src="/static/memory_graph.js?v=12"></script>
 <script defer src="/static/alpine.min.js"></script>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v=character-roster">
 </head>
 <body>
 <div
@@ -146,6 +146,7 @@
       <button
         type="button"
         class="ghost-btn menu-btn"
+        x-show="messages.length"
         aria-label="世界线"
         title="世界线"
         @click="openWorldline()"
@@ -165,6 +166,7 @@
       <button
         type="button"
         class="ghost-btn menu-btn"
+        x-show="messages.length"
         aria-label="记忆图谱"
         title="记忆图谱"
         @click="openMemoryGraph()"
@@ -181,6 +183,42 @@
           </svg>
         </span>
         <span class="btn-label">记忆图谱</span>
+      </button>
+
+      <button
+        type="button"
+        class="ghost-btn menu-btn"
+        x-show="messages.length"
+        aria-label="重新选择故事"
+        title="重新选择故事"
+        :disabled="busy || consolidating"
+        @click="showResetConfirmation()"
+      >
+        <span class="btn-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 2.64-6.36"/>
+            <path d="M3 4.5v5h5"/>
+          </svg>
+        </span>
+        <span class="btn-label">重开</span>
+      </button>
+
+      <button
+        type="button"
+        class="ghost-btn menu-btn"
+        x-show="messages.length"
+        aria-label="新建存档"
+        title="新建存档"
+        :disabled="busy || isSaving || consolidating"
+        @click="createSave()"
+      >
+        <span class="btn-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14"/>
+            <path d="M5 12h14"/>
+          </svg>
+        </span>
+        <span class="btn-label" x-text="isSaving ? '存档中' : '存档'"></span>
       </button>
 
       <button
@@ -424,105 +462,42 @@
     <div class="drawer-backdrop" x-show="drawerOpen && isCompact" @click="closeDrawer()"></div>
 
     <aside class="archive-drawer" :class="{ open: drawerOpen }">
-      <div class="drawer-head">
-        <div class="drawer-title-wrap">
-          <div class="drawer-title" x-text="isCompact ? '菜单' : '档案室'"></div>
-        </div>
-
-        <div class="drawer-actions">
-          <button type="button" class="icon-btn" title="刷新存档" :disabled="saveLoading" @click="refreshSaves()">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20 11a8 8 0 1 0-2.34 5.66"/>
-              <path d="M20 4v7h-7"/>
-            </svg>
-          </button>
-
-          <button type="button" class="icon-btn" title="关闭档案室" x-show="isCompact" @click="closeDrawer()">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 6 18 18"/>
-              <path d="m18 6-12 12"/>
-            </svg>
-          </button>
-        </div>
-      </div>
 
       <div class="drawer-body">
-        <div class="drawer-copy">存档会作为不可变节点写入世界线；读取旧节点后继续保存，会从那里分出新的分支。</div>
+        <div class="drawer-copy" x-show="consolidating" style="color: var(--accent-warm, #b07a2c);">记忆整理进行中，部分功能暂时不可用。</div>
 
-        <div class="drawer-copy" x-show="consolidating" style="color: var(--accent-warm, #b07a2c);">记忆整理进行中，存档与读档暂时不可用。</div>
+        <div class="drawer-section-title">在场角色</div>
 
-        <button
-          type="button"
-          class="drawer-reset-btn"
-          :disabled="busy || consolidating"
-          :title="consolidating ? '记忆整理进行中，请稍后再重开' : '重新选择故事'"
-          @click="resetFromDrawer()"
-        >
-          <span class="new-save-main">
-            <span class="new-save-icon drawer-reset-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 12a9 9 0 1 0 2.64-6.36"/>
-                <path d="M3 4.5v5h5"/>
-              </svg>
-            </span>
-            <span>
-              <span class="new-save-title">重新选择故事</span>
-              <span class="new-save-meta" x-text="consolidating ? '记忆整理中暂不可用' : '回到故事模板选择'"></span>
-            </span>
-          </span>
-        </button>
-
-        <button type="button" class="new-save-button" :disabled="busy || isSaving || consolidating || !messages.length" :title="isSaving ? '存档中，请稍候……' : consolidating ? '记忆整理进行中，请稍后再存档' : ''" @click="createSave()">
-          <span class="new-save-main">
-            <span class="new-save-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 5v14"/>
-                <path d="M5 12h14"/>
-              </svg>
-            </span>
-            <span>
-              <span class="new-save-title" x-text="isSaving ? '存档中……' : '新建存档'"></span>
-              <span class="new-save-meta" x-text="isSaving ? '请稍候，正在写入世界线节点' : messages.length ? '在当前世界线下创建节点' : '开始故事后可用'"></span>
-            </span>
-          </span>
-        </button>
-
-        <template x-if="saveLoading">
-          <div class="drawer-skeleton">
-            <div class="skeleton-shell">
-              <span class="skeleton-line" style="width: 34%;"></span>
-              <span class="skeleton-line" style="width: 72%;"></span>
-              <span class="skeleton-line" style="width: 58%;"></span>
-            </div>
+        <template x-if="charactersLoading">
+          <div class="character-skeleton">
             <div class="skeleton-shell">
               <span class="skeleton-line" style="width: 42%;"></span>
-              <span class="skeleton-line" style="width: 82%;"></span>
-              <span class="skeleton-line" style="width: 54%;"></span>
+              <span class="skeleton-line" style="width: 78%;"></span>
+              <span class="skeleton-line" style="width: 62%;"></span>
             </div>
           </div>
         </template>
 
-        <template x-if="!saveLoading && saveError">
-          <div class="drawer-error" x-text="saveError"></div>
+        <template x-if="!charactersLoading && !characters.length">
+          <div class="drawer-empty">还没有遇到角色。开始一个故事后，这里会显示在场角色的身份与位置。</div>
         </template>
 
-        <template x-if="!saveLoading && !saveError && !saves.length">
-          <div class="drawer-empty">还没有存档。开始一个故事后，用上方按钮创建第一个档位。</div>
-        </template>
-
-        <div class="save-list" x-show="!saveLoading && !saveError && saves.length">
-          <template x-for="(save, index) in saves" :key="save.filename">
-            <article class="save-card">
-              <div class="save-card-top">
-                <span class="save-card-label" x-text="`档位 ${index + 1}`"></span>
-                <span class="save-card-arrow" x-text="save.filename"></span>
+        <div class="character-list" x-show="!charactersLoading && characters.length">
+          <template x-for="char in characters" :key="char.name">
+            <article class="character-card">
+              <div class="character-card-head">
+                <span class="character-dot" :style="`background:${getAgentStyle(char.display_name).color};`"></span>
+                <span class="character-name" x-text="char.display_name"></span>
               </div>
-              <div class="save-card-time" x-text="save.display"></div>
-              <div class="save-card-focus" x-text="save.focus || '未提供额外焦点摘要。'"></div>
-              <div class="save-card-actions">
-                <button type="button" class="primary-btn save-action" :disabled="busy || consolidating" :title="consolidating ? '记忆整理进行中，请稍后再读取' : ''" @click="promptLoadSave(save.filename)">
-                  <span>读取</span>
-                </button>
+              <div class="character-card-body">
+                <div class="character-field" x-show="char.identity">
+                  <span class="character-field-label">身份</span>
+                  <span class="character-field-value" x-text="char.identity"></span>
+                </div>
+                <div class="character-field" x-show="char.location">
+                  <span class="character-field-label">位置</span>
+                  <span class="character-field-value" x-text="char.location"></span>
+                </div>
               </div>
             </article>
           </template>
@@ -1002,6 +977,6 @@
   </div>
 </div>
 
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=character-roster"></script>
 </body>
 </html>

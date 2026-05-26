@@ -60,8 +60,6 @@ from storage.history import (
 )
 from storage.message_router import message_router
 
-load_dotenv()
-
 app = FastAPI(title="AgentGal")
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -151,11 +149,11 @@ def _format_history_message(msg: dict) -> dict | None:
     return formatted
 
 
-def _clip_text(value: str, limit: int) -> str:
-    text = " ".join((value or "").split())
+def _clip_text(value: str, limit: int, *, normalize_whitespace: bool = True) -> str:
+    text = " ".join((value or "").split()) if normalize_whitespace else (value or "").strip()
     if len(text) <= limit:
         return text
-    return f"{text[: limit - 1]}…"
+    return f"{text[: limit - 1].rstrip()}…"
 
 
 def _current_scene_status() -> dict[str, object]:
@@ -168,13 +166,6 @@ def _current_scene_status() -> dict[str, object]:
         "scene": extract_status_field(status, "场景").strip(),
         "focus": extract_status_field(status, "叙事焦点").strip(),
     }
-
-
-def _clip_preserving_lines(value: str, limit: int) -> str:
-    text = (value or "").strip()
-    if len(text) <= limit:
-        return text
-    return f"{text[: limit - 1].rstrip()}…"
 
 
 def _format_raw_dialogue_preview(raw_dialogue: str, limit: int) -> str:
@@ -191,8 +182,8 @@ def _format_raw_dialogue_preview(raw_dialogue: str, limit: int) -> str:
         if not cleaned:
             continue
 
-        speaker, separator, body = cleaned.partition(":")
-        if separator and speaker and len(speaker) <= 18:
+        speaker, sep, body = cleaned.partition(":")
+        if sep and speaker and len(speaker) <= 18:
             speaker_name = speaker.strip()
             if speaker_name.lower() in {"旁白", "narrator"}:
                 continue
@@ -200,7 +191,7 @@ def _format_raw_dialogue_preview(raw_dialogue: str, limit: int) -> str:
         else:
             entries.append(cleaned)
 
-    return _clip_preserving_lines("\n\n".join(entries), limit)
+    return _clip_text("\n\n".join(entries), limit, normalize_whitespace=False)
 
 
 
@@ -223,17 +214,16 @@ def _memory_graph_agents() -> list[dict]:
 
 
 def _episode_node(agent_name: str, episode: EpisodeMemory, index: int) -> dict:
-    episode_key = episode.id or f"row-{index}"
-    label_source = episode.title or episode.content or episode_key
-    full_source = f"{episode.date} · {label_source}" if episode.date else label_source
-    label = _clip_text(full_source, _MEMORY_GRAPH_LABEL_LIMIT)
+    key = episode.id or f"row-{index}"
+    label = episode.title or episode.content or key
+    full_label = f"{episode.date} · {label}" if episode.date else label
     return {
-        "id": f"episode:{episode_key}",
-        "label": label,
+        "id": f"episode:{key}",
+        "label": _clip_text(full_label, _MEMORY_GRAPH_LABEL_LIMIT),
         "group": "episode",
         "value": max(2, episode.importance),
         "meta": {
-            "id": episode_key,
+            "id": key,
             "agent": agent_name,
             "type": "episode",
             "type_label": "Episode",
@@ -253,20 +243,16 @@ def _episode_node(agent_name: str, episode: EpisodeMemory, index: int) -> dict:
     }
 
 
-def _understanding_node(
-    agent_name: str,
-    understanding: Understanding,
-    index: int,
-) -> dict:
-    understanding_key = understanding.id or f"row-{index}"
-    label_source = understanding.subject or understanding.content or understanding_key
+def _understanding_node(agent_name: str, understanding: Understanding, index: int) -> dict:
+    key = understanding.id or f"row-{index}"
+    label = understanding.subject or understanding.content or key
     return {
-        "id": f"understanding:{understanding_key}",
-        "label": _clip_text(label_source, _MEMORY_GRAPH_LABEL_LIMIT),
+        "id": f"understanding:{key}",
+        "label": _clip_text(label, _MEMORY_GRAPH_LABEL_LIMIT),
         "group": "understanding",
         "value": max(3, len(understanding.linked_episodes)),
         "meta": {
-            "id": understanding_key,
+            "id": key,
             "agent": agent_name,
             "type": "understanding",
             "type_label": "Understanding",
@@ -281,10 +267,9 @@ def _understanding_node(
 
 
 def _missing_episode_node(agent_name: str, episode_id: str) -> dict:
-    short_id = _clip_text(episode_id, 10)
     return {
         "id": f"episode:{episode_id}",
-        "label": f"缺失 · {short_id}",
+        "label": f"缺失 · {_clip_text(episode_id, 10)}",
         "group": "missing_episode",
         "value": 1,
         "meta": {
@@ -306,36 +291,34 @@ def _build_memory_graph(agent_name: str, display_name: str) -> dict:
 
     nodes: list[dict] = []
     edges: list[dict] = []
-    episode_node_ids: set[str] = set()
+    episode_ids: set[str] = set()
+    missing_ids: set[str] = set()
 
-    for index, episode in enumerate(episodes):
-        node = _episode_node(agent_name, episode, index)
+    for i, ep in enumerate(episodes):
+        node = _episode_node(agent_name, ep, i)
         nodes.append(node)
-        episode_node_ids.add(node["id"])
+        episode_ids.add(node["id"])
 
-    missing_episode_node_ids: set[str] = set()
-    for index, understanding in enumerate(understandings):
-        understanding_node = _understanding_node(agent_name, understanding, index)
-        nodes.append(understanding_node)
-        for link_index, episode_id in enumerate(understanding.linked_episodes):
-            if not episode_id:
+    for i, u in enumerate(understandings):
+        u_node = _understanding_node(agent_name, u, i)
+        nodes.append(u_node)
+        for j, ep_id in enumerate(u.linked_episodes):
+            if not ep_id:
                 continue
-            episode_node_id = f"episode:{episode_id}"
-            if episode_node_id not in episode_node_ids and episode_node_id not in missing_episode_node_ids:
-                nodes.append(_missing_episode_node(agent_name, episode_id))
-                missing_episode_node_ids.add(episode_node_id)
-            edges.append(
-                {
-                    "id": f"{episode_node_id}->{understanding_node['id']}:{link_index}",
-                    "from": episode_node_id,
-                    "to": understanding_node["id"],
-                    "meta": {
-                        "type": "edge",
-                        "episode_id": episode_id,
-                        "understanding_id": understanding_node["meta"]["id"],
-                    },
-                }
-            )
+            ep_node_id = f"episode:{ep_id}"
+            if ep_node_id not in episode_ids and ep_node_id not in missing_ids:
+                nodes.append(_missing_episode_node(agent_name, ep_id))
+                missing_ids.add(ep_node_id)
+            edges.append({
+                "id": f"{ep_node_id}->{u_node['id']}:{j}",
+                "from": ep_node_id,
+                "to": u_node["id"],
+                "meta": {
+                    "type": "edge",
+                    "episode_id": ep_id,
+                    "understanding_id": u_node["meta"]["id"],
+                },
+            })
 
     return {
         "selected_agent": agent_name,
@@ -346,7 +329,7 @@ def _build_memory_graph(agent_name: str, display_name: str) -> dict:
             "episode_count": len(episodes),
             "understanding_count": len(understandings),
             "edge_count": len(edges),
-            "missing_episode_count": len(missing_episode_node_ids),
+            "missing_episode_count": len(missing_ids),
         },
     }
 
@@ -372,6 +355,10 @@ async def _settle_pending_state_update(*, cancel: bool = False) -> None:
         routing_logger.info("[state_updater] 后台任务已取消")
     finally:
         if _pending_state_update_task is task:
+            if not task.done():
+                # _settle 自身被外部取消（如 wait_for 超时），而非 cancel=True 主动取消：
+                # 内层 _run_state_update_loop 仍在运行，必须显式取消，否则成为孤儿任务。
+                task.cancel()
             _pending_state_update_task = None
 
 
@@ -385,8 +372,11 @@ async def _run_state_update_loop() -> None:
             if not _pending_state_update_requested:
                 break
     finally:
-        _pending_state_update_task = None
-        _pending_state_update_requested = False
+        # 只由本 task 自身清理全局引用：若任务因超时成为孤儿后另一个新任务已注册，
+        # 此处若无条件赋 None 会覆盖新任务的引用，导致 _settle 下次直接 return 跳过等待。
+        if _pending_state_update_task is asyncio.current_task():
+            _pending_state_update_task = None
+            _pending_state_update_requested = False
 
 
 def _start_state_update() -> None:
@@ -601,6 +591,13 @@ async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] 
     # 0 = 哨兵：本轮还没有 narrator 成功发言，不触发 consolidation
     current_turn = 0
 
+    async def _settle_state_update_with_timeout() -> None:
+        """等待 state_updater 完成；卡住时不阻塞 done 事件。"""
+        try:
+            await asyncio.wait_for(_settle_pending_state_update(), timeout=60.0)
+        except asyncio.TimeoutError:
+            routing_logger.warning("state_updater 超时（>60s），done 事件提前发出")
+
     # 1. narrator 路由
     narrator_output, is_narrator_valid = await narrator.route(
         user_input,
@@ -649,7 +646,8 @@ async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] 
         routing_logger.info("[导演] 无角色需要回应")
         if narrator_output is not None:
             _start_state_update()
-        yield _sse_event("done", {})
+            await _settle_state_update_with_timeout()
+        yield _sse_event("done", {"consolidating": memory_consolidation_flow.is_running})
         return
 
     # 4. 顺序处理角色，每完成一个立即推送
@@ -702,6 +700,9 @@ async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] 
             _save_last_choices(choices)
             yield _sse_event("choices", {"choices": choices})
 
+    # choices 已经 await 完了，这里等 state_updater 写完叙事焦点/最近世界事件，
+    # 前端 fetchCharacters 才能读到最新的 narrator/status.md。
+    await _settle_state_update_with_timeout()
     yield _sse_event("done", {"consolidating": memory_consolidation_flow.is_running})
 
 
@@ -910,3 +911,75 @@ async def api_reset(req: ResetRequest) -> JSONResponse:
             "character_count": len(get_agent_names(include_narrator=False)),
         }
     )
+
+
+# =============================================================================
+# /api/characters
+# =============================================================================
+
+
+@app.get("/api/characters")
+async def api_characters() -> JSONResponse:
+    """返回当前所有角色的身份信息与位置信息。"""
+    try:
+        narrator_status = read_agent_file("narrator", "status.md")
+    except Exception:
+        narrator_status = ""
+
+    # 从 narrator status 的 `角色位置` 字段解析各角色位置
+    location_text = extract_status_field(narrator_status, "角色位置")
+    if narrator_status and not location_text:
+        routing_logger.warning("/api/characters: narrator/status.md 中未找到「角色位置」字段，位置信息将为空")
+    locations: dict[str, str] = {}
+    for line in location_text.split("\n"):
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        rest = line[2:].strip()
+        # 取最先出现的分隔符，避免位置值中包含另一种冒号时分割位置错误
+        idx_cn = rest.find("：")
+        idx_en = rest.find(":")
+        candidates = [i for i in (idx_cn, idx_en) if i != -1]
+        if candidates:
+            split_at = min(candidates)
+            name_part, loc = rest[:split_at], rest[split_at + 1:]
+            locations[name_part.strip()] = loc.strip()
+
+    def _resolve_location(agent_name: str, display_name: str) -> str:
+        """按优先级匹配角色位置：精确 display_name > 精确 agent_name > 模糊包含。"""
+        if display_name in locations:
+            return locations[display_name]
+        if agent_name in locations:
+            return locations[agent_name]
+        if not display_name:
+            return ""
+        # 模糊匹配：仅在命中唯一条目时返回，防止子串重叠时选错
+        fuzzy = [v for k, v in locations.items() if display_name in k or k in display_name]
+        return fuzzy[0] if len(fuzzy) == 1 else ""
+
+    characters: list[dict[str, str]] = []
+    for agent_name in get_agent_names(include_narrator=False):
+        # display_name 和 identity 分开捕获：任一失败都不应让角色整体消失
+        try:
+            display_name = _get_agent_display_name(agent_name)
+        except Exception as e:
+            routing_logger.warning("[%s] /api/characters 获取显示名失败，降级为 agent_name: %s", agent_name, e)
+            display_name = agent_name
+
+        try:
+            status_text = read_agent_file(agent_name, "status.md")
+            identity = extract_status_field(status_text, "身份")
+        except Exception as e:
+            routing_logger.warning("[%s] /api/characters 读取 status.md 失败: %s", agent_name, e)
+            identity = ""
+
+        characters.append(
+            {
+                "name": agent_name,
+                "display_name": display_name,
+                "identity": identity,
+                "location": _resolve_location(agent_name, display_name),
+            }
+        )
+
+    return JSONResponse({"characters": characters})

@@ -37,6 +37,9 @@ document.addEventListener("alpine:init", () => {
     worldlineZoom: 1,
     worldlineDrag: null,
     isSaving: false,
+    characters: [],
+    charactersLoading: false,
+    _fetchCharactersSeq: 0,
     saveLoading: false,
     saveError: "",
     initialRecent: [],
@@ -106,6 +109,7 @@ document.addEventListener("alpine:init", () => {
       }
 
       await this.refreshSaves({ quiet: true });
+      await this.fetchCharacters();
     },
 
     destroy() {
@@ -684,7 +688,9 @@ document.addEventListener("alpine:init", () => {
       let minTurn = null;
       (items || []).forEach(message => {
         const role = message.role || "";
-        const kind = role === "player" ? "player" : (role === "narrator" ? "narrator" : "agent");
+        let kind = "agent";
+        if (role === "player") kind = "player";
+        else if (role === "narrator") kind = "narrator";
         const author = kind === "player" ? "你" : (message.author || role);
         const turn = Number(message.turn) || 0;
         const obj = this._makeMessage(kind, author, message.content, turn, { payload: message.payload || null });
@@ -1028,6 +1034,7 @@ document.addEventListener("alpine:init", () => {
       this.historySearchOpen = false;
       this.nearLatest = true;
       this.unreadNewMessages = false;
+      this.characters = [];
       clearTimeout(this.searchTimer);
       this.searchTimer = null;
       this.clearNotice();
@@ -1056,6 +1063,7 @@ document.addEventListener("alpine:init", () => {
         this.initialRecent = [];
         this.initialChoices = this.choices;
         await this.refreshSaves({ quiet: true });
+        await this.fetchCharacters();
         this.pushToast("新故事已开始", "success");
       } catch (error) {
         this.storyModalOpen = true;
@@ -1205,6 +1213,9 @@ document.addEventListener("alpine:init", () => {
             identity: event.identity || "",
             characterId: event.character_id || "",
           });
+          if (event.title === "角色已创建") {
+            this.fetchCharacters();
+          }
         } else if (event.type === "agent") {
           this.addMessage("agent", event.author, event.content);
         } else if (event.type === "choices") {
@@ -1217,6 +1228,7 @@ document.addEventListener("alpine:init", () => {
           }
         } else if (event.type === "done") {
           this.setConsolidating(Boolean(event.consolidating));
+          this.fetchCharacters();
         } else if (event.type === "response_done") {
           this.busy = false;
           this.setConsolidating(Boolean(event.consolidating));
@@ -1817,6 +1829,26 @@ document.addEventListener("alpine:init", () => {
       }, 380);
     },
 
+    async fetchCharacters() {
+      const seq = ++this._fetchCharactersSeq;
+      // 已有数据时静默刷新，不触发 loading 闪烁；首次加载才显示骨架屏
+      const isFirstLoad = this.characters.length === 0;
+      if (isFirstLoad) {
+        this.charactersLoading = true;
+      }
+      try {
+        const response = await this.fetchJson("/api/characters");
+        // 只采纳最新一次请求的结果，丢弃被后续请求超越的旧响应
+        if (seq === this._fetchCharactersSeq) {
+          this.characters = response.characters || [];
+        }
+      } catch (_error) {
+        // 后台刷新失败时保留旧数据，不清空已展示内容
+      } finally {
+        this.charactersLoading = false;
+      }
+    },
+
     async refreshSaves({ quiet = false, silent = false } = {}) {
       if (!silent) {
         this.saveLoading = true;
@@ -1957,6 +1989,7 @@ document.addEventListener("alpine:init", () => {
         this.initialChoices = response.last_choices || [];
         this.continueGame(response.recent, response.last_choices);
         await this.refreshSaves({ quiet: true });
+        await this.fetchCharacters();
         this.closeWorldline();
         this.pushToast("存档已加载", "success");
       } catch (error) {
