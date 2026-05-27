@@ -201,26 +201,153 @@
         <span class="btn-label" x-text="isSaving ? '存档中' : '存档'"></span>
       </button>
 
-      <button
-        type="button"
-        class="ghost-btn menu-btn"
-        x-show="isCompact"
-        aria-label="打开菜单"
-        title="打开菜单"
-        :aria-expanded="drawerOpen"
-        @click="toggleDrawer()"
-      >
-        <span class="btn-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 7h16"/>
-            <path d="M4 12h16"/>
-            <path d="M4 17h16"/>
-          </svg>
-        </span>
-        <span class="btn-label">菜单</span>
-      </button>
     </div>
   </header>
+
+  <!-- Mobile floating menu (compact screens only) -->
+  <div
+    class="mobile-fab-root"
+    x-show="isCompact"
+    x-cloak
+    @click.outside="closeMobileMenu()"
+  >
+    <button
+      type="button"
+      class="mobile-fab-btn"
+      :aria-expanded="mobileMenuOpen"
+      :aria-label="mobileMenuOpen ? '关闭菜单' : '打开菜单'"
+      @click="toggleMobileMenu()"
+    >
+      <svg :style="mobileMenuOpen ? '' : 'transform: rotate(45deg)'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+      </svg>
+    </button>
+
+    <div class="mobile-menu-panel" x-show="mobileMenuOpen" x-transition.opacity>
+      <!-- Search -->
+      <div class="mm-section" x-show="messages.length">
+        <button
+          type="button"
+          class="mm-item mm-toggle"
+          :class="{ 'mm-active': mmSection === 'search' }"
+          @click="mmSection = mmSection === 'search' ? null : 'search'"
+        >
+          <span class="mm-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/>
+            </svg>
+          </span>
+          <span>搜索</span>
+          <svg class="mm-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m6 9 6 6 6-6"/>
+          </svg>
+        </button>
+        <div class="mm-sub" x-show="mmSection === 'search'">
+          <input
+            type="search"
+            class="mm-search-input"
+            placeholder="搜索历史消息…"
+            x-model="searchQuery"
+            @input="onSearchInput()"
+            @keydown.escape.stop="mmSection = null"
+          />
+          <div class="mm-empty" x-show="searchQuery.trim() && !searchLoading && !searchResults.length">无匹配消息</div>
+          <ul class="mm-result-list" x-show="searchResults.length">
+            <template x-for="result in searchResults" :key="result.turn + ':' + result.role">
+              <li>
+                <button type="button" class="mm-result-item" @click="jumpToTurn(result.turn)">
+                  <span class="mm-result-author" x-text="result.author || result.role"></span>
+                  <span class="mm-result-snippet" x-html="renderSearchSnippet(result.content, searchQuery.trim())"></span>
+                </button>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div class="mm-section" x-show="messages.length">
+        <button
+          type="button"
+          class="mm-item mm-toggle"
+          :class="{ 'mm-active': mmSection === 'history' }"
+          @click="if (mmSection === 'history') { mmSection = null } else { mmSection = 'history'; ensureGameDates() }"
+        >
+          <span class="mm-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 3v4"/><path d="M16 3v4"/>
+            </svg>
+          </span>
+          <span>历史</span>
+          <svg class="mm-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m6 9 6 6 6-6"/>
+          </svg>
+        </button>
+        <div class="mm-sub" x-show="mmSection === 'history'">
+          <div class="mm-empty" x-show="gameDatesLoading && !gameDates.length">加载中…</div>
+          <div class="mm-empty" x-show="!gameDatesLoading && !gameDates.length">暂无可跳转的日期</div>
+          <ul class="mm-date-list" x-show="gameDates.length">
+            <template x-for="(anchor, idx) in gameDates" :key="idx + ':' + anchor.first_turn">
+              <li>
+                <button type="button" class="mm-date-item" @click="jumpToTurn(anchor.first_turn)">
+                  <span x-text="anchor.date"></span>
+                  <span class="mm-date-range" x-text="`轮 ${anchor.first_turn}`"></span>
+                </button>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
+
+      <div class="mm-divider" x-show="messages.length"></div>
+
+      <!-- Worldline -->
+      <button type="button" class="mm-item" x-show="messages.length" @click="closeMobileMenu(); openWorldline()">
+        <span class="mm-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/>
+            <path d="M8 6h3a3 3 0 0 1 3 3v7"/><path d="M16 6h-3a3 3 0 0 0-3 3v1"/>
+          </svg>
+        </span>
+        <span>世界线</span>
+      </button>
+
+      <!-- Reset -->
+      <button type="button" class="mm-item" x-show="messages.length" :disabled="busy || consolidating" @click="closeMobileMenu(); showResetConfirmation()">
+        <span class="mm-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 4.5v5h5"/>
+          </svg>
+        </span>
+        <span>重开</span>
+      </button>
+
+      <!-- Save -->
+      <button type="button" class="mm-item" x-show="messages.length" :disabled="busy || isSaving || consolidating" @click="closeMobileMenu(); createSave()">
+        <span class="mm-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14"/><path d="M5 12h14"/>
+          </svg>
+        </span>
+        <span x-text="isSaving ? '存档中…' : '存档'"></span>
+      </button>
+
+      <div class="mm-divider"></div>
+
+      <!-- Archive (character roster) -->
+      <button type="button" class="mm-item" @click="closeMobileMenu(); toggleDrawer()">
+        <span class="mm-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        </span>
+        <span>档案</span>
+      </button>
+    </div>
+  </div>
 
   <div class="main-shell">
     <section class="chat-panel">
@@ -464,21 +591,10 @@
 
         <div class="character-list" x-show="!charactersLoading && characters.length">
           <template x-for="char in characters" :key="char.name">
-            <article class="character-card">
+            <article class="character-card" @click="openMemoryGraph(char.name)" role="button" tabindex="0" :aria-label="`查看 ${char.display_name} 的记忆图谱`" @keydown.enter="openMemoryGraph(char.name)" @keydown.space.prevent="openMemoryGraph(char.name)">
               <div class="character-card-head">
                 <span class="character-dot" :style="`background:${getAgentStyle(char.display_name).color};`"></span>
                 <span class="character-name" x-text="char.display_name"></span>
-                <button type="button" class="character-memory-btn" @click="openMemoryGraph(char.name)" title="记忆图谱" aria-label="查看记忆图谱">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="6" cy="7" r="2.2"/>
-                    <circle cx="17" cy="5" r="2.2"/>
-                    <circle cx="18" cy="17" r="2.2"/>
-                    <circle cx="7" cy="18" r="2.2"/>
-                    <path d="m8 7 7-1.4"/>
-                    <path d="m7.4 9 9.2 6.8"/>
-                    <path d="m9.1 17.5 6.8-.4"/>
-                  </svg>
-                </button>
               </div>
               <div class="character-card-body">
                 <div class="character-field" x-show="char.identity">
@@ -490,6 +606,7 @@
                   <span class="character-field-value" x-text="char.location"></span>
                 </div>
               </div>
+              <div class="character-card-foot">记忆图谱 →</div>
             </article>
           </template>
         </div>

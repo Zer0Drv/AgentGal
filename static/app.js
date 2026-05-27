@@ -23,6 +23,8 @@ document.addEventListener("alpine:init", () => {
     hasSave: false,
     isCompact: false,
     drawerOpen: false,
+    mobileMenuOpen: false,
+    mmSection: null,
     inputText: "",
     stories: [],
     messages: [],
@@ -136,6 +138,8 @@ document.addEventListener("alpine:init", () => {
         this.drawerOpen = !event.matches;
         if (!event.matches) {
           this.inputFocused = false;
+          this.mobileMenuOpen = false;
+          this.mmSection = null;
         }
         this.updateKeyboardState();
         this.$nextTick(() => this.resizeComposer());
@@ -243,6 +247,19 @@ document.addEventListener("alpine:init", () => {
 
     closeDrawer() {
       this.drawerOpen = false;
+    },
+
+    toggleMobileMenu() {
+      this.mobileMenuOpen = !this.mobileMenuOpen;
+      if (!this.mobileMenuOpen) {
+        this.mmSection = null;
+        this.clearHistorySearch();
+      }
+    },
+
+    closeMobileMenu() {
+      this.mobileMenuOpen = false;
+      this.mmSection = null;
     },
 
     async createSave() {
@@ -878,6 +895,7 @@ document.addEventListener("alpine:init", () => {
       if (!target || target < 1) return;
       this.dateMenuOpen = false;
       this.historySearchOpen = false;
+      this.closeMobileMenu();
       const container = this.$refs.messages;
       let exists = this.messages.some(m => m.turn === target);
       let safety = 20;
