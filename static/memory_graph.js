@@ -7,7 +7,8 @@
         color: {
           background: "#b45a64",
           border: "#93444e",
-          highlight: { background: "#c96f78", border: "#7f3740" },
+          highlight: { background: "#fce8ea", border: "#b45a64" },
+          hover: { background: "#bc6370", border: "#93444e" },
         },
         font: { color: "#2f2324" },
       },
@@ -16,7 +17,8 @@
         color: {
           background: "#5b7d86",
           border: "#3f6670",
-          highlight: { background: "#6f95a0", border: "#365a62" },
+          highlight: { background: "#e4eef0", border: "#5b7d86" },
+          hover: { background: "#638892", border: "#3f6670" },
         },
         font: { color: "#2f2324" },
       },
@@ -25,13 +27,15 @@
         color: {
           background: "#d9c9bb",
           border: "#9f8174",
-          highlight: { background: "#e5d8cd", border: "#8b6b5f" },
+          highlight: { background: "#f5f0eb", border: "#9f8174" },
+          hover: { background: "#ddd0c4", border: "#9f8174" },
         },
         font: { color: "#6e5753" },
       },
     },
     nodes: {
       borderWidth: 1,
+      borderWidthSelected: 3,
       scaling: { min: 10, max: 34 },
       font: {
         face: "Outfit, PingFang SC, Hiragino Sans GB, sans-serif",
@@ -41,8 +45,9 @@
       },
     },
     edges: {
-      color: { color: "rgba(113, 84, 74, 0.28)", highlight: "#b45a64" },
+      color: { color: "rgba(113, 84, 74, 0.28)", highlight: "#b45a64", hover: "rgba(113, 84, 74, 0.68)" },
       width: 1,
+      hoverWidth: 0,
       smooth: { type: "dynamic" },
       selectionWidth: 2,
     },
@@ -71,6 +76,28 @@
       },
       stabilization: { enabled: true, iterations: 260, fit: true },
     },
+  };
+
+  // Dimmed styling applied to nodes/edges that aren't part of the current hover focus.
+  // Restoring uses graphOptions.groups / graphOptions.edges.color as the single source of truth.
+  const NODE_DIM_STYLES = {
+    understanding: {
+      color: { background: "#d3a2a3", border: "#c29798", highlight: { background: "#d3a2a3", border: "#c29798" }, hover: { background: "#d3a2a3", border: "#c29798" } },
+      font: { color: "rgba(47, 35, 36, 0.4)" },
+    },
+    episode: {
+      color: { background: "#a6b4b4", border: "#98a8a9", highlight: { background: "#a6b4b4", border: "#98a8a9" }, hover: { background: "#a6b4b4", border: "#98a8a9" } },
+      font: { color: "rgba(47, 35, 36, 0.4)" },
+    },
+    missing_episode: {
+      color: { background: "#e5dacf", border: "#c8b6ab", highlight: { background: "#e5dacf", border: "#c8b6ab" }, hover: { background: "#e5dacf", border: "#c8b6ab" } },
+      font: { color: "rgba(110, 87, 83, 0.4)" },
+    },
+  };
+  const EDGE_DIM_COLOR = {
+    color: "rgba(113, 84, 74, 0.06)",
+    highlight: "rgba(113, 84, 74, 0.06)",
+    hover: "rgba(113, 84, 74, 0.06)",
   };
 
   function isReady() {
@@ -141,14 +168,51 @@
     if (!isReady()) {
       throw new Error("vis-network is not available");
     }
+    const nodesDataset = new window.vis.DataSet(nodes);
+    const edgesDataset = new window.vis.DataSet(edges);
     const network = new window.vis.Network(
       container,
-      {
-        nodes: new window.vis.DataSet(nodes),
-        edges: new window.vis.DataSet(edges),
-      },
+      { nodes: nodesDataset, edges: edgesDataset },
       graphOptions,
     );
+
+    function dimExcept(keepNodeIds, keepEdgeIds) {
+      const dimmedNodes = nodesDataset.get()
+        .filter(n => !keepNodeIds.includes(n.id))
+        .map(n => {
+          const dim = NODE_DIM_STYLES[n.group] || NODE_DIM_STYLES.episode;
+          return { id: n.id, color: dim.color, font: dim.font, chosen: false };
+        });
+      const dimmedEdges = edgesDataset.getIds()
+        .filter(id => !keepEdgeIds.includes(id))
+        .map(id => ({ id, color: EDGE_DIM_COLOR }));
+      nodesDataset.update(dimmedNodes);
+      edgesDataset.update(dimmedEdges);
+    }
+
+    function restoreOpacity() {
+      const restoredNodes = nodesDataset.get().map(n => {
+        const restored = graphOptions.groups[n.group] || graphOptions.groups.episode;
+        return { id: n.id, color: restored.color, font: restored.font, chosen: true };
+      });
+      const restoredEdges = edgesDataset.getIds()
+        .map(id => ({ id, color: graphOptions.edges.color }));
+      nodesDataset.update(restoredNodes);
+      edgesDataset.update(restoredEdges);
+    }
+
+    network.on("hoverNode", params => {
+      const neighborEdges = network.getConnectedEdges(params.node);
+      const neighborNodes = network.getConnectedNodes(params.node);
+      dimExcept([params.node, ...neighborNodes], neighborEdges);
+    });
+    network.on("hoverEdge", params => {
+      const edge = edgesDataset.get(params.edge);
+      const keepNodes = edge ? [edge.from, edge.to] : [];
+      dimExcept(keepNodes, [params.edge]);
+    });
+    network.on("blurNode", restoreOpacity);
+    network.on("blurEdge", restoreOpacity);
 
     network.on("click", params => {
       const nodeId = params.nodes[0] || network.getNodeAt(params.pointer.DOM);
@@ -208,6 +272,7 @@
       memoryGraphNetwork: null,
       memoryGraphZoom: 1,
       memoryGraphDetailCollapsed: false,
+      memoryGraphDetailPrev: null,
 
       async openMemoryGraph(agentName = null) {
         if (this.isCompact) {
@@ -313,6 +378,7 @@
         this.memoryGraphLoading = true;
         this.memoryGraphError = "";
         this.memoryGraphSelected = null;
+        this.memoryGraphDetailPrev = null;
         this.memoryGraphZoom = 1;
         this.destroyMemoryGraphNetwork();
 
@@ -374,6 +440,7 @@
       selectMemoryGraphNode(nodeId) {
         const node = this.memoryGraphNodes.find(item => item.id === nodeId);
         this.memoryGraphSelected = node ? node.meta : null;
+        this.memoryGraphDetailPrev = null;
         if (node) {
           this.memoryGraphDetailCollapsed = false;
         }
@@ -415,6 +482,7 @@
           : [];
         const hasVisibleDiff = diff.some(segment => segment.type !== "same");
 
+        this.memoryGraphDetailPrev = null;
         this.memoryGraphSelected = {
           id: edge.id,
           type: "edge",
@@ -428,6 +496,37 @@
           diff: hasVisibleDiff ? diff : [],
         };
         this.memoryGraphDetailCollapsed = false;
+      },
+
+      openEpisodeFromHistory(episodeId) {
+        if (!episodeId) return;
+        const node = this.memoryGraphNodes.find(
+          n => n.meta && String(n.meta.id || "") === String(episodeId) &&
+               ["episode", "missing_episode"].includes(n.meta.type),
+        );
+        if (!node) return;
+        const currentMeta = this.memoryGraphSelected;
+        const currentNode =
+          currentMeta && currentMeta.type !== "edge"
+            ? this.memoryGraphNodes.find(n => n.meta && n.meta.id === currentMeta.id)
+            : null;
+        this.memoryGraphDetailPrev = {
+          selected: currentMeta,
+          nodeId: currentNode ? currentNode.id : null,
+        };
+        this.memoryGraphSelected = node.meta;
+        if (this.memoryGraphNetwork) {
+          this.memoryGraphNetwork.selectNodes([node.id]);
+        }
+      },
+
+      goBackMemoryGraphDetail() {
+        const prev = this.memoryGraphDetailPrev;
+        this.memoryGraphSelected = prev ? prev.selected : null;
+        this.memoryGraphDetailPrev = null;
+        if (this.memoryGraphNetwork && prev && prev.nodeId) {
+          this.memoryGraphNetwork.selectNodes([prev.nodeId]);
+        }
       },
 
       setMemoryGraphZoom(value) {

@@ -442,6 +442,64 @@
   color: rgba(113, 84, 74, 0.56);
 }
 
+.memory-graph-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  margin-bottom: 14px;
+  padding: 5px 10px 5px 7px;
+  border: 1px solid rgba(113, 84, 74, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 251, 247, 0.62);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s, color 0.2s;
+}
+
+.memory-graph-back-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.memory-graph-back-btn:hover {
+  border-color: rgba(113, 84, 74, 0.28);
+  background: rgba(255, 251, 247, 0.92);
+  color: var(--text);
+}
+
+.memory-graph-back-btn svg {
+  flex: 0 0 auto;
+}
+
+.memory-graph-episode-link {
+  background: none;
+  border: none;
+  padding: 0;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(180, 90, 100, 0.28);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: color 0.18s, text-decoration-color 0.18s;
+}
+
+.memory-graph-episode-link:hover {
+  color: var(--accent);
+  text-decoration-color: rgba(180, 90, 100, 0.68);
+}
+
 .memory-graph-section-title {
   margin: 20px 0 8px;
   color: var(--text-muted);
