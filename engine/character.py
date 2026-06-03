@@ -541,13 +541,17 @@ class Narrator(BaseEntity):
 
     @staticmethod
     def _format_characters_status() -> str:
-        """提取所有角色的身份/心境/在意的事/打算，供 state_updater 评估剧情状态与同步待触发事件。"""
+        """提取所有角色的 goal + 身份/心境/在意的事/打算，供 state_updater 评估剧情状态与同步待触发事件。"""
         blocks: list[str] = []
         for agent_name in get_agent_names(include_narrator=False):
             status_content = read_agent_file(agent_name, "status.md")
             soul_content = read_agent_file(agent_name, "soul.md")
             display_name = get_display_name(agent_name, soul_content)
             lines: list[str] = []
+            goal_match = re.search(r"<goal>(.*?)</goal>", soul_content or "", re.S)
+            if goal_match:
+                goal_text = " ".join(goal_match.group(1).split())
+                lines.append(f"深层目标：{goal_text}")
             for field in _CHARACTER_STATUS_FIELDS:
                 value = extract_status_field(status_content, field).strip()
                 if value:

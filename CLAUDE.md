@@ -150,11 +150,11 @@ Launch three post-response lines together:
   ↓
 Emit `response_done` so the UI can re-enable free input while those lines continue
   ↓
-state_updater inputs in order: `characters_status` (身份/心境/在意的事/打算 per character), `world_schedule`, latest_scene_json, current_narrator_status, recent_history
+state_updater inputs in order: `characters_status` (深层目标/身份/心境/在意的事/打算 per character; 深层目标 read from each character's soul.md `<goal>`), `world_schedule`, latest_scene_json, current_narrator_status, recent_history
   ↓
 narrator.route() writes 场景 / 当前时间 / 角色位置 synchronously to narrator/status.md before post-response tasks start; state_updater does not write these fields.
   ↓
-state_updater maintains "Recent World Event" as a derived narrator status field; when a new world-schedule event matches the current date, it also derives a concrete public scene (add_event) that pulls the player into the event via a main character.
+state_updater maintains "Recent World Event" as a derived narrator status field; when a new world-schedule event matches the current date, it also derives a concrete public scene (add_event) that pulls the player into the event via a main character. It can also derive an "identity-tension" add_event from a character's `<goal>` vs. 身份/秘密 (external pressure about to surface), so the queue carries conflict beats rather than only romance; mirroring a character's "打算"/"在意的事" into add_event only fires when the pending-event queue lacks a valid forward hook (per-round cap: ≤2 new, with ≤1 world-event and ≤1 identity-tension).
   ↓
 state_updater syncs public "Pending Events" from each character's "打算" (event names preserve character names)
 ```
