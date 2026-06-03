@@ -7,7 +7,7 @@
         color: {
           background: "#b45a64",
           border: "#93444e",
-          highlight: { background: "#fce8ea", border: "#b45a64" },
+          highlight: { background: "#e8707e", border: "#ffffff" },
           hover: { background: "#bc6370", border: "#93444e" },
         },
         font: { color: "#2f2324" },
@@ -17,7 +17,7 @@
         color: {
           background: "#5b7d86",
           border: "#3f6670",
-          highlight: { background: "#e4eef0", border: "#5b7d86" },
+          highlight: { background: "#72a8b8", border: "#ffffff" },
           hover: { background: "#638892", border: "#3f6670" },
         },
         font: { color: "#2f2324" },
@@ -27,7 +27,7 @@
         color: {
           background: "#d9c9bb",
           border: "#9f8174",
-          highlight: { background: "#f5f0eb", border: "#9f8174" },
+          highlight: { background: "#e8d8cc", border: "#ffffff" },
           hover: { background: "#ddd0c4", border: "#9f8174" },
         },
         font: { color: "#6e5753" },
@@ -78,8 +78,80 @@
     },
   };
 
-  // Dimmed styling applied to nodes/edges that aren't part of the current hover focus.
-  // Restoring uses graphOptions.groups / graphOptions.edges.color as the single source of truth.
+  // All node visual states are managed explicitly via DataSet updates.
+  // graphOptions.groups / graphOptions.edges.color are the single source of truth for the base (restored) state.
+
+  // Hover-adjacent + selected: brightest state, hue-shifted, with a soft glow.
+  const NODE_SELECTED_STYLES = {
+    understanding: {
+      color: {
+        background: "#d9607a",
+        border: "#b84868",
+        highlight: { background: "#d9607a", border: "#b84868" },
+        hover: { background: "#d9607a", border: "#b84868" },
+      },
+      font: { color: "#2f2324" },
+      borderWidth: 3,
+      shadow: { enabled: true, color: "rgba(217, 96, 122, 0.38)", size: 14, x: 0, y: 0 },
+    },
+    episode: {
+      color: {
+        background: "#5aaabb",
+        border: "#3d8898",
+        highlight: { background: "#5aaabb", border: "#3d8898" },
+        hover: { background: "#5aaabb", border: "#3d8898" },
+      },
+      font: { color: "#2f2324" },
+      borderWidth: 3,
+      shadow: { enabled: true, color: "rgba(90, 170, 187, 0.38)", size: 14, x: 0, y: 0 },
+    },
+    missing_episode: {
+      color: {
+        background: "#d4b0a0",
+        border: "#b89080",
+        highlight: { background: "#d4b0a0", border: "#b89080" },
+        hover: { background: "#d4b0a0", border: "#b89080" },
+      },
+      font: { color: "#6e5753" },
+      borderWidth: 3,
+      shadow: { enabled: true, color: "rgba(180, 140, 120, 0.32)", size: 12, x: 0, y: 0 },
+    },
+  };
+
+  // Hover not-adjacent + selected: preserves hue shift direction so it reads as "still selected", but pulled back.
+  const NODE_SELECTED_DIM_STYLES = {
+    understanding: {
+      color: {
+        background: "#b85a6c",
+        border: "#c86878",
+        highlight: { background: "#b85a6c", border: "#c86878" },
+        hover: { background: "#b85a6c", border: "#c86878" },
+      },
+      font: { color: "rgba(47, 35, 36, 0.72)" },
+      borderWidth: 2,
+    },
+    episode: {
+      color: {
+        background: "#588898",
+        border: "#6898a8",
+        highlight: { background: "#588898", border: "#6898a8" },
+        hover: { background: "#588898", border: "#6898a8" },
+      },
+      font: { color: "rgba(47, 35, 36, 0.72)" },
+      borderWidth: 2,
+    },
+    missing_episode: {
+      color: {
+        background: "#c8b0a0",
+        border: "#b09080",
+        highlight: { background: "#c8b0a0", border: "#b09080" },
+        hover: { background: "#c8b0a0", border: "#b09080" },
+      },
+      font: { color: "rgba(110, 87, 83, 0.64)" },
+      borderWidth: 2,
+    },
+  };
+
   const NODE_DIM_STYLES = {
     understanding: {
       color: { background: "#d3a2a3", border: "#c29798", highlight: { background: "#d3a2a3", border: "#c29798" }, hover: { background: "#d3a2a3", border: "#c29798" } },
@@ -176,29 +248,55 @@
       graphOptions,
     );
 
-    function dimExcept(keepNodeIds, keepEdgeIds) {
-      const dimmedNodes = nodesDataset.get()
-        .filter(n => !keepNodeIds.includes(n.id))
-        .map(n => {
-          const dim = NODE_DIM_STYLES[n.group] || NODE_DIM_STYLES.episode;
-          return { id: n.id, color: dim.color, font: dim.font, chosen: false };
-        });
-      const dimmedEdges = edgesDataset.getIds()
-        .filter(id => !keepEdgeIds.includes(id))
-        .map(id => ({ id, color: EDGE_DIM_COLOR }));
-      nodesDataset.update(dimmedNodes);
-      edgesDataset.update(dimmedEdges);
+    let selectedNodeId = null;
+
+    // Updates ALL nodes on every call so hover-focus and selection-focus are always consistent.
+    function dimExcept(focusNodeIds, focusEdgeIds) {
+      const updatedNodes = nodesDataset.get().map(n => {
+        const inFocus = focusNodeIds.includes(n.id);
+        const isSelected = n.id === selectedNodeId;
+        if (inFocus && isSelected) {
+          const s = NODE_SELECTED_STYLES[n.group] || NODE_SELECTED_STYLES.episode;
+          return { id: n.id, color: s.color, font: s.font, borderWidth: s.borderWidth, shadow: s.shadow, chosen: false };
+        }
+        if (inFocus) {
+          const base = graphOptions.groups[n.group] || graphOptions.groups.episode;
+          return { id: n.id, color: base.color, font: base.font, borderWidth: 1, shadow: { enabled: false }, chosen: true };
+        }
+        if (isSelected) {
+          const s = NODE_SELECTED_DIM_STYLES[n.group] || NODE_SELECTED_DIM_STYLES.episode;
+          return { id: n.id, color: s.color, font: s.font, borderWidth: s.borderWidth, shadow: { enabled: false }, chosen: false };
+        }
+        const dim = NODE_DIM_STYLES[n.group] || NODE_DIM_STYLES.episode;
+        return { id: n.id, color: dim.color, font: dim.font, borderWidth: 1, shadow: { enabled: false }, chosen: false };
+      });
+      const updatedEdges = edgesDataset.getIds().map(id => ({
+        id,
+        color: focusEdgeIds.includes(id) ? graphOptions.edges.color : EDGE_DIM_COLOR,
+      }));
+      nodesDataset.update(updatedNodes);
+      edgesDataset.update(updatedEdges);
     }
 
     function restoreOpacity() {
       const restoredNodes = nodesDataset.get().map(n => {
-        const restored = graphOptions.groups[n.group] || graphOptions.groups.episode;
-        return { id: n.id, color: restored.color, font: restored.font, chosen: true };
+        const base = graphOptions.groups[n.group] || graphOptions.groups.episode;
+        return { id: n.id, color: base.color, font: base.font, borderWidth: 1, shadow: { enabled: false }, chosen: true };
       });
       const restoredEdges = edgesDataset.getIds()
         .map(id => ({ id, color: graphOptions.edges.color }));
       nodesDataset.update(restoredNodes);
       edgesDataset.update(restoredEdges);
+    }
+
+    function applySelectionFocus(nodeId) {
+      if (nodeId === null) {
+        restoreOpacity();
+      } else {
+        const neighborEdges = network.getConnectedEdges(nodeId);
+        const neighborNodes = network.getConnectedNodes(nodeId);
+        dimExcept([nodeId, ...neighborNodes], neighborEdges);
+      }
     }
 
     network.on("hoverNode", params => {
@@ -211,24 +309,37 @@
       const keepNodes = edge ? [edge.from, edge.to] : [];
       dimExcept(keepNodes, [params.edge]);
     });
-    network.on("blurNode", restoreOpacity);
-    network.on("blurEdge", restoreOpacity);
+    network.on("blurNode", () => applySelectionFocus(selectedNodeId));
+    network.on("blurEdge", () => applySelectionFocus(selectedNodeId));
+
+    // Single entry point for changing selection: keeps selectedNodeId and the visual focus in sync.
+    function setSelectedNode(nodeId) {
+      selectedNodeId = nodeId;
+      applySelectionFocus(nodeId);
+    }
 
     network.on("click", params => {
       const nodeId = params.nodes[0] || network.getNodeAt(params.pointer.DOM);
       if (nodeId && onSelectNode) {
+        setSelectedNode(nodeId);
         onSelectNode(nodeId);
         return;
       }
       const edgeId = params.edges[0] || network.getEdgeAt(params.pointer.DOM);
       if (edgeId && onSelectEdge) {
+        setSelectedNode(null);
         onSelectEdge(edgeId);
         return;
       }
       if (onBlank) {
+        setSelectedNode(null);
         onBlank();
       }
     });
+
+    // External callers (e.g. openEpisodeFromHistory) can notify the network about programmatic selection.
+    network.setSelectedNode = setSelectedNode;
+
     const fireZoom = scale => onZoom && onZoom(clampZoom(scale));
     network.on("zoom", params => fireZoom(params.scale));
     network.once("stabilizationIterationsDone", () => {
@@ -433,7 +544,11 @@
           }
         });
         if (this.memoryGraphNodes[0]) {
-          this.selectMemoryGraphNode(this.memoryGraphNodes[0].id);
+          const firstId = this.memoryGraphNodes[0].id;
+          this.selectMemoryGraphNode(firstId);
+          if (this.memoryGraphNetwork) {
+            this.memoryGraphNetwork.setSelectedNode(firstId);
+          }
         }
       },
 
@@ -517,6 +632,7 @@
         this.memoryGraphSelected = node.meta;
         if (this.memoryGraphNetwork) {
           this.memoryGraphNetwork.selectNodes([node.id]);
+          this.memoryGraphNetwork.setSelectedNode(node.id);
         }
       },
 
