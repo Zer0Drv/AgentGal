@@ -15,6 +15,19 @@
 <link rel="stylesheet" href="/static/style.css?v=memory-graph-card">
 </head>
 <body>
+<svg width="0" height="0" class="icon-sprite" aria-hidden="true" style="position:absolute"><defs>
+  <g id="ic-search"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></g>
+  <g id="ic-plus"><path d="M12 5v14"/><path d="M5 12h14"/></g>
+  <g id="ic-x"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+  <g id="ic-calendar"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 3v4"/><path d="M16 3v4"/></g>
+  <g id="ic-worldline"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M8 6h3a3 3 0 0 1 3 3v7"/><path d="M16 6h-3a3 3 0 0 0-3 3v1"/></g>
+  <g id="ic-reset"><path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 4.5v5h5"/></g>
+  <g id="ic-chevron-down"><path d="m6 9 6 6 6-6"/></g>
+  <g id="ic-refresh"><path d="M20 11a8 8 0 1 0-2.34 5.66"/><path d="M20 4v7h-7"/></g>
+  <g id="ic-close"><path d="M6 6 18 18"/><path d="m18 6-12 12"/></g>
+  <g id="ic-trash"><path d="M6 2h4M2 4h12M5 4l.5 9h5l.5-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <g id="ic-chevron-left"><path d="m15 18-6-6 6-6"/></g>
+</defs></svg>
 <div
   id="app"
   x-data="agentGalApp"
@@ -40,10 +53,7 @@
           @click="toggleHistorySearch()"
         >
           <span class="btn-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="7"/>
-              <path d="m20 20-3.2-3.2"/>
-            </svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-search"></use></svg>
           </span>
           <span class="btn-label">搜索</span>
         </button>
@@ -51,10 +61,7 @@
         <div class="topbar-search-popover" x-show="historySearchOpen" x-transition.opacity x-ref="searchPopover">
           <div class="history-search-control">
             <span class="history-search-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="11" cy="11" r="7"/>
-                <path d="m20 20-3.2-3.2"/>
-              </svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-search"></use></svg>
             </span>
             <input
               type="search"
@@ -73,10 +80,7 @@
               aria-label="清空搜索"
               @click="clearHistorySearch({ keepOpen: true })"
             >
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M18 6 6 18"/>
-                <path d="m6 6 12 12"/>
-              </svg>
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#ic-x"></use></svg>
             </button>
           </div>
 
@@ -113,12 +117,7 @@
           @click="toggleDateMenu()"
         >
           <span class="btn-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="5" width="18" height="16" rx="2"/>
-              <path d="M3 9h18"/>
-              <path d="M8 3v4"/>
-              <path d="M16 3v4"/>
-            </svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-calendar"></use></svg>
           </span>
           <span class="btn-label">历史</span>
         </button>
@@ -152,13 +151,7 @@
         @click="openWorldline()"
       >
         <span class="btn-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="6" cy="6" r="2"/>
-            <circle cx="18" cy="6" r="2"/>
-            <circle cx="12" cy="18" r="2"/>
-            <path d="M8 6h3a3 3 0 0 1 3 3v7"/>
-            <path d="M16 6h-3a3 3 0 0 0-3 3v1"/>
-          </svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-worldline"></use></svg>
         </span>
         <span class="btn-label">世界线</span>
       </button>
@@ -175,10 +168,7 @@
         @click="showResetConfirmation()"
       >
         <span class="btn-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 12a9 9 0 1 0 2.64-6.36"/>
-            <path d="M3 4.5v5h5"/>
-          </svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-reset"></use></svg>
         </span>
         <span class="btn-label">重开</span>
       </button>
@@ -193,10 +183,7 @@
         @click="createSave()"
       >
         <span class="btn-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 5v14"/>
-            <path d="M5 12h14"/>
-          </svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-plus"></use></svg>
         </span>
         <span class="btn-label" x-text="isSaving ? '存档中' : '存档'"></span>
       </button>
@@ -218,9 +205,7 @@
       :aria-label="mobileMenuOpen ? '关闭菜单' : '打开菜单'"
       @click="toggleMobileMenu()"
     >
-      <svg :style="mobileMenuOpen ? '' : 'transform: rotate(45deg)'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-      </svg>
+      <svg :style="mobileMenuOpen ? '' : 'transform: rotate(45deg)'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#ic-x"></use></svg>
     </button>
 
     <div class="mobile-menu-panel" x-show="mobileMenuOpen" x-transition.opacity>
@@ -233,14 +218,10 @@
           @click="mmSection = mmSection === 'search' ? null : 'search'"
         >
           <span class="mm-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/>
-            </svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-search"></use></svg>
           </span>
           <span>搜索</span>
-          <svg class="mm-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
+          <svg class="mm-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#ic-chevron-down"></use></svg>
         </button>
         <div class="mm-sub" x-show="mmSection === 'search'">
           <input
@@ -274,14 +255,10 @@
           @click="if (mmSection === 'history') { mmSection = null } else { mmSection = 'history'; ensureGameDates() }"
         >
           <span class="mm-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 3v4"/><path d="M16 3v4"/>
-            </svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-calendar"></use></svg>
           </span>
           <span>历史</span>
-          <svg class="mm-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
+          <svg class="mm-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#ic-chevron-down"></use></svg>
         </button>
         <div class="mm-sub" x-show="mmSection === 'history'">
           <div class="mm-empty" x-show="gameDatesLoading && !gameDates.length">加载中…</div>
@@ -304,10 +281,7 @@
       <!-- Worldline -->
       <button type="button" class="mm-item" x-show="messages.length" @click="closeMobileMenu(); openWorldline()">
         <span class="mm-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/>
-            <path d="M8 6h3a3 3 0 0 1 3 3v7"/><path d="M16 6h-3a3 3 0 0 0-3 3v1"/>
-          </svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-worldline"></use></svg>
         </span>
         <span>世界线</span>
       </button>
@@ -315,9 +289,7 @@
       <!-- Reset -->
       <button type="button" class="mm-item" x-show="messages.length" :disabled="busy || consolidating" @click="closeMobileMenu(); showResetConfirmation()">
         <span class="mm-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 4.5v5h5"/>
-          </svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-reset"></use></svg>
         </span>
         <span>重开</span>
       </button>
@@ -325,9 +297,7 @@
       <!-- Save -->
       <button type="button" class="mm-item" x-show="messages.length" :disabled="busy || isSaving || consolidating" @click="closeMobileMenu(); createSave()">
         <span class="mm-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 5v14"/><path d="M5 12h14"/>
-          </svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-plus"></use></svg>
         </span>
         <span x-text="isSaving ? '存档中…' : '存档'"></span>
       </button>
@@ -770,16 +740,10 @@
 
           <div class="worldline-actions">
             <button type="button" class="icon-btn" title="刷新世界线" :disabled="saveLoading" @click="refreshSaves()">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 11a8 8 0 1 0-2.34 5.66"/>
-                <path d="M20 4v7h-7"/>
-              </svg>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-refresh"></use></svg>
             </button>
             <button type="button" class="icon-btn" title="关闭世界线" @click="closeWorldline()">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 6 18 18"/>
-                <path d="m18 6-12 12"/>
-              </svg>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-close"></use></svg>
             </button>
           </div>
         </div>
@@ -829,9 +793,7 @@
                     <div class="worldline-game-actions">
                       <div class="worldline-game-count" x-text="`${game.nodes.length} nodes`"></div>
                       <button type="button" class="save-delete-btn" :title="consolidating ? '记忆整理中，暂不可删除' : '删除整个 Game'" :disabled="busy || consolidating" @click.stop="promptDeleteGame(game)">
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                          <path d="M6 2h4M2 4h12M5 4l.5 9h5l.5-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><use href="#ic-trash"></use></svg>
                       </button>
                     </div>
                   </header>
@@ -860,9 +822,7 @@
                               :disabled="busy || consolidating"
                               @click.stop="promptDeleteLeafSave(node)"
                             >
-                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                                <path d="M6 2h4M2 4h12M5 4l.5 9h5l.5-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                              </svg>
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><use href="#ic-trash"></use></svg>
                             </button>
                           </div>
                           <div class="worldline-node-focus" x-text="node.focus || '未提供额外焦点摘要。'"></div>
@@ -893,10 +853,7 @@
           </button>
           <button type="button" class="worldline-zoom-value" title="重置缩放" aria-label="重置世界线缩放" x-text="worldlineZoomLabel()" @click="resetWorldlineZoom()"></button>
           <button type="button" class="worldline-zoom-btn" title="放大" aria-label="放大世界线" @click="zoomWorldlineBy(1.16)">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-              <path d="M12 5v14"/>
-              <path d="M5 12h14"/>
-            </svg>
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#ic-plus"></use></svg>
           </button>
         </div>
       </section>
@@ -964,17 +921,11 @@
           </div>
 
           <button type="button" class="icon-btn" title="刷新图谱" :disabled="memoryGraphLoading" @click="loadMemoryGraph(memoryGraphAgent)">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20 11a8 8 0 1 0-2.34 5.66"/>
-              <path d="M20 4v7h-7"/>
-            </svg>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-refresh"></use></svg>
           </button>
 
           <button type="button" class="icon-btn" title="关闭图谱" @click="closeMemoryGraph()">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 6 18 18"/>
-              <path d="m18 6-12 12"/>
-            </svg>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-close"></use></svg>
           </button>
         </div>
 
@@ -1008,9 +959,7 @@
           <svg x-show="!memoryGraphDetailCollapsed" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m9 18 6-6-6-6"/>
           </svg>
-          <svg x-show="memoryGraphDetailCollapsed" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="m15 18-6-6 6-6"/>
-          </svg>
+          <svg x-show="memoryGraphDetailCollapsed" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#ic-chevron-left"></use></svg>
         </button>
 
         <aside class="memory-graph-detail" aria-label="记忆图谱详情" x-show="!memoryGraphDetailCollapsed">
@@ -1018,7 +967,7 @@
             <div class="memory-graph-detail-inner">
               <template x-if="memoryGraphDetailPrev">
                 <button type="button" class="memory-graph-back-btn" @click="goBackMemoryGraphDetail()">
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#ic-chevron-left"></use></svg>
                   <span x-text="memoryGraphDetailPrev.selected.title || 'Understanding'"></span>
                 </button>
               </template>
