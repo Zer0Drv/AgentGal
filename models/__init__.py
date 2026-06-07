@@ -4,6 +4,7 @@
 或任何外层（storage / agents / memory）。
 """
 
+from models.character import Character
 from models.memory import (
     EpisodeMemory,
     Understanding,
@@ -11,6 +12,7 @@ from models.memory import (
 )
 
 __all__ = [
+    "Character",
     "EpisodeMemory",
     "Understanding",
     "UnderstandingHistoryEntry",

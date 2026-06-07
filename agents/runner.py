@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from log_config.routing import routing_logger
-from shared.config import AGENT_RUN_MAX_ATTEMPTS
+from shared.config import AGENT_RUN_MAX_ATTEMPTS, AGENT_RUN_TIMEOUT_SECONDS
 
 T = TypeVar("T")
 
@@ -168,4 +168,29 @@ async def run_structured_agent(
         label=label,
         on_result=_extract_structured,
         max_attempts=max_attempts,
+    )
+
+
+async def run_app_agent(
+    agent,
+    user_input: str,
+    output_type: type[T],
+    *,
+    workflow_name: str,
+    usage_agent: str,
+    model_name: str,
+    output_validator: Callable[[T], None] | None = None,
+) -> T:
+    """主流程结构化 Agent 调用的统一封装（套用应用层默认：超时 / usage_phase / trace）。"""
+    return await run_structured_agent(
+        agent=agent,
+        user_input=user_input,
+        output_type=output_type,
+        timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
+        workflow_name=workflow_name,
+        trace_metadata={"agent_name": usage_agent},
+        usage_agent=usage_agent,
+        usage_phase="agent_run",
+        model_name=model_name,
+        output_validator=output_validator,
     )

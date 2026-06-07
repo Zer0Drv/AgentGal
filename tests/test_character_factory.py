@@ -12,15 +12,15 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
-    import engine.character as character_module
     import engine.character_factory as character_factory_module
     import engine.conversation_flow as conversation_flow_module
+    import engine.narrator_service as narrator_service_module
     from agents.llm_schema import (
         LLMNarratorOutput,
         LLMNewCharacterProfile,
         LLMNewCharacterRequest,
     )
-    from engine.character import Narrator
+    from engine.narrator_service import NarratorService
     from engine.character_factory import CreatedCharacterInfo
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip character_factory tests: missing dependency ({exc})", allow_module_level=True)
@@ -56,7 +56,7 @@ def test_filter_new_characters_keeps_valid_specs():
             background_hint="玩家的表姐，大两岁，在附近工作，偶尔周末来串门。",
         ),
     ]
-    kept = Narrator._filter_new_characters(specs, ["mitsuki"])
+    kept = NarratorService._filter_new_characters(specs, ["mitsuki"])
     assert [s.name_hint for s in kept] == ["桥本志津", "林清荷"]
 
 
@@ -65,7 +65,7 @@ def test_filter_new_characters_dedupes_specs():
         LLMNewCharacterRequest(name_hint="桥本志津", background_hint="x"),
         LLMNewCharacterRequest(name_hint="桥本志津", background_hint="x"),
     ]
-    kept = Narrator._filter_new_characters(specs, ["mitsuki"])
+    kept = NarratorService._filter_new_characters(specs, ["mitsuki"])
     assert len(kept) == 1
 
 
@@ -76,7 +76,7 @@ def test_filter_new_characters_rejects_empty_description():
             background_hint="   ",
         ),
     ]
-    kept = Narrator._filter_new_characters(specs, ["mitsuki"])
+    kept = NarratorService._filter_new_characters(specs, ["mitsuki"])
     assert kept == []
 
 
@@ -91,7 +91,7 @@ def test_filter_new_characters_dedupes_names():
             background_hint="美月的双胞胎哥哥，在外地读大学，偶尔回家。",
         ),
     ]
-    kept = Narrator._filter_new_characters(specs, ["mitsuki"])
+    kept = NarratorService._filter_new_characters(specs, ["mitsuki"])
     assert len(kept) == 1
 
 
@@ -102,14 +102,16 @@ def test_filter_new_characters_dedupes_names():
 
 @pytest.mark.asyncio
 async def test_narrator_route_passes_new_characters(monkeypatch):
+    monkeypatch.setattr(NarratorService, "_sync_player_relations", lambda _self: None)
+    monkeypatch.setattr(NarratorService, "_write_scene", lambda _self, _output: None)
     monkeypatch.setattr(
-        character_module,
+        narrator_service_module,
         "get_agent_names",
         lambda include_narrator=False: ["mitsuki"],
     )
-    monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
-    monkeypatch.setattr(character_module, "read_agent_file", lambda *_args: "# soul")
-    monkeypatch.setattr(character_module, "get_display_name", lambda *_args: "美月")
+    monkeypatch.setattr(narrator_service_module, "load_conversation_history", lambda **_kw: [])
+    monkeypatch.setattr(narrator_service_module, "read_agent_file", lambda *_args: "# soul")
+    monkeypatch.setattr(narrator_service_module, "get_display_name", lambda *_args: "美月")
 
     async def fake_run_narrator(self, *_args, **_kwargs):
         return _narrator_output(
@@ -122,9 +124,9 @@ async def test_narrator_route_passes_new_characters(monkeypatch):
             ],
         )
 
-    monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
+    monkeypatch.setattr(NarratorService, "_run_narrator", fake_run_narrator)
 
-    output, is_valid = await Narrator().route("来一个妈妈")
+    output, is_valid = await narrator_service_module.narrator_service.route("来一个妈妈")
 
     assert output is not None
     assert output.targets == []

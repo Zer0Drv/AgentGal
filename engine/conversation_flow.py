@@ -7,8 +7,9 @@ Narrator / Character 实体方法里，这里只负责把编排串起来。
 from agents.factory import get_choices_agent
 from agents.runner import run_structured_agent
 from agents.llm_schema import LLMChoices, LLMNarratorOutput, LLMNewCharacterRequest
-from engine.character import get_character, narrator
+from engine.conversation_service import conversation_service
 from engine.character_factory import CreatedCharacterInfo, create_character
+from storage.character_repo import character_repo
 from engine.prompt_builder import build_history_transcript
 from llm.config import get_llm_config
 from log_config.routing import routing_logger
@@ -89,7 +90,8 @@ async def run_agent_in_scene(
 
     scene_json = narrator_output.model_dump_json() if narrator_output else ""
     query = scene_json if observation_mode else user_input
-    output = await get_character(agent_name).run(query, observation_mode=observation_mode)
+    character = character_repo.load(agent_name)
+    output = await conversation_service.run_turn(character, query, observation_mode=observation_mode)
     response = clean_response(output.content)
     if is_valid_response(response, agent_name):
         await message_router.broadcast_agent_response(agent_name, targets, response)
