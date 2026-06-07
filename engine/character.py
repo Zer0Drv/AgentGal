@@ -19,18 +19,17 @@ from agents.factory import (
     get_state_updater_agent,
 )
 from agents.runner import run_structured_agent
-from agents.schema import (
-    CharacterOutput,
-    NarratorOutput,
-    NewCharacterRequest,
-    StateUpdaterOutput,
+from agents.llm_schema import (
+    LLMCharacterOutput,
+    LLMNarratorOutput,
+    LLMNewCharacterRequest,
+    LLMStateUpdate,
 )
 from engine.prompt_builder import build_user_message
 from engine.memory_query_builder import build_retrieval_queries
 from llm.embedding import embed_sync
 from llm.config import get_llm_config
 from log_config.routing import routing_logger
-from memory.parser import extract_status_field, normalize
 from memory.retrieval import search_memories, search_understandings
 from shared.config import AGENT_RUN_TIMEOUT_SECONDS, HISTORY_RAW_SCAN_TURNS, get_agent_names
 from shared.narrator_output import (
@@ -39,8 +38,10 @@ from shared.narrator_output import (
 )
 from shared.text_utils import (
     clean_response,
+    extract_status_field,
     get_display_name,
     is_valid_response,
+    normalize,
     role_to_speaker,
 )
 from storage.agent_files import (
@@ -231,8 +232,8 @@ class Character(BaseEntity):
         raw_messages: list[dict] | None = None,
         *,
         observation_mode: bool = False,
-    ) -> CharacterOutput:
-        """搜记忆 → 构建 prompt → 运行 SDK → 写回文件，返回 CharacterOutput。"""
+    ) -> LLMCharacterOutput:
+        """搜记忆 → 构建 prompt → 运行 SDK → 写回文件，返回 LLMCharacterOutput。"""
         if raw_messages is None:
             raw_messages = load_conversation_history(turns=HISTORY_RAW_SCAN_TURNS)
 
@@ -241,7 +242,7 @@ class Character(BaseEntity):
         config = get_llm_config()
         output = await self._run_structured(
             user_message=user_message,
-            output_type=CharacterOutput,
+            output_type=LLMCharacterOutput,
             config=config,
             workflow_name="agentgal_turn",
         )
@@ -288,8 +289,8 @@ class Character(BaseEntity):
         )
         return message
 
-    async def _apply_updates(self, output: CharacterOutput) -> None:
-        """把 CharacterOutput 的所有字段落盘，并一次性记录结构化日志。"""
+    async def _apply_updates(self, output: LLMCharacterOutput) -> None:
+        """把 LLMCharacterOutput 的所有字段落盘，并一次性记录结构化日志。"""
         results: list[FileUpdateResult] = []
 
         if output.memory:
@@ -336,7 +337,7 @@ class Narrator(BaseEntity):
         raw_messages: list[dict] | None = None,
         *,
         observation_mode: bool = False,
-    ) -> tuple[NarratorOutput | None, bool]:
+    ) -> tuple[LLMNarratorOutput | None, bool]:
         """运行 narrator → 返回 (清洗后的结构化输出, is_valid)。
 
         new_characters 是 narrator 本轮请求孵化的新角色 spec 列表；
@@ -382,8 +383,8 @@ class Narrator(BaseEntity):
             self._write_scene_to_status(output)
         return output, is_valid
 
-    def _write_scene_to_status(self, output: NarratorOutput) -> None:
-        """把 NarratorOutput 的场景字段同步写入 narrator/status.md。
+    def _write_scene_to_status(self, output: LLMNarratorOutput) -> None:
+        """把 LLMNarratorOutput 的场景字段同步写入 narrator/status.md。
 
         场景 / 当前时间 / 角色位置 由 narrator 独占维护，state_updater 不写这些字段。
         角色位置来自 character_locations（覆盖所有主要角色，包括不在当前场景的）；
@@ -402,7 +403,7 @@ class Narrator(BaseEntity):
 
     @staticmethod
     def _validate_route_output(
-        output: NarratorOutput,
+        output: LLMNarratorOutput,
         existing_agents: list[str],
     ) -> None:
         """校验 schema 无法表达的运行时路由约束，失败交给 runner 重试。"""
@@ -422,11 +423,11 @@ class Narrator(BaseEntity):
 
     @staticmethod
     def _filter_new_characters(
-        specs: list[NewCharacterRequest],
+        specs: list[LLMNewCharacterRequest],
         existing_agents: list[str],
-    ) -> list[NewCharacterRequest]:
+    ) -> list[LLMNewCharacterRequest]:
         """过滤 narrator 提交的 new_characters：去重、去空描述。"""
-        kept: list[NewCharacterRequest] = []
+        kept: list[LLMNewCharacterRequest] = []
         seen: set[tuple[str, str]] = set()
         for spec in specs:
             name_hint = spec.name_hint.strip()
@@ -441,7 +442,7 @@ class Narrator(BaseEntity):
                 )
                 continue
             kept.append(
-                NewCharacterRequest(
+                LLMNewCharacterRequest(
                     name_hint=name_hint,
                     background_hint=background_hint,
                     initial_location=spec.initial_location.strip(),
@@ -460,7 +461,7 @@ class Narrator(BaseEntity):
         try:
             output = await self._run_structured(
                 user_message=user_message,
-                output_type=StateUpdaterOutput,
+                output_type=LLMStateUpdate,
                 config=config,
                 workflow_name="agentgal_state_update",
                 sdk=self._state_updater_sdk,
@@ -560,8 +561,8 @@ class Narrator(BaseEntity):
             blocks.append(f"【{agent_name} / {display_name}】\n{content}")
         return "\n\n".join(blocks) if blocks else "无"
 
-    def _apply_state_updates(self, output: StateUpdaterOutput) -> None:
-        """把 StateUpdaterOutput 的字段 / 触发 / 新增事件落盘，并记录结构化日志。"""
+    def _apply_state_updates(self, output: LLMStateUpdate) -> None:
+        """把 LLMStateUpdate 的字段 / 触发 / 新增事件落盘，并记录结构化日志。"""
         results: list[FileUpdateResult] = []
         if output.narrative_focus:
             results.extend(self.set_status_fields({"叙事焦点": output.narrative_focus}))
@@ -620,9 +621,9 @@ class Narrator(BaseEntity):
         raw_messages: list[dict],
         *,
         observation_mode: bool = False,
-        output_validator: Callable[[NarratorOutput], None] | None = None,
-    ) -> NarratorOutput:
-        """构建 prompt → 运行 narrator SDK，返回 NarratorOutput。"""
+        output_validator: Callable[[LLMNarratorOutput], None] | None = None,
+    ) -> LLMNarratorOutput:
+        """构建 prompt → 运行 narrator SDK，返回 LLMNarratorOutput。"""
         user_message, _ = build_user_message(
             self.name, user_input, "", raw_messages=raw_messages, observation_mode=observation_mode
         )
@@ -630,7 +631,7 @@ class Narrator(BaseEntity):
         sdk = get_observation_narrator_agent() if observation_mode else self._sdk
         return await self._run_structured(
             user_message=user_message,
-            output_type=NarratorOutput,
+            output_type=LLMNarratorOutput,
             config=config,
             workflow_name="agentgal_turn",
             sdk=sdk,

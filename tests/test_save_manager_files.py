@@ -118,7 +118,8 @@ def test_memory_jsonl_archive_payload_merges_db_recall_state(
     character_dir: Path,
     monkeypatch,
 ):
-    from memory.parser import EpisodeMemory, parse_jsonl_line, serialize_episode
+    from models import EpisodeMemory
+    from storage.memory_store import parse_jsonl_line, serialize_episode
 
     def _character_path(agent_name: str, *parts: str) -> str:
         return str(character_dir / agent_name / Path(*parts))

@@ -2,8 +2,8 @@ import importlib
 
 import pytest
 
-from agents.schema import UnderstandingEntry
-from memory.parser import Understanding
+from agents.llm_schema import LLMUnderstandingEntry
+from models import Understanding
 
 migrate = importlib.import_module("scripts.migrate_to_understandings")
 
@@ -130,12 +130,12 @@ async def test_migrate_agent_calls_llm_and_writes(monkeypatch):
     async def fake_run_structured_agent(**kwargs):
         return migrate.MigrationOutput(
             entries=[
-                UnderstandingEntry(
+                LLMUnderstandingEntry(
                     subject="我对玩家的靠近方式",
                     keywords=["玩家", "靠近"],
                     content="我已经不再克制对玩家的关心。",
                 ),
-                UnderstandingEntry(
+                LLMUnderstandingEntry(
                     subject="玩家在压力下的行为",
                     keywords=["玩家", "压力"],
                     content="他在压力下先行动后解释。",
@@ -238,17 +238,17 @@ async def test_migrate_agent_filters_empty_content_entries(monkeypatch):
     async def fake_run_structured_agent(**kwargs):
         return migrate.MigrationOutput(
             entries=[
-                UnderstandingEntry(
+                LLMUnderstandingEntry(
                     subject="有效条目",
                     keywords=["测试"],
                     content="有实际内容。",
                 ),
-                UnderstandingEntry(
+                LLMUnderstandingEntry(
                     subject="空内容条目",
                     keywords=["空"],
                     content="",
                 ),
-                UnderstandingEntry(
+                LLMUnderstandingEntry(
                     subject="纯空格条目",
                     keywords=["空格"],
                     content="   ",

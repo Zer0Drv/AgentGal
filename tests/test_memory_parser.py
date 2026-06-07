@@ -1,10 +1,8 @@
 from pathlib import Path
 
-import memory.parser as parser_module
-from memory.parser import (
-    EpisodeMemory,
-    Understanding,
-    UnderstandingHistoryEntry,
+import storage.memory_store as memory_store_module
+from models import EpisodeMemory, Understanding, UnderstandingHistoryEntry
+from storage.memory_store import (
     append_memory_records,
     read_memory_jsonl,
     read_understandings,
@@ -17,7 +15,7 @@ def test_append_memory_records_assigns_episode_ids(tmp_path, monkeypatch):
     def _character_path(agent_name: str, *subpaths: str) -> str:
         return str(tmp_path / agent_name / Path(*subpaths))
 
-    monkeypatch.setattr(parser_module, "character_path", _character_path)
+    monkeypatch.setattr(memory_store_module, "character_path", _character_path)
 
     written = append_memory_records(
         "alice",
@@ -50,7 +48,7 @@ def test_understanding_jsonl_round_trips_and_skips_bad_lines(tmp_path, monkeypat
     def _character_path(agent_name: str, *subpaths: str) -> str:
         return str(tmp_path / agent_name / Path(*subpaths))
 
-    monkeypatch.setattr(parser_module, "character_path", _character_path)
+    monkeypatch.setattr(memory_store_module, "character_path", _character_path)
 
     understandings = {
         "u1": Understanding(
@@ -97,7 +95,7 @@ def test_write_understandings_removes_file_when_empty(tmp_path, monkeypatch):
     def _character_path(agent_name: str, *subpaths: str) -> str:
         return str(tmp_path / agent_name / Path(*subpaths))
 
-    monkeypatch.setattr(parser_module, "character_path", _character_path)
+    monkeypatch.setattr(memory_store_module, "character_path", _character_path)
 
     write_understandings(
         "alice",

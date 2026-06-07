@@ -11,7 +11,7 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
-    from agents.schema import NarratorOutput
+    from agents.llm_schema import LLMNarratorOutput
     import server as server_module
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip server tests: missing dependency ({exc})", allow_module_level=True)
@@ -34,7 +34,7 @@ def _parse_sse_chunk(chunk: str) -> dict:
     return json.loads(chunk.removeprefix("data: ").strip())
 
 
-def _narrator_output(**overrides) -> NarratorOutput:
+def _narrator_output(**overrides) -> LLMNarratorOutput:
     data = {
         "targets": ["alice"],
         "date": "4月3日 星期三",
@@ -45,7 +45,7 @@ def _narrator_output(**overrides) -> NarratorOutput:
         "new_characters": [],
     }
     data.update(overrides)
-    return NarratorOutput(**data)
+    return LLMNarratorOutput(**data)
 
 
 

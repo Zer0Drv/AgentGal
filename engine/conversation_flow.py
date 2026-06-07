@@ -6,7 +6,7 @@ Narrator / Character 实体方法里，这里只负责把编排串起来。
 
 from agents.factory import get_choices_agent
 from agents.runner import run_structured_agent
-from agents.schema import ChoicesOutput, NarratorOutput, NewCharacterRequest
+from agents.llm_schema import LLMChoices, LLMNarratorOutput, LLMNewCharacterRequest
 from engine.character import get_character, narrator
 from engine.character_factory import CreatedCharacterInfo, create_character
 from engine.prompt_builder import build_history_transcript
@@ -18,7 +18,7 @@ from storage.history import load_conversation_history
 
 
 async def generate_choices(
-    narrator_output: NarratorOutput, agent_responses: list[tuple[str, str]]
+    narrator_output: LLMNarratorOutput, agent_responses: list[tuple[str, str]]
 ) -> list[str]:
     """根据当前场景和角色回应生成玩家可选行动（2-3 个）。"""
     raw_messages = load_conversation_history(turns=HISTORY_RAW_SCAN_TURNS)
@@ -35,7 +35,7 @@ async def generate_choices(
         output = await run_structured_agent(
             agent=get_choices_agent(),
             user_input="\n\n".join(parts),
-            output_type=ChoicesOutput,
+            output_type=LLMChoices,
             timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
             workflow_name="agentgal_choices",
             trace_metadata=None,
@@ -50,7 +50,7 @@ async def generate_choices(
 
 
 async def bootstrap_new_characters(
-    specs: list[NewCharacterRequest],
+    specs: list[LLMNewCharacterRequest],
     targets: list[str],
 ) -> tuple[list[str], list[CreatedCharacterInfo]]:
     """孵化 narrator 请求的新角色，并把成功创建的角色补入最终 targets。
@@ -82,7 +82,7 @@ async def run_agent_in_scene(
     user_input: str,
     *,
     observation_mode: bool = False,
-    narrator_output: NarratorOutput | None = None,
+    narrator_output: LLMNarratorOutput | None = None,
 ) -> str | None:
     """在场景上下文中运行单个角色并广播响应。"""
     from storage.message_router import message_router

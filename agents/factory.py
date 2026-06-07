@@ -15,15 +15,15 @@ from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
-from agents.schema import (
-    CharacterOutput,
-    ChoicesOutput,
-    EpisodeClosureOutput,
-    EpisodeMemoryBlock,
-    NarratorOutput,
-    NewCharacterProfile,
-    StateUpdaterOutput,
-    UnderstandingPatchOutput,
+from agents.llm_schema import (
+    LLMCharacterOutput,
+    LLMChoices,
+    LLMEpisodeClosure,
+    LLMEpisodeMemory,
+    LLMNarratorOutput,
+    LLMNewCharacterProfile,
+    LLMStateUpdate,
+    LLMUnderstandingPatch,
 )
 from engine.prompt_builder import build_system_prompt
 from llm.config import get_llm_config
@@ -43,14 +43,14 @@ from shared.config import (
 )
 from storage.agent_files import read_agent_file
 
-ConversationAgent = Agent[None, CharacterOutput | NarratorOutput]
+ConversationAgent = Agent[None, LLMCharacterOutput | LLMNarratorOutput]
 StructuredAgent = Agent[None, object]
 
 _conversation_agents: dict[str, ConversationAgent] = {}
 _observation_narrator_agent: ConversationAgent | None = None
-_choices_agent: Agent[None, ChoicesOutput] | None = None
-_state_updater_agent: Agent[None, StateUpdaterOutput] | None = None
-_character_factory_agent: Agent[None, NewCharacterProfile] | None = None
+_choices_agent: Agent[None, LLMChoices] | None = None
+_state_updater_agent: Agent[None, LLMStateUpdate] | None = None
+_character_factory_agent: Agent[None, LLMNewCharacterProfile] | None = None
 _consolidation_agents: dict[str, StructuredAgent] = {}
 
 
@@ -154,7 +154,7 @@ def reload_conversation_agent(name: str) -> None:
 
     soul = read_agent_file(name, "soul.md")
     config = get_llm_config()
-    output_type = NarratorOutput if name == "narrator" else CharacterOutput
+    output_type = LLMNarratorOutput if name == "narrator" else LLMCharacterOutput
     _conversation_agents[name] = _build_agent(
         name=name,
         instructions=build_system_prompt(name, soul),
@@ -181,12 +181,12 @@ def get_observation_narrator_agent() -> ConversationAgent:
             name="narrator_observation",
             instructions=NARRATOR_OBSERVATION.format(soul=soul),
             config=config,
-            output_type=NarratorOutput,
+            output_type=LLMNarratorOutput,
         )
     return _observation_narrator_agent
 
 
-def get_choices_agent() -> Agent[None, ChoicesOutput]:
+def get_choices_agent() -> Agent[None, LLMChoices]:
     global _choices_agent
 
     if _choices_agent is None:
@@ -195,12 +195,12 @@ def get_choices_agent() -> Agent[None, ChoicesOutput]:
             name="choices",
             instructions=CHOICES,
             config=config,
-            output_type=ChoicesOutput,
+            output_type=LLMChoices,
         )
     return _choices_agent
 
 
-def get_state_updater_agent() -> Agent[None, StateUpdaterOutput]:
+def get_state_updater_agent() -> Agent[None, LLMStateUpdate]:
     global _state_updater_agent
 
     if _state_updater_agent is None:
@@ -209,13 +209,13 @@ def get_state_updater_agent() -> Agent[None, StateUpdaterOutput]:
             name="state_updater",
             instructions=STATE_UPDATER,
             config=config,
-            output_type=StateUpdaterOutput,
+            output_type=LLMStateUpdate,
             output_retries=STATE_UPDATER_OUTPUT_RETRIES,
         )
     return _state_updater_agent
 
 
-def get_character_factory_agent() -> Agent[None, NewCharacterProfile]:
+def get_character_factory_agent() -> Agent[None, LLMNewCharacterProfile]:
     global _character_factory_agent
 
     if _character_factory_agent is None:
@@ -224,7 +224,7 @@ def get_character_factory_agent() -> Agent[None, NewCharacterProfile]:
             name="character_factory",
             instructions=CHARACTER_FACTORY,
             config=config,
-            output_type=NewCharacterProfile,
+            output_type=LLMNewCharacterProfile,
         )
     return _character_factory_agent
 
@@ -238,21 +238,21 @@ def _ensure_consolidation_agents() -> None:
         name="episode_memory_generator",
         instructions=EPISODE_MEMORY_GENERATOR,
         config=config,
-        output_type=EpisodeMemoryBlock,
+        output_type=LLMEpisodeMemory,
         max_tokens=CONSOLIDATION_MAX_TOKENS,
     )
     _consolidation_agents["episode_closure_detector"] = _build_agent(
         name="episode_closure_detector",
         instructions=EPISODE_CLOSURE_DETECTOR,
         config=config,
-        output_type=EpisodeClosureOutput,
+        output_type=LLMEpisodeClosure,
         max_tokens=CONSOLIDATION_MAX_TOKENS,
     )
     _consolidation_agents["understanding_patch"] = _build_agent(
         name="understanding_patch",
         instructions=UNDERSTANDING_PATCH,
         config=config,
-        output_type=UnderstandingPatchOutput,
+        output_type=LLMUnderstandingPatch,
         max_tokens=CONSOLIDATION_MAX_TOKENS,
     )
 
@@ -262,13 +262,13 @@ def _get_consolidation_agent(key: str) -> StructuredAgent:
     return _consolidation_agents[key]
 
 
-def get_episode_memory_generator_agent() -> Agent[None, EpisodeMemoryBlock]:
+def get_episode_memory_generator_agent() -> Agent[None, LLMEpisodeMemory]:
     return _get_consolidation_agent("episode_memory_generator")
 
 
-def get_episode_closure_detector_agent() -> Agent[None, EpisodeClosureOutput]:
+def get_episode_closure_detector_agent() -> Agent[None, LLMEpisodeClosure]:
     return _get_consolidation_agent("episode_closure_detector")
 
 
-def get_understanding_patch_agent() -> Agent[None, UnderstandingPatchOutput]:
+def get_understanding_patch_agent() -> Agent[None, LLMUnderstandingPatch]:
     return _get_consolidation_agent("understanding_patch")

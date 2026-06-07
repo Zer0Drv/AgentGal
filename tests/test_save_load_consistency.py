@@ -36,13 +36,14 @@ try:
     import storage.vector_store
     import storage.save_manager as save_manager_module
     import memory.retrieval
-    import memory.parser as parser_module
+    import storage.memory_store as memory_store_module
     vector_store_module = importlib.import_module("storage.vector_store")
     retrieval_module = importlib.import_module("memory.retrieval")
     from storage.vector_store import vector_store
     from llm.embedding import EMBED_API_URL, EMBED_API_KEY
     from storage.save_manager import export_save_archive, import_save_archive
-    from memory.parser import EpisodeMemory, serialize_episode, parse_jsonl_line
+    from models import EpisodeMemory
+    from storage.memory_store import serialize_episode, parse_jsonl_line
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip save_load tests: missing dependency ({exc})", allow_module_level=True)
 

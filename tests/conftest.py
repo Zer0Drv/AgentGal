@@ -1,9 +1,9 @@
 """Shared test helpers available to all tests in this directory."""
 
-from agents.schema import NarratorOutput
+from agents.llm_schema import LLMNarratorOutput
 
 
-def _narrator_output(**overrides) -> NarratorOutput:
+def _narrator_output(**overrides) -> LLMNarratorOutput:
     data = {
         "targets": ["mitsuki"],
         "date": "4月3日 星期三",
@@ -15,4 +15,4 @@ def _narrator_output(**overrides) -> NarratorOutput:
         "new_characters": [],
     }
     data.update(overrides)
-    return NarratorOutput(**data)
+    return LLMNarratorOutput(**data)

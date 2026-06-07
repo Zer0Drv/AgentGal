@@ -8,7 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pydantic import ValidationError
 
-from memory.parser import EpisodeMemory, memory_jsonl_path
+from models import EpisodeMemory
+from storage.memory_store import memory_jsonl_path
 from shared.config import get_agent_names
 
 

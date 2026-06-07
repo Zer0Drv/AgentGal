@@ -14,7 +14,7 @@ try:
     import engine.character as character_module
     import storage.agent_files as agent_files_module
     from engine.character import Character, Narrator
-    from agents.schema import CharacterOutput, NarratorOutput, StateUpdaterOutput
+    from agents.llm_schema import LLMCharacterOutput, LLMNarratorOutput, LLMStateUpdate
     from conftest import _narrator_output
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip conversation flow tests: missing dependency ({exc})", allow_module_level=True)
@@ -108,7 +108,7 @@ async def test_character_run_scans_recent_raw_history_by_turns(monkeypatch):
     )
 
     async def fake_run_structured(self, **_kwargs):
-        return CharacterOutput(content="回应", memory="")
+        return LLMCharacterOutput(content="回应", memory="")
 
     async def fake_apply_updates(self, _output):
         return None
@@ -239,7 +239,7 @@ async def test_narrator_route_returns_fallback_when_empty_route_is_rejected(monk
     async def fake_run_narrator(self, *_args, **_kwargs):
         nonlocal calls
         calls += 1
-        raise ValueError("NarratorOutput must include targets or new_characters")
+        raise ValueError("LLMNarratorOutput must include targets or new_characters")
 
     monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
 
@@ -335,7 +335,7 @@ def test_state_updater_output_writes_narrator_status_and_events(monkeypatch):
         lambda agent, field, content: calls.append(("derived_status", agent, field, content)) or {},
     )
 
-    output = StateUpdaterOutput(
+    output = LLMStateUpdate(
         narrative_focus="角色B和玩家在餐厅重逢",
         triggered=["角色B来电"],
         add_event=["【楼下碰面】10月24日 09:30 角色B到达公寓楼下"],
@@ -390,7 +390,7 @@ def test_state_updater_updates_recent_world_event_and_marks_schedule(monkeypatch
     )
     monkeypatch.setattr(character_module.Narrator, "add_event", lambda *_args: None)
 
-    output = StateUpdaterOutput(
+    output = LLMStateUpdate(
         recent_world_event="（准备期）体育祭报名周，告示板上贴出了体育祭的海报",
         add_event=["【世界事件：体育祭报名】5月第1周 各班教室。班长宣布报名开始。"],
         triggered_world_events=["体育祭报名"],
@@ -466,7 +466,7 @@ async def test_apply_response_updates_logs_structured_file_updates(monkeypatch, 
 
     monkeypatch.setattr(character_module.routing_logger, "debug", fake_log_debug)
 
-    output = CharacterOutput(
+    output = LLMCharacterOutput(
         content="回应",
         memory=(
             "- **时间**：10月24日 上午\n"
@@ -573,7 +573,7 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
 
     async def fake_run_structured_agent(**kwargs):
         captured.update(kwargs)
-        return StateUpdaterOutput(narrative_focus="玩家私下联系角色B")
+        return LLMStateUpdate(narrative_focus="玩家私下联系角色B")
 
     def fake_apply_state_updates(self, output):
         applied.append((self.name, output))
@@ -589,7 +589,7 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     await Narrator().update_state()
 
     assert captured["agent"] is fake_agent
-    assert captured["output_type"] is StateUpdaterOutput
+    assert captured["output_type"] is LLMStateUpdate
     assert captured["usage_agent"] == "state_updater"
     assert history_calls == [{"limit": None, "turns": 5}]
     user_input = captured["user_input"]

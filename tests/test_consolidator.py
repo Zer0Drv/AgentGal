@@ -15,13 +15,11 @@ sys.path.insert(0, str(project_root))
 try:
     import storage.agent_files as agent_files_module
     import consolidation.flow as consolidator_module
-    import memory.parser as parser_module
+    import storage.memory_store as memory_store_module
     from consolidation.flow import MemoryConsolidationFlow
-    from agents.schema import EpisodeClosureOutput, EpisodeMemoryBlock, UnderstandingPatchOutput
-    from memory.parser import (
-        EpisodeMemory,
-        Understanding,
-        UnderstandingHistoryEntry,
+    from agents.llm_schema import LLMEpisodeClosure, LLMEpisodeMemory, LLMUnderstandingPatch
+    from models import EpisodeMemory, Understanding, UnderstandingHistoryEntry
+    from storage.memory_store import (
         append_memory_records,
         read_memory_jsonl,
         read_understandings,
@@ -187,10 +185,10 @@ async def test_detect_closures_does_not_close_latest_open_narrator_turn(monkeypa
         function_name,
         user,
     ):
-        assert output_type is EpisodeClosureOutput
+        assert output_type is LLMEpisodeClosure
         assert function_name == "episode_closure_detector"
         assert "[turn=4]" in user
-        return EpisodeClosureOutput.model_validate(
+        return LLMEpisodeClosure.model_validate(
             {
                 "chenxiao": [
                     {
@@ -313,10 +311,10 @@ async def test_merge_memory_blocks_uses_episode_memory_generator(monkeypatch):
     ):
         captured["agent"] = agent
         captured["user"] = user
-        assert output_type is EpisodeMemoryBlock
+        assert output_type is LLMEpisodeMemory
         assert agent_name == "chenxiao"
         assert function_name == "episode_memory_generator"
-        return EpisodeMemoryBlock(
+        return LLMEpisodeMemory(
             date="10月19日",
             time="10月19日 晚上",
             location="餐厅",
@@ -376,7 +374,7 @@ def test_apply_understanding_patch_updates_and_adds(monkeypatch):
             ],
         ),
     }
-    patch = UnderstandingPatchOutput.model_validate(
+    patch = LLMUnderstandingPatch.model_validate(
         {
             "add": [
                 {
@@ -430,7 +428,7 @@ def test_apply_understanding_patch_does_not_append_history_for_link_only_update(
             linked_episodes=["e0"],
         ),
     }
-    patch = UnderstandingPatchOutput.model_validate(
+    patch = LLMUnderstandingPatch.model_validate(
         {
             "update": {
                 "u1": {
@@ -502,7 +500,7 @@ def test_resolve_understanding_patch_ids_maps_prompt_ids_to_real_ids():
             linked_episodes=["e0"],
         ),
     }
-    patch = UnderstandingPatchOutput.model_validate(
+    patch = LLMUnderstandingPatch.model_validate(
         {
             "add": [],
             "update": {
@@ -601,7 +599,7 @@ async def test_patch_understandings_writes_file_and_syncs_vectors(tmp_path, monk
     sentinel_agent = object()
 
     monkeypatch.setattr(consolidator_module.uuid, "uuid4", lambda: FakeUUID())
-    monkeypatch.setattr(parser_module, "character_path", path_helper)
+    monkeypatch.setattr(memory_store_module, "character_path", path_helper)
     monkeypatch.setattr(agent_files_module, "character_path", path_helper)
     monkeypatch.setattr(
         consolidator_module,
@@ -636,14 +634,14 @@ async def test_patch_understandings_writes_file_and_syncs_vectors(tmp_path, monk
         user,
     ):
         assert agent is sentinel_agent
-        assert output_type is UnderstandingPatchOutput
+        assert output_type is LLMUnderstandingPatch
         assert agent_name == "chenxiao"
         assert function_name == "understanding_patch"
         assert '"id": "e1"' in user
         assert "[u1] subject='对玩家的认知'" in user
         assert "linked_episodes" not in user
         assert "<profile>" not in user
-        return UnderstandingPatchOutput.model_validate(
+        return LLMUnderstandingPatch.model_validate(
             {
                 "update": {
                     "u1": {
@@ -720,7 +718,7 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     path_helper = _make_character_path(tmp_path)
 
     monkeypatch.setattr(agent_files_module, "character_path", path_helper)
-    monkeypatch.setattr(parser_module, "character_path", path_helper)
+    monkeypatch.setattr(memory_store_module, "character_path", path_helper)
     monkeypatch.setattr(
         consolidator_module,
         "load_conversation_history",

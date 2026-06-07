@@ -11,16 +11,15 @@ from pathlib import Path
 
 from agents.factory import get_character_factory_agent, reload_conversation_agent
 from agents.runner import run_structured_agent
-from agents.schema import NewCharacterProfile, NewCharacterRequest
+from agents.llm_schema import LLMNewCharacterProfile, LLMNewCharacterRequest
 from llm.config import get_llm_config
 from log_config.routing import routing_logger
-from memory.parser import extract_status_field
 from shared.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
     CHARACTERS_DIR,
     get_agent_names,
 )
-from shared.text_utils import extract_identity, get_display_name
+from shared.text_utils import extract_identity, extract_status_field, get_display_name
 from storage.agent_files import (
     read_agent_file,
     update_status,
@@ -44,7 +43,7 @@ class CreatedCharacterInfo:
     identity: str
 
 
-def _build_factory_user_message(spec: NewCharacterRequest) -> str:
+def _build_factory_user_message(spec: LLMNewCharacterRequest) -> str:
     narrator_status = read_agent_file("narrator", "status.md")
     current_time = extract_status_field(narrator_status, "当前时间").strip() or "（未知）"
     scene = extract_status_field(narrator_status, "场景").strip() or "（未知）"
@@ -74,7 +73,7 @@ def _build_factory_user_message(spec: NewCharacterRequest) -> str:
     return "\n\n".join(blocks)
 
 
-def _validate_spec(spec: NewCharacterRequest) -> str | None:
+def _validate_spec(spec: LLMNewCharacterRequest) -> str | None:
     """返回错误描述；None 表示校验通过。"""
     if not spec.background_hint.strip():
         return "background_hint 为空"
@@ -131,7 +130,7 @@ def _format_voice_block(items: list[str]) -> str:
     return "\n".join(item.strip() for item in items if item and item.strip())
 
 
-def _build_soul_md(creation: NewCharacterProfile) -> str:
+def _build_soul_md(creation: LLMNewCharacterProfile) -> str:
     """按模板结构拼装 soul.md：role / identity / goal / past / habits / reactions / voice。"""
     past_block = _format_paragraph_block(creation.past)
     habits_block = _format_paragraph_block(creation.habits)
@@ -170,8 +169,8 @@ def _append_to_narrator_locations(display_name: str, location: str) -> None:
 
 
 def _write_bootstrap_files(
-    spec: NewCharacterRequest,
-    creation: NewCharacterProfile,
+    spec: LLMNewCharacterRequest,
+    creation: LLMNewCharacterProfile,
     soul_content: str,
 ) -> None:
     agent_dir = CHARACTERS_DIR / creation.character_id
@@ -185,7 +184,7 @@ def _write_bootstrap_files(
         _append_to_narrator_locations(creation.display_name, spec.initial_location.strip())
 
 
-async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | None:
+async def create_character(spec: LLMNewCharacterRequest) -> CreatedCharacterInfo | None:
     """孵化新角色；成功返回 CreatedCharacterInfo，失败返回 None 并记录日志。"""
     error = _validate_spec(spec)
     if error:
@@ -198,7 +197,7 @@ async def create_character(spec: NewCharacterRequest) -> CreatedCharacterInfo | 
         creation = await run_structured_agent(
             agent=get_character_factory_agent(),
             user_input=_build_factory_user_message(spec),
-            output_type=NewCharacterProfile,
+            output_type=LLMNewCharacterProfile,
             timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
             workflow_name="agentgal_character_factory",
             trace_metadata={

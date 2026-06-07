@@ -328,7 +328,7 @@ world_schedule 维护：
 </rules>
 
 <output_contract>
-你会通过 pydantic-ai PromptedOutput 返回 StateUpdaterOutput。按自动注入的 JSON schema 填字段即可，不要输出 markdown、代码块、解释文字或第二个 JSON 对象。
+你会通过 pydantic-ai PromptedOutput 返回 LLMStateUpdate。按自动注入的 JSON schema 填字段即可，不要输出 markdown、代码块、解释文字或第二个 JSON 对象。
 字段含义：
 - narrative_focus：字符串，本轮叙事重心；无变化时填空字符串。
 - recent_world_event：字符串，当前世界事件氛围；填空字符串表示维持旧值。场景 / 当前时间 / 角色位置 由 narrator 自动写入，不需要在此输出。

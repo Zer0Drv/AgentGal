@@ -27,9 +27,10 @@ from pydantic import BaseModel, Field
 
 from agents.factory import _build_agent
 from agents.runner import run_structured_agent
-from agents.schema import UnderstandingEntry
+from agents.llm_schema import LLMUnderstandingEntry
 from llm.config import get_llm_config
-from memory.parser import Understanding, read_understandings, write_understandings
+from models import Understanding
+from storage.memory_store import read_understandings, write_understandings
 from shared.config import (
     AGENT_RUN_TIMEOUT_SECONDS,
     CONSOLIDATION_MAX_TOKENS,
@@ -161,7 +162,7 @@ linked_episodes 在迁移阶段始终为空数组。
 
 
 class MigrationOutput(BaseModel):
-    entries: list[UnderstandingEntry] = Field(default_factory=list)
+    entries: list[LLMUnderstandingEntry] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

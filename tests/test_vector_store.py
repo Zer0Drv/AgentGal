@@ -35,8 +35,8 @@ try:
     from storage.vector_store import vector_store, VectorStore
     from llm.embedding import embed_sync, EMBED_API_URL, EMBED_API_KEY
     import memory.retrieval as retrieval_module
-    import memory.parser as parser_module
-    from memory.parser import EpisodeMemory
+    import storage.memory_store as memory_store_module
+    from models import EpisodeMemory
     from memory.retrieval import (
         hybrid_fusion,
         apply_recency,
@@ -197,7 +197,7 @@ def write_memory(tmp_path, agent_name: str, content: str):
     agent_dir.mkdir(parents=True, exist_ok=True)
     path = agent_dir / "memory.jsonl"
     path.write_text("", encoding="utf-8")  # 清空以保证幂等
-    from memory.parser import serialize_episode
+    from storage.memory_store import serialize_episode
     episodes = _parse_memory_markdown(content, memory_owner=agent_name)
     with path.open("w", encoding="utf-8") as f:
         for ep in episodes:
@@ -215,7 +215,7 @@ def write_status(tmp_path, agent_name: str, content: str):
 
 def _read_episodes(tmp_path, agent_name: str) -> list[EpisodeMemory]:
     """直接从 tmp_path 下的 memory.jsonl 读回 EpisodeMemory 列表。"""
-    from memory.parser import parse_jsonl_line
+    from storage.memory_store import parse_jsonl_line
     path = tmp_path / agent_name / "memory.jsonl"
     if not path.exists():
         return []
@@ -295,7 +295,7 @@ class TestVectorStoreRebuild:
 
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
-        monkeypatch.setattr(parser_module, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(memory_store_module, "character_path", make_character_path(tmp_path))
 
         write_memory(
             tmp_path,
@@ -959,12 +959,12 @@ class TestHybridSearch:
     async def test_rebuild_restores_recall_from_memory_jsonl(self, clean_store, tmp_path, monkeypatch):
         """rebuild() 应优先从 memory.jsonl 的 last_recalled_at 恢复 DB 状态。"""
         import importlib
-        from memory.parser import serialize_episode
+        from storage.memory_store import serialize_episode
 
         vs_mod = importlib.import_module("storage.vector_store")
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
-        monkeypatch.setattr(parser_module, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(memory_store_module, "character_path", make_character_path(tmp_path))
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
 
         agent_dir = tmp_path / "lilith"
@@ -1007,7 +1007,7 @@ class TestHybridSearch:
         vs_mod = importlib.import_module("storage.vector_store")
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
-        monkeypatch.setattr(parser_module, "character_path", make_character_path(tmp_path))
+        monkeypatch.setattr(memory_store_module, "character_path", make_character_path(tmp_path))
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
 
         write_memory(
