@@ -27,15 +27,21 @@ agentgal-memos/
 │   │   ├── characters/         # Runtime character data
 │   │   └── vectors.sqlite      # Vector store
 │   ├── templates/              # Story templates (school / modern)
-├── engine/                     # Dialogue runtime orchestration
-│   ├── character.py            # Character / Narrator runtime wrapper and typed output writeback
+├── models/                     # Domain layer (innermost): entities & value objects, zero I/O
+│   ├── character.py            # Character entity (name + soul, frozen dataclass; derived display_name)
+│   ├── memory.py               # EpisodeMemory / Understanding / UnderstandingHistoryEntry
+│   └── status_fields.py        # status.md known field-name constants (replaces a structured CharacterStatus)
+├── engine/                     # Dialogue runtime orchestration (Service layer)
+│   ├── conversation_service.py # Single character turn: retrieve memory → prompt → SDK → writeback via CharacterRepository
+│   ├── narrator_service.py     # Narrator routing + state_updater orchestration (unpacks LLM DTOs → NarratorRepository)
 │   ├── character_factory.py    # New character incubation
 │   ├── conversation_flow.py    # Single-round dialogue orchestration and UI adapter functions
+│   ├── memory_query_builder.py # Character retrieval query construction (RetrievalQueries)
 │   └── prompt_builder.py       # Dialogue prompt / history window construction
 ├── agents/                     # SDK infrastructure (technical support layer)
 │   ├── factory.py              # Agent creation, registry, and SDK model configuration
-│   ├── runner.py               # SDK Runner invocation, Logfire trace, and typed parse
-│   └── schema.py               # Pydantic structured output types
+│   ├── runner.py               # SDK Runner invocation (run_structured_agent / run_app_agent), Logfire trace, typed parse
+│   └── llm_schema.py           # LLM structured output contracts (all LLM* prefixed)
 ├── consolidation/              # Background memory consolidation (independent process)
 │   ├── flow.py                 # Consolidation orchestration: EpisodeMemoryGenerator / understanding patch
 │   └── inputs.py               # Consolidation prompt assembly (memory_owner / raw_dialogue)
@@ -43,16 +49,21 @@ agentgal-memos/
 │   ├── config.py               # LLM URL configuration parsing (returns api_url/api_key/model_id/temperature)
 │   ├── embedding.py            # Embeddings client (embed_async / embed_sync)
 │   └── rerank.py               # Rerank API client
-├── log_config/                 # Logfire and business logger configuration
-├── memory/                     # Memory rules and flows
+├── log_config/                 # Logfire and business logger configuration (routing_logger / log_file_updates)
+├── memory/                     # Memory retrieval strategy
 │   ├── indexer.py              # Vector index rebuild entry point (reads from memory.jsonl, writes to storage)
-│   ├── parser.py               # memory.jsonl structured record read/write, EpisodeMemory definition, date utilities
 │   └── retrieval.py            # Full retrieval pipeline (fusion, rerank, recency, recall state update)
 ├── shared/                     # Pure configuration and side-effect-free utility functions
 │   ├── config.py               # Paths, runtime parameters, character_path, get_agent_names
-│   └── text_utils.py           # Text cleanup, get_display_name
-├── storage/                    # Persistence infrastructure (files / JSONL / sqlite-vec / saves)
-│   ├── agent_files.py          # Character directory file operations (read/write soul/memory/status/sidecar)
+│   ├── date_utils.py           # Game date parsing (parse_cn_date / canonical_cn_date / game_day_*)
+│   └── text_utils.py           # Text cleanup, get_display_name, normalize, extract_status_field
+├── storage/                    # Persistence infrastructure (files / JSONL / sqlite-vec / saves) + Repository
+│   ├── agent_files.py          # Basic per-agent file IO + JSON sidecar + backup
+│   ├── status_file.py          # status.md section engine + field whitelist + event queue + status writeback
+│   ├── runtime_state.py        # Global narrator turn counter + player name
+│   ├── memory_store.py         # memory.jsonl / understanding.jsonl / memory_draft.jsonl JSONL IO
+│   ├── character_repo.py       # CharacterRepository: soul cache + load→entity + writeback policy
+│   ├── narrator_repo.py        # NarratorRepository: soul / status / world_schedule read-write
 │   ├── history.py              # Narrator raw JSONL dialogue history read
 │   ├── message_router.py       # Dialogue write / visibility filtering
 │   ├── save_manager.py         # Save / load / reset / opening load
@@ -74,13 +85,14 @@ agentgal-memos/
 ### Layered Dependency Direction
 
 ```
-shared/          ← no internal dependencies
-storage/         ← shared/
+models/          ← shared/ (pure date_utils / text_utils only; never shared.config)  # innermost domain layer
+shared/          ← no internal dependencies (config = infrastructure leaf)
+storage/         ← models/ + shared/                  # includes Repository; must NOT import agents/
 llm/             ← shared/
-agents/          ← shared/                            # SDK base layer
-memory/          ← shared/ + storage/ + llm/
-consolidation/   ← shared/ + storage/ + agents/ + memory/ + llm/
-engine/          ← shared/ + storage/ + agents/ + memory/ + consolidation/
+agents/          ← models/ + shared/                  # SDK base layer; LLM* contracts
+memory/          ← models/ + shared/ + storage/ + llm/
+consolidation/   ← models/ + shared/ + storage/ + agents/ + memory/ + llm/
+engine/          ← models/ + shared/ + storage/ + agents/ + memory/ + consolidation/   # Service layer
 server.py        ← all
 ```
 
@@ -115,7 +127,7 @@ server.py        ← all
 The `narrator` decides who participates in the current round.
 
 ```text
-User Input → narrator → targets: ["existing character name", ...] (NarratorOutput.targets; may be empty if only introducing new characters this round)
+User Input → narrator → targets: ["existing character name", ...] (LLMNarratorOutput.targets; may be empty if only introducing new characters this round)
 ```
 
 ### Narrator Responsibilities
@@ -125,7 +137,7 @@ User Input → narrator → targets: ["existing character name", ...] (NarratorO
 - Every round must ensure at least one major character can perceive and respond to the player
 - Describe time, location, present characters, environment, pure NPC behavior, and current hooks
 - Do not add future events; future events are maintained by `state_updater` from character "Intentions"
-- When the plot requires introducing a new character with relationship anchors, list `NewCharacterRequest` anchors via `NarratorOutput.new_characters` (`name_hint` is just an optional name hint); `engine/character_factory.py` generates `character_id` and incubates the directory; the orchestration layer automatically adds successfully incubated new characters to this round's response list. Pure passersby are not generated, described directly in `present_characters` / `scene_description`
+- When the plot requires introducing a new character with relationship anchors, list `LLMNewCharacterRequest` anchors via `LLMNarratorOutput.new_characters` (`name_hint` is just an optional name hint); `engine/character_factory.py` generates `character_id` and incubates the directory; the orchestration layer automatically adds successfully incubated new characters to this round's response list. Pure passersby are not generated, described directly in `present_characters` / `scene_description`
 - **Never speak for characters or decide their actions**
 
 ## Single-Round Dialogue Flow
@@ -133,7 +145,7 @@ User Input → narrator → targets: ["existing character name", ...] (NarratorO
 ```text
 User Message
   ↓
-Invoke narrator, get NarratorOutput (targets + date + time + location + present_characters + scene_description + new_characters)
+Invoke narrator, get LLMNarratorOutput (targets + date + time + location + present_characters + scene_description + new_characters)
   ↓
 Incubate new_characters: `character_factory` generates `character_id`, writes soul/status/memory; successfully incubated new characters enter this round's final response list
   ↓
@@ -141,7 +153,7 @@ Write structured narrator output to single raw history (with visible_to)
   ↓
 Sequentially invoke each target Agent (each agent response is written to history before the next can see it)
   ↓
-After each Agent response: write back from CharacterOutput typed fields, broadcast to history
+After each Agent response: write back from LLMCharacterOutput typed fields, broadcast to history
   ↓
 Launch three post-response lines together:
   1. choice generation → cancellable auxiliary task; if it finishes before the next player input, display 2-3 optional actions and persist them to `last_choices.json`
@@ -152,7 +164,7 @@ Emit `response_done` so the UI can re-enable free input while those lines contin
   ↓
 state_updater inputs in order: `characters_status` (深层目标/身份/心境/在意的事/打算 per character; 深层目标 read from each character's soul.md `<goal>`), `world_schedule`, latest_scene_json, current_narrator_status, recent_history
   ↓
-narrator.route() writes 场景 / 当前时间 / 角色位置 synchronously to narrator/status.md before post-response tasks start; state_updater does not write these fields.
+narrator_service.route() writes 场景 / 当前时间 / 角色位置 synchronously to narrator/status.md before post-response tasks start; state_updater does not write these fields.
   ↓
 state_updater maintains "Recent World Event" as a derived narrator status field; when a new world-schedule event matches the current date, it also derives a concrete public scene (add_event) that pulls the player into the event via a main character. It can also derive an "identity-tension" add_event from a character's `<goal>` vs. 身份/秘密 (external pressure about to surface), so the queue carries conflict beats rather than only romance; mirroring a character's "打算"/"在意的事" into add_event only fires when the pending-event queue lacks a valid forward hook (per-round cap: ≤2 new, with ≤1 world-event and ≤1 identity-tension).
   ↓
@@ -165,16 +177,16 @@ Observation mode uses the same SSE chat endpoint with `mode="observe"`: the narr
 
 All structured agents use pydantic-ai's `PromptedOutput` structured output, no longer using XML `<update_notes>`:
 
-- `CharacterOutput`: `content`, `memory`, `status`, `triggered`, `add_event`
-- `NarratorOutput`: `targets`, `date`, `time`, `location`, `present_characters`, `scene_description`, `new_characters` (routing, structured scene state, and dynamic character requests)
-- `NewCharacterRequest` / `NewCharacterProfile`: New character incubation anchor (optional `name_hint`, no `character_id`) and character_factory's complete output (includes `character_id`, final `display_name`, `initial_status`)
-- `EpisodeMemoryBlock`: Single long-term memory event output by `EpisodeMemoryGenerator` (`date / time / location / participants / keywords / importance / content / title`), completed with a stable `id` by the write path and injected with `memory_owner` and `raw_dialogue` (original dialogue trace, metadata only, not vector-indexed, not in recall text), then appended to character `memory.jsonl`
-- `EpisodeClosureDetector` output type: `dict[str, list[EpisodeClosureBoundary]]` (key is the character's `agent_name` appearing in recent_history; value is all theme boundaries detected for that character in history, sorted by `end_turn` ascending, empty array means no boundaries. Each boundary contains `end_turn / old_theme / new_theme / reason`. Consumer only adopts local candidate characters, and takes the maximum `end_turn` from each array as this round's mergeable closure point)
-- `UnderstandingPatchOutput`: add/update patch for stable `Understanding` records; entries contain `subject / keywords / content` (LLM does not output `linked_episodes`; the flow layer injects the current episode id automatically), while ids and owners are maintained by the flow layer
-- `StateUpdaterOutput`: `status`, `triggered`, `add_event` (post-round background narrator state maintenance)
-- `ChoicesOutput`: `choices`
+- `LLMCharacterOutput`: `content`, `memory`, `status`, `triggered`, `add_event`
+- `LLMNarratorOutput`: `targets`, `date`, `time`, `location`, `present_characters`, `scene_description`, `new_characters` (routing, structured scene state, and dynamic character requests)
+- `LLMNewCharacterRequest` / `LLMNewCharacterProfile`: New character incubation anchor (optional `name_hint`, no `character_id`) and character_factory's complete output (includes `character_id`, final `display_name`, `initial_status`)
+- `LLMEpisodeMemory`: Single long-term memory event output by `EpisodeMemoryGenerator` (`date / time / location / participants / keywords / importance / content / title`), completed with a stable `id` by the write path and injected with `memory_owner` and `raw_dialogue` (original dialogue trace, metadata only, not vector-indexed, not in recall text), then appended to character `memory.jsonl`
+- `EpisodeClosureDetector` output type: `dict[str, list[LLMEpisodeClosureBoundary]]` (key is the character's `agent_name` appearing in recent_history; value is all theme boundaries detected for that character in history, sorted by `end_turn` ascending, empty array means no boundaries. Each boundary contains `end_turn / old_theme / new_theme / reason`. Consumer only adopts local candidate characters, and takes the maximum `end_turn` from each array as this round's mergeable closure point)
+- `LLMUnderstandingPatch`: add/update patch for stable `Understanding` records; entries contain `subject / keywords / content` (LLM does not output `linked_episodes`; the flow layer injects the current episode id automatically), while ids and owners are maintained by the flow layer
+- `LLMStateUpdate`: `status`, `triggered`, `add_event` (post-round background narrator state maintenance)
+- `LLMChoices`: `choices`
 
-`engine/character.py`'s `Character` / `Narrator` both inherit from `BaseEntity`, encapsulating soul / status read/write and SDK invocation; writes go through entity methods (`set_status_fields` / `append_memory` / `add_event` / `mark_triggered`), no longer allowing external direct calls to underlying `update_xxx`. `Narrator.route()` handles routing and scene description, `Narrator.update_state()` invokes `state_updater` at round end.
+The runtime is split three ways (Clean Architecture): `models/Character` is a thin frozen-dataclass entity (`name` + read-only `soul`, derived `display_name`); `storage/character_repo.py` (`CharacterRepository`) and `storage/narrator_repo.py` (`NarratorRepository`) own all file I/O — soul caching, status read, and the writeback policy (`apply_status_fields` / `append_memory` / `add_event` / `mark_triggered`; narrator's `write_scene` / `set_narrative_focus` / `set_recent_world_event` / `sync_player_relations` / world_schedule read-write); `engine/conversation_service.py` (`ConversationService.run_turn`) and `engine/narrator_service.py` (`NarratorService.route` / `update_state`) hold the orchestration. LLM DTOs are unpacked into primitives inside the Services before calling the repos, so `storage/` never imports `agents/`. There is no global entity registry; Services obtain entities via `CharacterRepository.load(name)`, and `reset_entities()` (in `server.py`) invalidates both repos' soul caches on load / reset.
 
 ### Writeback Rules
 
