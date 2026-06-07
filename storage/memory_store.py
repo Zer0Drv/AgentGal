@@ -3,6 +3,7 @@
 机制层：负责领域实体（models）与磁盘 JSONL 之间的读写，不含检索 / 整理策略。
 """
 
+import json
 import uuid
 from pathlib import Path
 from typing import Iterable
@@ -121,3 +122,62 @@ def write_understandings(
         for u in understandings.values():
             record = u.model_copy(update={"memory_owner": agent_name})
             f.write(record.model_dump_json() + "\n")
+
+
+# ===== memory_draft.jsonl 读写（带 turn 标记的归并缓冲） =====
+
+
+def _memory_draft_path(agent_name: str) -> Path:
+    return Path(character_path(agent_name, "memory_draft.jsonl"))
+
+
+def read_memory_draft(agent_name: str) -> list[dict]:
+    """返回 [{turn: int, text: str}, ...]，按写入顺序；非法行跳过。"""
+    path = _memory_draft_path(agent_name)
+    if not path.exists():
+        return []
+    records: list[dict] = []
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            s = line.strip()
+            if not s:
+                continue
+            try:
+                record = json.loads(s)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict) and isinstance(record.get("text"), str):
+                records.append(record)
+    return records
+
+
+def append_memory_draft(agent_name: str, turn: int, text: str) -> None:
+    """追加一条 draft 记录到 memory_draft.jsonl。"""
+    path = _memory_draft_path(agent_name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"turn": int(turn), "text": text}
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def split_memory_draft_by_turn(
+    agent_name: str,
+    until_turn: int,
+) -> tuple[list[dict], list[dict]]:
+    """按 turn 切片，返回 (<=until_turn 的条目, 剩余条目)，不修改文件。"""
+    records = read_memory_draft(agent_name)
+    taken = [r for r in records if int(r.get("turn", 0)) <= until_turn]
+    remaining = [r for r in records if int(r.get("turn", 0)) > until_turn]
+    return taken, remaining
+
+
+def rewrite_memory_draft(agent_name: str, records: list[dict]) -> None:
+    """用 records 覆盖写 memory_draft.jsonl；records 为空则删除文件。"""
+    path = _memory_draft_path(agent_name)
+    if not records:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for record in records:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")

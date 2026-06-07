@@ -12,7 +12,7 @@ os.chdir(project_root)
 
 try:
     import engine.character as character_module
-    import storage.agent_files as agent_files_module
+    import storage.status_file as status_file_module
     from engine.character import Character, Narrator
     from agents.llm_schema import LLMCharacterOutput, LLMNarratorOutput, LLMStateUpdate
     from conftest import _narrator_output
@@ -130,9 +130,9 @@ def test_update_status_allow_new_field_appends_missing_section(tmp_path, monkeyp
     def fake_character_path(agent_name, *subpaths):
         return str(tmp_path / agent_name / Path(*subpaths))
 
-    monkeypatch.setattr(agent_files_module, "character_path", fake_character_path)
+    monkeypatch.setattr(status_file_module, "character_path", fake_character_path)
 
-    result = agent_files_module.update_status_allow_new_field(
+    result = status_file_module.update_status_allow_new_field(
         "narrator",
         "和玩家的关系",
         "- 美月：同班同学",

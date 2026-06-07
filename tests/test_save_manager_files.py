@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from storage import agent_files as agent_files_module
+from storage import runtime_state as runtime_state_module
 from storage import save_manager
-from storage.agent_files import PLAYER_NAME_FILENAME
+from storage.runtime_state import PLAYER_NAME_FILENAME
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def test_restore_player_name_from_raw_history(tmp_path: Path, monkeypatch):
     )
 
     monkeypatch.setattr(shared_config, "CHARACTERS_DIR", tmp_path)
-    monkeypatch.setattr(agent_files_module, "CHARACTERS_DIR", tmp_path)
+    monkeypatch.setattr(runtime_state_module, "CHARACTERS_DIR", tmp_path)
 
     save_manager._restore_player_name_from_raw_history()
 
@@ -172,7 +172,7 @@ async def test_export_new_save_uses_fresh_slot_filename(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(save_manager, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(save_manager, "CHARACTERS_DIR", characters_dir)
-    monkeypatch.setattr(agent_files_module, "CHARACTERS_DIR", characters_dir)
+    monkeypatch.setattr(runtime_state_module, "CHARACTERS_DIR", characters_dir)
     monkeypatch.setattr(save_manager, "get_agent_names", lambda: ["narrator"])
     monkeypatch.setattr(
         save_manager,

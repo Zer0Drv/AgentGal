@@ -26,19 +26,17 @@ from consolidation.inputs import (
     build_understanding_patch_payload,
     render_raw_history,
 )
-from storage.agent_files import (
-    backup_file,
-    read_memory_draft,
-    rewrite_memory_draft,
-    split_memory_draft_by_turn,
-)
+from storage.agent_files import backup_file
 from storage.history import load_conversation_history
 from models import EpisodeMemory, Understanding, UnderstandingHistoryEntry
 from shared.date_utils import canonical_cn_date
 from storage.memory_store import (
     append_memory_records,
     memory_jsonl_path,
+    read_memory_draft,
     read_understandings,
+    rewrite_memory_draft,
+    split_memory_draft_by_turn,
     write_understandings,
 )
 from storage.vector_store import vector_store

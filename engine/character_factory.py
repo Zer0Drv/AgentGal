@@ -20,10 +20,8 @@ from shared.config import (
     get_agent_names,
 )
 from shared.text_utils import extract_identity, extract_status_field, get_display_name
-from storage.agent_files import (
-    read_agent_file,
-    update_status,
-)
+from storage.agent_files import read_agent_file
+from storage.status_file import update_status
 
 
 _RESERVED_NAMES = {"player", "narrator", ""}

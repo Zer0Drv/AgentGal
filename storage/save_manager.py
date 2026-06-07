@@ -16,11 +16,11 @@ from pathlib import Path
 
 from shared.config import CHARACTERS_DIR, PROJECT_ROOT, character_path, get_agent_names
 from log_config.routing import routing_logger
-from storage.agent_files import (
+from storage.agent_files import read_agent_file
+from storage.runtime_state import (
     PLAYER_NAME_FILENAME,
     extract_player_name,
     increment_turn_counter,
-    read_agent_file,
     read_player_name,
     read_turn_counter,
     write_player_name,
