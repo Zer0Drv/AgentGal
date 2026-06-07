@@ -244,11 +244,11 @@ After each participation round of character responses, `generate_choices()` is l
 ## Long-Term Memory Retrieval
 
 - Vector store indexes long-term memory events from `memory.jsonl` and stable understandings from `understanding.jsonl` in separate tables; owner scope is fixed to current character
-- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); `engine/memory_query_builder.py` builds retrieval queries from the character's own `在意的事` status field and the current location extracted from the latest visible narrator message
+- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); `engine/memory_query_builder.py` builds retrieval queries from the character's own `在意的事` status field (used only by the lexical/BM25 queries) and the current location (used only by the episode semantic query), extracted from the latest visible narrator message
 - Retrieval query construction (`engine/memory_query_builder.py` → `RetrievalQueries`): read character's `在意的事` from their own `status.md`; extract `location` from the most recent narrator message visible to that character; build four queries, each falls back to current player input if empty:
-  - `episode` (semantic, limit 1800 chars): `在意的事` + location + user_input (location anchors episode scene searches; EpisodeMemory embedding index includes location)
+  - `episode` (semantic, limit 1800 chars): location + user_input (`在意的事` is kept out of the embedding query to avoid query drift; location anchors episode scene searches and the EpisodeMemory embedding index includes location)
   - `episode_bm25` (lexical, limit 700 chars): `在意的事` + user_input (location is not a useful BM25 signal)
-  - `understanding` (semantic, limit 1200 chars): `在意的事` + user_input (understandings are not place-bound; location adds noise)
+  - `understanding` (semantic, limit 1200 chars): user_input only (understandings are not place-bound, and `在意的事` is kept out to avoid query drift)
   - `understanding_bm25` (lexical, limit 700 chars): `在意的事` + user_input
 - `memory/retrieval.py` handles the full retrieval pipeline: semantic query embedding → vector candidates + optional BM25 lexical candidates → hybrid fusion → (optional) rerank → recency sort → recall state update
 - `storage/vector_store.py` is storage layer only: provides raw candidates for EpisodeMemory and Understanding tables, pipeline logic is not here

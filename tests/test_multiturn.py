@@ -204,24 +204,28 @@ class TestBuildMemoryQueryBuilder:
             },
         ]
 
-    def test_episode_query_includes_concern_location_and_input(self, monkeypatch):
+    def test_episode_query_includes_location_and_input_not_concern(self, monkeypatch):
         monkeypatch.setattr(
             query_builder_module, "read_agent_file", lambda _agent, _file: "## 在意的事\n玩家是否真的在乎她的感受"
         )
         queries = build_retrieval_queries("mitsuki", "我不想再被拒绝", self._raw_messages())
-        assert "玩家是否真的在乎她的感受" in queries.episode
+        # episode 语义查询 = location + user_input；在意的事 只进 BM25，避免向量 query 漂移
         assert "一之濑美月家客厅" in queries.episode
         assert "我不想再被拒绝" in queries.episode
+        assert "玩家是否真的在乎她的感受" not in queries.episode
 
-    def test_bm25_and_understanding_contain_concern_and_input_not_location(self, monkeypatch):
+    def test_bm25_queries_contain_concern_and_input_not_location(self, monkeypatch):
         monkeypatch.setattr(
             query_builder_module, "read_agent_file", lambda _agent, _file: "## 在意的事\n玩家是否真的在乎她的感受"
         )
         queries = build_retrieval_queries("mitsuki", "我不想再被拒绝", self._raw_messages())
-        for q in [queries.episode_bm25, queries.understanding, queries.understanding_bm25]:
+        # 词法查询（episode_bm25 / understanding_bm25）= 在意的事 + user_input，不含 location
+        for q in [queries.episode_bm25, queries.understanding_bm25]:
             assert "玩家是否真的在乎她的感受" in q
             assert "我不想再被拒绝" in q
             assert "一之濑美月家客厅" not in q
+        # understanding 语义查询 = user_input only（理解不绑定地点，也不掺 concern）
+        assert queries.understanding == "我不想再被拒绝"
 
     def test_location_extracted_from_visible_narrator_message(self, monkeypatch):
         monkeypatch.setattr(query_builder_module, "read_agent_file", lambda _agent, _file: "")
