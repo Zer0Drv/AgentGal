@@ -1,11 +1,10 @@
-"""旁白文件 ↔ 状态仓库：soul / status / world_schedule 的读写。
+"""旁白文件 ↔ 状态仓库：status / world_schedule 的读写。
 
 narrator 无 memory / draft，字段与角色不同（场景 / 角色位置 / 待触发事件 / world_schedule）。
 方法只吃原始值，LLM DTO 的拆解留在 NarratorService（反腐层），storage 不依赖 agents。
 """
 
 from models import status_fields
-from log_config.routing import routing_logger
 from shared.config import get_agent_names
 from shared.text_utils import extract_status_field, get_display_name
 from storage.agent_files import read_agent_file, read_sidecar_json, write_sidecar_json
@@ -22,17 +21,17 @@ WORLD_SCHEDULE_FILENAME = "world_schedule.json"
 
 
 class NarratorRepository:
-    """旁白文件读写仓库；soul 缓存随存档生命周期，reset 后失效。"""
+    """旁白文件读写仓库；status / world_schedule 均为运行时动态文件，按需直读不缓存。
 
-    def __init__(self) -> None:
-        self._soul_cache: str | None = None
+    刻意不持有 soul 缓存（与 CharacterRepository 不对称）：narrator 的 soul 只有一个用途——
+    建 narrator agent 时烤进 system prompt（agents.factory.reload_conversation_agent），
+    建好的 agent 进 _conversation_agents registry 复用，每轮 get_conversation_agent 不重读
+    soul.md，load/reset 时 rebuild agent 自然刷新。soul 已被 agent registry 缓存，repo 再缓存
+    既重复又无调用方。character 之所以保留 soul 缓存，是因为它每轮还会 character_repo.load(name)
+    取一个带 soul 的领域实体（命中缓存），而 narrator 没有这条 load 路径。
+    """
 
     # ── 读 ──
-
-    def load_soul(self) -> str:
-        if self._soul_cache is None:
-            self._soul_cache = read_agent_file(_NAME, "soul.md")
-        return self._soul_cache
 
     def read_status_text(self) -> str:
         return read_agent_file(_NAME, "status.md")
@@ -42,9 +41,6 @@ class NarratorRepository:
 
     def read_world_schedule_text(self) -> str:
         return read_agent_file(_NAME, WORLD_SCHEDULE_FILENAME)
-
-    def invalidate(self) -> None:
-        self._soul_cache = None
 
     # ── 写回 ──
 
@@ -84,22 +80,12 @@ class NarratorRepository:
         )
 
     def add_event(self, desc: str) -> FileUpdateResult | None:
-        """向「待触发事件」段追加一条；desc 为 '无' 时跳过。"""
-        if desc.strip() == "无":
-            return None
-        try:
-            return add_pending_event(_NAME, desc, status_fields.PENDING_EVENTS)
-        except Exception as e:
-            routing_logger.error(f"[{_NAME}] add_event 失败: {e}")
-            return None
+        """向「待触发事件」段追加一条（哨兵「无」/写入失败时返回 None，由机制层处理）。"""
+        return add_pending_event(_NAME, desc, status_fields.PENDING_EVENTS)
 
     def mark_triggered(self, event_name: str) -> FileUpdateResult | None:
-        """从「待触发事件」段移除一条已触发事件。"""
-        try:
-            return mark_event_triggered(_NAME, event_name, status_fields.PENDING_EVENTS)
-        except Exception as e:
-            routing_logger.error(f"[{_NAME}] mark_triggered 失败: {e}")
-            return None
+        """从「待触发事件」段移除一条已触发事件（失败时返回 None，由机制层处理）。"""
+        return mark_event_triggered(_NAME, event_name, status_fields.PENDING_EVENTS)
 
     def sync_player_relations(self) -> FileUpdateResult:
         """把各角色 status.md 的「和玩家的关系」汇总写入 narrator/status.md。"""

@@ -34,10 +34,6 @@ class CharacterRepository:
             self._soul_cache[name] = soul
         return Character(name=name, soul=soul)
 
-    def read_status_text(self, name: str) -> str:
-        """实时读取 status.md 原文（运行时动态文件，不缓存）。"""
-        return read_agent_file(name, "status.md")
-
     def invalidate(self, name: str | None = None) -> None:
         """存档恢复 / reset 后清空 soul 缓存（name=None 清全部）。"""
         if name is None:
@@ -48,17 +44,10 @@ class CharacterRepository:
     # ── 写回策略 ──
 
     def apply_status_fields(self, name: str, fields: dict[str, str]) -> list[FileUpdateResult]:
-        """按字段合并更新 status.md；事件段禁止整段覆写、空值跳过。"""
+        """按字段合并更新 status.md；空值跳过。事件段的整段覆写拦截由 update_status 负责。"""
         results: list[FileUpdateResult] = []
         for field, content in fields.items():
             if not content:
-                continue
-            if field in status_fields.EVENT_SECTIONS:
-                routing_logger.warning(
-                    "[%s] apply_status_fields 拒绝写入事件段 %r；请用 add_event / mark_triggered",
-                    name,
-                    field,
-                )
                 continue
             try:
                 results.append(update_status(name, field, str(content)))
@@ -87,22 +76,12 @@ class CharacterRepository:
             return None
 
     def add_event(self, name: str, desc: str) -> FileUpdateResult | None:
-        """向「打算」事件段追加一条；desc 为 '无' 时跳过。"""
-        if desc.strip() == "无":
-            return None
-        try:
-            return add_pending_event(name, desc, status_fields.PLANS)
-        except Exception as e:
-            routing_logger.error(f"[{name}] add_event 失败: {e}")
-            return None
+        """向「打算」事件段追加一条（哨兵「无」/写入失败时返回 None，由机制层处理）。"""
+        return add_pending_event(name, desc, status_fields.PLANS)
 
     def mark_triggered(self, name: str, event_name: str) -> FileUpdateResult | None:
-        """从「打算」事件段移除一条已触发事件。"""
-        try:
-            return mark_event_triggered(name, event_name, status_fields.PLANS)
-        except Exception as e:
-            routing_logger.error(f"[{name}] mark_triggered 失败: {e}")
-            return None
+        """从「打算」事件段移除一条已触发事件（失败时返回 None，由机制层处理）。"""
+        return mark_event_triggered(name, event_name, status_fields.PLANS)
 
 
 character_repo = CharacterRepository()

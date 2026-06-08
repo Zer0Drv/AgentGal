@@ -28,7 +28,6 @@ from engine.conversation_flow import (
     run_agent_in_scene,
 )
 from storage.character_repo import character_repo
-from storage.narrator_repo import narrator_repo
 from models import EpisodeMemory, Understanding
 from storage.memory_store import read_memory_jsonl, read_understandings
 from storage.save_manager import (
@@ -59,9 +58,8 @@ from storage.message_router import message_router
 
 
 def reset_entities() -> None:
-    """存档恢复 / reset 后清空角色与旁白的 soul 缓存。"""
+    """存档恢复 / reset 后清空角色 soul 缓存（narrator soul 直读不缓存）。"""
     character_repo.invalidate()
-    narrator_repo.invalidate()
 
 
 app = FastAPI(title="AgentGal")

@@ -63,7 +63,7 @@ agentgal-memos/
 │   ├── runtime_state.py        # Global narrator turn counter + player name
 │   ├── memory_store.py         # memory.jsonl / understanding.jsonl / memory_draft.jsonl JSONL IO
 │   ├── character_repo.py       # CharacterRepository: soul cache + load→entity + writeback policy
-│   ├── narrator_repo.py        # NarratorRepository: soul / status / world_schedule read-write
+│   ├── narrator_repo.py        # NarratorRepository: status / world_schedule read-write (narrator soul is read fresh, not cached)
 │   ├── history.py              # Narrator raw JSONL dialogue history read
 │   ├── message_router.py       # Dialogue write / visibility filtering
 │   ├── save_manager.py         # Save / load / reset / opening load
@@ -186,7 +186,7 @@ All structured agents use pydantic-ai's `PromptedOutput` structured output, no l
 - `LLMStateUpdate`: `status`, `triggered`, `add_event` (post-round background narrator state maintenance)
 - `LLMChoices`: `choices`
 
-The runtime is split three ways (Clean Architecture): `models/Character` is a thin frozen-dataclass entity (`name` + read-only `soul`, derived `display_name`); `storage/character_repo.py` (`CharacterRepository`) and `storage/narrator_repo.py` (`NarratorRepository`) own all file I/O — soul caching, status read, and the writeback policy (`apply_status_fields` / `append_memory` / `add_event` / `mark_triggered`; narrator's `write_scene` / `set_narrative_focus` / `set_recent_world_event` / `sync_player_relations` / world_schedule read-write); `engine/conversation_service.py` (`ConversationService.run_turn`) and `engine/narrator_service.py` (`NarratorService.route` / `update_state`) hold the orchestration. LLM DTOs are unpacked into primitives inside the Services before calling the repos, so `storage/` never imports `agents/`. There is no global entity registry; Services obtain entities via `CharacterRepository.load(name)`, and `reset_entities()` (in `server.py`) invalidates both repos' soul caches on load / reset.
+The runtime is split three ways (Clean Architecture): `models/Character` is a thin frozen-dataclass entity (`name` + read-only `soul`, derived `display_name`); `storage/character_repo.py` (`CharacterRepository`) and `storage/narrator_repo.py` (`NarratorRepository`) own all file I/O — soul caching, status read, and the writeback policy (`apply_status_fields` / `append_memory` / `add_event` / `mark_triggered`; narrator's `write_scene` / `set_narrative_focus` / `set_recent_world_event` / `sync_player_relations` / world_schedule read-write); `engine/conversation_service.py` (`ConversationService.run_turn`) and `engine/narrator_service.py` (`NarratorService.route` / `update_state`) hold the orchestration. LLM DTOs are unpacked into primitives inside the Services before calling the repos, so `storage/` never imports `agents/`. There is no global entity registry; Services obtain entities via `CharacterRepository.load(name)`, and `reset_entities()` (in `server.py`) invalidates the character soul cache on load / reset (narrator soul is read fresh, not cached). The event-section integrity rules live in the mechanism layer: `status_file.update_status` rejects bulk overwrites of `EVENT_SECTIONS` (打算/待触发事件), and `add_pending_event` / `mark_event_triggered` own the `无`-sentinel skip and error handling, so the repos' `add_event` / `mark_triggered` are thin section-binding delegations.
 
 ### Writeback Rules
 

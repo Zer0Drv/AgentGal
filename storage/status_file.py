@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 from log_config.routing import routing_logger
+from models import status_fields
 from shared.config import character_path
 
 _EMPTY_PLACEHOLDER = "（暂无）"
@@ -236,8 +237,10 @@ def mark_event_triggered(
     agent_name: str,
     event_name: str,
     section_name: str = "待触发事件",
-) -> FileUpdateResult:
+) -> FileUpdateResult | None:
     """将 status.md 中指定 section 里【event_name】对应的未触发事件行直接删除。
+
+    出错时记录日志并返回 None（吸收原 Repository 包装的容错层）。
 
     Args:
         agent_name: 角色名称
@@ -245,49 +248,55 @@ def mark_event_triggered(
         section_name: 要操作的 section 标题，默认 "待触发事件"，角色传 "打算"
 
     Returns:
-        可序列化的更新结果，供日志记录具体写回内容
+        可序列化的更新结果（出错时为 None），供日志记录具体写回内容
     """
     status_path = character_path(agent_name, "status.md")
     try:
-        content = Path(status_path).read_text(encoding="utf-8")
-    except FileNotFoundError:
+        try:
+            content = Path(status_path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return FileUpdateResult(
+                file="status.md", target=section_name, operation="skip", reason="status.md 不存在"
+            )
+        pattern = rf"- \[ \] 【{re.escape(event_name)}】[^\n]*\n?"
+        matches = list(re.finditer(pattern, content))
+
+        if not matches:
+            return FileUpdateResult(
+                file="status.md",
+                target=section_name,
+                operation="skip",
+                reason=f"未找到事件【{event_name}】",
+            )
+
+        removed = "\n".join(m.group(0).rstrip("\n") for m in matches)
+        # Build new_content by splicing out matched spans (avoids a second regex scan)
+        parts: list[str] = []
+        pos = 0
+        for m in matches:
+            parts.append(content[pos : m.start()])
+            pos = m.end()
+        parts.append(content[pos:])
+        new_content = "".join(parts)
+
+        Path(status_path).write_text(new_content, encoding="utf-8")
         return FileUpdateResult(
-            file="status.md", target=section_name, operation="skip", reason="status.md 不存在"
+            file="status.md", target=section_name, operation="remove", removed=removed
         )
-    pattern = rf"- \[ \] 【{re.escape(event_name)}】[^\n]*\n?"
-    matches = list(re.finditer(pattern, content))
-
-    if not matches:
-        return FileUpdateResult(
-            file="status.md",
-            target=section_name,
-            operation="skip",
-            reason=f"未找到事件【{event_name}】",
-        )
-
-    removed = "\n".join(m.group(0).rstrip("\n") for m in matches)
-    # Build new_content by splicing out matched spans (avoids a second regex scan)
-    parts: list[str] = []
-    pos = 0
-    for m in matches:
-        parts.append(content[pos : m.start()])
-        pos = m.end()
-    parts.append(content[pos:])
-    new_content = "".join(parts)
-
-    Path(status_path).write_text(new_content, encoding="utf-8")
-    return FileUpdateResult(
-        file="status.md", target=section_name, operation="remove", removed=removed
-    )
+    except Exception as e:
+        routing_logger.error(f"[{agent_name}] mark_event_triggered 失败: {e}")
+        return None
 
 
 def add_pending_event(
     agent_name: str,
     event_line: str,
     section_name: str = "待触发事件",
-) -> FileUpdateResult:
+) -> FileUpdateResult | None:
     """在 status.md 的指定区块中，于第一个未触发条目前插入新条目。
-    插入前检查同名条目是否已存在（按【】内名称匹配），存在则跳过。
+
+    event_line 为哨兵「无」时跳过（返回 None）；插入前按【】内名称去重，已存在则跳过。
+    出错时记录日志并返回 None（吸收原 Repository 包装的容错层）。
 
     Args:
         agent_name: 角色名称
@@ -295,56 +304,62 @@ def add_pending_event(
         section_name: 要操作的 section 标题，默认 "待触发事件"，角色传 "打算"
 
     Returns:
-        可序列化的更新结果，供日志记录具体写回内容
+        可序列化的更新结果（哨兵/出错时为 None），供日志记录具体写回内容
     """
+    if event_line.strip() == "无":
+        return None
     status_path = character_path(agent_name, "status.md")
     stripped = event_line.strip()
     if not stripped.startswith("- [ ]"):
         stripped = f"- [ ] {stripped}"
 
     try:
-        content = Path(status_path).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return FileUpdateResult(
-            file="status.md", target=section_name, operation="skip", reason="status.md 不存在"
-        )
-
-    name_match = re.search(r"【(.+?)】", stripped)
-    if name_match:
-        event_name = name_match.group(1)
-        if re.search(rf"【{re.escape(event_name)}】", content):
+        try:
+            content = Path(status_path).read_text(encoding="utf-8")
+        except FileNotFoundError:
             return FileUpdateResult(
-                file="status.md",
-                target=section_name,
-                operation="skip",
-                reason=f"【{event_name}】已存在，跳过",
+                file="status.md", target=section_name, operation="skip", reason="status.md 不存在"
             )
 
-    lines = content.split("\n")
+        name_match = re.search(r"【(.+?)】", stripped)
+        if name_match:
+            event_name = name_match.group(1)
+            if re.search(rf"【{re.escape(event_name)}】", content):
+                return FileUpdateResult(
+                    file="status.md",
+                    target=section_name,
+                    operation="skip",
+                    reason=f"【{event_name}】已存在，跳过",
+                )
 
-    in_section = False
-    insert_idx = None
-    for i, line in enumerate(lines):
-        if line.startswith(f"## {section_name}"):
-            in_section = True
-            continue
-        if in_section:
-            if line.startswith("## "):
-                insert_idx = i
-                break
-            if re.match(r"- \[ \]", line):
-                insert_idx = i
-                break
+        lines = content.split("\n")
 
-    if insert_idx is None:
-        lines.append(stripped)
-    else:
-        lines.insert(insert_idx, stripped)
+        in_section = False
+        insert_idx = None
+        for i, line in enumerate(lines):
+            if line.startswith(f"## {section_name}"):
+                in_section = True
+                continue
+            if in_section:
+                if line.startswith("## "):
+                    insert_idx = i
+                    break
+                if re.match(r"- \[ \]", line):
+                    insert_idx = i
+                    break
 
-    Path(status_path).write_text("\n".join(lines), encoding="utf-8")
-    return FileUpdateResult(
-        file="status.md", target=section_name, operation="add", added=stripped
-    )
+        if insert_idx is None:
+            lines.append(stripped)
+        else:
+            lines.insert(insert_idx, stripped)
+
+        Path(status_path).write_text("\n".join(lines), encoding="utf-8")
+        return FileUpdateResult(
+            file="status.md", target=section_name, operation="add", added=stripped
+        )
+    except Exception as e:
+        routing_logger.error(f"[{agent_name}] add_pending_event 失败: {e}")
+        return None
 
 
 # ===== Agent 状态写回（status.md） =====
@@ -352,22 +367,16 @@ def add_pending_event(
 
 def update_status(agent_name: str, field: str, content: str) -> FileUpdateResult:
     """覆盖更新 status.md 的指定字段。"""
-    # 事件队列只能通过 add_pending_event/mark_event_triggered 操作，禁止整体覆盖
-    if agent_name != "narrator" and field == "打算":
-        routing_logger.warning(f"[{agent_name}] 禁止通过 <status> 覆盖「打算」字段，请使用 <triggered>/<add_event>")
-        return FileUpdateResult(
-            file="status.md",
-            target=field,
-            operation="skip",
-            reason="禁止覆盖「打算」字段，请用 <triggered>/<add_event> 逐条管理",
+    # 事件段只能逐条经 add_pending_event/mark_event_triggered 维护，禁止整段覆盖
+    if field in status_fields.EVENT_SECTIONS:
+        routing_logger.warning(
+            f"[{agent_name}] 禁止通过 <status> 覆盖事件段「{field}」，请使用 <triggered>/<add_event>"
         )
-    if agent_name == "narrator" and field == "待触发事件":
-        routing_logger.warning("[narrator] 禁止通过 <status> 覆盖「待触发事件」字段，请使用 <triggered>/<add_event>")
         return FileUpdateResult(
             file="status.md",
             target=field,
             operation="skip",
-            reason="禁止覆盖「待触发事件」字段，请用 <triggered>/<add_event> 逐条管理",
+            reason=f"禁止覆盖事件段「{field}」，请用 <triggered>/<add_event> 逐条管理",
         )
     allowed = get_allowed_fields(agent_name, "status")
     status_path = character_path(agent_name, "status.md")
