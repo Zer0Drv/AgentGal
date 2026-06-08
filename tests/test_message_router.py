@@ -9,8 +9,8 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 import storage.message_router as router_module
-import storage.agent_files as agent_files_module
-from storage.agent_files import PLAYER_NAME_FILENAME, read_player_name
+import storage.runtime_state as runtime_state_module
+from storage.runtime_state import PLAYER_NAME_FILENAME, read_player_name
 from storage.message_router import MessageRouter
 
 
@@ -37,7 +37,7 @@ async def test_narrator_response_starts_next_turn(tmp_path, monkeypatch):
     async def fake_append_message(message: dict) -> None:
         written.append(dict(message))
 
-    monkeypatch.setattr(agent_files_module, "CHARACTERS_DIR", tmp_path)
+    monkeypatch.setattr(runtime_state_module, "CHARACTERS_DIR", tmp_path)
     monkeypatch.setattr(router_module, "read_turn_counter", fake_read_turn_counter)
     monkeypatch.setattr(router_module, "increment_turn_counter", fake_increment_turn_counter)
     monkeypatch.setattr(router_module, "append_message", fake_append_message)
@@ -72,7 +72,7 @@ async def test_broadcast_narrator_output_writes_structured_scene(tmp_path, monke
     async def fake_append_message(message: dict) -> None:
         written.append(dict(message))
 
-    monkeypatch.setattr(agent_files_module, "CHARACTERS_DIR", tmp_path)
+    monkeypatch.setattr(runtime_state_module, "CHARACTERS_DIR", tmp_path)
     monkeypatch.setattr(router_module, "increment_turn_counter", fake_increment_turn_counter)
     monkeypatch.setattr(router_module, "append_message", fake_append_message)
 
@@ -118,7 +118,7 @@ async def test_player_message_extracts_and_reuses_name_for_raw(tmp_path, monkeyp
     def fake_read_turn_counter() -> int:
         return current_turn
 
-    monkeypatch.setattr(agent_files_module, "CHARACTERS_DIR", tmp_path)
+    monkeypatch.setattr(runtime_state_module, "CHARACTERS_DIR", tmp_path)
     monkeypatch.setattr(router_module, "read_turn_counter", fake_read_turn_counter)
     monkeypatch.setattr(router_module, "append_message", fake_append_message)
 

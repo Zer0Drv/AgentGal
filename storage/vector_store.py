@@ -22,7 +22,8 @@ from log_config.memory import memory_logger
 from llm.embedding import (
     embed_async,
 )
-from memory.parser import EpisodeMemory, canonical_cn_date
+from models import EpisodeMemory
+from shared.date_utils import canonical_cn_date
 from shared.config import (
     character_path,
     RUNTIME_DIR,

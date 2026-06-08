@@ -3,9 +3,10 @@ from pathlib import Path
 import pytest
 
 import memory.indexer as indexer
-import memory.parser as parser_module
+import storage.memory_store as memory_store_module
 import storage.vector_store as vector_store_module
-from memory.parser import EpisodeMemory, Understanding, serialize_episode, write_understandings
+from models import EpisodeMemory, Understanding
+from storage.memory_store import serialize_episode, write_understandings
 from storage.vector_store import VectorStore
 
 
@@ -47,7 +48,7 @@ def _patch_character_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     def _character_path(agent_name: str, *subpaths: str) -> str:
         return str(tmp_path / agent_name / Path(*subpaths))
 
-    monkeypatch.setattr(parser_module, "character_path", _character_path)
+    monkeypatch.setattr(memory_store_module, "character_path", _character_path)
 
 
 def _write_single_understanding(agent: str, uid: str = "u1") -> None:

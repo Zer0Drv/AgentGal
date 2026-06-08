@@ -4,7 +4,7 @@
 """
 
 from log_config.memory import memory_logger as logger
-from memory.parser import (
+from storage.memory_store import (
     memory_jsonl_path,
     read_memory_jsonl,
     read_understandings,

@@ -78,3 +78,41 @@ def get_display_name(agent_name: str, soul_content: str) -> str:
     return agent_name
 
 
+def normalize(content: str) -> str:
+    """修复常见格式问题：字面 \\n、日期标题不规范、多余空行。"""
+    content = content.replace("\\n", "\n")
+    content = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+    lines = content.split("\n")
+    out = []
+    for line in lines:
+        stripped = line.strip()
+        m = re.match(r"^(?:#{1,2}\s*|\*\*)?(\d{1,2}月\d{1,2}日)(?:\*\*)?(?:\s.*)?$", stripped)
+        if m:
+            out.append(f"## {m.group(1)}")
+        elif re.match(r"^(?:\*\*(时间|地点|在场|关键词|重要度|内容)\*\*|(时间|地点|在场|关键词|重要度|内容))：", stripped):
+            out.append(f"- {stripped}")
+        else:
+            out.append(line)
+    content = "\n".join(out)
+    content = re.sub(r"\n{3,}", "\n\n", content)
+    return content.strip()
+
+
+def extract_status_field(status_text: str, field_name: str) -> str:
+    """从 status.md 文本中提取指定 ## 字段的值。
+
+    Args:
+        status_text: status.md 的完整文本内容
+        field_name: 要提取的字段名（如 "叙事焦点"、"心境"）
+
+    Returns:
+        字段内容，未找到返回空字符串
+    """
+    pattern = re.compile(
+        rf"^##\s+{re.escape(field_name)}\s*\n(.*?)(?=^##\s|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = pattern.search(status_text)
+    if not m:
+        return ""
+    return m.group(1).strip()

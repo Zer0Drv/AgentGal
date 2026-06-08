@@ -25,12 +25,9 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from memory.parser import (  # noqa: E402
-    EpisodeMemory,
-    append_memory_records,
-    memory_jsonl_path,
-    normalize,
-)
+from models import EpisodeMemory  # noqa: E402
+from shared.text_utils import normalize  # noqa: E402
+from storage.memory_store import append_memory_records, memory_jsonl_path  # noqa: E402
 
 
 CHARACTERS_DIR = PROJECT_ROOT / "data" / "runtime" / "characters"

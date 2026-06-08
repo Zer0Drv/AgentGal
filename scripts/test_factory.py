@@ -16,7 +16,7 @@ for key in list(os.environ):
 
 from agents.factory import get_character_factory_agent
 from agents.runner import run_structured_agent
-from agents.schema import NewCharacterProfile, NewCharacterRequest
+from agents.llm_schema import LLMNewCharacterProfile, LLMNewCharacterRequest
 from llm.config import get_llm_config
 from shared.config import AGENT_RUN_TIMEOUT_SECONDS
 
@@ -86,7 +86,7 @@ async def main():
         result = await run_structured_agent(
             agent=agent,
             user_input=USER_INPUT,
-            output_type=NewCharacterProfile,
+            output_type=LLMNewCharacterProfile,
             timeout_seconds=AGENT_RUN_TIMEOUT_SECONDS,
             workflow_name="test_character_factory",
             trace_metadata={"agent_name": "character_factory_test", "target": "北原栞"},

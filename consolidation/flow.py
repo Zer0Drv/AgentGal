@@ -26,29 +26,25 @@ from consolidation.inputs import (
     build_understanding_patch_payload,
     render_raw_history,
 )
-from storage.agent_files import (
-    backup_file,
+from storage.agent_files import backup_file
+from storage.history import load_conversation_history
+from models import EpisodeMemory, Understanding, UnderstandingHistoryEntry
+from shared.date_utils import canonical_cn_date
+from storage.memory_store import (
+    append_memory_records,
+    memory_jsonl_path,
     read_memory_draft,
+    read_understandings,
     rewrite_memory_draft,
     split_memory_draft_by_turn,
-)
-from storage.history import load_conversation_history
-from memory.parser import (
-    EpisodeMemory,
-    Understanding,
-    UnderstandingHistoryEntry,
-    append_memory_records,
-    canonical_cn_date,
-    memory_jsonl_path,
-    read_understandings,
     write_understandings,
 )
 from storage.vector_store import vector_store
-from agents.schema import (
-    EpisodeClosureOutput,
-    EpisodeMemoryBlock,
-    UnderstandingEntry,
-    UnderstandingPatchOutput,
+from agents.llm_schema import (
+    LLMEpisodeClosure,
+    LLMEpisodeMemory,
+    LLMUnderstandingEntry,
+    LLMUnderstandingPatch,
 )
 
 
@@ -124,13 +120,13 @@ def _resolve_understanding_update_id(
 
 
 def _resolve_understanding_patch_ids(
-    patch: UnderstandingPatchOutput,
+    patch: LLMUnderstandingPatch,
     understandings: dict[str, Understanding],
     prompt_id_map: dict[str, str],
-) -> UnderstandingPatchOutput:
+) -> LLMUnderstandingPatch:
     if not patch.update:
         return patch
-    resolved_update: dict[str, UnderstandingEntry] = {}
+    resolved_update: dict[str, LLMUnderstandingEntry] = {}
     for raw_uid, entry in patch.update.items():
         uid = _resolve_understanding_update_id(raw_uid, understandings, prompt_id_map)
         resolved_update[uid] = entry
@@ -140,7 +136,7 @@ def _resolve_understanding_patch_ids(
 def _apply_understanding_patch(
     agent_name: str,
     understandings: dict[str, Understanding],
-    patch: UnderstandingPatchOutput,
+    patch: LLMUnderstandingPatch,
     episode: EpisodeMemory | None = None,
 ) -> _UnderstandingPatchResult:
     updated = dict(understandings)
@@ -335,7 +331,7 @@ class MemoryConsolidationFlow:
         user = build_episode_memory_generator_payload(agent_name, memory_entries, raw_dialogue)
         block = await self._run_consolidation_agent(
             agent=get_episode_memory_generator_agent(),
-            output_type=EpisodeMemoryBlock,
+            output_type=LLMEpisodeMemory,
             agent_name=agent_name,
             function_name="episode_memory_generator",
             user=user,
@@ -371,7 +367,7 @@ class MemoryConsolidationFlow:
 
         output = await self._run_consolidation_agent(
             agent=get_understanding_patch_agent(),
-            output_type=UnderstandingPatchOutput,
+            output_type=LLMUnderstandingPatch,
             agent_name=agent_name,
             function_name="understanding_patch",
             user=user,
@@ -569,7 +565,7 @@ class MemoryConsolidationFlow:
         try:
             output = await self._run_consolidation_agent(
                 agent=get_episode_closure_detector_agent(),
-                output_type=EpisodeClosureOutput,
+                output_type=LLMEpisodeClosure,
                 agent_name="_closure_detector",
                 function_name="episode_closure_detector",
                 user=user,

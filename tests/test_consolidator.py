@@ -15,13 +15,12 @@ sys.path.insert(0, str(project_root))
 try:
     import storage.agent_files as agent_files_module
     import consolidation.flow as consolidator_module
-    import memory.parser as parser_module
+    import storage.memory_store as memory_store_module
+    import storage.status_file as status_file_module
     from consolidation.flow import MemoryConsolidationFlow
-    from agents.schema import EpisodeClosureOutput, EpisodeMemoryBlock, UnderstandingPatchOutput
-    from memory.parser import (
-        EpisodeMemory,
-        Understanding,
-        UnderstandingHistoryEntry,
+    from agents.llm_schema import LLMEpisodeClosure, LLMEpisodeMemory, LLMUnderstandingPatch
+    from models import EpisodeMemory, Understanding, UnderstandingHistoryEntry
+    from storage.memory_store import (
         append_memory_records,
         read_memory_jsonl,
         read_understandings,
@@ -123,7 +122,7 @@ async def test_scheduled_consolidation_swallows_pipeline_exceptions(monkeypatch)
 
 def test_prepare_slice_returns_none_when_draft_empty(tmp_path, monkeypatch):
     """memory_draft.jsonl 不存在或切片为空时返回 None。"""
-    monkeypatch.setattr(agent_files_module, "character_path", _make_character_path(tmp_path))
+    monkeypatch.setattr(memory_store_module, "character_path", _make_character_path(tmp_path))
     consolidator = MemoryConsolidationFlow()
 
     result = consolidator._prepare_consolidation_slice("chenxiao", until_turn=5, raw_messages=[])
@@ -132,10 +131,10 @@ def test_prepare_slice_returns_none_when_draft_empty(tmp_path, monkeypatch):
 
 def test_prepare_slice_skips_entries_beyond_until_turn(tmp_path, monkeypatch):
     """只取 turn <= until_turn 的 draft 条目，后续 turn 留在 remaining。"""
-    monkeypatch.setattr(agent_files_module, "character_path", _make_character_path(tmp_path))
+    monkeypatch.setattr(memory_store_module, "character_path", _make_character_path(tmp_path))
 
-    agent_files_module.append_memory_draft("chenxiao", 3, "- 第三轮 draft")
-    agent_files_module.append_memory_draft("chenxiao", 5, "- 第五轮 draft")
+    memory_store_module.append_memory_draft("chenxiao", 3, "- 第三轮 draft")
+    memory_store_module.append_memory_draft("chenxiao", 5, "- 第五轮 draft")
 
     raw_messages = [
         {"role": "narrator", "content": "场景 A", "visible_to": ["chenxiao", "narrator"], "turn": 3},
@@ -157,8 +156,8 @@ def test_prepare_slice_skips_entries_beyond_until_turn(tmp_path, monkeypatch):
 
 def test_prepare_slice_returns_none_when_no_entries_within_turn(tmp_path, monkeypatch):
     """Draft 非空但所有条目 turn 都大于 until_turn 时跳过。"""
-    monkeypatch.setattr(agent_files_module, "character_path", _make_character_path(tmp_path))
-    agent_files_module.append_memory_draft("chenxiao", 10, "- 未来轮 draft")
+    monkeypatch.setattr(memory_store_module, "character_path", _make_character_path(tmp_path))
+    memory_store_module.append_memory_draft("chenxiao", 10, "- 未来轮 draft")
 
     consolidator = MemoryConsolidationFlow()
     result = consolidator._prepare_consolidation_slice(
@@ -187,10 +186,10 @@ async def test_detect_closures_does_not_close_latest_open_narrator_turn(monkeypa
         function_name,
         user,
     ):
-        assert output_type is EpisodeClosureOutput
+        assert output_type is LLMEpisodeClosure
         assert function_name == "episode_closure_detector"
         assert "[turn=4]" in user
-        return EpisodeClosureOutput.model_validate(
+        return LLMEpisodeClosure.model_validate(
             {
                 "chenxiao": [
                     {
@@ -236,7 +235,7 @@ def test_agent_file_updates_return_structured_json_items(tmp_path, monkeypatch):
     agent_name = "chenxiao"
     path_helper = _make_character_path(tmp_path)
 
-    monkeypatch.setattr(agent_files_module, "character_path", path_helper)
+    monkeypatch.setattr(status_file_module, "character_path", path_helper)
 
     agent_dir = tmp_path / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
@@ -256,7 +255,7 @@ def test_agent_file_updates_return_structured_json_items(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    replace_result = agent_files_module.update_status(agent_name, "场景", "图书馆二楼靠窗座位")
+    replace_result = status_file_module.update_status(agent_name, "场景", "图书馆二楼靠窗座位")
     assert replace_result == {
         "file": "status.md",
         "target": "场景",
@@ -265,7 +264,7 @@ def test_agent_file_updates_return_structured_json_items(tmp_path, monkeypatch):
         "after": "图书馆二楼靠窗座位",
     }
 
-    add_result = agent_files_module.add_pending_event(agent_name, "【新计划】去图书馆", "打算")
+    add_result = status_file_module.add_pending_event(agent_name, "【新计划】去图书馆", "打算")
     assert add_result == {
         "file": "status.md",
         "target": "打算",
@@ -273,7 +272,7 @@ def test_agent_file_updates_return_structured_json_items(tmp_path, monkeypatch):
         "added": "- [ ] 【新计划】去图书馆",
     }
 
-    skip_result = agent_files_module.add_pending_event(agent_name, "【新计划】去图书馆", "打算")
+    skip_result = status_file_module.add_pending_event(agent_name, "【新计划】去图书馆", "打算")
     assert skip_result == {
         "file": "status.md",
         "target": "打算",
@@ -281,7 +280,7 @@ def test_agent_file_updates_return_structured_json_items(tmp_path, monkeypatch):
         "reason": "【新计划】已存在，跳过",
     }
 
-    remove_result = agent_files_module.mark_event_triggered(agent_name, "去天台", "打算")
+    remove_result = status_file_module.mark_event_triggered(agent_name, "去天台", "打算")
     assert remove_result == {
         "file": "status.md",
         "target": "打算",
@@ -313,10 +312,10 @@ async def test_merge_memory_blocks_uses_episode_memory_generator(monkeypatch):
     ):
         captured["agent"] = agent
         captured["user"] = user
-        assert output_type is EpisodeMemoryBlock
+        assert output_type is LLMEpisodeMemory
         assert agent_name == "chenxiao"
         assert function_name == "episode_memory_generator"
-        return EpisodeMemoryBlock(
+        return LLMEpisodeMemory(
             date="10月19日",
             time="10月19日 晚上",
             location="餐厅",
@@ -376,7 +375,7 @@ def test_apply_understanding_patch_updates_and_adds(monkeypatch):
             ],
         ),
     }
-    patch = UnderstandingPatchOutput.model_validate(
+    patch = LLMUnderstandingPatch.model_validate(
         {
             "add": [
                 {
@@ -430,7 +429,7 @@ def test_apply_understanding_patch_does_not_append_history_for_link_only_update(
             linked_episodes=["e0"],
         ),
     }
-    patch = UnderstandingPatchOutput.model_validate(
+    patch = LLMUnderstandingPatch.model_validate(
         {
             "update": {
                 "u1": {
@@ -502,7 +501,7 @@ def test_resolve_understanding_patch_ids_maps_prompt_ids_to_real_ids():
             linked_episodes=["e0"],
         ),
     }
-    patch = UnderstandingPatchOutput.model_validate(
+    patch = LLMUnderstandingPatch.model_validate(
         {
             "add": [],
             "update": {
@@ -601,7 +600,7 @@ async def test_patch_understandings_writes_file_and_syncs_vectors(tmp_path, monk
     sentinel_agent = object()
 
     monkeypatch.setattr(consolidator_module.uuid, "uuid4", lambda: FakeUUID())
-    monkeypatch.setattr(parser_module, "character_path", path_helper)
+    monkeypatch.setattr(memory_store_module, "character_path", path_helper)
     monkeypatch.setattr(agent_files_module, "character_path", path_helper)
     monkeypatch.setattr(
         consolidator_module,
@@ -636,14 +635,14 @@ async def test_patch_understandings_writes_file_and_syncs_vectors(tmp_path, monk
         user,
     ):
         assert agent is sentinel_agent
-        assert output_type is UnderstandingPatchOutput
+        assert output_type is LLMUnderstandingPatch
         assert agent_name == "chenxiao"
         assert function_name == "understanding_patch"
         assert '"id": "e1"' in user
         assert "[u1] subject='对玩家的认知'" in user
         assert "linked_episodes" not in user
         assert "<profile>" not in user
-        return UnderstandingPatchOutput.model_validate(
+        return LLMUnderstandingPatch.model_validate(
             {
                 "update": {
                     "u1": {
@@ -720,7 +719,7 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     path_helper = _make_character_path(tmp_path)
 
     monkeypatch.setattr(agent_files_module, "character_path", path_helper)
-    monkeypatch.setattr(parser_module, "character_path", path_helper)
+    monkeypatch.setattr(memory_store_module, "character_path", path_helper)
     monkeypatch.setattr(
         consolidator_module,
         "load_conversation_history",
@@ -757,10 +756,10 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     append_memory_records(agent_name, [seed_record])
 
     # draft 写入 memory_draft.jsonl，带 turn 标记
-    agent_files_module.append_memory_draft(agent_name, 3, _event("10月6日", "中午", "中午 draft 内容。"))
-    agent_files_module.append_memory_draft(agent_name, 4, _event("10月6日", "下午", "下午 draft 内容。"))
+    memory_store_module.append_memory_draft(agent_name, 3, _event("10月6日", "中午", "中午 draft 内容。"))
+    memory_store_module.append_memory_draft(agent_name, 4, _event("10月6日", "下午", "下午 draft 内容。"))
     # 模拟还未闭合的下一轮 draft（turn=5），不应被本次归并
-    agent_files_module.append_memory_draft(agent_name, 5, _event("10月6日", "傍晚", "傍晚 draft 内容。"))
+    memory_store_module.append_memory_draft(agent_name, 5, _event("10月6日", "傍晚", "傍晚 draft 内容。"))
 
     rewritten_episode = EpisodeMemory(
         date="10月6日",
@@ -809,7 +808,7 @@ async def test_consolidate_agent_merges_draft_into_memory_and_clears_draft(tmp_p
     assert records[1].content == "中午下午合并后内容。"
 
     # 未闭合的 turn=5 draft 条目应保留
-    remaining_draft = agent_files_module.read_memory_draft(agent_name)
+    remaining_draft = memory_store_module.read_memory_draft(agent_name)
     assert [r["turn"] for r in remaining_draft] == [5]
     assert "傍晚 draft 内容" in remaining_draft[0]["text"]
 

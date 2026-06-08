@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass
 
-from memory.parser import extract_status_field
+from shared.text_utils import extract_status_field
 from shared.narrator_output import extract_narrator_output
 from storage.agent_files import read_agent_file
 

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import engine.conversation_flow as conversation_flow_module
-from agents.schema import NarratorOutput
+from agents.llm_schema import LLMNarratorOutput
 from shared.config import AGENT_RUN_TIMEOUT_SECONDS
 
 
@@ -35,7 +35,7 @@ async def test_generate_choices_passes_required_timeout(monkeypatch):
         fake_run_structured_agent,
     )
 
-    narrator_output = NarratorOutput(
+    narrator_output = LLMNarratorOutput(
         targets=["alice"],
         date="4月3日 星期三",
         time="16:10",

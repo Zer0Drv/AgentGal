@@ -21,19 +21,15 @@ from pydantic import BaseModel
 
 from agents.factory import initialize_conversation_agents, reload_conversation_agent
 from consolidation.flow import memory_consolidation_flow
-from engine.character import narrator, reset_entities
+from engine.narrator_service import narrator_service
 from engine.conversation_flow import (
     bootstrap_new_characters,
     generate_choices,
     run_agent_in_scene,
 )
-from memory.parser import (
-    EpisodeMemory,
-    Understanding,
-    extract_status_field,
-    read_memory_jsonl,
-    read_understandings,
-)
+from storage.character_repo import character_repo
+from models import EpisodeMemory, Understanding
+from storage.memory_store import read_memory_jsonl, read_understandings
 from storage.save_manager import (
     delete_save_leaf,
     delete_save_game,
@@ -50,7 +46,7 @@ from log_config.routing import routing_logger
 from log_config.logfire import setup_logfire
 from shared.config import CHARACTERS_DIR, get_agent_names
 from shared.narrator_output import extract_narrator_output
-from shared.text_utils import get_display_name
+from shared.text_utils import extract_status_field, get_display_name
 from storage.agent_files import read_agent_file
 from storage.history import (
     extract_game_date_anchors,
@@ -59,6 +55,12 @@ from storage.history import (
     search_history,
 )
 from storage.message_router import message_router
+
+
+def reset_entities() -> None:
+    """存档恢复 / reset 后清空角色 soul 缓存（narrator soul 直读不缓存）。"""
+    character_repo.invalidate()
+
 
 app = FastAPI(title="AgentGal")
 
@@ -368,7 +370,7 @@ async def _run_state_update_loop() -> None:
     try:
         while True:
             _pending_state_update_requested = False
-            await narrator.update_state()
+            await narrator_service.update_state()
             if not _pending_state_update_requested:
                 break
     finally:
@@ -599,7 +601,7 @@ async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] 
             routing_logger.warning("state_updater 超时（>60s），done 事件提前发出")
 
     # 1. narrator 路由
-    narrator_output, is_narrator_valid = await narrator.route(
+    narrator_output, is_narrator_valid = await narrator_service.route(
         user_input,
         observation_mode=observation_mode,
     )

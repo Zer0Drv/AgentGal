@@ -1,6 +1,6 @@
 """测试长期记忆索引用文本的字段组合。"""
 
-from memory.parser import EpisodeMemory, Understanding
+from models import EpisodeMemory, Understanding
 from storage.vector_store import VectorStore
 
 

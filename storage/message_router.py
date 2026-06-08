@@ -1,6 +1,6 @@
 """消息路由系统 - 维护每个角色的独立对话历史"""
 
-from storage.agent_files import (
+from storage.runtime_state import (
     extract_player_name,
     increment_turn_counter,
     read_player_name,

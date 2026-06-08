@@ -3,14 +3,14 @@
 import pytest
 from pydantic import ValidationError
 
-from agents.schema import (
+from agents.llm_schema import (
     MAX_CHOICE_CHARS,
     MAX_EPISODE_KEYWORDS,
-    ChoicesOutput,
-    EpisodeMemoryBlock,
-    NarratorOutput,
-    StateUpdaterOutput,
-    UnderstandingPatchOutput,
+    LLMChoices,
+    LLMEpisodeMemory,
+    LLMNarratorOutput,
+    LLMStateUpdate,
+    LLMUnderstandingPatch,
 )
 from conftest import _narrator_output
 
@@ -18,7 +18,7 @@ from conftest import _narrator_output
 def test_choices_output_trims_each_choice_to_50_chars():
     long_choice = "我" * (MAX_CHOICE_CHARS + 8)
 
-    output = ChoicesOutput(choices=[f"  {long_choice}  ", "短选项"])
+    output = LLMChoices(choices=[f"  {long_choice}  ", "短选项"])
 
     assert output.choices[0] == "我" * MAX_CHOICE_CHARS
     assert len(output.choices[0]) == MAX_CHOICE_CHARS
@@ -46,7 +46,7 @@ def test_narrator_output_allows_new_character_without_existing_target():
 
 
 def test_episode_memory_block_cleans_keywords_and_clamps_importance():
-    block = EpisodeMemoryBlock(
+    block = LLMEpisodeMemory(
         date="10月19日",
         time="10月19日 晚上",
         location="餐厅",
@@ -62,7 +62,7 @@ def test_episode_memory_block_cleans_keywords_and_clamps_importance():
 
 
 def test_episode_memory_block_defaults_bad_metadata():
-    block = EpisodeMemoryBlock(
+    block = LLMEpisodeMemory(
         date="10月19日",
         time="10月19日 晚上",
         location="餐厅",
@@ -77,7 +77,7 @@ def test_episode_memory_block_defaults_bad_metadata():
 
 
 def test_understanding_patch_output_defaults_to_empty_operations():
-    output = UnderstandingPatchOutput()
+    output = LLMUnderstandingPatch()
 
     assert output.add == []
     assert output.update == {}
@@ -85,7 +85,7 @@ def test_understanding_patch_output_defaults_to_empty_operations():
 
 
 def test_understanding_entry_strips_string_fields():
-    output = UnderstandingPatchOutput.model_validate(
+    output = LLMUnderstandingPatch.model_validate(
         {
             "add": [
                 {
@@ -103,12 +103,12 @@ def test_understanding_entry_strips_string_fields():
 
 
 def test_state_updater_output_accepts_world_schedule_fields():
-    default_output = StateUpdaterOutput()
+    default_output = LLMStateUpdate()
     assert default_output.recent_world_event == ""
     assert default_output.world_schedule_update == ""
     assert default_output.triggered_world_events == []
 
-    output = StateUpdaterOutput(
+    output = LLMStateUpdate(
         recent_world_event="（准备期）文化祭准备中",
         world_schedule_update='{"events":[]}',
         triggered_world_events=["文化祭主题讨论"],
@@ -119,7 +119,7 @@ def test_state_updater_output_accepts_world_schedule_fields():
 
 
 def test_understanding_update_allows_subject_only_entry():
-    output = UnderstandingPatchOutput.model_validate(
+    output = LLMUnderstandingPatch.model_validate(
         {"update": {"u1": {"subject": "对玩家的认知"}}}
     )
 

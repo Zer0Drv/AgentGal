@@ -12,21 +12,21 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
-    import engine.character as character_module
     import engine.character_factory as character_factory_module
     import engine.conversation_flow as conversation_flow_module
-    from agents.schema import (
-        NarratorOutput,
-        NewCharacterProfile,
-        NewCharacterRequest,
+    import engine.narrator_service as narrator_service_module
+    from agents.llm_schema import (
+        LLMNarratorOutput,
+        LLMNewCharacterProfile,
+        LLMNewCharacterRequest,
     )
-    from engine.character import Narrator
+    from engine.narrator_service import NarratorService
     from engine.character_factory import CreatedCharacterInfo
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip character_factory tests: missing dependency ({exc})", allow_module_level=True)
 
 
-def _narrator_output(**overrides) -> NarratorOutput:
+def _narrator_output(**overrides) -> LLMNarratorOutput:
     data = {
         "targets": ["mitsuki"],
         "date": "4月3日 星期三",
@@ -37,7 +37,7 @@ def _narrator_output(**overrides) -> NarratorOutput:
         "new_characters": [],
     }
     data.update(overrides)
-    return NarratorOutput(**data)
+    return LLMNarratorOutput(**data)
 
 
 # ---------------------------------------------------------------------------
@@ -47,51 +47,51 @@ def _narrator_output(**overrides) -> NarratorOutput:
 
 def test_filter_new_characters_keeps_valid_specs():
     specs = [
-        NewCharacterRequest(
+        LLMNewCharacterRequest(
             name_hint="桥本志津",
             background_hint="美月的妈妈，温柔但严厉，常在放学时到校门口等女儿。",
         ),
-        NewCharacterRequest(
+        LLMNewCharacterRequest(
             name_hint="林清荷",
             background_hint="玩家的表姐，大两岁，在附近工作，偶尔周末来串门。",
         ),
     ]
-    kept = Narrator._filter_new_characters(specs, ["mitsuki"])
+    kept = NarratorService._filter_new_characters(specs, ["mitsuki"])
     assert [s.name_hint for s in kept] == ["桥本志津", "林清荷"]
 
 
 def test_filter_new_characters_dedupes_specs():
     specs = [
-        NewCharacterRequest(name_hint="桥本志津", background_hint="x"),
-        NewCharacterRequest(name_hint="桥本志津", background_hint="x"),
+        LLMNewCharacterRequest(name_hint="桥本志津", background_hint="x"),
+        LLMNewCharacterRequest(name_hint="桥本志津", background_hint="x"),
     ]
-    kept = Narrator._filter_new_characters(specs, ["mitsuki"])
+    kept = NarratorService._filter_new_characters(specs, ["mitsuki"])
     assert len(kept) == 1
 
 
 def test_filter_new_characters_rejects_empty_description():
     specs = [
-        NewCharacterRequest(
+        LLMNewCharacterRequest(
             name_hint="桥本志津",
             background_hint="   ",
         ),
     ]
-    kept = Narrator._filter_new_characters(specs, ["mitsuki"])
+    kept = NarratorService._filter_new_characters(specs, ["mitsuki"])
     assert kept == []
 
 
 def test_filter_new_characters_dedupes_names():
     specs = [
-        NewCharacterRequest(
+        LLMNewCharacterRequest(
             name_hint="双胞胎哥哥",
             background_hint="美月的双胞胎哥哥，在外地读大学，偶尔回家。",
         ),
-        NewCharacterRequest(
+        LLMNewCharacterRequest(
             name_hint="双胞胎哥哥",
             background_hint="美月的双胞胎哥哥，在外地读大学，偶尔回家。",
         ),
     ]
-    kept = Narrator._filter_new_characters(specs, ["mitsuki"])
+    kept = NarratorService._filter_new_characters(specs, ["mitsuki"])
     assert len(kept) == 1
 
 
@@ -102,29 +102,31 @@ def test_filter_new_characters_dedupes_names():
 
 @pytest.mark.asyncio
 async def test_narrator_route_passes_new_characters(monkeypatch):
+    monkeypatch.setattr(NarratorService, "_sync_player_relations", lambda _self: None)
+    monkeypatch.setattr(NarratorService, "_write_scene", lambda _self, _output: None)
     monkeypatch.setattr(
-        character_module,
+        narrator_service_module,
         "get_agent_names",
         lambda include_narrator=False: ["mitsuki"],
     )
-    monkeypatch.setattr(character_module, "load_conversation_history", lambda **_kw: [])
-    monkeypatch.setattr(character_module, "read_agent_file", lambda *_args: "# soul")
-    monkeypatch.setattr(character_module, "get_display_name", lambda *_args: "美月")
+    monkeypatch.setattr(narrator_service_module, "load_conversation_history", lambda **_kw: [])
+    monkeypatch.setattr(narrator_service_module, "read_agent_file", lambda *_args: "# soul")
+    monkeypatch.setattr(narrator_service_module, "get_display_name", lambda *_args: "美月")
 
     async def fake_run_narrator(self, *_args, **_kwargs):
         return _narrator_output(
             targets=[],
             new_characters=[
-                NewCharacterRequest(
+                LLMNewCharacterRequest(
                     name_hint="桥本志津",
                     background_hint="美月的妈妈，温柔而谨慎，常在放学时到校门口等女儿。",
                 )
             ],
         )
 
-    monkeypatch.setattr(character_module.Narrator, "_run_narrator", fake_run_narrator)
+    monkeypatch.setattr(NarratorService, "_run_narrator", fake_run_narrator)
 
-    output, is_valid = await Narrator().route("来一个妈妈")
+    output, is_valid = await narrator_service_module.narrator_service.route("来一个妈妈")
 
     assert output is not None
     assert output.targets == []
@@ -157,7 +159,7 @@ def _seed(root: Path, name: str, soul: str = "", status: str = "") -> None:
 
 def test_validate_spec_accepts_valid_anchor(character_dir):
     _seed(character_dir, "mitsuki", soul="# 美月")
-    spec = NewCharacterRequest(
+    spec = LLMNewCharacterRequest(
         name_hint="桥本志津",
         background_hint="美月的妈妈，温柔而谨慎，常在放学时到校门口等女儿。",
     )
@@ -166,7 +168,7 @@ def test_validate_spec_accepts_valid_anchor(character_dir):
 
 def test_validate_spec_rejects_empty_description(character_dir):
     _seed(character_dir, "mitsuki")
-    spec = NewCharacterRequest(
+    spec = LLMNewCharacterRequest(
         name_hint="路人",
         background_hint="   ",
     )
@@ -174,7 +176,7 @@ def test_validate_spec_rejects_empty_description(character_dir):
 
 
 def test_validate_spec_allows_player_anchor(character_dir):
-    spec = NewCharacterRequest(
+    spec = LLMNewCharacterRequest(
         name_hint="林清荷",
         background_hint="玩家的表姐，大两岁，在附近工作，偶尔来串门。",
     )
@@ -200,7 +202,7 @@ def test_validate_creation_character_id_accepts_ascii_name(character_dir):
 @pytest.mark.parametrize("character_id", ["MitsukiMom", "mitsuki2", "mitsuki_mom", "美月妈妈"])
 def test_new_character_creation_rejects_invalid_character_id_format(character_id: str):
     with pytest.raises(ValueError, match="lowercase ASCII letters"):
-        NewCharacterProfile(
+        LLMNewCharacterProfile(
             character_id=character_id,
             display_name="桥本志津",
             identity="美月的妈妈，来学校接她放学的家长。",
@@ -213,7 +215,7 @@ def test_new_character_creation_rejects_invalid_character_id_format(character_id
 
 
 def test_new_character_creation_normalizes_identity_to_single_line():
-    creation = NewCharacterProfile(
+    creation = LLMNewCharacterProfile(
         character_id="mitsukimom",
         display_name="桥本志津",
         identity="美月的妈妈，\n来学校接她放学的家长。",
@@ -228,7 +230,7 @@ def test_new_character_creation_normalizes_identity_to_single_line():
 
 def test_new_character_creation_rejects_blank_goal():
     with pytest.raises(ValueError, match="field cannot be empty"):
-        NewCharacterProfile(
+        LLMNewCharacterProfile(
             character_id="mitsukimom",
             display_name="桥本志津",
             identity="美月的妈妈，来学校接她放学的家长。",
@@ -249,7 +251,7 @@ def test_build_factory_user_message_omits_empty_optional_fields(character_dir):
     )
 
     message = character_factory_module._build_factory_user_message(
-        NewCharacterRequest(
+        LLMNewCharacterRequest(
             background_hint="美月的妈妈，温柔而谨慎，常在放学时到校门口等女儿。",
         ),
     )
@@ -280,7 +282,7 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
     )
 
     async def fake_run_structured_agent(**_kwargs):
-        return NewCharacterProfile(
+        return LLMNewCharacterProfile(
             character_id="mitsukimom",
             display_name="桥本志津",
             identity="美月的妈妈，来学校接她放学的家长。",
@@ -331,7 +333,7 @@ async def test_create_character_bootstraps_all_files(character_dir, monkeypatch)
         lambda _name: None,
     )
 
-    spec = NewCharacterRequest(
+    spec = LLMNewCharacterRequest(
         background_hint="美月的妈妈，温柔而谨慎，常在放学时到校门口等女儿。",
         initial_location="教室走廊",
     )
@@ -370,7 +372,7 @@ async def test_create_character_validates_before_calling_llm(character_dir, monk
     async def fake_run_structured_agent(**_kwargs):
         nonlocal called
         called = True
-        return NewCharacterProfile(
+        return LLMNewCharacterProfile(
             character_id="x",
             display_name="x",
             identity="x",
@@ -387,7 +389,7 @@ async def test_create_character_validates_before_calling_llm(character_dir, monk
         fake_run_structured_agent,
     )
 
-    spec = NewCharacterRequest(
+    spec = LLMNewCharacterRequest(
         background_hint="   ",
     )
     created = await character_factory_module.create_character(spec)
@@ -400,7 +402,7 @@ async def test_create_character_rejects_invalid_generated_character_id(character
     _seed(character_dir, "mitsuki")
 
     async def fake_run_structured_agent(**_kwargs):
-        return NewCharacterProfile(
+        return LLMNewCharacterProfile(
             character_id="美月妈妈",
             display_name="桥本志津",
             identity="美月的妈妈。",
@@ -419,7 +421,7 @@ async def test_create_character_rejects_invalid_generated_character_id(character
         lambda: {"model_id": "test"},
     )
 
-    spec = NewCharacterRequest(
+    spec = LLMNewCharacterRequest(
         background_hint="美月的妈妈，温柔而谨慎，常在放学时到校门口等女儿。",
     )
     created = await character_factory_module.create_character(spec)
@@ -446,9 +448,9 @@ async def test_bootstrap_new_characters_keeps_only_targeted_successes(monkeypatc
     monkeypatch.setattr(conversation_flow_module, "create_character", fake_create_character)
 
     specs = [
-        NewCharacterRequest(name_hint="好角色1", background_hint="x"),
-        NewCharacterRequest(name_hint="坏角色", background_hint="x"),
-        NewCharacterRequest(name_hint="好角色2", background_hint="x"),
+        LLMNewCharacterRequest(name_hint="好角色1", background_hint="x"),
+        LLMNewCharacterRequest(name_hint="坏角色", background_hint="x"),
+        LLMNewCharacterRequest(name_hint="好角色2", background_hint="x"),
     ]
     targets, created = await conversation_flow_module.bootstrap_new_characters(
         specs, ["mitsuki"]
@@ -470,7 +472,7 @@ async def test_bootstrap_new_characters_auto_targets_created(monkeypatch):
     monkeypatch.setattr(conversation_flow_module, "create_character", fake_create_character)
 
     specs = [
-        NewCharacterRequest(name_hint="Good One", background_hint="x"),
+        LLMNewCharacterRequest(name_hint="Good One", background_hint="x"),
     ]
     targets, created = await conversation_flow_module.bootstrap_new_characters(
         specs, ["mitsuki"]

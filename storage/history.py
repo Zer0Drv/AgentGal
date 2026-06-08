@@ -6,7 +6,7 @@ import os
 from collections.abc import Iterator
 from datetime import datetime
 
-from memory.parser import canonical_cn_date
+from shared.date_utils import canonical_cn_date
 from shared.config import character_path
 from shared.narrator_output import extract_narrator_output, raw_message_text
 

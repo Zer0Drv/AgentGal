@@ -11,7 +11,7 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
-    from agents.schema import NarratorOutput
+    from agents.llm_schema import LLMNarratorOutput
     import server as server_module
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip server tests: missing dependency ({exc})", allow_module_level=True)
@@ -34,7 +34,7 @@ def _parse_sse_chunk(chunk: str) -> dict:
     return json.loads(chunk.removeprefix("data: ").strip())
 
 
-def _narrator_output(**overrides) -> NarratorOutput:
+def _narrator_output(**overrides) -> LLMNarratorOutput:
     data = {
         "targets": ["alice"],
         "date": "4月3日 星期三",
@@ -45,7 +45,7 @@ def _narrator_output(**overrides) -> NarratorOutput:
         "new_characters": [],
     }
     data.update(overrides)
-    return NarratorOutput(**data)
+    return LLMNarratorOutput(**data)
 
 
 
@@ -57,7 +57,7 @@ async def test_settle_pending_state_update_waits_for_background_task(monkeypatch
         nonlocal started
         started = True
 
-    monkeypatch.setattr(server_module.narrator.__class__, "update_state", fake_update_state)
+    monkeypatch.setattr(server_module.narrator_service.__class__, "update_state", fake_update_state)
     server_module._pending_state_update_task = None
 
     server_module._start_state_update()
@@ -77,7 +77,7 @@ async def test_settle_pending_state_update_cancels_background_task(monkeypatch):
         while not release:
             await server_module.asyncio.sleep(0)
 
-    monkeypatch.setattr(server_module.narrator.__class__, "update_state", fake_update_state)
+    monkeypatch.setattr(server_module.narrator_service.__class__, "update_state", fake_update_state)
     server_module._pending_state_update_task = None
 
     server_module._start_state_update()
@@ -103,7 +103,7 @@ async def test_start_state_update_coalesces_while_running(monkeypatch):
             started.set()
             await release.wait()
 
-    monkeypatch.setattr(server_module.narrator.__class__, "update_state", fake_update_state)
+    monkeypatch.setattr(server_module.narrator_service.__class__, "update_state", fake_update_state)
     server_module._pending_state_update_task = None
     server_module._pending_state_update_requested = False
 
@@ -139,7 +139,7 @@ async def test_chat_stream_does_not_wait_for_pending_state_update(monkeypatch):
     task = server_module.asyncio.create_task(blocking_task())
     server_module._pending_state_update_task = task
     server_module._pending_state_update_requested = False
-    monkeypatch.setattr(server_module.narrator.__class__, "route", fake_route)
+    monkeypatch.setattr(server_module.narrator_service.__class__, "route", fake_route)
 
     try:
         chunks = await server_module.asyncio.wait_for(
@@ -184,7 +184,7 @@ async def test_chat_stream_yields_response_done_before_choices(monkeypatch):
     def fake_schedule_detect_and_consolidate(turn):
         maintenance_calls.append(("memory", turn))
 
-    monkeypatch.setattr(server_module.narrator.__class__, "route", fake_route)
+    monkeypatch.setattr(server_module.narrator_service.__class__, "route", fake_route)
     monkeypatch.setattr(
         server_module.message_router,
         "broadcast_player_message",
@@ -262,7 +262,7 @@ async def test_new_chat_cancels_pending_choices(monkeypatch):
             raise
         return ["过期选项"]
 
-    monkeypatch.setattr(server_module.narrator.__class__, "route", fake_route)
+    monkeypatch.setattr(server_module.narrator_service.__class__, "route", fake_route)
     monkeypatch.setattr(
         server_module.message_router,
         "broadcast_player_message",
@@ -590,7 +590,7 @@ async def test_chat_stream_emits_created_character_identity(monkeypatch):
         "_settle_pending_state_update",
         fake_settle_pending_state_update,
     )
-    monkeypatch.setattr(server_module.narrator.__class__, "route", fake_route)
+    monkeypatch.setattr(server_module.narrator_service.__class__, "route", fake_route)
     monkeypatch.setattr(
         server_module,
         "bootstrap_new_characters",

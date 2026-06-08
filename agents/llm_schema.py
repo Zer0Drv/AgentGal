@@ -1,4 +1,9 @@
-"""所有 Agent 的结构化输出类型（对话 + 记忆整理）。"""
+"""所有 Agent 的 LLM 结构化输出契约（对话 + 记忆整理）。
+
+命名约定：以 ``LLM`` 前缀标识"这是 LLM 的输出规范"——界定哪些字段交给模型填写。
+这些契约与 models/ 里的领域实体（EpisodeMemory / Understanding）刻意保持独立、
+不互相继承；实体多出的系统字段（id / memory_owner / 时间戳等）绝不暴露给 LLM。
+"""
 
 from typing import Annotated
 
@@ -22,7 +27,7 @@ ChoiceText = Annotated[str, Field(max_length=MAX_CHOICE_CHARS)]
 # ---------------------------------------------------------------------------
 
 
-class CharacterOutput(BaseModel):
+class LLMCharacterOutput(BaseModel):
     content: str
     memory: str
     status: dict[str, str] = Field(default_factory=dict)
@@ -30,13 +35,13 @@ class CharacterOutput(BaseModel):
     add_event: list[str] = Field(default_factory=list)
 
 
-class NewCharacterRequest(BaseModel):
+class LLMNewCharacterRequest(BaseModel):
     name_hint: str = ""
     background_hint: str
     initial_location: str = ""
 
 
-class NarratorOutput(BaseModel):
+class LLMNarratorOutput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     targets: list[str]
@@ -46,7 +51,7 @@ class NarratorOutput(BaseModel):
     present_characters: dict[str, str]
     scene_description: str
     character_locations: dict[str, str] = Field(default_factory=dict)
-    new_characters: list[NewCharacterRequest] = Field(default_factory=list)
+    new_characters: list[LLMNewCharacterRequest] = Field(default_factory=list)
 
     @field_validator("targets", mode="before")
     @classmethod
@@ -88,13 +93,13 @@ class NarratorOutput(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _require_route_target_or_new_character(self) -> "NarratorOutput":
+    def _require_route_target_or_new_character(self) -> "LLMNarratorOutput":
         if not self.targets and not self.new_characters:
-            raise ValueError("NarratorOutput must include targets or new_characters")
+            raise ValueError("LLMNarratorOutput must include targets or new_characters")
         return self
 
 
-class NewCharacterProfile(BaseModel):
+class LLMNewCharacterProfile(BaseModel):
     """character_factory 输出的完整角色骨架。
 
     character_id 是最终目录名 / agent 标识，display_name 会写入 soul.md / status.md。
@@ -148,7 +153,7 @@ class NewCharacterProfile(BaseModel):
         return " ".join(value.split())
 
 
-class StateUpdaterOutput(BaseModel):
+class LLMStateUpdate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     narrative_focus: str = ""
@@ -159,7 +164,7 @@ class StateUpdaterOutput(BaseModel):
     triggered_world_events: list[str] = Field(default_factory=list)
 
 
-class ChoicesOutput(BaseModel):
+class LLMChoices(BaseModel):
     choices: list[ChoiceText]
 
     @field_validator("choices", mode="before")
@@ -178,7 +183,7 @@ class ChoicesOutput(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class EpisodeMemoryBlock(BaseModel):
+class LLMEpisodeMemory(BaseModel):
     """EpisodeMemoryGenerator 输出的单条长期记忆事件。
 
     memory_owner 与 raw_dialogue 由整理流程注入，不交给 LLM 判断。
@@ -213,18 +218,18 @@ class EpisodeMemoryBlock(BaseModel):
             return 3
 
 
-class EpisodeClosureBoundary(BaseModel):
+class LLMEpisodeClosureBoundary(BaseModel):
     end_turn: int
     old_theme: str = ""
     new_theme: str = ""
     reason: str = ""
 
 
-class EpisodeClosureOutput(RootModel[dict[str, list[EpisodeClosureBoundary]]]):
+class LLMEpisodeClosure(RootModel[dict[str, list[LLMEpisodeClosureBoundary]]]):
     """消费方取每个数组里 end_turn 最大的边界作为本轮可归并的闭合点。"""
 
 
-class UnderstandingEntry(BaseModel):
+class LLMUnderstandingEntry(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     subject: str = ""
@@ -232,9 +237,9 @@ class UnderstandingEntry(BaseModel):
     content: str = ""
 
 
-class UnderstandingPatchOutput(BaseModel):
-    add: list[UnderstandingEntry] = Field(default_factory=list)
-    update: dict[str, UnderstandingEntry] = Field(default_factory=dict)
+class LLMUnderstandingPatch(BaseModel):
+    add: list[LLMUnderstandingEntry] = Field(default_factory=list)
+    update: dict[str, LLMUnderstandingEntry] = Field(default_factory=dict)
 
     @field_validator("update", mode="before")
     @classmethod
@@ -246,5 +251,3 @@ class UnderstandingPatchOutput(BaseModel):
             for k, item in value.items()
             if str(k).strip()
         }
-
-
