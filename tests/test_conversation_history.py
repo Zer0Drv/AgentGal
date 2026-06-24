@@ -16,8 +16,8 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
-from shared.config import character_path
-from storage.history import extract_game_date_anchors, load_conversation_history, search_history
+from repository.config import character_path
+from repository.history import extract_game_date_anchors, load_conversation_history, search_history
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def temp_raw_dir(tmp_path, monkeypatch):
             return str(raw_dir / subpaths[1] if len(subpaths) > 1 else raw_dir)
         return original_character_path(agent_name, *subpaths)
     
-    monkeypatch.setattr("storage.history.character_path", mock_character_path)
+    monkeypatch.setattr("repository.history.character_path", mock_character_path)
     return raw_dir
 
 

@@ -12,16 +12,16 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
-    import engine.character_factory as character_factory_module
-    import engine.conversation_flow as conversation_flow_module
-    import engine.narrator_service as narrator_service_module
-    from agents.llm_schema import (
+    import app.character_factory as character_factory_module
+    import app.conversation_flow as conversation_flow_module
+    import app.narrator_service as narrator_service_module
+    from app.llm_schema import (
         LLMNarratorOutput,
         LLMNewCharacterProfile,
         LLMNewCharacterRequest,
     )
-    from engine.narrator_service import NarratorService
-    from engine.character_factory import CreatedCharacterInfo
+    from app.narrator_service import NarratorService
+    from app.character_factory import CreatedCharacterInfo
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip character_factory tests: missing dependency ({exc})", allow_module_level=True)
 
@@ -102,7 +102,6 @@ def test_filter_new_characters_dedupes_names():
 
 @pytest.mark.asyncio
 async def test_narrator_route_passes_new_characters(monkeypatch):
-    monkeypatch.setattr(NarratorService, "_sync_player_relations", lambda _self: None)
     monkeypatch.setattr(NarratorService, "_write_scene", lambda _self, _output: None)
     monkeypatch.setattr(
         narrator_service_module,
@@ -141,7 +140,7 @@ async def test_narrator_route_passes_new_characters(monkeypatch):
 
 @pytest.fixture
 def character_dir(tmp_path: Path, monkeypatch):
-    from shared import config as shared_config
+    from repository import config as shared_config
 
     monkeypatch.setattr(shared_config, "CHARACTERS_DIR", tmp_path)
     monkeypatch.setattr(character_factory_module, "CHARACTERS_DIR", tmp_path)

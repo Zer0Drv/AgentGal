@@ -1,8 +1,8 @@
 from pathlib import Path
 
-import storage.memory_store as memory_store_module
+import repository.memory_store as memory_store_module
 from models import EpisodeMemory, Understanding, UnderstandingHistoryEntry
-from storage.memory_store import (
+from repository.memory_store import (
     append_memory_records,
     read_memory_jsonl,
     read_understandings,

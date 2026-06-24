@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from storage.vector_store import VectorStore
+from repository.vector_store import VectorStore
 
 
 class FakeConnection:
@@ -70,7 +70,7 @@ async def test_concurrent_export_recall_state_initializes_connection_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import storage.vector_store as vector_store_module
+    import repository.vector_store as vector_store_module
 
     connections: list[FakeConnection] = []
     load_calls: list[FakeConnection] = []

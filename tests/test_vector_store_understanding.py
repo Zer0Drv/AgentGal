@@ -3,8 +3,8 @@ import sqlite3
 import pytest
 
 from models import Understanding
-import storage.vector_store as vector_store_module
-from storage.vector_store import VectorStore
+import repository.vector_store as vector_store_module
+from repository.vector_store import VectorStore
 
 
 TEST_EMBED_DIM = 8

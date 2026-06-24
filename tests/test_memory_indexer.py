@@ -2,12 +2,12 @@ from pathlib import Path
 
 import pytest
 
-import memory.indexer as indexer
-import storage.memory_store as memory_store_module
-import storage.vector_store as vector_store_module
+import app.memory.indexer as indexer
+import repository.memory_store as memory_store_module
+import repository.vector_store as vector_store_module
 from models import EpisodeMemory, Understanding
-from storage.memory_store import serialize_episode, write_understandings
-from storage.vector_store import VectorStore
+from repository.memory_store import serialize_episode, write_understandings
+from repository.vector_store import VectorStore
 
 
 class FakeVectorStore:

@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 
 load_dotenv(project_root / ".env")
 
-from storage.vector_store import DB_PATH
+from repository.vector_store import DB_PATH
 
 
 async def _open_db() -> aiosqlite.Connection | None:

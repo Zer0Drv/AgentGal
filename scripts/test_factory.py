@@ -14,11 +14,11 @@ for key in list(os.environ):
     if val and ("$" in val):
         os.environ[key] = os.path.expandvars(val)
 
-from agents.factory import get_character_factory_agent
-from agents.runner import run_structured_agent
-from agents.llm_schema import LLMNewCharacterProfile, LLMNewCharacterRequest
-from llm.config import get_llm_config
-from shared.config import AGENT_RUN_TIMEOUT_SECONDS
+from app.agent_factory import get_character_factory_agent
+from repository.sdk_runner import run_structured_agent
+from app.llm_schema import LLMNewCharacterProfile, LLMNewCharacterRequest
+from repository.llm.config import get_llm_config
+from repository.config import AGENT_RUN_TIMEOUT_SECONDS
 
 # 与原始 trace 完全一致的输入
 USER_INPUT = """<spec>

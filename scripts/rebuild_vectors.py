@@ -19,8 +19,8 @@ from dotenv import load_dotenv
 
 load_dotenv(project_root / ".env")
 
-from memory.indexer import rebuild_memory_index
-from storage.vector_store import vector_store
+from app.memory.indexer import rebuild_memory_index
+from repository.vector_store import vector_store
 
 
 async def main() -> None:

@@ -11,7 +11,7 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
-    from agents.llm_schema import LLMNarratorOutput
+    from app.llm_schema import LLMNarratorOutput
     import server as server_module
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip server tests: missing dependency ({exc})", allow_module_level=True)

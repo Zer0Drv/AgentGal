@@ -25,20 +25,15 @@ load_dotenv(project_root / ".env")
 
 from pydantic import BaseModel, Field
 
-from agents.factory import _build_agent
-from agents.runner import run_structured_agent
-from agents.llm_schema import LLMUnderstandingEntry
-from llm.config import get_llm_config
+from app.agent_factory import _build_agent
+from repository.sdk_runner import run_structured_agent
+from app.llm_schema import LLMUnderstandingEntry
+from repository.llm.config import get_llm_config
 from models import Understanding
-from storage.memory_store import read_understandings, write_understandings
-from shared.config import (
-    AGENT_RUN_TIMEOUT_SECONDS,
-    CONSOLIDATION_MAX_TOKENS,
-    CONSOLIDATION_TEMPERATURE,
-    get_agent_names,
-)
-from storage.agent_files import read_agent_file
-from storage.vector_store import vector_store
+from repository.memory_store import read_understandings, write_understandings
+from repository.config import AGENT_RUN_TIMEOUT_SECONDS, CONSOLIDATION_MAX_TOKENS, CONSOLIDATION_TEMPERATURE, get_agent_names
+from repository.agent_files import read_agent_file
+from repository.vector_store import vector_store
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 """Shared test helpers available to all tests in this directory."""
 
-from agents.llm_schema import LLMNarratorOutput
+from app.llm_schema import LLMNarratorOutput
 
 
 def _narrator_output(**overrides) -> LLMNarratorOutput:

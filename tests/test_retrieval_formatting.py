@@ -1,5 +1,5 @@
-import memory.retrieval as retrieval_module
-from memory.retrieval import _format_retrieved_memory, search_memories, search_understandings
+import app.memory.retrieval as retrieval_module
+from app.memory.retrieval import _format_retrieved_memory, search_memories, search_understandings
 
 
 def test_format_retrieved_memory_includes_date_heading():

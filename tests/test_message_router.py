@@ -8,10 +8,10 @@ import pytest
 project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
-import storage.message_router as router_module
-import storage.runtime_state as runtime_state_module
-from storage.runtime_state import PLAYER_NAME_FILENAME, read_player_name
-from storage.message_router import MessageRouter
+import repository.message_router as router_module
+import repository.runtime_state as runtime_state_module
+from repository.runtime_state import PLAYER_NAME_FILENAME, read_player_name
+from repository.message_router import MessageRouter
 
 
 @pytest.fixture(autouse=True)

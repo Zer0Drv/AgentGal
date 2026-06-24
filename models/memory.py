@@ -9,7 +9,7 @@
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from shared.date_utils import canonical_cn_date
+from models.dates import canonical_cn_date
 
 
 class EpisodeMemory(BaseModel):

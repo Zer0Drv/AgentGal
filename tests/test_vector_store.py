@@ -30,14 +30,14 @@ except ImportError:
 # 现在导入 vector_store，此时环境变量已加载
 try:
     import importlib
-    import storage.vector_store  # 确保子模块被加载进 sys.modules
-    vector_store_module = importlib.import_module("storage.vector_store")
-    from storage.vector_store import vector_store, VectorStore
-    from llm.embedding import embed_sync, EMBED_API_URL, EMBED_API_KEY
-    import memory.retrieval as retrieval_module
-    import storage.memory_store as memory_store_module
+    import repository.vector_store  # 确保子模块被加载进 sys.modules
+    vector_store_module = importlib.import_module("repository.vector_store")
+    from repository.vector_store import vector_store, VectorStore
+    from repository.llm.embedding import embed_sync, EMBED_API_URL, EMBED_API_KEY
+    import app.memory.retrieval as retrieval_module
+    import repository.memory_store as memory_store_module
     from models import EpisodeMemory
-    from memory.retrieval import (
+    from app.memory.retrieval import (
         hybrid_fusion,
         apply_recency,
         _recency_score,
@@ -197,7 +197,7 @@ def write_memory(tmp_path, agent_name: str, content: str):
     agent_dir.mkdir(parents=True, exist_ok=True)
     path = agent_dir / "memory.jsonl"
     path.write_text("", encoding="utf-8")  # 清空以保证幂等
-    from storage.memory_store import serialize_episode
+    from repository.memory_store import serialize_episode
     episodes = _parse_memory_markdown(content, memory_owner=agent_name)
     with path.open("w", encoding="utf-8") as f:
         for ep in episodes:
@@ -215,7 +215,7 @@ def write_status(tmp_path, agent_name: str, content: str):
 
 def _read_episodes(tmp_path, agent_name: str) -> list[EpisodeMemory]:
     """直接从 tmp_path 下的 memory.jsonl 读回 EpisodeMemory 列表。"""
-    from storage.memory_store import parse_jsonl_line
+    from repository.memory_store import parse_jsonl_line
     path = tmp_path / agent_name / "memory.jsonl"
     if not path.exists():
         return []
@@ -291,7 +291,7 @@ class TestVectorStoreRebuild:
     @pytest.mark.asyncio
     async def test_rebuild_memory_layer(self, clean_store, tmp_path, monkeypatch):
         """测试 rebuild() 从 memory.jsonl + consolidation_state 重建 memory 层向量索引"""
-        import importlib; vs_mod = importlib.import_module("storage.vector_store")
+        import importlib; vs_mod = importlib.import_module("repository.vector_store")
 
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
@@ -320,9 +320,9 @@ class TestVectorStoreRebuild:
         # monkeypatch get_agent_names
         monkeypatch.setattr(vs_mod, "get_agent_names", lambda: ["lilith"])
 
-        from memory.indexer import rebuild_memory_index
-        monkeypatch.setattr("memory.indexer.vector_store", store)
-        monkeypatch.setattr("memory.indexer.get_agent_names", lambda **_: ["lilith"])
+        from app.memory.indexer import rebuild_memory_index
+        monkeypatch.setattr("app.memory.indexer.vector_store", store)
+        monkeypatch.setattr("app.memory.indexer.get_agent_names", lambda **_: ["lilith"])
         await rebuild_memory_index()
 
         res = await wait_for_search(store, "lilith", "被 rebuild 的记忆")
@@ -460,7 +460,7 @@ class TestVectorStoreEdgeCases:
     @pytest.mark.asyncio
     async def test_delete_all_agents_full_clear(self, clean_store, tmp_path, monkeypatch):
         """测试 delete_all_agents 命中全角色时走全量清理。"""
-        import importlib; vs_mod = importlib.import_module("storage.vector_store")
+        import importlib; vs_mod = importlib.import_module("repository.vector_store")
 
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
@@ -916,7 +916,7 @@ class TestHybridSearch:
         await wait_for_search(store, "lilith", "录取通知书")
 
         # 启用混合检索后，用精确关键词搜索
-        from memory.retrieval import search_memories
+        from app.memory.retrieval import search_memories
         result_str = search_memories("lilith", "京都大学")
         assert result_str != "（无相关记忆）", "混合检索应能命中结果"
         assert "京都大学" in result_str, "结果应包含关键词"
@@ -943,7 +943,7 @@ class TestHybridSearch:
         await add_episodes(store, get_episodes(tmp_path, "lilith", "4月3日"))
         await wait_for_search(store, "lilith", "告白")
 
-        from memory.retrieval import search_memories
+        from app.memory.retrieval import search_memories
         result_str = search_memories("lilith", "告白")
         assert result_str != "（无相关记忆）", "应命中记忆"
 
@@ -959,9 +959,9 @@ class TestHybridSearch:
     async def test_rebuild_restores_recall_from_memory_jsonl(self, clean_store, tmp_path, monkeypatch):
         """rebuild() 应优先从 memory.jsonl 的 last_recalled_at 恢复 DB 状态。"""
         import importlib
-        from storage.memory_store import serialize_episode
+        from repository.memory_store import serialize_episode
 
-        vs_mod = importlib.import_module("storage.vector_store")
+        vs_mod = importlib.import_module("repository.vector_store")
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
         monkeypatch.setattr(memory_store_module, "character_path", make_character_path(tmp_path))
@@ -985,9 +985,9 @@ class TestHybridSearch:
             encoding="utf-8",
         )
 
-        from memory.indexer import rebuild_memory_index
-        monkeypatch.setattr("memory.indexer.vector_store", store)
-        monkeypatch.setattr("memory.indexer.get_agent_names", lambda **_: ["lilith"])
+        from app.memory.indexer import rebuild_memory_index
+        monkeypatch.setattr("app.memory.indexer.vector_store", store)
+        monkeypatch.setattr("app.memory.indexer.get_agent_names", lambda **_: ["lilith"])
         await rebuild_memory_index()
 
         conn = __import__("sqlite3").connect(test_db_path)
@@ -1004,7 +1004,7 @@ class TestHybridSearch:
         import importlib
         import hashlib
 
-        vs_mod = importlib.import_module("storage.vector_store")
+        vs_mod = importlib.import_module("repository.vector_store")
         store = clean_store
         monkeypatch.setattr(store, "character_path", make_character_path(tmp_path))
         monkeypatch.setattr(memory_store_module, "character_path", make_character_path(tmp_path))
@@ -1046,9 +1046,9 @@ class TestHybridSearch:
             encoding="utf-8",
         )
 
-        from memory.indexer import rebuild_memory_index
-        monkeypatch.setattr("memory.indexer.vector_store", store)
-        monkeypatch.setattr("memory.indexer.get_agent_names", lambda **_: ["lilith"])
+        from app.memory.indexer import rebuild_memory_index
+        monkeypatch.setattr("app.memory.indexer.vector_store", store)
+        monkeypatch.setattr("app.memory.indexer.get_agent_names", lambda **_: ["lilith"])
         await rebuild_memory_index()
 
         conn = __import__("sqlite3").connect(test_db_path)

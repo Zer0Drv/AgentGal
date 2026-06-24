@@ -2,7 +2,7 @@ import importlib
 
 import pytest
 
-from agents.llm_schema import LLMUnderstandingEntry
+from app.llm_schema import LLMUnderstandingEntry
 from models import Understanding
 
 migrate = importlib.import_module("scripts.migrate_to_understandings")

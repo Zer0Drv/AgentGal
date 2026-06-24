@@ -9,15 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from storage import runtime_state as runtime_state_module
-from storage import save_manager
-from storage.runtime_state import PLAYER_NAME_FILENAME
+from repository import runtime_state as runtime_state_module
+from repository import save_manager
+from repository.runtime_state import PLAYER_NAME_FILENAME
 
 
 @pytest.fixture
 def character_dir(tmp_path: Path, monkeypatch):
     """把 CHARACTERS_DIR 指到临时目录，避免污染仓库数据。"""
-    from shared import config as shared_config
+    from repository import config as shared_config
 
     monkeypatch.setattr(shared_config, "CHARACTERS_DIR", tmp_path)
     monkeypatch.setattr(save_manager, "CHARACTERS_DIR", tmp_path)
@@ -37,7 +37,7 @@ def _seed_character(root: Path, name: str) -> Path:
 
 
 def test_restore_player_name_from_raw_history(tmp_path: Path, monkeypatch):
-    from shared import config as shared_config
+    from repository import config as shared_config
 
     raw_dir = tmp_path / "narrator" / "raw"
     raw_dir.mkdir(parents=True)
@@ -119,7 +119,7 @@ def test_memory_jsonl_archive_payload_merges_db_recall_state(
     monkeypatch,
 ):
     from models import EpisodeMemory
-    from storage.memory_store import parse_jsonl_line, serialize_episode
+    from repository.memory_store import parse_jsonl_line, serialize_episode
 
     def _character_path(agent_name: str, *parts: str) -> str:
         return str(character_dir / agent_name / Path(*parts))

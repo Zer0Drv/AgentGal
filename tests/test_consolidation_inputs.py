@@ -9,7 +9,7 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
-from consolidation.inputs import (
+from app.consolidation.inputs import (
     build_episode_closure_payload,
     build_episode_memory_generator_payload,
     build_understanding_patch_payload,
@@ -93,7 +93,7 @@ def test_build_episode_memory_generator_payload_includes_owner_before_memory(mon
     """EpisodeMemoryGenerator payload 应先注入记忆主体，再附带 memory 与 raw 对话。"""
 
     monkeypatch.setattr(
-        "consolidation.inputs.read_agent_file",
+        "app.consolidation.inputs.read_agent_file",
         lambda agent_name, filename: "<role>陈晓</role>" if filename == "soul.md" else "",
     )
 

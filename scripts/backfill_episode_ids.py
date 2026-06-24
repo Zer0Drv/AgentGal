@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pydantic import ValidationError
 
 from models import EpisodeMemory
-from storage.memory_store import memory_jsonl_path
-from shared.config import get_agent_names
+from repository.memory_store import memory_jsonl_path
+from repository.config import get_agent_names
 
 
 def backfill(agent_name: str) -> int:

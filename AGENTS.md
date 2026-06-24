@@ -20,54 +20,47 @@ Multi-Agent Roleplay / Narrative Game Project. The current implementation is bui
 
 ```text
 agentgal-memos/
-├── server.py                   # FastAPI entry point (UI adapter layer)
+├── server.py                   # FastAPI/SSE entry (delivery layer)
 ├── config.toml                 # Non-secret runtime parameters
 ├── data/
 │   ├── runtime/                # Runtime state (ignored by git)
 │   │   ├── characters/         # Runtime character data
 │   │   └── vectors.sqlite      # Vector store
 │   ├── templates/              # Story templates (school / modern)
-├── models/                     # Domain layer (innermost): entities & value objects, zero I/O
-│   ├── character.py            # Character entity (name + soul, frozen dataclass; derived display_name)
+├── models/                     # Domain layer (innermost): entities + value objects + pure domain rules, zero I/O
+│   ├── character.py            # Character entity + get_display_name / extract_identity (derive from soul)
 │   ├── memory.py               # EpisodeMemory / Understanding / UnderstandingHistoryEntry
-│   └── status_fields.py        # status.md known field-name constants (replaces a structured CharacterStatus)
-├── engine/                     # Dialogue runtime orchestration (Service layer)
-│   ├── conversation_service.py # Single character turn: retrieve memory → prompt → SDK → writeback via CharacterRepository
-│   ├── narrator_service.py     # Narrator routing + state_updater orchestration (unpacks LLM DTOs → NarratorRepository)
-│   ├── character_factory.py    # New character incubation
-│   ├── conversation_flow.py    # Single-round dialogue orchestration and UI adapter functions
-│   ├── memory_query_builder.py # Character retrieval query construction (RetrievalQueries)
-│   └── prompt_builder.py       # Dialogue prompt / history window construction
-├── agents/                     # SDK infrastructure (technical support layer)
-│   ├── factory.py              # Agent creation, registry, and SDK model configuration
-│   ├── runner.py               # SDK Runner invocation (run_structured_agent / run_app_agent), Logfire trace, typed parse
-│   └── llm_schema.py           # LLM structured output contracts (all LLM* prefixed)
-├── consolidation/              # Background memory consolidation (independent process)
-│   ├── flow.py                 # Consolidation orchestration: EpisodeMemoryGenerator / understanding patch
-│   └── inputs.py               # Consolidation prompt assembly (memory_owner / raw_dialogue)
-├── llm/
-│   ├── config.py               # LLM URL configuration parsing (returns api_url/api_key/model_id/temperature)
-│   ├── embedding.py            # Embeddings client (embed_async / embed_sync)
-│   └── rerank.py               # Rerank API client
-├── log_config/                 # Logfire and business logger configuration (routing_logger / log_file_updates)
-├── memory/                     # Memory retrieval strategy
-│   ├── indexer.py              # Vector index rebuild entry point (reads from memory.jsonl, writes to storage)
-│   └── retrieval.py            # Full retrieval pipeline (fusion, rerank, recency, recall state update)
-├── shared/                     # Pure configuration and side-effect-free utility functions
-│   ├── config.py               # Paths, runtime parameters, character_path, get_agent_names
-│   ├── date_utils.py           # Game date parsing (parse_cn_date / canonical_cn_date / game_day_*)
-│   └── text_utils.py           # Text cleanup, get_display_name, normalize, extract_status_field
-├── storage/                    # Persistence infrastructure (files / JSONL / sqlite-vec / saves) + Repository
+│   ├── dates.py                # Game date value object (parse_cn_date / canonical_cn_date / game_day_*)
+│   └── status_fields.py        # status.md known field-name constants
+├── repository/                 # Infrastructure layer: all outward I/O (files / sqlite-vec / LLM clients / logging)
+│   ├── config.py               # App config: paths, runtime params, character_path, get_agent_names
 │   ├── agent_files.py          # Basic per-agent file IO + JSON sidecar + backup
-│   ├── status_file.py          # status.md section engine + field whitelist + event queue + status writeback
+│   ├── status_file.py          # status.md section engine (prose fields) + extract_status_field
+│   ├── intent_queue.py         # 打算/待触发事件 typed-list store (intents.json / pending_events.json)
 │   ├── runtime_state.py        # Global narrator turn counter + player name
-│   ├── memory_store.py         # memory.jsonl / understanding.jsonl / memory_draft.jsonl JSONL IO
+│   ├── memory_store.py         # memory/understanding/draft JSONL IO + normalize (memory text format)
 │   ├── character_repo.py       # CharacterRepository: soul cache + load→entity + writeback policy
-│   ├── narrator_repo.py        # NarratorRepository: status / world_schedule read-write (narrator soul is read fresh, not cached)
+│   ├── narrator_repo.py        # NarratorRepository: status / world_schedule read-write
 │   ├── history.py              # Narrator raw JSONL dialogue history read
 │   ├── message_router.py       # Dialogue write / visibility filtering
+│   ├── narrator_output.py      # message helpers (extract_narrator_output / raw_message_text / role_to_speaker)
 │   ├── save_manager.py         # Save / load / reset / opening load
-│   └── vector_store.py         # sqlite-vec vector storage (write/delete + raw candidate retrieval)
+│   ├── vector_store.py         # sqlite-vec vector storage (write/delete + raw candidate retrieval)
+│   ├── sdk_runner.py           # SDK Runner invocation (run_structured_agent / run_app_agent), Logfire trace
+│   ├── llm/                    # config (LLM_* parsing) / embedding / rerank clients
+│   └── log_config/             # Logfire + business logger configuration (routing_logger / log_file_updates)
+├── app/                        # Use-case layer: single-round orchestration + agent assembly + LLM DTOs
+│   ├── conversation_flow.py    # Single-round dialogue orchestration and UI adapter functions
+│   ├── conversation_service.py # Single character turn: retrieve memory → prompt → SDK → writeback
+│   ├── narrator_service.py     # Narrator routing + state_updater orchestration (unpacks LLM DTOs → repos)
+│   ├── character_factory.py    # New character incubation
+│   ├── prompt_builder.py       # user-message / history window; build_status_block + render_player_relations
+│   ├── memory_query_builder.py # Character retrieval query construction (RetrievalQueries)
+│   ├── responses.py            # LLM response post-processing (clean_response / strip_thinking / is_valid_response)
+│   ├── agent_factory.py        # Agent creation, registry, SDK model config, build_system_prompt
+│   ├── llm_schema.py           # LLM structured output contracts (all LLM* prefixed)
+│   ├── consolidation/          # Background memory consolidation (flow + inputs)
+│   └── memory/                 # Retrieval pipeline (retrieval) + vector index rebuild (indexer)
 ├── prompts/                    # Prompt constant modules grouped by lifecycle
 │   ├── consolidation_prompts.py  # Background consolidation: EpisodeClosureDetector / EpisodeMemoryGenerator / understanding
 │   ├── runtime_prompts.py        # Main dialogue: character / narrator / choices / state_updater
@@ -85,16 +78,15 @@ agentgal-memos/
 ### Layered Dependency Direction
 
 ```
-models/          ← shared/ (pure date_utils / text_utils only; never shared.config)  # innermost domain layer
-shared/          ← no internal dependencies (config = infrastructure leaf)
-storage/         ← models/ + shared/                  # includes Repository; must NOT import agents/
-llm/             ← shared/
-agents/          ← models/ + shared/                  # SDK base layer; LLM* contracts
-memory/          ← models/ + shared/ + storage/ + llm/
-consolidation/   ← models/ + shared/ + storage/ + agents/ + memory/ + llm/
-engine/          ← models/ + shared/ + storage/ + agents/ + memory/ + consolidation/   # Service layer
-server.py        ← all
+models/        ← (self only)            # innermost domain layer: entities + value objects + 纯领域规则
+repository/    ← models/                 # infra: files / vector / LLM clients / logging; must NOT import app/ or server
+app/           ← models/ + repository/   # use cases: orchestration + agent assembly + LLM* DTOs + response post-processing
+server.py      ← all
 ```
+
+无独立 `shared/`——原 shared 已按归属拆散：游戏日期值对象与 soul 派生规则进 `models/`，config / status 格式解析 / 消息助手进 `repository/`，LLM 输出后处理进 `app/`（判据：领域无关才配做通用工具，否则它有自己的层）。
+
+依赖方向由 `tests/test_layer_dependencies.py` 用 AST 静态强制（新增反向 import 会让对应用例失败）：models 不依赖任何外层；repository 不反依赖 app/server；app 不依赖 server。LLM 调用收敛在 `repository/`（sdk_runner + llm/ 客户端），agent 装配与 LLM* DTO 在 `app/`，consolidation/memory 检索流水线是 `app/` 子包。
 
 ## Runtime File Responsibilities
 
@@ -104,7 +96,7 @@ server.py        ← all
 - `memory.jsonl`: Character long-term memory, one structured `EpisodeMemory` per line (`id / date / time / location / participants / keywords / importance / content / memory_owner / title / raw_dialogue / last_recalled_at`), append-only, characters only; `id` is a stable UUID, `last_recalled_at` defaults to the event date and is refreshed from SQLite into saved archives, and old data can be backfilled with `scripts/backfill_episode_ids.py`
 - `memory_draft.jsonl`: On-disk buffer for each round's `output.memory` (characters only), each line is `{"turn": int, "text": str}`; after consolidation's `EpisodeClosureDetector` determines closure, slices are read by `until_turn` to produce structured `EpisodeMemory` appended to `memory.jsonl`. Merged entries are removed from draft; unclosed turn entries are retained
 - `understanding.jsonl`: Stable understandings formed by the character, one structured `Understanding` per line (`id / memory_owner / subject / keywords / content / linked_episodes / history`); unlike `EpisodeMemory`, this records durable beliefs or interaction patterns rather than single events. `history` belongs to that single Understanding and records the initial version plus content-changing updates as `{episode_id / date / title / content}`; link-only evidence updates do not append history entries
-- `status.md`: Current status; characters contain "Intentions" and "Relationship with Player", narrator contains "Pending Events", "Character Locations", and the derived field "Relationship with Player" (summarized from each character's status as `- Character Display Name: Relationship`, maintained by code, narrator does not generate it)
+- `status.md`: Current status (prose fields only). Characters contain "心境 / 在意的事 / Relationship with Player"; narrator contains "场景 / 当前时间 / Character Locations / 叙事焦点 …". 打算 / 待触发事件 are no longer status.md sections — they live in `intents.json` / `pending_events.json` (see `intent_queue`). Narrator's "Relationship with Player" is not stored either — it is computed at prompt-build time from each character's own status (`- Character Display Name: Relationship`)
 
 ### History Files
 
@@ -137,7 +129,7 @@ User Input → narrator → targets: ["existing character name", ...] (LLMNarrat
 - Every round must ensure at least one major character can perceive and respond to the player
 - Describe time, location, present characters, environment, pure NPC behavior, and current hooks
 - Do not add future events; future events are maintained by `state_updater` from character "Intentions"
-- When the plot requires introducing a new character with relationship anchors, list `LLMNewCharacterRequest` anchors via `LLMNarratorOutput.new_characters` (`name_hint` is just an optional name hint); `engine/character_factory.py` generates `character_id` and incubates the directory; the orchestration layer automatically adds successfully incubated new characters to this round's response list. Pure passersby are not generated, described directly in `present_characters` / `scene_description`
+- When the plot requires introducing a new character with relationship anchors, list `LLMNewCharacterRequest` anchors via `LLMNarratorOutput.new_characters` (`name_hint` is just an optional name hint); `app/character_factory.py` generates `character_id` and incubates the directory; the orchestration layer automatically adds successfully incubated new characters to this round's response list. Pure passersby are not generated, described directly in `present_characters` / `scene_description`
 - **Never speak for characters or decide their actions**
 
 ## Single-Round Dialogue Flow
@@ -157,7 +149,7 @@ After each Agent response: write back from LLMCharacterOutput typed fields, broa
   ↓
 Launch three post-response lines together:
   1. choice generation → cancellable auxiliary task; if it finishes before the next player input, display 2-3 optional actions and persist them to `last_choices.json`
-  2. state_updater → update narrator/status.md (narrative focus, pending events; "Relationship with Player" is derived and synced from each character's status by code)
+  2. state_updater → update narrator/status.md (narrative focus, pending events; "Relationship with Player" is not stored — it is computed at prompt-build time from each character's status)
   3. detect_and_consolidate(current_turn) → determine episode closure and merge memories (see "Memory Consolidation")
   ↓
 Emit `response_done` so the UI can re-enable free input while those lines continue
@@ -166,9 +158,9 @@ state_updater inputs in order: `characters_status` (深层目标/身份/心境/�
   ↓
 narrator_service.route() writes 场景 / 当前时间 / 角色位置 synchronously to narrator/status.md before post-response tasks start; state_updater does not write these fields.
   ↓
-state_updater maintains "Recent World Event" as a derived narrator status field; when a new world-schedule event matches the current date, it also derives a concrete public scene (add_event) that pulls the player into the event via a main character. It can also derive an "identity-tension" add_event from a character's `<goal>` vs. 身份/秘密 (external pressure about to surface), so the queue carries conflict beats rather than only romance; mirroring a character's "打算"/"在意的事" into add_event only fires when the pending-event queue lacks a valid forward hook (per-round cap: ≤2 new, with ≤1 world-event and ≤1 identity-tension).
+state_updater reads the input blocks and decides on its own whether the upcoming plot needs new pending events (add_event) and what they are — no fixed sourcing taxonomy or per-round quota; the prompt states only the raw materials and the output contract. It still maintains a few mechanical fields: recent_world_event (a derived narrator status field prefixed with `（phase）`; "" keeps the old value), triggered_world_events (the pushed world-schedule event names, runtime marks them triggered), and world_schedule_update (full new calendar only on a major world change such as graduation / new environment).
   ↓
-state_updater syncs public "Pending Events" from each character's "打算" (event names preserve character names)
+triggered prunes the narrator "待触发事件" queue (events that fired, were missed, or are duplicate); add_event names must keep the 【角色显示名：事件名】 prefix because triggered / mark_triggered match by that string
 ```
 
 Observation mode uses the same SSE chat endpoint with `mode="observe"`: the narrator runs with the observation prompt, the player message is not written to raw history, selected characters respond to the narrator scene, choices are cleared instead of generated, and state update / consolidation still run after the round.
@@ -186,20 +178,20 @@ All structured agents use pydantic-ai's `PromptedOutput` structured output, no l
 - `LLMStateUpdate`: `status`, `triggered`, `add_event` (post-round background narrator state maintenance)
 - `LLMChoices`: `choices`
 
-The runtime is split three ways (Clean Architecture): `models/Character` is a thin frozen-dataclass entity (`name` + read-only `soul`, derived `display_name`); `storage/character_repo.py` (`CharacterRepository`) and `storage/narrator_repo.py` (`NarratorRepository`) own all file I/O — soul caching, status read, and the writeback policy (`apply_status_fields` / `append_memory` / `add_event` / `mark_triggered`; narrator's `write_scene` / `set_narrative_focus` / `set_recent_world_event` / `sync_player_relations` / world_schedule read-write); `engine/conversation_service.py` (`ConversationService.run_turn`) and `engine/narrator_service.py` (`NarratorService.route` / `update_state`) hold the orchestration. LLM DTOs are unpacked into primitives inside the Services before calling the repos, so `storage/` never imports `agents/`. There is no global entity registry; Services obtain entities via `CharacterRepository.load(name)`, and `reset_entities()` (in `server.py`) invalidates the character soul cache on load / reset (narrator soul is read fresh, not cached). The event-section integrity rules live in the mechanism layer: `status_file.update_status` rejects bulk overwrites of `EVENT_SECTIONS` (打算/待触发事件), and `add_pending_event` / `mark_event_triggered` own the `无`-sentinel skip and error handling, so the repos' `add_event` / `mark_triggered` are thin section-binding delegations.
+The runtime is split four ways (domain → repository → app → server): `models/Character` is a thin frozen-dataclass entity (`name` + read-only `soul`, derived `display_name`); `repository/character_repo.py` (`CharacterRepository`) and `repository/narrator_repo.py` (`NarratorRepository`) own all file I/O — soul caching, status read, and the writeback policy (`apply_status_fields` / `append_memory`; narrator's `write_scene` / world_schedule read-write); `app/conversation_service.py` (`ConversationService.run_turn`) and `app/narrator_service.py` (`NarratorService.route` / `update_state`) hold the orchestration. LLM DTOs are unpacked into primitives inside the Services before calling the repos, so `repository/` never imports `app/`. There is no global entity registry; Services obtain entities via `CharacterRepository.load(name)`, and `reset_entities()` (in `server.py`) invalidates the character soul cache on load / reset (narrator soul is read fresh, not cached). 打算 / 待触发事件 are typed lists in `repository/intent_queue.py` (`add` / `remove` / `render`), not status.md sections — the Services call `intent_queue.add(name, section, ...)` / `intent_queue.remove(...)` with the section constant (打算 / 待触发事件); the `无`-sentinel skip and【名】dedup live there. Because the queue is a real list, there is no "bulk-overwrite an event section" path to guard against. Narrator's `和玩家的关系` is no longer materialized — `prompt_builder.render_player_relations()` computes it at prompt-build time from each character's own status (single source of truth).
 
 ### Writeback Rules
 
 - `output.memory` → append one record tagged with current narrator turn number to `memory_draft.jsonl` (after `EpisodeClosureDetector` determines closure turn, consolidation slices by `until_turn` to produce `EpisodeMemory` appended to `memory.jsonl`, merged entries removed from draft)
-- `output.status` → overwrite corresponding fields in `status.md`
-- `output.triggered` → remove executed entries from `status.md`
-- `output.add_event` → insert new entries into `status.md`
+- `output.status` → overwrite corresponding prose fields in `status.md` (心境 / 在意的事 / 场景 …)
+- `output.triggered` → `intent_queue.remove`: drop the matching `【名】` entry from the queue
+- `output.add_event` → `intent_queue.add`: prepend a new entry (skips `无` sentinel and `【名】` duplicates)
 
 Where:
 
-- `narrator` operates on section: `Pending Events`
-- Other characters operate on section: `Intentions`
-- `Intentions` / `Pending Events` cannot be overwritten in bulk via `<status>`, only maintained item-by-item via `<triggered>` / `<add_event>`
+- `narrator` operates the `待触发事件` queue (`pending_events.json`)
+- Other characters operate the `打算` queue (`intents.json`)
+- These queues are typed `list[str]` files, not status.md sections; they are rendered back into the prompt's `<status>` block by `build_status_block` so the LLM input format is unchanged. There is no bulk-overwrite path, so no guard is needed.
 
 ## Prompt Composition
 
@@ -238,7 +230,7 @@ Where:
 3. `status.md`
 4. Current round player input
 
-`narrator` does not use vector recall; it relies on scene, narrative focus, pending events, and "Relationship with Player" in `status.md` to advance the current round. Pending events are primarily synced by `state_updater` from character "Intentions", event names preserve character names (e.g. `【Mitsuki: Promise to Walk Together】`). "Relationship with Player" is summarized from each character's status by code, format `- Mitsuki: Lover`.
+`narrator` does not use vector recall; it relies on scene, narrative focus, pending events (the `待触发事件` queue, rendered into `<status>`), and "Relationship with Player" to advance the current round. Pending events are primarily synced by `state_updater` from character "打算", event names preserve character names (e.g. `【Mitsuki: Promise to Walk Together】`). "Relationship with Player" is computed at render time from each character's status, format `- Mitsuki: Lover`.
 
 > Note: `<world_now>` (derived projection of current time / real-time character locations) is currently disabled. During this period narrator only reads fields maintained by author/state_updater in `status.md`.
 
@@ -256,23 +248,23 @@ After each participation round of character responses, `generate_choices()` is l
 ## Long-Term Memory Retrieval
 
 - Vector store indexes long-term memory events from `memory.jsonl` and stable understandings from `understanding.jsonl` in separate tables; owner scope is fixed to current character
-- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); `engine/memory_query_builder.py` builds retrieval queries from the character's own `在意的事` status field (used only by the lexical/BM25 queries) and the current location (used only by the episode semantic query), extracted from the latest visible narrator message
-- Retrieval query construction (`engine/memory_query_builder.py` → `RetrievalQueries`): read character's `在意的事` from their own `status.md`; extract `location` from the most recent narrator message visible to that character; build four queries, each falls back to current player input if empty:
+- Each turn retrieves both episode memories (`<relevant_memories>`) and stable understandings (`<relevant_understandings>`); `app/memory_query_builder.py` builds retrieval queries from the character's own `在意的事` status field (used only by the lexical/BM25 queries) and the current location (used only by the episode semantic query), extracted from the latest visible narrator message
+- Retrieval query construction (`app/memory_query_builder.py` → `RetrievalQueries`): read character's `在意的事` from their own `status.md`; extract `location` from the most recent narrator message visible to that character; build four queries, each falls back to current player input if empty:
   - `episode` (semantic, limit 1800 chars): location + user_input (`在意的事` is kept out of the embedding query to avoid query drift; location anchors episode scene searches and the EpisodeMemory embedding index includes location)
   - `episode_bm25` (lexical, limit 700 chars): `在意的事` + user_input (location is not a useful BM25 signal)
   - `understanding` (semantic, limit 1200 chars): user_input only (understandings are not place-bound, and `在意的事` is kept out to avoid query drift)
   - `understanding_bm25` (lexical, limit 700 chars): `在意的事` + user_input
-- `memory/retrieval.py` handles the full retrieval pipeline: semantic query embedding → vector candidates + optional BM25 lexical candidates → hybrid fusion → (optional) rerank → recency sort → recall state update
-- `storage/vector_store.py` is storage layer only: provides raw candidates for EpisodeMemory and Understanding tables, pipeline logic is not here
-- `memory/indexer.py` reads `EpisodeMemory` records from `memory.jsonl` and `Understanding` records from `understanding.jsonl`, then appends them to the vector store
+- `app/memory/retrieval.py` handles the full retrieval pipeline: semantic query embedding → vector candidates + optional BM25 lexical candidates → hybrid fusion → (optional) rerank → recency sort → recall state update
+- `repository/vector_store.py` is storage layer only: provides raw candidates for EpisodeMemory and Understanding tables, pipeline logic is not here
+- `app/memory/indexer.py` reads `EpisodeMemory` records from `memory.jsonl` and `Understanding` records from `understanding.jsonl`, then appends them to the vector store
 - Recall ranking: vector relevance and BM25 relevance are fused first, rerank (optional) replaces relevance signal, then in-game time recency is layered on top
 - When Logfire is configured, memory retrieval logs each round's semantic query, BM25 query, and top hit summary for debugging recall quality
 - `last_recalled_at` is updated in SQLite on hit; save export merges the latest DB value into the archived `memory.jsonl`, while the working `memory.jsonl` remains append-only
-- `memory/indexer.rebuild_memory_index()` reads `memory.jsonl.last_recalled_at` to restore the long-term memory index; when `clear_existing=True` (the default, used on load), it also rebuilds the Understanding index via the shared `_rebuild_understanding_index_for_agents` helper. Legacy `.memory_recall_state.json` is only a fallback for old saves whose `memory.jsonl` lacks `last_recalled_at`. `rebuild_understanding_index()` is still available as a standalone function for targeted rebuilds (e.g. after consolidation patches a single agent's understandings)
+- `app/memory/indexer.rebuild_memory_index()` reads `memory.jsonl.last_recalled_at` to restore the long-term memory index; when `clear_existing=True` (the default, used on load), it also rebuilds the Understanding index via the shared `_rebuild_understanding_index_for_agents` helper. Legacy `.memory_recall_state.json` is only a fallback for old saves whose `memory.jsonl` lacks `last_recalled_at`. `rebuild_understanding_index()` is still available as a standalone function for targeted rebuilds (e.g. after consolidation patches a single agent's understandings)
 
 ## Memory Consolidation
 
-`consolidation/flow.py` handles character background consolidation:
+`app/consolidation/flow.py` handles character background consolidation:
 
 - Triggered as a background task by `detect_and_consolidate(current_turn)` at the end of each round (concurrent with `state_updater`): first scans characters with `memory_draft.jsonl` as candidates, calls `EpisodeClosureDetector` to determine which characters have closed episodes this round (returns `{agent_name: closed_at_turn}`); closed characters execute `consolidate_agent(name, until_turn=closed_at_turn)` in parallel
 - `consolidate_agent` slices draft entries + raw dialogue for the corresponding turn range from `memory_draft.jsonl` by `until_turn`, hands to `EpisodeMemoryGenerator` to produce a single structured `EpisodeMemory`; flow layer injects `memory_owner` and `raw_dialogue`, then appends to `memory.jsonl`. Merged entries are removed from draft; unclosed turn entries are retained. On failure, entire draft is retained for retry next round
@@ -297,7 +289,7 @@ After each participation round of character responses, `generate_choices()` is l
 
 ## Save and Reset
 
-Handled by `storage/save_manager.py`, exposed via FastAPI endpoints:
+Handled by `repository/save_manager.py`, exposed via FastAPI endpoints:
 
 - `POST /api/save`: Export a new immutable worldline node zip to `saves/`; filename-based overwrite is rejected
 - `GET /api/saves`: List saves and return temporary worldline trees grouped by `story_id`
@@ -314,6 +306,7 @@ Save includes:
 - Character `memory.jsonl` (structured long-term memory, one `EpisodeMemory` per line, includes stable `id`, `raw_dialogue` trace field, and archive-refreshed `last_recalled_at`)
 - Character `memory_draft.jsonl` (when present; each line `{"turn": int, "text": str}`, ensuring unclosed merge memories are not lost on save)
 - Character `understanding.jsonl` (when present; stable beliefs linked back to EpisodeMemory ids)
+- Character `intents.json` / narrator `pending_events.json` (when present; the 打算 / 待触发事件 typed-list queues)
 - Narrator raw history (each entry carries turn number)
 - Narrator `world_schedule.json` when present
 - Per-agent `.history_window_state.json`

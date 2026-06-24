@@ -12,7 +12,7 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
-    import agents.runner as agent_runner_module
+    import repository.sdk_runner as agent_runner_module
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip agent runner tests: missing dependency ({exc})", allow_module_level=True)
 

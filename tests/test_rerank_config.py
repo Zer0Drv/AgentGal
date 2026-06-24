@@ -2,7 +2,7 @@
 
 import importlib
 
-import llm.rerank as rerank_module
+import repository.llm.rerank as rerank_module
 
 
 def test_rerank_model_enables_rerank_without_extra_flag(monkeypatch):

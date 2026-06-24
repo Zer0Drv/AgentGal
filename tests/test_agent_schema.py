@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from agents.llm_schema import (
+from app.llm_schema import (
     MAX_CHOICE_CHARS,
     MAX_EPISODE_KEYWORDS,
     LLMChoices,

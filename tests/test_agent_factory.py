@@ -9,7 +9,7 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
-    import agents.factory as agent_factory_module
+    import app.agent_factory as agent_factory_module
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip agent factory tests: missing dependency ({exc})", allow_module_level=True)
 

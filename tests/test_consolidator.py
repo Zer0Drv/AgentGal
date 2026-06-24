@@ -13,14 +13,15 @@ os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
 try:
-    import storage.agent_files as agent_files_module
-    import consolidation.flow as consolidator_module
-    import storage.memory_store as memory_store_module
-    import storage.status_file as status_file_module
-    from consolidation.flow import MemoryConsolidationFlow
-    from agents.llm_schema import LLMEpisodeClosure, LLMEpisodeMemory, LLMUnderstandingPatch
+    import repository.agent_files as agent_files_module
+    import app.consolidation.flow as consolidator_module
+    import repository.intent_queue as intent_queue_module
+    import repository.memory_store as memory_store_module
+    import repository.status_file as status_file_module
+    from app.consolidation.flow import MemoryConsolidationFlow
+    from app.llm_schema import LLMEpisodeClosure, LLMEpisodeMemory, LLMUnderstandingPatch
     from models import EpisodeMemory, Understanding, UnderstandingHistoryEntry
-    from storage.memory_store import (
+    from repository.memory_store import (
         append_memory_records,
         read_memory_jsonl,
         read_understandings,
@@ -264,28 +265,32 @@ def test_agent_file_updates_return_structured_json_items(tmp_path, monkeypatch):
         "after": "图书馆二楼靠窗座位",
     }
 
-    add_result = status_file_module.add_pending_event(agent_name, "【新计划】去图书馆", "打算")
+    # 打算 / 待触发事件已改为 intent_queue 类型化列表（见 storage.intent_queue）
+    monkeypatch.setattr(intent_queue_module, "character_path", path_helper)
+    intent_queue_module.add(agent_name, "打算", "【去天台】午休去天台找玩家")  # 队列初始
+
+    add_result = intent_queue_module.add(agent_name, "打算", "【新计划】去图书馆")
     assert add_result == {
-        "file": "status.md",
+        "file": "intents.json",
         "target": "打算",
         "operation": "add",
-        "added": "- [ ] 【新计划】去图书馆",
+        "added": "【新计划】去图书馆",
     }
 
-    skip_result = status_file_module.add_pending_event(agent_name, "【新计划】去图书馆", "打算")
+    skip_result = intent_queue_module.add(agent_name, "打算", "【新计划】去图书馆")
     assert skip_result == {
-        "file": "status.md",
+        "file": "intents.json",
         "target": "打算",
         "operation": "skip",
         "reason": "【新计划】已存在，跳过",
     }
 
-    remove_result = status_file_module.mark_event_triggered(agent_name, "去天台", "打算")
+    remove_result = intent_queue_module.remove(agent_name, "打算", "去天台")
     assert remove_result == {
-        "file": "status.md",
+        "file": "intents.json",
         "target": "打算",
         "operation": "remove",
-        "removed": "- [ ] 【去天台】午休去天台找玩家",
+        "removed": "【去天台】午休去天台找玩家",
     }
 
 

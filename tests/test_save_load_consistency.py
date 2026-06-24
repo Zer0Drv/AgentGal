@@ -33,17 +33,17 @@ except ImportError:
 # 导入必要模块
 try:
     import importlib
-    import storage.vector_store
-    import storage.save_manager as save_manager_module
-    import memory.retrieval
-    import storage.memory_store as memory_store_module
-    vector_store_module = importlib.import_module("storage.vector_store")
-    retrieval_module = importlib.import_module("memory.retrieval")
-    from storage.vector_store import vector_store
-    from llm.embedding import EMBED_API_URL, EMBED_API_KEY
-    from storage.save_manager import export_save_archive, import_save_archive
+    import repository.vector_store
+    import repository.save_manager as save_manager_module
+    import app.memory.retrieval
+    import repository.memory_store as memory_store_module
+    vector_store_module = importlib.import_module("repository.vector_store")
+    retrieval_module = importlib.import_module("app.memory.retrieval")
+    from repository.vector_store import vector_store
+    from repository.llm.embedding import EMBED_API_URL, EMBED_API_KEY
+    from repository.save_manager import export_save_archive, import_save_archive
     from models import EpisodeMemory
-    from storage.memory_store import serialize_episode, parse_jsonl_line
+    from repository.memory_store import serialize_episode, parse_jsonl_line
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip save_load tests: missing dependency ({exc})", allow_module_level=True)
 
@@ -246,7 +246,7 @@ class TestSaveLoadConsistency:
             )
             await add_episodes(store, get_episodes(tmp_path, "mitsuki", "4月3日"))
 
-            from memory.retrieval import search_memories
+            from app.memory.retrieval import search_memories
             search_result = search_memories("lilith", "第一轮对话")
             assert search_result != "（无相关记忆）", "save 前应该能搜索到数据"
 

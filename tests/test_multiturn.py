@@ -11,9 +11,9 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 sys.path.insert(0, str(project_root))
 
-import engine.memory_query_builder as query_builder_module
-from engine.memory_query_builder import build_retrieval_queries
-from engine.prompt_builder import (
+import app.memory_query_builder as query_builder_module
+from app.memory_query_builder import build_retrieval_queries
+from app.prompt_builder import (
     _apply_high_low_watermark,
     build_history_transcript,
     build_user_message,
@@ -26,10 +26,10 @@ def fake_history_window_state():
     state: dict[str, int] = {}
 
     with patch(
-        "engine.prompt_builder.read_sidecar_json",
+        "app.prompt_builder.read_sidecar_json",
         side_effect=lambda agent_name, _filename: {"start_turn": state.get(agent_name, 0)},
     ), patch(
-        "engine.prompt_builder.write_sidecar_json",
+        "app.prompt_builder.write_sidecar_json",
         side_effect=lambda agent_name, _filename, data: state.__setitem__(agent_name, data["start_turn"]),
     ):
         yield state
@@ -116,7 +116,7 @@ class TestBuildHistoryTranscript:
             for i in range(40)
         ]
 
-        with patch("engine.prompt_builder.HISTORY_HIGH", 30), patch("engine.prompt_builder.HISTORY_LOW", 15):
+        with patch("app.prompt_builder.HISTORY_HIGH", 30), patch("app.prompt_builder.HISTORY_LOW", 15):
             result, was_truncated = build_history_transcript("lilith", msgs)
 
         assert result == "\n\n".join(f"旁白: 消息{i}" for i in range(25, 40))
@@ -135,7 +135,7 @@ class TestBuildHistoryTranscript:
             for i in range(47)
         ]
 
-        with patch("engine.prompt_builder.HISTORY_HIGH", 30), patch("engine.prompt_builder.HISTORY_LOW", 15):
+        with patch("app.prompt_builder.HISTORY_HIGH", 30), patch("app.prompt_builder.HISTORY_LOW", 15):
             result_31, truncated_31 = build_history_transcript("lilith", msgs_31)
             result_32, truncated_32 = build_history_transcript("lilith", msgs_32)
             result_47, truncated_47 = build_history_transcript("lilith", msgs_47)
@@ -320,7 +320,7 @@ class TestBuildUserMessage:
             return data[filename]
 
         with patch(
-            "engine.prompt_builder.read_agent_file",
+            "app.prompt_builder.read_agent_file",
             side_effect=fake_read,
         ):
             result, _ = build_user_message(
@@ -342,7 +342,7 @@ class TestBuildUserMessage:
             return data[filename]
 
         with patch(
-            "engine.prompt_builder.read_agent_file",
+            "app.prompt_builder.read_agent_file",
             side_effect=fake_read,
         ):
             result, _ = build_user_message(
@@ -364,7 +364,7 @@ class TestBuildUserMessage:
             {"role": "guyining", "content": "旧回复", "visible_to": ["narrator"]},
         ]
 
-        with patch("engine.prompt_builder.read_agent_file", return_value="故事状态"):
+        with patch("app.prompt_builder.read_agent_file", return_value="故事状态"):
             result, _ = build_user_message("narrator", "新输入", "", raw_messages=msgs)
 
         assert "最近对话历史:" in result

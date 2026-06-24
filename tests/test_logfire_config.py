@@ -4,7 +4,7 @@ import logging
 import sys
 import types
 
-import log_config.logfire as logfire_config
+import repository.log_config.logfire as logfire_config
 
 
 class FakeLogfireLoggingHandler(logging.Handler):

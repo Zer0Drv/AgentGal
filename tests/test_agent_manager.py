@@ -10,17 +10,18 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
-    import agents.runner as runner_module
-    import engine.conversation_service as conversation_service_module
-    import engine.narrator_service as narrator_service_module
-    import log_config.routing as routing_module
-    import storage.character_repo as character_repo_module
-    import storage.narrator_repo as narrator_repo_module
-    import storage.status_file as status_file_module
-    from engine.conversation_service import ConversationService
-    from engine.narrator_service import NarratorService
+    import repository.sdk_runner as runner_module
+    import app.conversation_service as conversation_service_module
+    import app.narrator_service as narrator_service_module
+    import repository.log_config.routing as routing_module
+    import repository.character_repo as character_repo_module
+    import repository.intent_queue as intent_queue_module
+    import repository.narrator_repo as narrator_repo_module
+    import repository.status_file as status_file_module
+    from app.conversation_service import ConversationService
+    from app.narrator_service import NarratorService
     from models import Character
-    from agents.llm_schema import LLMCharacterOutput, LLMNarratorOutput, LLMStateUpdate
+    from app.llm_schema import LLMCharacterOutput, LLMNarratorOutput, LLMStateUpdate
     from conftest import _narrator_output
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip conversation flow tests: missing dependency ({exc})", allow_module_level=True)
@@ -31,7 +32,6 @@ _conversation_service = conversation_service_module.conversation_service
 
 
 def _stub_player_relation_sync(monkeypatch):
-    monkeypatch.setattr(NarratorService, "_sync_player_relations", lambda _self: None)
     # _write_scene 在 route() 中写真实文件；测试只关心路由逻辑，统一 stub 掉
     monkeypatch.setattr(NarratorService, "_write_scene", lambda _self, _output: None)
 
@@ -51,7 +51,10 @@ def test_sanitize_narrator_scene_description_truncates_character_dialogue(monkey
     assert sanitized == "房间里安静下来。"
 
 
-def test_narrator_formats_player_relations_from_character_status(monkeypatch):
+def test_render_player_relations_computes_from_character_status(monkeypatch):
+    """旁白「和玩家的关系」现算：从各角色 status.md 源头汇总，带 ## 段头，不落盘。"""
+    import app.prompt_builder as prompt_builder_module
+
     files = {
         ("role_a", "status.md"): "# A\n\n## 和玩家的关系\n恋人",
         ("role_a", "soul.md"): "# A",
@@ -63,37 +66,23 @@ def test_narrator_formats_player_relations_from_character_status(monkeypatch):
     display_names = {"role_a": "美月", "role_b": "陈晓", "role_empty": "空角色"}
 
     monkeypatch.setattr(
-        narrator_repo_module,
+        prompt_builder_module,
         "get_agent_names",
         lambda include_narrator=False: ["role_a", "role_b", "role_empty"],
     )
-    monkeypatch.setattr(narrator_repo_module, "read_agent_file", lambda agent, filename: files[(agent, filename)])
     monkeypatch.setattr(
-        narrator_repo_module,
+        prompt_builder_module, "read_agent_file", lambda agent, filename: files[(agent, filename)]
+    )
+    monkeypatch.setattr(
+        prompt_builder_module,
         "get_display_name",
         lambda agent_name, _soul: display_names[agent_name],
     )
 
-    assert narrator_repo_module.NarratorRepository._format_player_relations() == "- 美月：恋人\n- 陈晓：刚认识 但有好感"
-
-
-def test_narrator_sync_player_relations_writes_derived_status(monkeypatch):
-    written: list[tuple[str, str, str]] = []
-
-    monkeypatch.setattr(
-        narrator_repo_module.NarratorRepository,
-        "_format_player_relations",
-        staticmethod(lambda: "- 美月：恋人"),
+    assert (
+        prompt_builder_module.render_player_relations()
+        == "## 和玩家的关系\n- 美月：恋人\n- 陈晓：刚认识 但有好感"
     )
-    monkeypatch.setattr(
-        narrator_repo_module,
-        "update_status_allow_new_field",
-        lambda agent, field, content: written.append((agent, field, content)) or {},
-    )
-
-    narrator_repo_module.narrator_repo.sync_player_relations()
-
-    assert written == [("narrator", "和玩家的关系", "- 美月：恋人")]
 
 
 @pytest.mark.asyncio
@@ -325,22 +314,22 @@ def test_state_updater_output_writes_narrator_status_and_events(monkeypatch):
     calls: list[tuple[str, str, str, str | None]] = []
 
     monkeypatch.setattr(
-        narrator_repo_module,
+        narrator_service_module,
         "update_status",
         lambda agent, field, content: calls.append(("status", agent, field, content)) or {},
     )
     monkeypatch.setattr(
-        narrator_repo_module,
-        "mark_event_triggered",
-        lambda agent, event, section: calls.append(("triggered", agent, event, section)) or {},
+        intent_queue_module,
+        "remove",
+        lambda agent, section, event: calls.append(("triggered", agent, event, section)) or {},
     )
     monkeypatch.setattr(
-        narrator_repo_module,
-        "add_pending_event",
-        lambda agent, event, section: calls.append(("add_event", agent, event, section)) or {},
+        intent_queue_module,
+        "add",
+        lambda agent, section, event: calls.append(("add_event", agent, event, section)) or {},
     )
     monkeypatch.setattr(
-        narrator_repo_module,
+        narrator_service_module,
         "update_status_allow_new_field",
         lambda agent, field, content: calls.append(("derived_status", agent, field, content)) or {},
     )
@@ -382,7 +371,7 @@ def test_state_updater_updates_recent_world_event_and_marks_schedule(monkeypatch
     }
 
     monkeypatch.setattr(
-        narrator_repo_module,
+        narrator_service_module,
         "update_status_allow_new_field",
         lambda agent, field, content: derived_status.append((agent, field, content)) or {},
     )
@@ -398,7 +387,7 @@ def test_state_updater_updates_recent_world_event_and_marks_schedule(monkeypatch
         "write_sidecar_json",
         lambda agent, filename, data: written.append((agent, filename, data)),
     )
-    monkeypatch.setattr(narrator_repo_module.NarratorRepository, "add_event", lambda *_args: None)
+    monkeypatch.setattr(intent_queue_module, "add", lambda *_args: None)
 
     output = LLMStateUpdate(
         recent_world_event="（准备期）体育祭报名周，告示板上贴出了体育祭的海报",
@@ -441,31 +430,31 @@ def test_apply_response_updates_logs_structured_file_updates(monkeypatch, tmp_pa
         },
     )
     monkeypatch.setattr(
-        character_repo_module,
-        "mark_event_triggered",
-        lambda agent, event, section: {
-            "file": "status.md",
+        intent_queue_module,
+        "remove",
+        lambda agent, section, event: {
+            "file": "intents.json",
             "target": section,
             "operation": "remove",
-            "removed": f"- [ ] 【{event}】去天台",
+            "removed": f"【{event}】去天台",
         },
     )
     monkeypatch.setattr(
-        character_repo_module,
-        "add_pending_event",
-        lambda agent, event, section: (
+        intent_queue_module,
+        "add",
+        lambda agent, section, event: (
             {
-                "file": "status.md",
+                "file": "intents.json",
                 "target": section,
                 "operation": "skip",
                 "reason": "【重复】已存在，跳过",
             }
             if "重复" in event
             else {
-                "file": "status.md",
+                "file": "intents.json",
                 "target": section,
                 "operation": "add",
-                "added": f"- [ ] {event}",
+                "added": event,
             }
         ),
     )
@@ -512,19 +501,19 @@ def test_apply_response_updates_logs_structured_file_updates(monkeypatch, tmp_pa
             "after": "图书馆二楼靠窗座位",
         },
         {
-            "file": "status.md",
+            "file": "intents.json",
             "target": "打算",
             "operation": "remove",
-            "removed": "- [ ] 【去天台】去天台",
+            "removed": "【去天台】去天台",
         },
         {
-            "file": "status.md",
+            "file": "intents.json",
             "target": "打算",
             "operation": "add",
-            "added": "- [ ] 【新计划】去图书馆",
+            "added": "【新计划】去图书馆",
         },
         {
-            "file": "status.md",
+            "file": "intents.json",
             "target": "打算",
             "operation": "skip",
             "reason": "【重复】已存在，跳过",
@@ -536,7 +525,6 @@ def test_apply_response_updates_logs_structured_file_updates(monkeypatch, tmp_pa
 async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     captured: dict = {}
     applied: list[tuple] = []
-    relation_syncs: list[tuple[str, str, str]] = []
     fake_agent = object()
 
     def fake_read_agent_file(agent, filename):
@@ -548,21 +536,24 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
         return files.get((agent, filename), "")
 
     # read_agent_file 在 narrator_service（_format_characters_status）与 narrator_repo
-    # （read_status_text / _format_player_relations）两处使用，需同时打桩
+    # （read_status_text）两处使用，需同时打桩；打算改从 intent_queue 读
     monkeypatch.setattr(narrator_service_module, "read_agent_file", fake_read_agent_file)
     monkeypatch.setattr(narrator_repo_module, "read_agent_file", fake_read_agent_file)
+    monkeypatch.setattr(
+        intent_queue_module,
+        "read_queue",
+        lambda agent, section: (
+            ["【楼下碰面】10月24日 09:30 公寓楼下。去见玩家。"]
+            if (agent, section) == ("role_b", "打算")
+            else []
+        ),
+    )
     monkeypatch.setattr(
         narrator_service_module,
         "get_agent_names",
         lambda include_narrator=False: ["role_b"],
     )
-    monkeypatch.setattr(
-        narrator_repo_module,
-        "get_agent_names",
-        lambda include_narrator=False: ["role_b"],
-    )
     monkeypatch.setattr(narrator_service_module, "get_display_name", lambda *_args: "角色B")
-    monkeypatch.setattr(narrator_repo_module, "get_display_name", lambda *_args: "角色B")
     monkeypatch.setattr(
         narrator_service_module,
         "get_llm_config",
@@ -598,11 +589,6 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
 
     monkeypatch.setattr(runner_module, "run_structured_agent", fake_run_structured_agent)
     monkeypatch.setattr(NarratorService, "_apply_state_updates", fake_apply_state_updates)
-    monkeypatch.setattr(
-        narrator_repo_module,
-        "update_status_allow_new_field",
-        lambda agent, field, content: relation_syncs.append((agent, field, content)) or {},
-    )
 
     await _narrator_service.update_state()
 
@@ -619,7 +605,6 @@ async def test_narrator_update_state_uses_state_updater_agent(monkeypatch):
     assert "role_b: 应该不会，家里人还没回来。" in user_input
     assert "【role_b / 角色B】" in user_input
     assert "【楼下碰面】10月24日 09:30 公寓楼下。去见玩家。" in user_input
-    assert relation_syncs == [("narrator", "和玩家的关系", "（暂无）")]
     assert "<character_intentions>" not in user_input
     assert "<player_input>" not in user_input
     assert "<narrator_targets>" not in user_input

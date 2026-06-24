@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import engine.conversation_flow as conversation_flow_module
-from agents.llm_schema import LLMNarratorOutput
-from shared.config import AGENT_RUN_TIMEOUT_SECONDS
+import app.conversation_flow as conversation_flow_module
+from app.llm_schema import LLMNarratorOutput
+from repository.config import AGENT_RUN_TIMEOUT_SECONDS
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ project_root = Path(__file__).parent.parent
 os.chdir(project_root)
 
 try:
-    import llm.config as llm_config_module
+    import repository.llm.config as llm_config_module
 except ModuleNotFoundError as exc:
     pytest.skip(f"skip llm config tests: missing dependency ({exc})", allow_module_level=True)
 

@@ -19,18 +19,19 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from agents.factory import initialize_conversation_agents, reload_conversation_agent
-from consolidation.flow import memory_consolidation_flow
-from engine.narrator_service import narrator_service
-from engine.conversation_flow import (
+from app.agent_factory import initialize_conversation_agents, reload_conversation_agent
+from app.consolidation.flow import memory_consolidation_flow
+from app.narrator_service import narrator_service
+from app.conversation_flow import (
     bootstrap_new_characters,
     generate_choices,
     run_agent_in_scene,
 )
-from storage.character_repo import character_repo
+from app.memory.indexer import rebuild_memory_index, rebuild_understanding_index
+from repository.character_repo import character_repo
 from models import EpisodeMemory, Understanding
-from storage.memory_store import read_memory_jsonl, read_understandings
-from storage.save_manager import (
+from repository.memory_store import read_memory_jsonl, read_understandings
+from repository.save_manager import (
     delete_save_leaf,
     delete_save_game,
     export_save_archive_with_detail,
@@ -42,19 +43,20 @@ from storage.save_manager import (
     load_story_file,
     reset_game,
 )
-from log_config.routing import routing_logger
-from log_config.logfire import setup_logfire
-from shared.config import CHARACTERS_DIR, get_agent_names
-from shared.narrator_output import extract_narrator_output
-from shared.text_utils import extract_status_field, get_display_name
-from storage.agent_files import read_agent_file
-from storage.history import (
+from repository.log_config.routing import routing_logger
+from repository.log_config.logfire import setup_logfire
+from repository.config import CHARACTERS_DIR, get_agent_names
+from repository.narrator_output import extract_narrator_output
+from models.character import get_display_name
+from repository.status_file import extract_status_field
+from repository.agent_files import read_agent_file
+from repository.history import (
     extract_game_date_anchors,
     load_conversation_history,
     load_history_before,
     search_history,
 )
-from storage.message_router import message_router
+from repository.message_router import message_router
 
 
 def reset_entities() -> None:
@@ -823,6 +825,12 @@ async def api_load(req: LoadRequest) -> JSONResponse:
     await _settle_pending_state_update(cancel=True)
     success = await import_save_archive(req.filename)
     if success:
+        # 文件恢复后，由调用方（最外层）触发向量库重建——memory 层职责，保持 storage 不反依赖 memory。
+        print("[读档] 并发重建向量库...", flush=True)
+        await asyncio.gather(
+            rebuild_memory_index(clear_existing=False),
+            rebuild_understanding_index(),
+        )
         reset_entities()
         for name in get_agent_names(include_narrator=True):
             reload_conversation_agent(name)

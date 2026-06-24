@@ -1,4 +1,4 @@
-import llm.embedding as embedding_module
+import repository.llm.embedding as embedding_module
 
 
 def test_embedding_payload_omits_dimensions_by_default(monkeypatch):

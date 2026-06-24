@@ -8,7 +8,7 @@ status.md 字段仍是文件驱动 / 作者可自定义（白名单现读 ## 标
 IDENTITY = "身份"
 MOOD = "心境"
 CONCERN = "在意的事"
-PLANS = "打算"  # 事件段（逐条维护，禁止整段覆写）
+PLANS = "打算"  # 队列段：存于 intents.json，渲染回此标题供 prompt 注入
 
 # 角色 + narrator 共有
 PLAYER_RELATION = "和玩家的关系"
@@ -19,10 +19,7 @@ SCENE = "场景"
 CHARACTER_LOCATIONS = "角色位置"
 NARRATIVE_FOCUS = "叙事焦点"
 RECENT_WORLD_EVENT = "最近世界事件"
-PENDING_EVENTS = "待触发事件"  # 事件段
+PENDING_EVENTS = "待触发事件"  # 队列段：存于 pending_events.json
 
-# 事件段：只能经 add_event / mark_triggered 逐条维护，禁止从字段写回整段覆写
-EVENT_SECTIONS = frozenset({PLANS, PENDING_EVENTS})
-
-# state_updater 评估剧情时读取的角色字段顺序
-CHARACTER_STATUS_FIELDS = (IDENTITY, MOOD, CONCERN, PLANS)
+# state_updater 评估剧情时读取的角色散文字段顺序（打算另从队列渲染）
+CHARACTER_STATUS_FIELDS = (IDENTITY, MOOD, CONCERN)
