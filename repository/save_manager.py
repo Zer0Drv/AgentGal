@@ -25,6 +25,7 @@ from repository.runtime_state import (
     read_turn_counter,
     write_player_name,
 )
+from repository.player_persona import PLAYER_PERSONA_FILENAME
 from repository.history import append_message, load_conversation_history
 from models.dates import canonical_cn_date
 from repository.status_file import extract_status_field
@@ -820,7 +821,7 @@ async def export_save_archive_with_detail() -> tuple[str | None, str | None]:
             zf.writestr(".save_id", save_id)
             print(f"[存档] 已添加: .save_id")
 
-            for marker in [".story_id", ".turn_counter.json", PLAYER_NAME_FILENAME]:
+            for marker in [".story_id", ".turn_counter.json", PLAYER_NAME_FILENAME, PLAYER_PERSONA_FILENAME]:
                 marker_path = CHARACTERS_DIR / marker
                 if marker_path.exists():
                     zf.write(str(marker_path), marker)
