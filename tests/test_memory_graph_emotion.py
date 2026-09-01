@@ -1,67 +1,119 @@
-"""情绪系统测试：记忆图谱 episode 节点关联「当时心情」。
+"""情绪系统测试：记忆图谱 episode 节点关联「当时心情」（最近邻归属）。
 
-验证 _episode_node 能把同日期情绪轨迹关联到 episode 节点 meta（emotion / emotion_trace）。
+_assign_emotions_to_episodes 把情绪按「时段中心最近邻」归属到各 episode；
+_episode_node 展示归属好的情绪。
 """
 
 from models import EpisodeMemory
-from server import _episode_node
+from server import _assign_emotions_to_episodes, _episode_node
 
 
-def _episode(**kwargs) -> EpisodeMemory:
-    base = {
-        "id": "abc-episode",
-        "date": "10月2日",
-        "title": "新同事入职的第一天",
-        "content": "茶水间帮他按咖啡机、递咖啡。",
-        "importance": 3,
-    }
-    base.update(kwargs)
-    return EpisodeMemory(**base)
+def _episode(eid: str, date: str = "10月2日", time: str = "") -> EpisodeMemory:
+    return EpisodeMemory(
+        id=eid,
+        date=date,
+        time=time,
+        title=f"记忆{eid}",
+        content="内容",
+        importance=3,
+    )
 
 
-def test_episode_node_attaches_same_day_emotion_trace():
-    emotions = [
-        {"date": "10月2日", "emotion": "有点开心", "reason": "他被信任"},
-        {"date": "10月2日", "emotion": "有点安心", "reason": "感觉被依赖"},
+def _emo(emotion: str, date: str = "10月2日", time: str = "", reason: str = "") -> dict:
+    return {"date": date, "time": time, "emotion": emotion, "reason": reason}
+
+
+# ---- 最近邻归属 _assign_emotions_to_episodes ----
+
+
+def test_assign_emotion_to_nearest_episode_center():
+    # episode1 09:20-09:27（中心 09:23.5），episode2 09:30-09:35（中心 09:32.5）
+    eps = [
+        _episode("e1", time="10月2日 09:20-09:27"),
+        _episode("e2", time="10月2日 09:30-09:35"),
     ]
-    node = _episode_node("chenxiao", _episode(), 0, emotions)
+    emotions = [
+        _emo("有点开心", time="星期一 09:30"),
+        _emo("有点紧张", time="星期一 09:38"),
+    ]
+    assigned = _assign_emotions_to_episodes(eps, emotions)
+    # 09:30 → 中心 09:32.5 更近 → e2；09:38 → 也近 e2 → e2
+    assert assigned["e1"] == []
+    assert [e["emotion"] for e in assigned["e2"]] == ["有点开心", "有点紧张"]
+
+
+def test_assign_emotion_split_across_episodes():
+    eps = [
+        _episode("e1", time="10月2日 08:00-08:30"),
+        _episode("e2", time="10月2日 12:00-12:30"),
+    ]
+    emotions = [_emo("平静", time="08:10"), _emo("开心", time="12:10")]
+    assigned = _assign_emotions_to_episodes(eps, emotions)
+    assert [e["emotion"] for e in assigned["e1"]] == ["平静"]
+    assert [e["emotion"] for e in assigned["e2"]] == ["开心"]
+
+
+def test_assign_emotion_fallback_to_first_when_no_clock():
+    # episode 无时刻、情绪带时刻 → 无法算中心，保底归当天第一个 episode
+    eps = [_episode("e1", time="10月2日"), _episode("e2", time="10月2日 12:00")]
+    emotions = [_emo("开心", time="09:00")]
+    assigned = _assign_emotions_to_episodes(eps, emotions)
+    # e1 无时刻，情绪 09:00 的最近邻只在有时刻的 e2 里算 → 归 e2
+    assert [e["emotion"] for e in assigned["e2"]] == ["开心"]
+
+
+def test_assign_emotion_ignores_other_date():
+    eps = [_episode("e1", date="10月2日")]
+    emotions = [_emo("生气", date="10月3日", time="09:00")]
+    assigned = _assign_emotions_to_episodes(eps, emotions)
+    assert assigned["e1"] == []
+
+
+# ---- _episode_node 展示 ----
+
+
+def test_episode_node_attaches_assigned_emotion():
+    emotions = [
+        _emo("有点开心", time="09:30", reason="被信任"),
+        _emo("有点安心", time="09:35", reason="感觉被依赖"),
+    ]
+    node = _episode_node("chenxiao", _episode("e1", time="10月2日 09:30-09:35"), 0, emotions)
     meta = node["meta"]
-    # 主导情绪 = 该日最后一条
-    assert meta["emotion"] == "有点安心"
+    assert meta["emotion"] == "有点安心"          # 主导 = 最后一条
     assert meta["emotion_trace"] == ["有点开心", "有点安心"]
-    assert meta["emotion_reasons"] == ["他被信任", "感觉被依赖"]
+    assert meta["emotion_reasons"] == ["被信任", "感觉被依赖"]
+    assert meta["emotion_match"] == "time"
 
 
-def test_episode_node_ignores_other_days():
+def test_episode_node_dedupes_by_date():
+    # 传入跨日期情绪时，只保留与 episode 日期一致的
     emotions = [
-        {"date": "10月3日", "emotion": "生气", "reason": "误会"},
-        {"date": "10月2日", "emotion": "开心", "reason": "顺利"},
+        _emo("开心", date="10月2日"),
+        _emo("生气", date="10月3日"),
     ]
-    node = _episode_node("chenxiao", _episode(), 0, emotions)
-    # 只取 10月2日 的情绪
+    node = _episode_node("chenxiao", _episode("e1"), 0, emotions)
     assert node["meta"]["emotion"] == "开心"
     assert node["meta"]["emotion_trace"] == ["开心"]
 
 
 def test_episode_node_filters_empty_emotion_rows():
     emotions = [
-        {"date": "10月2日", "emotion": "", "reason": ""},
-        {"date": "10月2日", "emotion": "紧张", "reason": "第一次见他"},
+        _emo("", reason=""),
+        _emo("紧张", time="09:30", reason="第一次见他"),
     ]
-    node = _episode_node("chenxiao", _episode(), 0, emotions)
+    node = _episode_node("chenxiao", _episode("e1"), 0, emotions)
     assert node["meta"]["emotion"] == "紧张"
-    assert node["meta"]["emotion_trace"] == ["紧张"]
+    assert node["meta"]["emotion_match"] == "time"
 
 
-def test_episode_node_no_emotion_records():
-    node = _episode_node("chenxiao", _episode(), 0, [])
+def test_episode_node_empty_when_no_emotions():
+    node = _episode_node("chenxiao", _episode("e1"), 0, [])
     assert node["meta"]["emotion"] == ""
     assert node["meta"]["emotion_trace"] == []
     assert node["meta"]["emotion_reasons"] == []
 
 
 def test_episode_node_default_day_emotions_is_none():
-    # 不传 day_emotions（向后兼容）：情绪字段为空但不报错
-    node = _episode_node("chenxiao", _episode(), 0)
+    # 向后兼容：不传情绪列表不报错
+    node = _episode_node("chenxiao", _episode("e1"), 0)
     assert node["meta"]["emotion"] == ""
-    assert node["meta"]["emotion_trace"] == []

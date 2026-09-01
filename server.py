@@ -86,6 +86,77 @@ _RECENT_HISTORY_LIMIT = 12
 _MEMORY_GRAPH_LABEL_LIMIT = 42
 _MEMORY_GRAPH_DETAIL_LIMIT = 260
 _MEMORY_GRAPH_RAW_LIMIT = 12000
+# 记忆图谱「当时心情」时间窗口匹配的缓冲（分钟）：情绪时刻落在 episode 时段 ± 该值内则归入该 episode
+_EMOTION_GRAPH_TIME_BUFFER_MINUTES = 30
+
+# 从 "星期一 09:30" / "10月2日 09:20-09:27" 等文本中提取 HH:MM 时刻
+_TIME_RE = re.compile(r"(\d{1,2})\s*[:：]\s*(\d{2})")
+
+
+def _extract_times(text: str) -> list[tuple[int, int]]:
+    """提取文本里所有 HH:MM 时刻，返回 [(小时, 分钟)] 列表。"""
+    return [(int(m.group(1)), int(m.group(2))) for m in _TIME_RE.finditer(text or "")]
+
+
+def _minutes(h: int, m: int) -> int:
+    return h * 60 + m
+
+
+def _episode_center_min(episode: EpisodeMemory) -> float | None:
+    """episode 时段中心（分钟）。无具体时刻时返回 None。"""
+    times = _extract_times(episode.time)
+    if not times:
+        return None
+    start = _minutes(*times[0])
+    end = max(start, _minutes(*times[-1]))
+    return (start + end) / 2.0
+
+
+def _assign_emotions_to_episodes(
+    episodes: list[EpisodeMemory],
+    emotions: list[dict],
+) -> dict[str, list[dict]]:
+    """把情绪按「时段中心最近邻」归属到各 episode。
+
+    规则：
+    - 按日期收敛：情绪只可能归属同一日期下有时段（可计算中心）的 episode
+    - 对每个有具体时刻的情绪，找日期相同且时段中心最接近的 episode
+    - 情绪或当天 episode 缺时刻（无法算中心）时，按其日期归属到当天第一个 episode（保底）
+    返回 {episode_id: [情绪记录]}。
+    """
+    assign: dict[str, list[dict]] = {ep.id: [] for ep in episodes if ep.id}
+
+    ep_by_date: dict[str, list[EpisodeMemory]] = {}
+    for ep in episodes:
+        day = str(ep.date or "").strip()
+        if day and ep.id:
+            ep_by_date.setdefault(day, []).append(ep)
+
+    for emo in emotions:
+        emo_day = str(emo.get("date", "")).strip()
+        candidates = ep_by_date.get(emo_day, [])
+        if not candidates:
+            continue
+
+        emo_times = _extract_times(str(emo.get("time", "")))
+        emo_min = _minutes(*emo_times[0]) if emo_times else None
+
+        target = None
+        if emo_min is not None:
+            # 仅有时段（可算中心）的 episode 参与最近邻；无时刻的 episode 不比较
+            timed = [
+                (ep, center) for ep, center in ((ep, _episode_center_min(ep)) for ep in candidates)
+                if center is not None
+            ]
+            if timed:
+                target = min(timed, key=lambda pair: abs(pair[1] - emo_min))[0]
+        if target is None:
+            target = candidates[0]
+
+        if target.id:
+            assign.setdefault(target.id, []).append(emo)
+
+    return assign
 
 
 # =============================================================================
@@ -237,17 +308,19 @@ def _episode_node(
     label = episode.title or episode.content or key
     full_label = f"{episode.date} · {label}" if episode.date else label
 
-    # 关联「当时心情」：按 episode 日期匹配该日情绪轨迹，取该日最后一条为主导情绪
+    # 关联「当时心情」：展示 build 层已归属好的情绪（这里再按日期兜底过滤）
     day_emotions = day_emotions or []
     ep_day = str(episode.date or "").strip()
-    # 防御性过滤：调用方可能传入未按日期分组的情绪，这里按 episode 日期收敛
     day_emotions = [
         e for e in day_emotions
         if str(e.get("date", "")).strip() == ep_day
     ]
+
     emotion_trace = [e for e in day_emotions if str(e.get("emotion", "")).strip()]
     emotion = emotion_trace[-1]["emotion"] if emotion_trace else ""
     emotion_reasons = [str(e.get("reason", "")).strip() for e in emotion_trace if str(e.get("reason", "")).strip()]
+    has_time = bool(emotion_trace) and any(_extract_times(str(e.get("time", ""))) for e in emotion_trace)
+    match_mode = "time" if has_time else "date"
 
     return {
         "id": f"episode:{key}",
@@ -274,6 +347,7 @@ def _episode_node(
             "emotion": emotion,
             "emotion_trace": [e["emotion"] for e in emotion_trace],
             "emotion_reasons": emotion_reasons,
+            "emotion_match": match_mode,
         },
     }
 
@@ -324,12 +398,8 @@ def _build_memory_graph(agent_name: str, display_name: str) -> dict:
     episodes = read_memory_jsonl(agent_name)
     understandings = list(read_understandings(agent_name).values())
 
-    # 按日期分组情绪记录，供 episode 节点关联「当时心情」
-    emotion_by_date: dict[str, list[dict]] = {}
-    for emo in read_all_emotions(agent_name):
-        day = str(emo.get("date", "")).strip()
-        if day:
-            emotion_by_date.setdefault(day, []).append(emo)
+    # 把情绪按「时段中心最近邻」归属到各 episode，供节点展示当时心情
+    assigned_emotions = _assign_emotions_to_episodes(episodes, read_all_emotions(agent_name))
 
     nodes: list[dict] = []
     edges: list[dict] = []
@@ -337,7 +407,7 @@ def _build_memory_graph(agent_name: str, display_name: str) -> dict:
     missing_ids: set[str] = set()
 
     for i, ep in enumerate(episodes):
-        node = _episode_node(agent_name, ep, i, emotion_by_date.get(ep.date, []))
+        node = _episode_node(agent_name, ep, i, assigned_emotions.get(ep.id, []))
         nodes.append(node)
         episode_ids.add(node["id"])
 
