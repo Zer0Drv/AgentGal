@@ -227,10 +227,28 @@ def _memory_graph_agents() -> list[dict]:
     return agents
 
 
-def _episode_node(agent_name: str, episode: EpisodeMemory, index: int) -> dict:
+def _episode_node(
+    agent_name: str,
+    episode: EpisodeMemory,
+    index: int,
+    day_emotions: list[dict] | None = None,
+) -> dict:
     key = episode.id or f"row-{index}"
     label = episode.title or episode.content or key
     full_label = f"{episode.date} · {label}" if episode.date else label
+
+    # 关联「当时心情」：按 episode 日期匹配该日情绪轨迹，取该日最后一条为主导情绪
+    day_emotions = day_emotions or []
+    ep_day = str(episode.date or "").strip()
+    # 防御性过滤：调用方可能传入未按日期分组的情绪，这里按 episode 日期收敛
+    day_emotions = [
+        e for e in day_emotions
+        if str(e.get("date", "")).strip() == ep_day
+    ]
+    emotion_trace = [e for e in day_emotions if str(e.get("emotion", "")).strip()]
+    emotion = emotion_trace[-1]["emotion"] if emotion_trace else ""
+    emotion_reasons = [str(e.get("reason", "")).strip() for e in emotion_trace if str(e.get("reason", "")).strip()]
+
     return {
         "id": f"episode:{key}",
         "label": _clip_text(full_label, _MEMORY_GRAPH_LABEL_LIMIT),
@@ -253,6 +271,9 @@ def _episode_node(agent_name: str, episode: EpisodeMemory, index: int) -> dict:
             "raw_dialogue_preview": _format_raw_dialogue_preview(
                 episode.raw_dialogue, _MEMORY_GRAPH_RAW_LIMIT
             ),
+            "emotion": emotion,
+            "emotion_trace": [e["emotion"] for e in emotion_trace],
+            "emotion_reasons": emotion_reasons,
         },
     }
 
@@ -303,13 +324,20 @@ def _build_memory_graph(agent_name: str, display_name: str) -> dict:
     episodes = read_memory_jsonl(agent_name)
     understandings = list(read_understandings(agent_name).values())
 
+    # 按日期分组情绪记录，供 episode 节点关联「当时心情」
+    emotion_by_date: dict[str, list[dict]] = {}
+    for emo in read_all_emotions(agent_name):
+        day = str(emo.get("date", "")).strip()
+        if day:
+            emotion_by_date.setdefault(day, []).append(emo)
+
     nodes: list[dict] = []
     edges: list[dict] = []
     episode_ids: set[str] = set()
     missing_ids: set[str] = set()
 
     for i, ep in enumerate(episodes):
-        node = _episode_node(agent_name, ep, i)
+        node = _episode_node(agent_name, ep, i, emotion_by_date.get(ep.date, []))
         nodes.append(node)
         episode_ids.add(node["id"])
 
