@@ -1010,6 +1010,30 @@ svg {
   text-align: right;
 }
 
+.choices-fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.choices-fold-toggle:hover {
+  color: var(--text-soft);
+  background: rgba(0, 0, 0, 0.045);
+}
+
+.choices-fold-toggle svg {
+  transition: transform 0.18s ease;
+}
+
 .choice-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1208,7 +1232,18 @@ svg {
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;
+  gap: 12px;
   padding: 0 2px 2px 0;
+}
+
+.composer-actions .composer-hint {
+  flex: 0 1 auto;
+  max-width: 160px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: right;
+  padding-bottom: 16px;
 }
 
 .composer-actions .primary-btn {
@@ -1354,6 +1389,15 @@ svg {
 
 .observe-switch-wrap.on .observe-switch-thumb {
   transform: translateX(16px);
+}
+
+/* 建议行动开关：暖色区分于观察模式 */
+.choices-switch-wrap.on .observe-switch-label {
+  color: var(--accent-warm, #b07a2c);
+}
+
+.choices-switch-wrap.on .observe-switch-track {
+  background: var(--accent-warm, #b07a2c);
 }
 
 .composer-foot {
@@ -3811,3 +3855,145 @@ svg {
     width: min(320px, calc(100vw - 24px));
   }
 }
+
+/* =============================================================================
+   我的人设 弹窗
+   ========================================================================== */
+[x-cloak] { display: none !important; }
+
+.persona-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.persona-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(30, 20, 18, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.persona-panel {
+  position: relative;
+  width: min(520px, 100%);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: #fdfaf6;
+  border: 1px solid rgba(113, 84, 74, 0.14);
+  border-radius: 20px;
+  box-shadow: 0 30px 60px -28px rgba(50, 28, 26, 0.5);
+  overflow: hidden;
+}
+
+.persona-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 10px;
+}
+
+.persona-panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.persona-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.persona-close:hover { background: rgba(0, 0, 0, 0.05); color: var(--text-soft); }
+
+.persona-panel-body {
+  padding: 4px 20px 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.persona-hint {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  padding-bottom: 4px;
+}
+
+.persona-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.persona-field-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+.persona-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(113, 84, 74, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 252, 248, 0.8);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.persona-input:focus {
+  outline: none;
+  border-color: rgba(180, 90, 100, 0.4);
+  box-shadow: 0 0 0 3px rgba(180, 90, 100, 0.08);
+}
+.persona-input::placeholder { color: rgba(110, 87, 83, 0.55); }
+
+.persona-panel-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px 18px;
+}
+
+.persona-btn {
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+.persona-btn-ghost {
+  background: transparent;
+  border: 1px solid rgba(113, 84, 74, 0.18);
+  color: var(--text-soft);
+}
+.persona-btn-ghost:hover { background: rgba(0, 0, 0, 0.04); }
+.persona-btn-primary {
+  background: var(--accent);
+  border: 1px solid transparent;
+  color: #fffaf5;
+  box-shadow: 0 12px 22px -16px rgba(148, 68, 78, 0.8);
+}
+.persona-btn-primary:hover { background: var(--accent-strong); }
+.persona-btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+

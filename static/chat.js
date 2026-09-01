@@ -6,6 +6,7 @@
   function createState() {
     return {
       observeMode: false,
+      generateChoices: true,  // 建议行动开关：关闭时不生成建议行动
       characterCount: 0,
       messages: [],
       choices: [],
@@ -539,7 +540,7 @@
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message, mode: this.observeMode ? "observe" : "participate" }),
+          body: JSON.stringify({ message, mode: this.observeMode ? "observe" : "participate", generate_choices: this.generateChoices }),
           signal: controller.signal,
         });
 
