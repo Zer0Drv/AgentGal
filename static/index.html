@@ -1003,6 +1003,7 @@
               </template>
 
               <div class="memory-graph-detail-meta">
+                <span class="memory-graph-pill memory-graph-pill-emotion" x-show="memoryGraphSelected.emotion" x-text="memoryGraphSelected.emotion"></span>
                 <template x-for="item in memoryGraphMetaPills()" :key="item">
                   <span class="memory-graph-pill" x-text="item"></span>
                 </template>

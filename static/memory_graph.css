@@ -359,6 +359,21 @@
   white-space: nowrap;
 }
 
+/* 情绪标签：暖粉色，区别于普通灰色 pill */
+.memory-graph-pill-emotion {
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid rgba(214, 120, 138, 0.42);
+  border-radius: 999px;
+  background: rgba(214, 120, 138, 0.14);
+  color: #a44a5e;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .memory-graph-detail-content {
   color: var(--text-soft);
   line-height: 1.74;

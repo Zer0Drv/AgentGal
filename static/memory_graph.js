@@ -436,7 +436,6 @@
           return pills;
         }
         const pills = [];
-        if (item.emotion) pills.push(`心情 · ${item.emotion}`);
         if (item.location) pills.push(item.location);
         if (item.participants) pills.push(item.participants);
         if (Array.isArray(item.linked_episodes)) {
@@ -457,7 +456,6 @@
         const dateLabel =
           date && time ? (time.startsWith(date) ? time : `${date} · ${time}`) : date || time;
         if (dateLabel) facts.push(dateLabel);
-        if (source.emotion) facts.push(`当时心情 · ${source.emotion}`);
         if (source.importance) facts.push(`importance ${source.importance}`);
         return facts;
       },
