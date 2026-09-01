@@ -116,12 +116,12 @@ def _assign_emotions_to_episodes(
     episodes: list[EpisodeMemory],
     emotions: list[dict],
 ) -> dict[str, list[dict]]:
-    """把情绪按「时段中心最近邻」归属到各 episode。
+    """把情绪按「时段中心最近邻」归属到各 episode，并为无情绪节点回退兜底。
 
-    规则：
-    - 按日期收敛：情绪只可能归属同一日期下有时段（可计算中心）的 episode
-    - 对每个有具体时刻的情绪，找日期相同且时段中心最接近的 episode
-    - 情绪或当天 episode 缺时刻（无法算中心）时，按其日期归属到当天第一个 episode（保底）
+    归属优先级：
+    1. 时段中心最近邻（精准）：情绪归给时段中心最贴近的 episode
+    2. 当天回退（date）：该时段无情绪时，回退到与 episode 同一天的情绪
+    3. 全局最近（nearest）：当天也无时，取时间上最近的一条情绪
     返回 {episode_id: [情绪记录]}。
     """
     assign: dict[str, list[dict]] = {ep.id: [] for ep in episodes if ep.id}
@@ -132,18 +132,16 @@ def _assign_emotions_to_episodes(
         if day and ep.id:
             ep_by_date.setdefault(day, []).append(ep)
 
+    # 1) 精准最近邻归属
     for emo in emotions:
         emo_day = str(emo.get("date", "")).strip()
         candidates = ep_by_date.get(emo_day, [])
         if not candidates:
             continue
-
         emo_times = _extract_times(str(emo.get("time", "")))
         emo_min = _minutes(*emo_times[0]) if emo_times else None
-
         target = None
         if emo_min is not None:
-            # 仅有时段（可算中心）的 episode 参与最近邻；无时刻的 episode 不比较
             timed = [
                 (ep, center) for ep, center in ((ep, _episode_center_min(ep)) for ep in candidates)
                 if center is not None
@@ -152,11 +150,36 @@ def _assign_emotions_to_episodes(
                 target = min(timed, key=lambda pair: abs(pair[1] - emo_min))[0]
         if target is None:
             target = candidates[0]
-
         if target.id:
             assign.setdefault(target.id, []).append(emo)
 
+    # 2) 无情绪节点回退：取时间上最近的一条情绪（单条，避免与相邻节点轨迹重叠）
+    for ep in episodes:
+        if not ep.id or assign[ep.id]:
+            continue
+        nearest = _nearest_emotion(ep, emotions)
+        if nearest is not None:
+            assign[ep.id] = [nearest]
+
     return assign
+
+
+def _nearest_emotion(episode: EpisodeMemory, emotions: list[dict]) -> dict | None:
+    """按 episode 时段中心找时间上最近的任意情绪（跨日期兜底）。"""
+    center = _episode_center_min(episode)
+    if center is None:
+        return None
+    best: dict | None = None
+    best_dist = float("inf")
+    for emo in emotions:
+        times = _extract_times(str(emo.get("time", "")))
+        if not times:
+            continue
+        dist = abs(_minutes(*times[0]) - center)
+        if dist < best_dist:
+            best_dist = dist
+            best = emo
+    return best
 
 
 # =============================================================================

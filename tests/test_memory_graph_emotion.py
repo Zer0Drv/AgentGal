@@ -37,9 +37,17 @@ def test_assign_emotion_to_nearest_episode_center():
         _emo("有点紧张", time="星期一 09:38"),
     ]
     assigned = _assign_emotions_to_episodes(eps, emotions)
-    # 09:30 → 中心 09:32.5 更近 → e2；09:38 → 也近 e2 → e2
-    assert assigned["e1"] == []
+    # e2 精准拿到 09:30/09:38；e1 时段无情绪 → 回退到时间最近一条（09:30）
     assert [e["emotion"] for e in assigned["e2"]] == ["有点开心", "有点紧张"]
+    assert [e["emotion"] for e in assigned["e1"]] == ["有点开心"]
+
+
+def test_assign_emotion_falls_back_to_nearest_across_days():
+    # episode 当天无任何情绪 → 回退到全局时间最近的（跨日期）
+    eps = [_episode("e1", date="10月5日", time="10月5日 09:00-09:10")]
+    emotions = [_emo("平静", date="10月2日", time="09:00")]
+    assigned = _assign_emotions_to_episodes(eps, emotions)
+    assert [e["emotion"] for e in assigned["e1"]] == ["平静"]
 
 
 def test_assign_emotion_split_across_episodes():
