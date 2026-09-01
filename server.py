@@ -9,6 +9,7 @@ import asyncio
 import json
 import re
 import traceback
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -65,7 +66,15 @@ def reset_entities() -> None:
     character_repo.invalidate()
 
 
-app = FastAPI(title="AgentGal")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """应用生命周期：替代已弃用的 @app.on_event(\"startup\")。"""
+    setup_logfire()
+    initialize_conversation_agents()
+    yield
+
+
+app = FastAPI(title="AgentGal", lifespan=lifespan)
 
 STATIC_DIR = Path(__file__).parent / "static"
 _LAST_CHOICES_FILE = CHARACTERS_DIR / "last_choices.json"
@@ -391,17 +400,6 @@ def _start_state_update() -> None:
         return
     _pending_state_update_requested = False
     _pending_state_update_task = asyncio.create_task(_run_state_update_loop())
-
-
-# =============================================================================
-# 启动初始化
-# =============================================================================
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    setup_logfire()
-    initialize_conversation_agents()
 
 
 # =============================================================================

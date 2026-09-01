@@ -36,6 +36,10 @@ dev = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["."]
+# 过滤第三方库 jieba 自身正则写法的 invalid escape sequence 警告（本项目代码无此类问题）
+filterwarnings = [
+    "ignore:invalid escape sequence.*:Warning:jieba",
+]
 
 [dependency-groups]
 dev = [
