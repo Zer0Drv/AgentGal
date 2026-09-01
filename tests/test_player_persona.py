@@ -18,8 +18,8 @@ def test_default_persona_has_six_sections():
         assert f"<{tag}>" in pp.DEFAULT_PLAYER_PERSONA
 
 
-def test_read_missing_returns_default():
-    assert pp.read_player_persona() == pp.DEFAULT_PLAYER_PERSONA
+def test_read_missing_returns_empty():
+    assert pp.read_player_persona() == ""
 
 
 def test_write_then_read_roundtrip():

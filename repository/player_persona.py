@@ -45,10 +45,10 @@ def persona_path() -> Path:
 
 
 def read_player_persona() -> str:
-    """读取玩家 persona；不存在返回默认模板。"""
+    """读取玩家 persona；不存在返回空串（不注入模板文案）。"""
     p = persona_path()
     if not p.exists():
-        return DEFAULT_PLAYER_PERSONA
+        return ""
     return p.read_text(encoding="utf-8").strip()
 
 

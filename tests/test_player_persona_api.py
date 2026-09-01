@@ -15,12 +15,10 @@ def _isolate(tmp_path, monkeypatch):
     yield
 
 
-def test_get_persona_default_has_six_sections():
+def test_get_persona_default_is_empty():
     resp = client.get("/api/player/persona")
     assert resp.status_code == 200
-    persona = resp.json()["persona"]
-    for tag in ["<identity>", "<goal>", "<past>", "<habits>", "<reactions>", "<voice>"]:
-        assert tag in persona
+    assert resp.json()["persona"] == ""
 
 
 def test_post_then_get_roundtrip():
@@ -37,7 +35,7 @@ def test_post_then_get_roundtrip():
 def test_post_empty_is_noop():
     resp = client.post("/api/player/persona", json={"persona": "   "})
     assert resp.status_code == 200
-    assert "<identity>" in resp.json()["persona"]  # 仍是默认模板
+    assert resp.json()["persona"] == ""  # 空文本不写文件，仍为空
 
 
 def test_persona_file_persisted_on_disk(tmp_path):
