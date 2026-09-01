@@ -50,6 +50,7 @@ from repository.narrator_output import extract_narrator_output
 from models.character import get_display_name
 from repository.status_file import extract_status_field
 from repository.agent_files import read_agent_file
+from repository.emotion_store import read_all_emotions
 from repository.history import (
     extract_game_date_anchors,
     load_conversation_history,
@@ -979,9 +980,15 @@ async def api_characters() -> JSONResponse:
         try:
             status_text = read_agent_file(agent_name, "status.md")
             identity = extract_status_field(status_text, "身份")
+            mood = extract_status_field(status_text, "心境")
+            concern = extract_status_field(status_text, "在意的事")
         except Exception as e:
             routing_logger.warning("[%s] /api/characters 读取 status.md 失败: %s", agent_name, e)
-            identity = ""
+            identity = mood = concern = ""
+
+        emotion_records = read_all_emotions(agent_name)
+        latest_emotion = emotion_records[-1]["emotion"] if emotion_records else ""
+        emotion_history = [r["emotion"] for r in emotion_records[-5:]]
 
         characters.append(
             {
@@ -989,6 +996,10 @@ async def api_characters() -> JSONResponse:
                 "display_name": display_name,
                 "identity": identity,
                 "location": _resolve_location(agent_name, display_name),
+                "emotion": latest_emotion,
+                "emotion_history": emotion_history,
+                "mood": mood,
+                "concern": concern,
             }
         )
 

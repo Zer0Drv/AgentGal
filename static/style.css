@@ -1736,6 +1736,51 @@ svg {
   color: rgba(83, 49, 45, 0.48);
 }
 
+.emotion-history-toggle {
+  margin-left: auto;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-family: "JetBrains Mono", monospace;
+  color: rgba(83, 49, 45, 0.55);
+  background: rgba(83, 49, 45, 0.06);
+  border: 1px solid rgba(83, 49, 45, 0.14);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.emotion-history-toggle:hover {
+  color: rgba(83, 49, 45, 0.85);
+  background: rgba(83, 49, 45, 0.1);
+}
+
+.emotion-history {
+  margin: 2px 0 4px 0;
+  padding: 6px 8px;
+  background: rgba(83, 49, 45, 0.05);
+  border: 1px dashed rgba(83, 49, 45, 0.18);
+  border-radius: 7px;
+}
+
+.emotion-history-title {
+  font-size: 10px;
+  font-family: "JetBrains Mono", monospace;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.emotion-history-item {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-soft);
+}
+
+.emotion-history-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .character-skeleton {
   padding: 8px 0;
 }
