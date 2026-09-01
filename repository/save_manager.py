@@ -604,6 +604,8 @@ def _get_agent_save_files(agent_name: str) -> list[str]:
         core_files.extend([
             "memory.jsonl", "memory_draft.jsonl", "understanding.jsonl",
             "intents.json",  # 「打算」队列（intent_queue）
+            "emotions.jsonl",  # 情绪标签轨迹（表现层）
+            "mood.json",       # 内心层三维驱动力状态
         ])
     else:
         core_files.append("pending_events.json")  # 「待触发事件」队列（intent_queue）

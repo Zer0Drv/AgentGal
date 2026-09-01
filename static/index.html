@@ -572,9 +572,29 @@
                   <span class="character-field-label">身份</span>
                   <span class="character-field-value" x-text="char.identity"></span>
                 </div>
+                <div class="character-field" x-show="char.emotion">
+                  <span class="character-field-label">情绪</span>
+                  <span class="character-field-value" x-text="char.emotion"></span>
+                  <button class="emotion-history-toggle" type="button" @click.stop="toggleEmotions(char.name)" :aria-label="`查看 ${char.display_name} 的情绪记录`">记录</button>
+                </div>
+                <div class="emotion-history" x-show="emotionExpanded[char.name] && char.emotion_history && char.emotion_history.length" @click.stop>
+                  <div class="emotion-history-title">最近情绪</div>
+                  <template x-for="(em, i) in char.emotion_history" :key="i">
+                    <div class="emotion-history-item" x-text="em"></div>
+                  </template>
+                  <div class="emotion-history-empty" x-show="!char.emotion_history || !char.emotion_history.length">还没有情绪记录</div>
+                </div>
+                <div class="character-field" x-show="char.mood">
+                  <span class="character-field-label">心境</span>
+                  <span class="character-field-value" x-text="char.mood"></span>
+                </div>
                 <div class="character-field" x-show="char.location">
                   <span class="character-field-label">位置</span>
                   <span class="character-field-value" x-text="char.location"></span>
+                </div>
+                <div class="character-field" x-show="char.concern">
+                  <span class="character-field-label">在意的事</span>
+                  <span class="character-field-value" x-text="char.concern"></span>
                 </div>
               </div>
               <div class="character-card-foot">记忆图谱 →</div>

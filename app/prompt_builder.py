@@ -17,6 +17,7 @@ from repository.agent_files import (
     write_sidecar_json,
 )
 from repository.runtime_state import extract_player_name, read_player_name
+from repository.emotion_state import build_inner_hint
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +206,10 @@ def build_user_message(
     parts.append(
         f"<status>\n{status_content.strip()}\n</status>" if status_content.strip() else ""
     )
+    if not is_narrator:
+        inner_hint = build_inner_hint(agent_name)
+        if inner_hint:
+            parts.append(f"<inner_state>\n{inner_hint}\n</inner_state>")
     parts.append(memory_prefix if memory_prefix else "")
     parts.append(understandings_prefix if understandings_prefix else "")
     if not observation_mode:

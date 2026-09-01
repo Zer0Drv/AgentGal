@@ -9,6 +9,7 @@ import asyncio
 import json
 import re
 import traceback
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -50,6 +51,7 @@ from repository.narrator_output import extract_narrator_output
 from models.character import get_display_name
 from repository.status_file import extract_status_field
 from repository.agent_files import read_agent_file
+from repository.emotion_store import read_all_emotions
 from repository.history import (
     extract_game_date_anchors,
     load_conversation_history,
@@ -64,7 +66,15 @@ def reset_entities() -> None:
     character_repo.invalidate()
 
 
-app = FastAPI(title="AgentGal")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """应用生命周期：替代已弃用的 @app.on_event(\"startup\")。"""
+    setup_logfire()
+    initialize_conversation_agents()
+    yield
+
+
+app = FastAPI(title="AgentGal", lifespan=lifespan)
 
 STATIC_DIR = Path(__file__).parent / "static"
 _LAST_CHOICES_FILE = CHARACTERS_DIR / "last_choices.json"
@@ -390,17 +400,6 @@ def _start_state_update() -> None:
         return
     _pending_state_update_requested = False
     _pending_state_update_task = asyncio.create_task(_run_state_update_loop())
-
-
-# =============================================================================
-# 启动初始化
-# =============================================================================
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    setup_logfire()
-    initialize_conversation_agents()
 
 
 # =============================================================================
@@ -979,9 +978,15 @@ async def api_characters() -> JSONResponse:
         try:
             status_text = read_agent_file(agent_name, "status.md")
             identity = extract_status_field(status_text, "身份")
+            mood = extract_status_field(status_text, "心境")
+            concern = extract_status_field(status_text, "在意的事")
         except Exception as e:
             routing_logger.warning("[%s] /api/characters 读取 status.md 失败: %s", agent_name, e)
-            identity = ""
+            identity = mood = concern = ""
+
+        emotion_records = read_all_emotions(agent_name)
+        latest_emotion = emotion_records[-1]["emotion"] if emotion_records else ""
+        emotion_history = [r["emotion"] for r in emotion_records[-5:]]
 
         characters.append(
             {
@@ -989,6 +994,10 @@ async def api_characters() -> JSONResponse:
                 "display_name": display_name,
                 "identity": identity,
                 "location": _resolve_location(agent_name, display_name),
+                "emotion": latest_emotion,
+                "emotion_history": emotion_history,
+                "mood": mood,
+                "concern": concern,
             }
         )
 

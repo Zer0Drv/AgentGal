@@ -19,6 +19,11 @@ from repository import intent_queue
 from repository.character_repo import character_repo
 from repository.history import load_conversation_history
 from repository.status_file import FileUpdateResult
+from repository.emotion_store import append_emotion
+from repository.emotion_state import note_user_turn
+from repository.runtime_state import read_turn_counter
+from repository.agent_files import read_agent_file
+from repository.status_file import extract_status_field
 
 
 class ConversationService:
@@ -126,7 +131,36 @@ class ConversationService:
             if r is not None:
                 results.append(r)
 
+        # ---- 情绪系统：表现层轨迹 + 内心层回调 ----
+        if output.emotion.strip():
+            turn = read_turn_counter()
+            date, time_ = _current_game_time()
+            reason = output.emotional_impact.reason if output.emotional_impact else ""
+            append_emotion(
+                name,
+                output.emotion,
+                turn=turn,
+                date=date,
+                time=time_,
+                reason=reason,
+            )
+        impact = output.emotional_impact.model_dump() if output.emotional_impact else None
+        note_user_turn(name, impact)
+
         log_file_updates(name, results)
+
+
+def _current_game_time() -> tuple[str, str]:
+    """从 narrator status.md 读当前游戏时间，拆成 (日期, 时刻)；缺失返回空。"""
+    try:
+        status_text = read_agent_file("narrator", "status.md")
+        current_time = extract_status_field(status_text, status_fields.CURRENT_TIME)
+        parts = current_time.split(maxsplit=1)
+        if len(parts) == 2:
+            return parts[0], parts[1]
+        return current_time, ""
+    except Exception:
+        return "", ""
 
 
 conversation_service = ConversationService()

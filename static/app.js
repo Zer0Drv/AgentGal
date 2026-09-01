@@ -30,6 +30,7 @@ document.addEventListener("alpine:init", () => {
     stories: [],
     characters: [],
     charactersLoading: false,
+    emotionExpanded: {},
     _fetchCharactersSeq: 0,
     initialRecent: [],
     initialChoices: [],
@@ -486,6 +487,13 @@ document.addEventListener("alpine:init", () => {
       } finally {
         this.charactersLoading = false;
       }
+    },
+
+    toggleEmotions(agentName) {
+      this.emotionExpanded = {
+        ...this.emotionExpanded,
+        [agentName]: !this.emotionExpanded[agentName],
+      };
     },
   }));
 });

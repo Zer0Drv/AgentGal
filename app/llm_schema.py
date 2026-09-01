@@ -5,7 +5,7 @@
 不互相继承；实体多出的系统字段（id / memory_owner / 时间戳等）绝不暴露给 LLM。
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     AliasChoices,
@@ -27,9 +27,23 @@ ChoiceText = Annotated[str, Field(max_length=MAX_CHOICE_CHARS)]
 # ---------------------------------------------------------------------------
 
 
+class LLMEmotionalImpact(BaseModel):
+    """对话内容对内心层（驱动力状态）的影响方向。
+
+    LLM 只输出符号方向（++ / + / 0 / - / --），数值幅度由代码端 impact_delta 映射。
+    """
+
+    affection: Literal["++", "+", "0", "-", "--"] = "0"
+    loneliness: Literal["++", "+", "0", "-", "--"] = "0"
+    energy: Literal["++", "+", "0", "-", "--"] = "0"
+    reason: str = ""
+
+
 class LLMCharacterOutput(BaseModel):
     content: str
     memory: str
+    emotion: str = ""
+    emotional_impact: LLMEmotionalImpact | None = None
     status: dict[str, str] = Field(default_factory=dict)
     triggered: list[str] = Field(default_factory=list)
     add_event: list[str] = Field(default_factory=list)
