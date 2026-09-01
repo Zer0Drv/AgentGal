@@ -71,13 +71,16 @@ def test_search_understandings_returns_empty_when_vector_schema_missing(tmp_path
     assert search_understandings("mitsuki", "query", qvec=[0.0]) == ""
 
 
-def test_search_memories_uses_bm25_query_for_bm25(monkeypatch):
+def test_search_memories_uses_bm25_query_for_bm25(monkeypatch, tmp_path):
     captured: dict[str, str | None] = {}
 
     class FakeConn:
         def close(self):
             return None
 
+    fake_db = tmp_path / "vectors.sqlite"
+    fake_db.write_text("", encoding="utf-8")  # 仅满足 Path(DB_PATH).exists() 前置检查
+    monkeypatch.setattr(retrieval_module, "DB_PATH", str(fake_db))
     monkeypatch.setattr(retrieval_module.sqlite3, "connect", lambda _path: FakeConn())
     monkeypatch.setattr(retrieval_module.VectorStore, "_load_sqlite_vec_sync", lambda _conn: None)
     monkeypatch.setattr(retrieval_module, "_sync_tables_exist", lambda _conn, _names: True)
@@ -114,13 +117,16 @@ def test_search_memories_uses_bm25_query_for_bm25(monkeypatch):
     assert result == "（无相关记忆）"
 
 
-def test_search_understandings_logs_semantic_and_bm25_queries(monkeypatch):
+def test_search_understandings_logs_semantic_and_bm25_queries(monkeypatch, tmp_path):
     captured: dict[str, str | None] = {}
 
     class FakeConn:
         def close(self):
             return None
 
+    fake_db = tmp_path / "vectors.sqlite"
+    fake_db.write_text("", encoding="utf-8")  # 仅满足 Path(DB_PATH).exists() 前置检查
+    monkeypatch.setattr(retrieval_module, "DB_PATH", str(fake_db))
     monkeypatch.setattr(retrieval_module.sqlite3, "connect", lambda _path: FakeConn())
     monkeypatch.setattr(retrieval_module.VectorStore, "_load_sqlite_vec_sync", lambda _conn: None)
     monkeypatch.setattr(retrieval_module, "_sync_tables_exist", lambda _conn, _names: True)
