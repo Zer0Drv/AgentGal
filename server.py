@@ -52,6 +52,7 @@ from models.character import get_display_name
 from repository.status_file import extract_status_field
 from repository.agent_files import read_agent_file
 from repository.emotion_store import read_all_emotions
+from repository.player_persona import read_player_persona, write_player_persona
 from repository.history import (
     extract_game_date_anchors,
     load_conversation_history,
@@ -705,9 +706,14 @@ async def api_new_game(req: NewGameRequest) -> JSONResponse:
 class ChatRequest(BaseModel):
     message: str
     mode: Literal["participate", "observe"] = "participate"
+    generate_choices: bool = True  # 建议行动开关：关闭时不生成建议行动
 
 
-async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] = "participate"):
+async def _chat_stream(
+    user_input: str,
+    mode: Literal["participate", "observe"] = "participate",
+    should_generate_choices: bool = True,
+):
     """核心游戏循环，通过 SSE 逐步推送结果。"""
     global _pending_choices_task
     observation_mode = mode == "observe"
@@ -799,7 +805,7 @@ async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] 
             )
 
     choices_task: asyncio.Task[list[str]] | None = None
-    if agent_responses and not observation_mode and choices_token == _choices_generation_token:
+    if agent_responses and not observation_mode and should_generate_choices and choices_token == _choices_generation_token:
         choices_task = asyncio.create_task(generate_choices(narrator_output, agent_responses))
         _pending_choices_task = choices_task
 
@@ -833,7 +839,7 @@ async def _chat_stream(user_input: str, mode: Literal["participate", "observe"] 
 @app.post("/api/chat")
 async def api_chat(req: ChatRequest) -> StreamingResponse:
     return StreamingResponse(
-        _chat_stream(req.message, req.mode),
+        _chat_stream(req.message, req.mode, req.generate_choices),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -1046,6 +1052,23 @@ async def api_reset(req: ResetRequest) -> JSONResponse:
 # =============================================================================
 # /api/characters
 # =============================================================================
+
+
+class PlayerPersonaRequest(BaseModel):
+    persona: str = ""
+
+
+@app.get("/api/player/persona")
+async def api_get_player_persona() -> JSONResponse:
+    """返回当前玩家「我」的人设卡（六段 markdown）。"""
+    return JSONResponse({"persona": read_player_persona()})
+
+
+@app.post("/api/player/persona")
+async def api_set_player_persona(req: PlayerPersonaRequest) -> JSONResponse:
+    """保存玩家「我」的人设卡。"""
+    write_player_persona(req.persona)
+    return JSONResponse({"ok": True, "persona": read_player_persona()})
 
 
 @app.get("/api/characters")

@@ -34,6 +34,10 @@ document.addEventListener("alpine:init", () => {
     _fetchCharactersSeq: 0,
     initialRecent: [],
     initialChoices: [],
+    choicesPanelOpen: true,  // 建议行动面板：默认展开，可手动收起/展开
+    personaOpen: false,       // 我的人设 弹窗
+    personaSaving: false,
+    personaSections: { identity: "", goal: "", past: "", habits: "", reactions: "", voice: "" },
     toastTimers: new Map(),
     toasts: [],
     mediaQuery: null,
@@ -176,13 +180,77 @@ document.addEventListener("alpine:init", () => {
     },
 
     shouldShowChoices() {
-      return this.choiceStatus !== "hidden" && !this.isInputMode();
+      return this.generateChoices && !this.isInputMode();
+    },
+
+    toggleChoicesPanel() {
+      this.choicesPanelOpen = !this.choicesPanelOpen;
     },
 
     choiceRailSubtitle() {
       if (this.choiceStatus === "loading") return "选项生成中，也可以直接输入你想说的话。";
       if (this.choiceStatus === "empty") return "这一轮没有预设选项。";
       return "选项只是建议，也可以直接输入你想说的话。";
+    },
+
+    openPlayerPersona() {
+      this.personaOpen = true;
+      this.loadPlayerPersona();
+    },
+
+    closePlayerPersona() {
+      this.personaOpen = false;
+    },
+
+    async loadPlayerPersona() {
+      try {
+        const resp = await fetch("/api/player/persona", { headers: { "X-Hermes-Profile": window.__HERMES_PROFILE__ || "" } });
+        if (!resp.ok) throw new Error(`载入失败 ${resp.status}`);
+        const data = await resp.json();
+        this.personaSections = this._personaToSections(data.persona || "");
+      } catch (e) {
+        this.pushToast("我的人设载入失败", "error");
+      }
+    },
+
+    async savePlayerPersona() {
+      this.personaSaving = true;
+      try {
+        const persona = this._sectionsToPersona(this.personaSections);
+        const resp = await fetch("/api/player/persona", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Hermes-Profile": window.__HERMES_PROFILE__ || "" },
+          body: JSON.stringify({ persona }),
+        });
+        if (!resp.ok) throw new Error(`保存失败 ${resp.status}`);
+        this.closePlayerPersona();
+        this.pushToast("我的人设已保存", "success");
+      } catch (e) {
+        this.pushToast("我的人设保存失败", "error");
+      } finally {
+        this.personaSaving = false;
+      }
+    },
+
+    _personaToSections(persona) {
+      const out = { identity: "", goal: "", past: "", habits: "", reactions: "", voice: "" };
+      const tags = Object.keys(out);
+      for (const tag of tags) {
+        const m = persona.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
+        if (m) out[tag] = m[1].trim();
+      }
+      return out;
+    },
+
+    _sectionsToPersona(sections) {
+      const tags = ["identity", "goal", "past", "habits", "reactions", "voice"];
+      const parts = [];
+      for (const tag of tags) {
+        const v = String(sections[tag] || "").trim();
+        if (!v) continue;
+        parts.push(`<${tag}>\n${v}\n</${tag}>`);
+      }
+      return parts.join("\n\n");
     },
 
     trimmedInput() {

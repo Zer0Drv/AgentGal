@@ -13,7 +13,7 @@
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <script src="/static/memory_graph.js?v=12"></script>
 <script defer src="/static/alpine.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=memory-graph-card">
+<link rel="stylesheet" href="/static/style.css?v=persona-1">
 </head>
 <body>
 <svg width="0" height="0" class="icon-sprite" aria-hidden="true" style="position:absolute"><defs>
@@ -43,6 +43,19 @@
     </div>
 
     <div class="topbar-actions">
+      <button
+        type="button"
+        class="ghost-btn menu-btn"
+        aria-label="我的人设"
+        title="我的人设"
+        @click="openPlayerPersona()"
+      >
+        <span class="btn-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/></svg>
+        </span>
+        <span class="btn-label">我的人设</span>
+      </button>
+
       <div class="topbar-search-wrap" x-show="messages.length" @click.outside="closeHistorySearch()">
         <button
           type="button"
@@ -440,7 +453,7 @@
             <div class="choice-rail-subtitle" x-text="choiceRailSubtitle()"></div>
           </div>
 
-          <div class="choice-list" x-show="choices.length > 0">
+          <div class="choice-list" x-show="choicesPanelOpen && choices.length > 0">
             <template x-for="choice in choices" :key="choice">
               <button type="button" class="choice-chip" @click="submitMessage(choice)">
                 <span class="choice-chip-text" x-text="choice"></span>
@@ -448,7 +461,7 @@
             </template>
           </div>
 
-          <div class="choice-state loading" x-show="choiceStatus === 'loading'" aria-live="polite">
+          <div class="choice-state loading" x-show="choicesPanelOpen && choiceStatus === 'loading'" aria-live="polite">
             <span class="choice-state-bars" aria-hidden="true">
               <span></span>
               <span></span>
@@ -457,7 +470,7 @@
             <span>正在生成建议行动</span>
           </div>
 
-          <div class="choice-state" x-show="choiceStatus === 'empty'" aria-live="polite">
+          <div class="choice-state" x-show="choicesPanelOpen && choiceStatus === 'empty'" aria-live="polite">
             当前无建议行动，你可以直接输入下一句。
           </div>
         </section>
@@ -489,9 +502,39 @@
                   <div class="observe-switch-thumb"></div>
                 </div>
               </div>
-            </div>
-            <div class="composer-tools">
-              <div class="composer-hint" x-text="observeMode ? '输入想观察的角色，Enter 发送' : 'Enter 发送，Shift + Enter 换行'"></div>
+              <div
+                class="observe-switch-wrap choices-switch-wrap"
+                :class="{ on: generateChoices }"
+                x-show="messages.length > 0 && characterCount > 0"
+                @click="generateChoices = !generateChoices"
+                role="switch"
+                :aria-checked="generateChoices"
+                tabindex="0"
+                @keydown.space.prevent="generateChoices = !generateChoices"
+                @keydown.enter.prevent="generateChoices = !generateChoices"
+              >
+                <span class="observe-switch-copy">
+                  <span class="observe-switch-label">建议行动</span>
+                  <span
+                    class="observe-info-badge"
+                    data-tooltip="关闭后不再生成建议行动选项"
+                    aria-label="关闭后不再生成建议行动选项"
+                  >i</span>
+                </span>
+                <div class="observe-switch-track">
+                  <div class="observe-switch-thumb"></div>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="choices-fold-toggle"
+                x-show="messages.length > 0 && characterCount > 0"
+                @click="toggleChoicesPanel()"
+                :aria-label="choicesPanelOpen ? '收起建议行动' : '展开建议行动'"
+              >
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :style="`transform:rotate(${choicesPanelOpen ? 180 : 0}deg)`"><use href="#ic-chevron-down"></use></svg>
+                <span x-text="choicesPanelOpen ? '收起' : '展开'"></span>
+              </button>
             </div>
           </div>
 
@@ -512,6 +555,7 @@
             </div>
 
             <div class="composer-actions">
+              <div class="composer-hint" x-text="observeMode ? '输入想观察的角色，Enter 发送' : 'Enter 发送，Shift + Enter 换行'"></div>
               <button
                 type="button"
                 class="primary-btn"
@@ -1070,11 +1114,58 @@
       <div class="toast" :class="toast.tone ? `tone-${toast.tone}` : ''" x-text="toast.message"></div>
     </template>
   </div>
+
+  <!-- 我的人设 编辑弹窗 -->
+  <div class="persona-modal" x-show="personaOpen" x-cloak @keydown.escape.window="closePlayerPersona()">
+    <div class="persona-backdrop" @click="closePlayerPersona()"></div>
+    <div class="persona-panel" role="dialog" aria-modal="true" aria-label="我的人设">
+      <div class="persona-panel-head">
+        <div class="persona-panel-title">我的人设</div>
+        <button type="button" class="persona-close" aria-label="关闭" @click="closePlayerPersona()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-x"></use></svg>
+        </button>
+      </div>
+      <div class="persona-panel-body">
+        <div class="persona-hint">这份人设会写入旁白和所有角色的 prompt，让 TA 们知道「你是谁、怎么称呼、怎么对待你」。留空的段不会注入。</div>
+
+        <label class="persona-field">
+          <span class="persona-field-name">身份</span>
+          <textarea class="persona-input" rows="3" x-model="personaSections.identity" placeholder="例如：新来的后端实习生，习惯用昵称自称。"></textarea>
+        </label>
+        <label class="persona-field">
+          <span class="persona-field-name">目标</span>
+          <textarea class="persona-input" rows="2" x-model="personaSections.goal" placeholder="你想在故事里达成什么？或想和谁走近。"></textarea>
+        </label>
+        <label class="persona-field">
+          <span class="persona-field-name">过去</span>
+          <textarea class="persona-input" rows="2" x-model="personaSections.past" placeholder="过往经历、来到这个世界的缘由。"></textarea>
+        </label>
+        <label class="persona-field">
+          <span class="persona-field-name">习惯</span>
+          <textarea class="persona-input" rows="2" x-model="personaSections.habits" placeholder="生活习惯、行事惯性。"></textarea>
+        </label>
+        <label class="persona-field">
+          <span class="persona-field-name">反应</span>
+          <textarea class="persona-input" rows="2" x-model="personaSections.reactions" placeholder="遇到某些情形时的本能反应。"></textarea>
+        </label>
+        <label class="persona-field">
+          <span class="persona-field-name">说话风格</span>
+          <textarea class="persona-input" rows="2" x-model="personaSections.voice" placeholder="说话的风格、常用语气词。"></textarea>
+        </label>
+      </div>
+      <div class="persona-panel-foot">
+        <button type="button" class="persona-btn persona-btn-ghost" @click="closePlayerPersona()">取消</button>
+        <button type="button" class="persona-btn persona-btn-primary" :disabled="personaSaving" @click="savePlayerPersona()">
+          <span x-text="personaSaving ? '保存中…' : '保存人设'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="/static/worldline.js?v=1"></script>
 <script src="/static/search.js?v=1"></script>
-<script src="/static/chat.js?v=1"></script>
-<script src="/static/app.js?v=chat-split"></script>
+<script src="/static/chat.js?v=2"></script>
+<script src="/static/app.js?v=persona-1"></script>
 </body>
 </html>

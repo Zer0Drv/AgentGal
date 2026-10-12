@@ -18,6 +18,10 @@ from repository.agent_files import (
 )
 from repository.runtime_state import extract_player_name, read_player_name
 from repository.emotion_state import build_inner_hint
+from repository.player_persona import (
+    build_player_block as _build_player_persona_block,
+    read_player_persona,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -142,11 +146,16 @@ def build_characters_block(tag: str = "characters") -> str:
 
 
 def build_player_block(latest_user_input: str) -> str:
-    """Expose the player's display name to narrator prompts when known."""
+    """Expose the player's display name + persona to prompts when known.
+
+    人设卡与 display_name 一并注入：让旁白和角色都理解「玩家是谁、怎么称呼、怎么对待」。
+    """
     player_name = read_player_name() or extract_player_name(latest_user_input)
-    if not player_name:
-        return ""
-    return f"<player>\ndisplay_name: {player_name}\n</player>"
+    persona = read_player_persona()
+    has_persona = persona.strip() and any(
+        tag in persona for tag in ["<identity>", "<goal>", "<voice>"]
+    )
+    return _build_player_persona_block(player_name, persona if has_persona else "")
 
 
 def render_player_relations() -> str:
@@ -200,7 +209,7 @@ def build_user_message(
     history, was_truncated = build_history_transcript(agent_name, raw_messages or [])
     status_content = build_status_block(agent_name)
 
-    parts.append(build_player_block(latest_user_input) if is_narrator else "")
+    parts.append(build_player_block(latest_user_input))
     parts.append(build_characters_block(tag="fields") if is_narrator else "")
     parts.append(f"最近对话历史:\n\n{history}" if history else "")
     parts.append(
